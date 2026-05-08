@@ -1,0 +1,14 @@
+id: compsognathus
+display_name: Compsognathus
+category: dinosaur
+rarity: common
+era: Late Jurassic
+tier: 1
+base_cost: 100
+base_income_per_hour: 8
+popularity: 25
+danger: 5
+biome: forest
+description: >-
+  Chicken-sized and twitchy, the smallest known carnivorous dinosaur.
+  Cheap to keep but doesn't pull a crowd on its own.

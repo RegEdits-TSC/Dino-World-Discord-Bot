@@ -1,0 +1,14 @@
+id: triceratops
+display_name: Triceratops
+category: dinosaur
+rarity: rare
+era: Late Cretaceous
+tier: 3
+base_cost: 2000
+base_income_per_hour: 75
+popularity: 88
+danger: 50
+biome: grassland
+description: >-
+  Three-horned ceratopsid, instantly recognizable to every kid in the
+  parking lot. A keystone exhibit for the herbivore wing.

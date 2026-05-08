@@ -1,0 +1,14 @@
+id: spinosaurus
+display_name: Spinosaurus
+category: dinosaur
+rarity: legendary
+era: Late Cretaceous
+tier: 5
+base_cost: 17000
+base_income_per_hour: 580
+popularity: 97
+danger: 92
+biome: marine
+description: >-
+  Sail-backed semi-aquatic predator, longer than a tyrannosaur. Needs a
+  hybrid land/water enclosure — a logistical headache, but worth it.

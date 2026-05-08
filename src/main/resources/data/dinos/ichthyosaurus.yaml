@@ -1,0 +1,14 @@
+id: ichthyosaurus
+display_name: Ichthyosaurus
+category: marine_reptile
+rarity: uncommon
+era: Early Jurassic
+tier: 2
+base_cost: 620
+base_income_per_hour: 23
+popularity: 65
+danger: 20
+biome: marine
+description: >-
+  Streamlined marine reptile shaped startlingly like a modern dolphin.
+  Convergent evolution at its finest — a popular education talking point.

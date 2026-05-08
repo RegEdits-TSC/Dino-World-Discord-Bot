@@ -1,0 +1,14 @@
+id: pteranodon
+display_name: Pteranodon
+category: pterosaur
+rarity: uncommon
+era: Late Cretaceous
+tier: 2
+base_cost: 700
+base_income_per_hour: 28
+popularity: 75
+danger: 35
+biome: aerial
+description: >-
+  Crested gliding pterosaur with a wingspan to match a small plane.
+  The poster-child for any flying exhibit, drawing a steady visitor crowd.

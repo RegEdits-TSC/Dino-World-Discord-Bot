@@ -1,0 +1,14 @@
+id: gallimimus
+display_name: Gallimimus
+category: dinosaur
+rarity: uncommon
+era: Late Cretaceous
+tier: 2
+base_cost: 600
+base_income_per_hour: 24
+popularity: 68
+danger: 25
+biome: grassland
+description: >-
+  Ostrich-mimic dinosaur built for speed. Watching the herd sprint across
+  the open paddock is one of the park's quieter highlights.

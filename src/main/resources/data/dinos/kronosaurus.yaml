@@ -1,0 +1,14 @@
+id: kronosaurus
+display_name: Kronosaurus
+category: marine_reptile
+rarity: epic
+era: Early Cretaceous
+tier: 4
+base_cost: 5400
+base_income_per_hour: 195
+popularity: 89
+danger: 75
+biome: marine
+description: >-
+  Stocky pliosaur named for the Titan king himself. Powerful jaws,
+  reinforced plexiglass — the price of admission is worth it.

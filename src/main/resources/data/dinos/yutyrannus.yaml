@@ -1,0 +1,14 @@
+id: yutyrannus
+display_name: Yutyrannus
+category: dinosaur
+rarity: mythic
+era: Early Cretaceous
+tier: 5
+base_cost: 45000
+base_income_per_hour: 1300
+popularity: 100
+danger: 90
+biome: mountain
+description: >-
+  The "feathered tyrant" — proof that even tyrannosauroids wore plumage.
+  A scientific blockbuster, requiring a chilled enclosure to look right.

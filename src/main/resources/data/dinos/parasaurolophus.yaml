@@ -1,0 +1,14 @@
+id: parasaurolophus
+display_name: Parasaurolophus
+category: dinosaur
+rarity: rare
+era: Late Cretaceous
+tier: 3
+base_cost: 1850
+base_income_per_hour: 68
+popularity: 78
+danger: 25
+biome: forest
+description: >-
+  Tube-crested hadrosaur whose call echoes through the trees at feeding
+  time. The audio alone has driven gift-shop sales for years.

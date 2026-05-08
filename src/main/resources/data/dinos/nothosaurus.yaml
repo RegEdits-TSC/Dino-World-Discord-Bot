@@ -1,0 +1,14 @@
+id: nothosaurus
+display_name: Nothosaurus
+category: marine_reptile
+rarity: common
+era: Middle Triassic
+tier: 1
+base_cost: 130
+base_income_per_hour: 11
+popularity: 32
+danger: 12
+biome: marine
+description: >-
+  Long-necked semi-aquatic reptile, slim and snake-like in the water.
+  A practical choice for filling out your first marine enclosure.

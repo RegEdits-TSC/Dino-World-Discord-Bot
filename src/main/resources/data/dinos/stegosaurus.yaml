@@ -1,0 +1,15 @@
+id: stegosaurus
+display_name: Stegosaurus
+category: dinosaur
+rarity: epic
+era: Late Jurassic
+tier: 4
+base_cost: 5500
+base_income_per_hour: 200
+popularity: 92
+danger: 55
+biome: forest
+description: >-
+  Twin rows of bony plates and a spiked tail (the "thagomizer"). One of
+  the most recognizable dinosaurs in pop culture — anchor of any Jurassic
+  wing.

@@ -1,0 +1,14 @@
+id: giganotosaurus
+display_name: Giganotosaurus
+category: dinosaur
+rarity: legendary
+era: Late Cretaceous
+tier: 5
+base_cost: 16500
+base_income_per_hour: 560
+popularity: 96
+danger: 93
+biome: forest
+description: >-
+  Even bigger than a T. rex by some measurements. The "what if T. rex
+  fought one?" exhibit sells half the merch in the gift shop.

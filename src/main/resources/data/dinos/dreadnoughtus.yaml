@@ -1,0 +1,14 @@
+id: dreadnoughtus
+display_name: Dreadnoughtus
+category: dinosaur
+rarity: mythic
+era: Late Cretaceous
+tier: 5
+base_cost: 50000
+base_income_per_hour: 1450
+popularity: 100
+danger: 50
+biome: grassland
+description: >-
+  One of the largest land animals ever to walk the Earth. The enclosure
+  needs its own zip code; the photo ops fund the next quarter's expansion.

@@ -1,0 +1,14 @@
+id: dimorphodon
+display_name: Dimorphodon
+category: pterosaur
+rarity: common
+era: Early Jurassic
+tier: 1
+base_cost: 120
+base_income_per_hour: 10
+popularity: 30
+danger: 10
+biome: aerial
+description: >-
+  Stout-headed pterosaur with mismatched teeth. A reliable starter for any
+  flier exhibit — visitors love watching them flap between perches.

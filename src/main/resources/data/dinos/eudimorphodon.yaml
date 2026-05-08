@@ -1,0 +1,14 @@
+id: eudimorphodon
+display_name: Eudimorphodon
+category: pterosaur
+rarity: common
+era: Late Triassic
+tier: 1
+base_cost: 110
+base_income_per_hour: 9
+popularity: 28
+danger: 8
+biome: aerial
+description: >-
+  One of the earliest pterosaurs known to science. Modest crowd-puller,
+  but invaluable as the entry-level flying exhibit.
