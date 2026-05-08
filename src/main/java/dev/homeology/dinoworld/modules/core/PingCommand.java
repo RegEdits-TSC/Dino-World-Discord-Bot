@@ -30,21 +30,21 @@ public final class PingCommand implements Command {
 	public void execute(SlashCommandInteractionEvent event, CommandContext ctx) {
 		JDA jda = event.getJDA();
 		long gatewayMs = jda.getGatewayPing();
-		// Defer first so the round-trip we're about to measure is the only
-		// delay; getRestPing().complete() runs on this worker thread, which
-		// is fine — we're already off the JDA event-pool thread.
+		// The router has already deferred the reply; getRestPing().complete()
+		// blocks this worker thread, which is fine — we're off the JDA
+		// event-pool thread and the user already sees "thinking…".
 		long restMs = jda.getRestPing().complete();
 
 		EmbedBuilder embed = Embeds.info("Pong!", null)
 			.addField("Gateway", gatewayMs + " ms", true)
 			.addField("REST", restMs + " ms", true);
 		Embeds.brand(embed, jda);
-		event.replyEmbeds(embed.build()).queue();
+		event.getHook().editOriginalEmbeds(embed.build()).queue();
 	}
 
 	@Override
 	public boolean deferEphemeral() {
-		// /ping should not get ephemeral'd if it ever auto-defers — keep it public.
+		// /ping replies in-channel — keep the deferred reply public.
 		return false;
 	}
 }

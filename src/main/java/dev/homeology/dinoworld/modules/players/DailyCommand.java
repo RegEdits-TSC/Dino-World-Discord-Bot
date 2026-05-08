@@ -59,6 +59,14 @@ public final class DailyCommand implements Command {
 	}
 
 	@Override
+	public boolean deferEphemeral() {
+		// Daily reward is public so other players see the activity. The cooldown
+		// denial branch is also public as a side-effect of locking the defer to
+		// one ephemerality — a small UX trade-off vs. the previous racy reply.
+		return false;
+	}
+
+	@Override
 	public void execute(SlashCommandInteractionEvent event, CommandContext ctx) {
 		User invoker = event.getUser();
 		Player p = players.ensure(invoker.getIdLong(), invoker.getEffectiveName());
@@ -71,7 +79,7 @@ public final class DailyCommand implements Command {
 				EmbedBuilder embed = Embeds.warning("Already claimed",
 					"You'll be able to claim again in " + humanizeShort(left) + ".");
 				Embeds.brand(embed, event.getJDA());
-				event.replyEmbeds(embed.build()).setEphemeral(true).queue();
+				event.getHook().editOriginalEmbeds(embed.build()).queue();
 				return;
 			}
 		}
@@ -83,7 +91,7 @@ public final class DailyCommand implements Command {
 		EmbedBuilder embed = Embeds.success("+" + REWARD_COINS + " coins, +" + REWARD_XP + " XP",
 			"Come back in 22 hours for another claim.");
 		Embeds.brand(embed, event.getJDA());
-		event.replyEmbeds(embed.build()).queue();
+		event.getHook().editOriginalEmbeds(embed.build()).queue();
 	}
 
 	private static String humanizeShort(Duration d) {

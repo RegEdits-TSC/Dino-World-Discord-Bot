@@ -15,8 +15,9 @@ import org.slf4j.MDC;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Single JDA listener that dispatches every slash command interaction.
@@ -28,12 +29,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li>Apply the per-user {@link RateLimiter}; reject ephemerally if over limit.</li>
  *   <li>Set MDC tags (command, guild_id, user_id) so any log line emitted
  *       during the command run is greppable.</li>
- *   <li>Schedule an auto-defer task at 2.0 s; if the handler hasn't replied
- *       by then, defer the reply so Discord doesn't time the interaction
- *       out at 3 s.</li>
+ *   <li>Defer the reply <em>synchronously</em>, on the JDA event-pool thread,
+ *       before any handler work runs. The defer's ephemerality is taken from
+ *       {@link Command#deferEphemeral()}. This guarantees the interaction is
+ *       acknowledged inside Discord's 3 s window even when the worker
+ *       executor is briefly saturated or the handler is slow on a cold JVM.</li>
  *   <li>Submit the command body to a bounded executor so JDA's event-pool
  *       thread is never blocked by handler work. MDC context propagates
- *       across the thread boundary.</li>
+ *       across the thread boundary. Handlers reply via
+ *       {@code event.getHook().editOriginal*} — never {@code event.reply*} —
+ *       since the interaction is already acknowledged.</li>
  *   <li>Record duration + outcome metrics; turn any uncaught exception
  *       into a generic ephemeral embed plus a DM to {@code DEVELOPER_ID}
  *       containing an error ID, the command path, the invoker, and the
@@ -44,16 +49,10 @@ public final class CommandRouter extends ListenerAdapter {
 
 	private static final Logger log = LoggerFactory.getLogger(CommandRouter.class);
 
-	/**
-	 * Time after dispatch at which an unanswered command is auto-deferred.
-	 */
-	private static final long AUTO_DEFER_AFTER_MS = 2000L;
-
 	private final Map<String, Command> byName = new HashMap<>();
 	private final PermissionGate gate;
 	private final RateLimiter rateLimiter;
 	private final CommandContext baseContext;
-	private final ScheduledExecutorService scheduler;
 	private final ExecutorService commandExecutor;
 	private final MetricsRegistry metrics;
 	private final AppConfig config;
@@ -62,7 +61,6 @@ public final class CommandRouter extends ListenerAdapter {
 	                     PermissionGate gate,
 	                     RateLimiter rateLimiter,
 	                     CommandContext baseContext,
-	                     ScheduledExecutorService scheduler,
 	                     ExecutorService commandExecutor,
 	                     MetricsRegistry metrics,
 	                     AppConfig config) {
@@ -78,7 +76,6 @@ public final class CommandRouter extends ListenerAdapter {
 		this.gate = gate;
 		this.rateLimiter = rateLimiter;
 		this.baseContext = baseContext;
-		this.scheduler = scheduler;
 		this.commandExecutor = commandExecutor;
 		this.metrics = metrics;
 		this.config = config;
@@ -129,36 +126,32 @@ public final class CommandRouter extends ListenerAdapter {
 
 			log.debug("Dispatching /{} for {}", fullName, invokerName);
 
-			// Schedule auto-defer. AtomicBoolean lets the scheduled task no-op
-			// if the handler already replied (or threw — we cancel either way).
-			AtomicBoolean acked = new AtomicBoolean(false);
-			ScheduledFuture<?> deferTask = scheduler.schedule(() -> {
-				if (acked.get()) return;
-				if (!event.isAcknowledged()) {
-					try {
-						event.deferReply(cmd.deferEphemeral()).queue(
-							ok -> {
-							},
-							err -> log.debug("Auto-defer failed for /{}: {}", name, err.toString()));
-					} catch (IllegalStateException ignored) {
-						// raced — handler acked between check and call
-					}
-				}
-			}, AUTO_DEFER_AFTER_MS, TimeUnit.MILLISECONDS);
+			// Defer synchronously on the JDA event-pool thread. This must
+			// happen before any handler work so the interaction is
+			// acknowledged even if the worker queue blocks or the handler
+			// is slow on a cold JVM. Ephemerality is locked here per
+			// Command.deferEphemeral(); handlers can no longer choose.
+			event.deferReply(cmd.deferEphemeral()).queue(
+				ok -> {
+				},
+				err -> log.warn("Failed to defer /{}: {}", fullName, err.toString()));
 
 			// Capture MDC across the thread boundary so the worker logs the
 			// same context. Final-effective for the lambda.
 			Map<String, String> mdcSnapshot = MDC.getCopyOfContextMap();
 
 			try {
-				commandExecutor.submit(() -> runOnWorker(event, cmd, fullName, name, mdcSnapshot, acked, deferTask));
+				commandExecutor.submit(() -> runOnWorker(event, cmd, fullName, name, mdcSnapshot));
 			} catch (RejectedExecutionException e) {
-				acked.set(true);
-				deferTask.cancel(false);
 				log.warn("Command executor rejected /{}: queue full", fullName);
 				metrics.recordDenied("overload");
-				replyEphemeralEmbed(event, Embeds.warning("Bot is busy",
-					"The bot is overloaded right now. Please try again in a moment."));
+				EmbedBuilder embed = Embeds.warning("Bot is busy",
+					"The bot is overloaded right now. Please try again in a moment.");
+				Embeds.brand(embed, event.getJDA());
+				event.getHook().editOriginalEmbeds(embed.build()).queue(
+					ok -> {
+					},
+					err -> log.warn("Could not send overload reply: {}", err.toString()));
 			}
 		} finally {
 			MDC.remove("command");
@@ -172,9 +165,7 @@ public final class CommandRouter extends ListenerAdapter {
 	                         Command cmd,
 	                         String fullName,
 	                         String topName,
-	                         Map<String, String> mdcSnapshot,
-	                         AtomicBoolean acked,
-	                         ScheduledFuture<?> deferTask) {
+	                         Map<String, String> mdcSnapshot) {
 		if (mdcSnapshot != null) MDC.setContextMap(mdcSnapshot);
 		long startNs = System.nanoTime();
 		try {
@@ -187,13 +178,13 @@ public final class CommandRouter extends ListenerAdapter {
 			metrics.recordInvocation(topName, "error");
 			handleUncaught(event, topName, e);
 		} finally {
-			acked.set(true);
-			deferTask.cancel(false);
 			MDC.clear();
 		}
 	}
 
 	private void replyEphemeralEmbed(SlashCommandInteractionEvent event, EmbedBuilder embed) {
+		// Used by early-return paths (unknown command / permission deny / rate
+		// limit) before the router defers, so this still uses event.reply*.
 		Embeds.brand(embed, event.getJDA());
 		event.replyEmbeds(embed.build()).setEphemeral(true).queue(
 			ok -> {
@@ -211,15 +202,14 @@ public final class CommandRouter extends ListenerAdapter {
 			"Something went wrong (id: `" + errorId + "`). The developer has been notified.");
 		Embeds.brand(embed, event.getJDA());
 		try {
-			if (event.isAcknowledged()) {
-				event.getHook().sendMessageEmbeds(embed.build()).setEphemeral(true).queue(
-					ok -> {
-					}, err -> log.warn("Could not send error follow-up: {}", err.toString()));
-			} else {
-				event.replyEmbeds(embed.build()).setEphemeral(true).queue(
-					ok -> {
-					}, err -> log.warn("Could not send error reply: {}", err.toString()));
-			}
+			// Always deferred by the time we get here, so always go via the hook.
+			// Use sendMessage (not editOriginal) so a partial reply that already
+			// edited the original isn't overwritten — the error becomes a
+			// follow-up after whatever the handler managed to send.
+			event.getHook().sendMessageEmbeds(embed.build()).setEphemeral(true).queue(
+				ok -> {
+				},
+				err -> log.warn("Could not send error follow-up: {}", err.toString()));
 		} catch (Exception inner) {
 			log.warn("Failed to deliver error reply for {}", errorId, inner);
 		}

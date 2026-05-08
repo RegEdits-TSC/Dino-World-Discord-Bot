@@ -64,7 +64,7 @@ public final class HelpCommand extends ListenerAdapter implements Command {
 			: renderDetail(target.getAsString(), isDeveloper);
 
 		Embeds.brand(embed, event.getJDA());
-		event.replyEmbeds(embed.build()).setEphemeral(true).queue();
+		event.getHook().editOriginalEmbeds(embed.build()).queue();
 	}
 
 	// ─── list view ───────────────────────────────────────────────────────

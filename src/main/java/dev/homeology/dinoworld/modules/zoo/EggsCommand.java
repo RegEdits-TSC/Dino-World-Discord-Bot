@@ -85,9 +85,9 @@ public final class EggsCommand implements Command {
 		Player p = players.ensure(userId, event.getUser().getEffectiveName());
 
 		Rendered r = render(p, eggs.findPending(userId));
-		var reply = event.replyEmbeds(r.embed.build()).setEphemeral(true);
+		var reply = event.getHook().editOriginalEmbeds(r.embed.build());
 		if (!r.components.isEmpty()) {
-			reply.addComponents(r.components);
+			reply.setComponents(r.components);
 		}
 		reply.queue();
 	}

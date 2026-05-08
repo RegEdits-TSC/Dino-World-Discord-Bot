@@ -56,7 +56,7 @@ public final class AboutCommand implements Command {
 			.addField("Modules", String.valueOf(moduleManager.active().size()), true)
 			.addField("Java", Runtime.version().toString(), true);
 		Embeds.brand(embed, event.getJDA());
-		event.replyEmbeds(embed.build()).queue();
+		event.getHook().editOriginalEmbeds(embed.build()).queue();
 	}
 
 	@Override

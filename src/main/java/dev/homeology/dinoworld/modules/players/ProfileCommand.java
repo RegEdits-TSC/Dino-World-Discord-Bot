@@ -47,6 +47,12 @@ public final class ProfileCommand implements Command {
 	}
 
 	@Override
+	public boolean deferEphemeral() {
+		// Profiles are public — looking up someone else's stats should be visible to the channel.
+		return false;
+	}
+
+	@Override
 	public void execute(SlashCommandInteractionEvent event, CommandContext ctx) {
 		User invoker = event.getUser();
 		Player invokerPlayer = players.ensure(invoker.getIdLong(), invoker.getEffectiveName());
@@ -63,7 +69,7 @@ public final class ProfileCommand implements Command {
 				EmbedBuilder e = Embeds.info("No profile",
 					target.getEffectiveName() + " hasn't started a park yet.");
 				Embeds.brand(e, event.getJDA());
-				event.replyEmbeds(e.build()).queue();
+				event.getHook().editOriginalEmbeds(e.build()).queue();
 				return;
 			}
 			p = found.get();
@@ -84,6 +90,6 @@ public final class ProfileCommand implements Command {
 			.addField("Park age", days + " day" + (days == 1 ? "" : "s"), true)
 			.addField("​", "​", true); // spacer for grid alignment
 		Embeds.brand(embed, event.getJDA());
-		event.replyEmbeds(embed.build()).queue();
+		event.getHook().editOriginalEmbeds(embed.build()).queue();
 	}
 }

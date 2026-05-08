@@ -83,9 +83,9 @@ public final class MoveCommand implements Command {
 
 		List<DinoInstance> owned = dinos.findByOwner(userId);
 		if (owned.isEmpty()) {
-			event.replyEmbeds(Embeds.warning("Nothing to move",
+			event.getHook().editOriginalEmbeds(Embeds.warning("Nothing to move",
 				"You have no dinos. Hatch one from `/eggs`.").build())
-				.setEphemeral(true).queue();
+				.queue();
 			return;
 		}
 
@@ -103,9 +103,9 @@ public final class MoveCommand implements Command {
 			"Pick a dino. The next prompt will list enclosures it can live in "
 				+ "(tier and capacity must allow it; biome doesn't need to match).");
 		Embeds.brand(embed, event.getJDA());
-		event.replyEmbeds(embed.build())
-			.addComponents(ActionRow.of(sel.build()))
-			.setEphemeral(true).queue();
+		event.getHook().editOriginalEmbeds(embed.build())
+			.setComponents(ActionRow.of(sel.build()))
+			.queue();
 	}
 
 	/**

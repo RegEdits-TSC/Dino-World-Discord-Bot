@@ -129,12 +129,13 @@ public final class FeedbackCommand implements Command {
 		EmbedBuilder reply = Embeds.success("Thanks!",
 			"Your feedback has been sent to the developer.");
 		Embeds.brand(reply, event.getJDA());
-		event.replyEmbeds(reply.build()).setEphemeral(true).queue();
+		event.getHook().editOriginalEmbeds(reply.build()).queue();
 	}
 
 	private static void replyEphemeral(SlashCommandInteractionEvent event, EmbedBuilder embed) {
+		// Router has already deferred ephemerally — fill the original.
 		Embeds.brand(embed, event.getJDA());
-		event.replyEmbeds(embed.build()).setEphemeral(true).queue();
+		event.getHook().editOriginalEmbeds(embed.build()).queue();
 	}
 
 	/** Format a {@link Duration} as the largest sensible unit for cooldown messaging. */

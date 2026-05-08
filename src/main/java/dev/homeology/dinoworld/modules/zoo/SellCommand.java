@@ -72,9 +72,9 @@ public final class SellCommand implements Command {
 
 		List<DinoInstance> owned = dinos.findByOwner(userId);
 		if (owned.isEmpty()) {
-			event.replyEmbeds(Embeds.warning("Nothing to sell",
+			event.getHook().editOriginalEmbeds(Embeds.warning("Nothing to sell",
 				"You have no dinos. Visit `/shop`.").build())
-				.setEphemeral(true).queue();
+				.queue();
 			return;
 		}
 
@@ -91,9 +91,9 @@ public final class SellCommand implements Command {
 		EmbedBuilder embed = Embeds.warning("💸  Sell a dino",
 			"Pick from the dropdown. The next screen will confirm the price before anything's removed.");
 		Embeds.brand(embed, event.getJDA());
-		event.replyEmbeds(embed.build())
-			.addComponents(ActionRow.of(sel.build()))
-			.setEphemeral(true).queue();
+		event.getHook().editOriginalEmbeds(embed.build())
+			.setComponents(ActionRow.of(sel.build()))
+			.queue();
 	}
 
 	// ─── pricing — exposed for the component handler ─────────────────────

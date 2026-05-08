@@ -371,12 +371,12 @@ public final class AdminCommand extends ListenerAdapter implements Command {
 	private void replyOk(SlashCommandInteractionEvent event, String title, String body) {
 		EmbedBuilder e = Embeds.success("🛠️  " + title, body);
 		Embeds.brand(e, event.getJDA());
-		event.replyEmbeds(e.build()).setEphemeral(true).queue();
+		event.getHook().editOriginalEmbeds(e.build()).queue();
 	}
 
 	private void reply(SlashCommandInteractionEvent event, EmbedBuilder e) {
 		Embeds.brand(e, event.getJDA());
-		event.replyEmbeds(e.build()).setEphemeral(true).queue();
+		event.getHook().editOriginalEmbeds(e.build()).queue();
 	}
 
 	// ─── autocomplete ────────────────────────────────────────────────────
