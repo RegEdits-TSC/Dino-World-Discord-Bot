@@ -19,7 +19,7 @@ plugins {
 }
 
 group = "dev.homeology"
-version = "1.0.0"
+version = "1.0.0-beta1"
 
 // ─── Dependency versions (single source of truth — edit here) ─────────────
 val jdaVersion = "6.4.1"      // https://mvnrepository.com/artifact/net.dv8tion/JDA

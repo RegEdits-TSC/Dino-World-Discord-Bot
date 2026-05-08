@@ -21,7 +21,7 @@ policy.
 
 ---
 
-## [1.0.0-beta1] — TBD
+## [1.0.0-beta1] — 2026-05-08
 
 Initial public beta.
 
