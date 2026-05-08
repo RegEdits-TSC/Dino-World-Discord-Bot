@@ -1,5 +1,11 @@
 # Dino-World
 
+[![build](https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/actions/workflows/build.yml)
+[![codeql](https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/actions/workflows/codeql.yml)
+[![release](https://img.shields.io/github/v/release/RegEdits-TSC/Dino-World-Discord-Bot?include_prereleases&sort=semver)](https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/releases)
+[![java](https://img.shields.io/badge/java-21-007396?logo=openjdk&logoColor=white)](https://adoptium.net)
+[![license](https://img.shields.io/github/license/RegEdits-TSC/Dino-World-Discord-Bot)](LICENSE)
+
 A modular Discord bot built around a dinosaur tycoon experience — collect eggs,
 hatch dinosaurs, level up, and grow a park across themed habitats. Java 21,
 JDA 6, SQLite, Caffeine. Designed to be small enough to fit in your head and
