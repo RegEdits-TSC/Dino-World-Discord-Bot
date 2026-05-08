@@ -1,0 +1,35 @@
+name: labeler
+
+# Auto-applies labels to pull requests based on branch prefix and changed
+# files. Rules live in .github/labeler.yml.
+#
+# Uses pull_request (not pull_request_target) — this is a personal repo;
+# we don't expect fork PRs and pull_request avoids the security risk of
+# running PR-supplied workflow code with write permissions. Dependabot's
+# own PRs label themselves via dependabot.yml; the labeler runs on top
+# of them additively.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# pull-requests:write is the only scope needed — the action reads the
+# labeler.yml from the base branch via the runner checkout (handled
+# internally by the action) and applies labels via the PRs API.
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  label:
+    name: apply labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Apply labels
+        uses: actions/labeler@v5
+        with:
+          # Don't strip labels that don't match a rule — Dependabot
+          # pre-applies labels we want to keep, and humans may add
+          # `wontfix` etc. by hand.
+          sync-labels: false
