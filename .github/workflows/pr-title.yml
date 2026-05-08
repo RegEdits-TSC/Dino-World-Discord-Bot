@@ -31,8 +31,8 @@ jobs:
             perf
             style
           requireScope: false
-          subjectPattern: ^[a-z].*[^.]$
+          subjectPattern: ^[A-Za-z].*[^.]$
           subjectPatternError: |
-            Subject must start lowercase and not end with a period.
+            Subject must start with a letter and not end with a period.
             Got: "{subject}"
           wip: true
