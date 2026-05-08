@@ -22,15 +22,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          # Full Conventional Commits set. Order roughly groups
+          # behaviour-affecting types first, then meta types.
           types: |
             feat
             fix
             refactor
+            perf
+            test
+            build
+            ci
             chore
             docs
-            test
-            perf
             style
+            revert
           requireScope: false
           subjectPattern: ^[A-Za-z].*[^.]$
           subjectPatternError: |
