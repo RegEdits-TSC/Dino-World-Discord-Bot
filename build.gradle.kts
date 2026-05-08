@@ -31,7 +31,7 @@ val logbackVersion = "1.5.32"     // https://mvnrepository.com/artifact/ch.qos.l
 val micrometerVersion = "1.16.5"     // https://mvnrepository.com/artifact/io.micrometer/micrometer-core
 val snakeyamlVersion = "2.6"        // https://mvnrepository.com/artifact/org.yaml/snakeyaml
 val junitBomVersion = "6.0.3"      // https://mvnrepository.com/artifact/org.junit/junit-bom (latest stable)
-val mockitoVersion = "5.14.2"     // https://mvnrepository.com/artifact/org.mockito/mockito-core
+val mockitoVersion = "5.23.0"     // https://mvnrepository.com/artifact/org.mockito/mockito-core
 // ──────────────────────────────────────────────────────────────────────────
 
 java {
