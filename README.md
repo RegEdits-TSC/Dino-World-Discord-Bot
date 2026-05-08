@@ -3,11 +3,11 @@
 [![build](https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/actions/workflows/build.yml)
 [![codeql](https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/actions/workflows/codeql.yml)
 [![release](https://img.shields.io/github/v/release/RegEdits-TSC/Dino-World-Discord-Bot?include_prereleases&sort=semver)](https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/releases)
-[![java](https://img.shields.io/badge/java-21-007396?logo=openjdk&logoColor=white)](https://adoptium.net)
+[![java](https://img.shields.io/badge/java-25-007396?logo=openjdk&logoColor=white)](https://adoptium.net)
 [![license](https://img.shields.io/github/license/RegEdits-TSC/Dino-World-Discord-Bot)](LICENSE)
 
 A modular Discord bot built around a dinosaur tycoon experience — collect eggs,
-hatch dinosaurs, level up, and grow a park across themed habitats. Java 21,
+hatch dinosaurs, level up, and grow a park across themed habitats. Java 25,
 JDA 6, SQLite, Caffeine. Designed to be small enough to fit in your head and
 structured enough that adding a new feature is a single new package.
 
@@ -39,7 +39,7 @@ stateless — restarts and crashes are non-events.
 
 | Layer        | Choice                                                     |
 |--------------|------------------------------------------------------------|
-| Language     | Java 21 (LTS, modern preview features off)                 |
+| Language     | Java 25 (LTS, modern preview features off)                 |
 | Discord API  | JDA 6.4.1                                                  |
 | Persistence  | SQLite via HikariCP, with WAL mode                         |
 | Caching      | Caffeine (in-process, bounded)                             |
