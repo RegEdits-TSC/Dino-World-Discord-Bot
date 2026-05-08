@@ -57,19 +57,21 @@ public final class RarityCatalog {
 				throw new IllegalStateException(
 					"Missing required resource: " + RESOURCE_PATH);
 			}
-			Map<String, Object> raw = new Yaml().load(new InputStreamReader(in, StandardCharsets.UTF_8));
-			if (raw == null) {
-				throw new IllegalStateException(RESOURCE_PATH + " is empty");
-			}
-			for (String expected : KNOWN_IDS) {
-				Object v = raw.get(expected);
-				if (!(v instanceof Map)) {
-					throw new IllegalStateException(
-						"Missing rarity '" + expected + "' in " + RESOURCE_PATH);
+			try (InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
+				Map<String, Object> raw = new Yaml().load(reader);
+				if (raw == null) {
+					throw new IllegalStateException(RESOURCE_PATH + " is empty");
 				}
-				@SuppressWarnings("unchecked")
-				Map<String, Object> body = (Map<String, Object>) v;
-				byId.put(expected, parse(expected, body));
+				for (String expected : KNOWN_IDS) {
+					Object v = raw.get(expected);
+					if (!(v instanceof Map)) {
+						throw new IllegalStateException(
+							"Missing rarity '" + expected + "' in " + RESOURCE_PATH);
+					}
+					@SuppressWarnings("unchecked")
+					Map<String, Object> body = (Map<String, Object>) v;
+					byId.put(expected, parse(expected, body));
+				}
 			}
 		} catch (java.io.IOException e) {
 			throw new IllegalStateException("Failed to read " + RESOURCE_PATH, e);

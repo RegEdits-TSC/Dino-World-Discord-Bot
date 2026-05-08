@@ -74,16 +74,18 @@ public final class DinoCatalog {
 					if (in == null) {
 						throw new IllegalStateException("Could not open resource: " + resourcePath);
 					}
-					Map<String, Object> raw = yaml.load(new InputStreamReader(in, StandardCharsets.UTF_8));
-					if (raw == null) {
-						throw new IllegalStateException("YAML file is empty: " + resourcePath);
+					try (InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
+						Map<String, Object> raw = yaml.load(reader);
+						if (raw == null) {
+							throw new IllegalStateException("YAML file is empty: " + resourcePath);
+						}
+						DinoSpecies species = parse(resourcePath, raw);
+						if (byId.containsKey(species.id())) {
+							throw new IllegalStateException(
+								"Duplicate dino id '" + species.id() + "' in " + resourcePath);
+						}
+						byId.put(species.id(), species);
 					}
-					DinoSpecies species = parse(resourcePath, raw);
-					if (byId.containsKey(species.id())) {
-						throw new IllegalStateException(
-							"Duplicate dino id '" + species.id() + "' in " + resourcePath);
-					}
-					byId.put(species.id(), species);
 				} catch (IOException e) {
 					throw new IllegalStateException("Failed to read " + resourcePath, e);
 				}
@@ -271,11 +273,19 @@ public final class DinoCatalog {
 				Enumeration<java.util.jar.JarEntry> entries = jar.entries();
 				while (entries.hasMoreElements()) {
 					java.util.jar.JarEntry e = entries.nextElement();
-					if (e.isDirectory() || !e.getName().startsWith(inside)) continue;
-					String tail = e.getName().substring(inside.length());
+					String entryName = e.getName();
+					// Defence against Zip Slip / path-traversal in malicious archives:
+					// a JarEntry whose name contains ".." segments could let a tampered
+					// jar resolve resources outside the intended catalog directory.
+					if (entryName.contains("..") || entryName.contains("\\")) {
+						log.warn("Skipping suspicious jar entry: {}", entryName);
+						continue;
+					}
+					if (e.isDirectory() || !entryName.startsWith(inside)) continue;
+					String tail = entryName.substring(inside.length());
 					if (tail.contains("/")) continue;     // not direct child
 					if (!YAML_FILE.matcher(tail).matches()) continue;
-					out.add(e.getName());
+					out.add(entryName);
 				}
 			}
 		} else {
