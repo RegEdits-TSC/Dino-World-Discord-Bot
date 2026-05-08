@@ -53,8 +53,8 @@ public final class AppConfig {
 		this.activityType = parseActivityType(orDefault(dotenv, "BOT_ACTIVITY_TYPE", "NONE"));
 		this.activityText = orDefault(dotenv, "BOT_ACTIVITY_TEXT", "");
 
-		this.rateLimitPer10s = parseIntOrDefault(
-			orDefault(dotenv, "RATE_LIMIT_PER_10S", "5"), "RATE_LIMIT_PER_10S", 5);
+		this.rateLimitPer10s = parseNonNegativeInt(
+			orDefault(dotenv, "RATE_LIMIT_PER_10S", "5"), "RATE_LIMIT_PER_10S");
 
 		String disabled = orDefault(dotenv, "DISABLED_MODULES", "");
 		this.disabledModules = disabled.isBlank()
@@ -149,7 +149,7 @@ public final class AppConfig {
 		return (v == null || v.isBlank()) ? fallback : v.trim();
 	}
 
-	private static int parseIntOrDefault(String value, String key, int fallback) {
+	private static int parseNonNegativeInt(String value, String key) {
 		try {
 			int n = Integer.parseInt(value);
 			if (n < 0) {

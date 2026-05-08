@@ -216,7 +216,7 @@ public final class MigrationRunner {
 				Matcher m = FILE_NAME.matcher(f.getName());
 				if (!m.matches()) continue;
 				out.add(new MigrationFile(
-					Integer.parseInt(m.group(1)),
+					parseVersion(m.group(1), f.getName()),
 					m.group(2),
 					readFile(f.toPath())));
 			}
@@ -238,7 +238,7 @@ public final class MigrationRunner {
 					if (!m.matches()) continue;
 					try (InputStream in = jar.getInputStream(e)) {
 						out.add(new MigrationFile(
-							Integer.parseInt(m.group(1)),
+							parseVersion(m.group(1), e.getName()),
 							m.group(2),
 							readStream(in)));
 					}
@@ -252,6 +252,20 @@ public final class MigrationRunner {
 
 	private static String readFile(java.nio.file.Path p) throws IOException {
 		return java.nio.file.Files.readString(p, StandardCharsets.UTF_8);
+	}
+
+	/**
+	 * Parse the version segment of a migration filename. The regex constrains
+	 * input to digits, but a 10+ digit value still overflows int; surface a
+	 * clear error tied to the filename rather than a bare NumberFormatException.
+	 */
+	private static int parseVersion(String digits, String filename) {
+		try {
+			return Integer.parseInt(digits);
+		} catch (NumberFormatException nfe) {
+			throw new IllegalStateException(
+				"Migration version in '" + filename + "' is not a valid 32-bit integer: " + digits, nfe);
+		}
 	}
 
 	private static String readStream(InputStream in) throws IOException {
