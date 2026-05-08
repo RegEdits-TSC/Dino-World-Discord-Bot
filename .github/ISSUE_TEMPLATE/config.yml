@@ -1,0 +1,10 @@
+# Disable the "Open a blank issue" link so every issue arrives via a
+# template — keeps triage cheap during beta.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/security/advisories/new
+    about: |
+      Don't open a public issue for security bugs. Use private vulnerability
+      reporting — see SECURITY.md for what to include.
