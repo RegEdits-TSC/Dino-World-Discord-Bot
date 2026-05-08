@@ -15,7 +15,7 @@
 plugins {
     java
     application
-    id("com.gradleup.shadow") version "9.0.0-beta11"
+    id("com.gradleup.shadow") version "9.4.1"
 }
 
 group = "dev.homeology"
@@ -23,13 +23,13 @@ version = "1.0.0"
 
 // ─── Dependency versions (single source of truth — edit here) ─────────────
 val jdaVersion = "6.4.1"      // https://mvnrepository.com/artifact/net.dv8tion/JDA
-val sqliteVersion = "3.53.0.0"   // https://mvnrepository.com/artifact/org.xerial/sqlite-jdbc
+val sqliteVersion = "3.53.1.0"   // https://mvnrepository.com/artifact/org.xerial/sqlite-jdbc
 val hikariVersion = "7.0.2"      // https://mvnrepository.com/artifact/com.zaxxer/HikariCP
 val caffeineVersion = "3.2.4"      // https://mvnrepository.com/artifact/com.github.ben-manes.caffeine/caffeine
 val dotenvVersion = "3.2.0"      // https://mvnrepository.com/artifact/io.github.cdimascio/dotenv-java
 val logbackVersion = "1.5.32"     // https://mvnrepository.com/artifact/ch.qos.logback/logback-classic
-val micrometerVersion = "1.14.0"     // https://mvnrepository.com/artifact/io.micrometer/micrometer-core
-val snakeyamlVersion = "2.4"        // https://mvnrepository.com/artifact/org.yaml/snakeyaml
+val micrometerVersion = "1.16.5"     // https://mvnrepository.com/artifact/io.micrometer/micrometer-core
+val snakeyamlVersion = "2.6"        // https://mvnrepository.com/artifact/org.yaml/snakeyaml
 val junitBomVersion = "6.0.3"      // https://mvnrepository.com/artifact/org.junit/junit-bom (latest stable)
 val mockitoVersion = "5.14.2"     // https://mvnrepository.com/artifact/org.mockito/mockito-core
 // ──────────────────────────────────────────────────────────────────────────
