@@ -1,0 +1,37 @@
+# Categorises PRs in auto-generated release notes by label. The order
+# below is the order that sections appear in the rendered release.
+# Anything not matching a category falls into "Other changes".
+changelog:
+  exclude:
+    # Don't surface these in release notes — they're either non-shipping
+    # or already represented elsewhere.
+    labels:
+      - duplicate
+      - invalid
+      - wontfix
+      - skip-release
+
+  categories:
+    - title: 🚀 Features
+      labels:
+        - enhancement
+
+    - title: 🐛 Bug fixes
+      labels:
+        - bug
+
+    - title: 📦 Dependencies
+      labels:
+        - dependencies
+
+    - title: 📚 Documentation
+      labels:
+        - documentation
+
+    - title: 🤖 GitHub Actions
+      labels:
+        - github-actions
+
+    - title: 🔧 Other changes
+      labels:
+        - "*"
