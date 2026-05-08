@@ -24,7 +24,7 @@ Group=dinoworld
 WorkingDirectory=/opt/dinoworld
 EnvironmentFile=/opt/dinoworld/.env
 Environment=JAVA_OPTS=--enable-native-access=ALL-UNNAMED -Xmx256m -XX:+UseG1GC -Dfile.encoding=UTF-8 -Duser.timezone=UTC
-ExecStart=/usr/bin/java $JAVA_OPTS -jar /opt/dinoworld/build/libs/Dino-World-1.0.0-all.jar
+ExecStart=/usr/bin/java $JAVA_OPTS -jar /opt/dinoworld/build/libs/Dino-World-1.0.0-beta1-all.jar
 Restart=on-failure
 RestartForceExitStatus=64
 RestartSec=2
