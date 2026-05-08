@@ -224,10 +224,10 @@ public final class CommandRouter extends ListenerAdapter {
 			log.warn("Failed to deliver error reply for {}", errorId, inner);
 		}
 
-		sendDeveloperDm(event, topName, errorId, e);
+		sendDeveloperDm(event, errorId, e);
 	}
 
-	private void sendDeveloperDm(SlashCommandInteractionEvent event, String topName,
+	private void sendDeveloperDm(SlashCommandInteractionEvent event,
 	                             String errorId, Exception e) {
 		JDA jda = event.getJDA();
 		long devId = config.developerId();

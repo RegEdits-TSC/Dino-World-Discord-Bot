@@ -4,7 +4,6 @@ import dev.homeology.dinoworld.command.CommandContext;
 import dev.homeology.dinoworld.command.ComponentHandler;
 import dev.homeology.dinoworld.modules.players.Player;
 import dev.homeology.dinoworld.modules.players.PlayerService;
-import dev.homeology.dinoworld.modules.zoo.model.EggInstance;
 import dev.homeology.dinoworld.modules.zoo.model.Enclosure;
 import dev.homeology.dinoworld.util.Embeds;
 import net.dv8tion.jda.api.EmbedBuilder;
@@ -265,7 +264,7 @@ public final class ZooComponentHandler implements ComponentHandler {
 		String rarityId = rest[1];
 		long userId = event.getUser().getIdLong();
 		players.ensure(userId, event.getUser().getEffectiveName());
-		EggInstance egg = eggs.buyMystery(userId, rarityId);
+		eggs.buyMystery(userId, rarityId);
 		Player p = players.get(userId).orElseThrow();
 		EmbedBuilder ack = Embeds.success("Mystery egg purchased",
 			"You bought a mystery " + rarities.require(rarityId).displayName().toLowerCase()
@@ -354,7 +353,7 @@ public final class ZooComponentHandler implements ComponentHandler {
 		String speciesId = rest[1];
 		long userId = event.getUser().getIdLong();
 		players.ensure(userId, event.getUser().getEffectiveName());
-		EggInstance egg = eggs.buyDetermined(userId, speciesId);
+		eggs.buyDetermined(userId, speciesId);
 		DinoSpecies s = catalog.byId(speciesId).orElseThrow();
 		Player p = players.get(userId).orElseThrow();
 		EmbedBuilder ack = Embeds.success(s.displayName() + " egg purchased",
