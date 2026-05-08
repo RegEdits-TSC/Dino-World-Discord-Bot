@@ -1,0 +1,56 @@
+# Auto-label rules for actions/labeler@v5. Triggered by the workflow at
+# .github/workflows/labeler.yml.
+#
+# Strategy: label by BRANCH PREFIX first (cheap, intent-matching), then
+# by CHANGED FILES as a fallback so PRs that don't follow the branch
+# convention still get categorised. Labels are additive — Dependabot's
+# pre-applied labels (dependencies, gradle, github-actions) are kept.
+#
+# Allowed branch prefixes match the Conventional Commits types in
+# .github/workflows/pr-title.yml: feat, fix, refactor, perf, test,
+# build, ci, chore, docs, style, revert.
+
+# ─── New functionality ────────────────────────────────────────────────
+enhancement:
+  - head-branch: ['^feat/']
+
+# ─── Bug fixes ────────────────────────────────────────────────────────
+bug:
+  - head-branch: ['^fix/']
+
+# ─── Documentation ────────────────────────────────────────────────────
+documentation:
+  - any:
+      - head-branch: ['^docs/']
+      - changed-files:
+          - any-glob-to-any-file:
+              - '**/*.md'
+              - 'docs/**'
+              - 'SECURITY.md'
+              - 'CHANGELOG.md'
+              - 'README.md'
+
+# ─── CI / GitHub Actions ──────────────────────────────────────────────
+github-actions:
+  - any:
+      - head-branch: ['^ci/']
+      - changed-files:
+          - any-glob-to-any-file:
+              - '.github/workflows/**'
+              - '.github/labeler.yml'
+              - '.github/release.yml'
+              - '.github/dependabot.yml'
+              - '.github/rulesets/**'
+
+# ─── Build system / Gradle ────────────────────────────────────────────
+gradle:
+  - any:
+      - head-branch: ['^build/']
+      - changed-files:
+          - any-glob-to-any-file:
+              - 'build.gradle.kts'
+              - 'settings.gradle.kts'
+              - 'gradle/**'
+              - 'gradlew'
+              - 'gradlew.bat'
+              - 'gradle.properties'
