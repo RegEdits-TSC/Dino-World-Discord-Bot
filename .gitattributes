@@ -1,0 +1,70 @@
+# Normalize line endings + lock down binary handling so that contributions
+# from Windows checkouts don't fight Linux CI. The Permission denied on
+# `./gradlew` in PR #6 was the symptom — files committed from Windows
+# inherited mode 100644 and CRLF endings; this file pins both to the
+# values the build expects.
+
+# Default: detect text vs binary, store with LF in the repo, leave the
+# working-tree to the platform's `core.autocrlf` (so Windows clones still
+# see CRLF for non-locked types). For files we explicitly pin below,
+# this default is overridden.
+* text=auto eol=lf
+
+# ─── Source code ─────────────────────────────────────────────────────────
+*.java   text eol=lf
+*.kt     text eol=lf
+*.kts    text eol=lf
+*.gradle text eol=lf
+
+# ─── Config / data ───────────────────────────────────────────────────────
+*.json       text eol=lf
+*.yaml       text eol=lf
+*.yml        text eol=lf
+*.properties text eol=lf
+*.toml       text eol=lf
+*.xml        text eol=lf
+*.md         text eol=lf
+*.txt        text eol=lf
+
+# ─── Shell / scripts ─────────────────────────────────────────────────────
+# Linux CI runs gradlew + *.sh — they MUST be LF, never CRLF, or the
+# shebang line breaks and the runner reports "bad interpreter".
+gradlew   text eol=lf
+*.sh      text eol=lf
+
+# Windows-only — keep CRLF so cmd.exe parses correctly.
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+
+# ─── Binary assets ───────────────────────────────────────────────────────
+# Marking these binary stops git from attempting line-ending conversion
+# (silent corruption on a PNG round-trip is a real failure mode on Windows)
+# and disables diffs that would just show "binary files differ".
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.jar   binary
+*.zip   binary
+*.tar   binary
+*.gz    binary
+*.tgz   binary
+*.7z    binary
+*.db    binary
+*.sqlite binary
+*.so    binary
+*.dll   binary
+*.exe   binary
+
+# ─── Linguist (github.com language stats) ────────────────────────────────
+# Generated/vendored files shouldn't skew the language breakdown on the
+# repo home page. Currently nothing matches; left here as a hook for
+# future generated sources.
+# src/generated/** linguist-generated=true
+
+# ─── Diff hints ──────────────────────────────────────────────────────────
+# Treat .kts as Kotlin for syntax-highlighted diffs even though most diff
+# viewers fall back to plain text by default.
+*.kts diff=kotlin
