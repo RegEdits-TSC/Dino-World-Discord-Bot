@@ -14,6 +14,9 @@ policy.
 - _Track here as work lands on `main` between releases._
 
 ### Changed
+- Bumped JDK toolchain and CI from 21 (LTS) to 25 (current LTS).
+  Java is forward-compatible so existing JDK 21 deployments will keep
+  running, but new builds and `/about` will report Java 25.
 
 ### Fixed
 

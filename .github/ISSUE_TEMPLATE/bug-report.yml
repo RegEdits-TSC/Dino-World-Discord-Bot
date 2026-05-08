@@ -72,6 +72,6 @@ body:
       label: Environment
       description: JDK version, OS, deployment shape (running locally vs systemd vs docker).
       placeholder: |
-        - JDK: Temurin 21.0.4
+        - JDK: Temurin 25.0.1
         - OS: Ubuntu 24.04
         - Deploy: systemd unit

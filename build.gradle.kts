@@ -36,7 +36,7 @@ val mockitoVersion = "5.23.0"     // https://mvnrepository.com/artifact/org.mock
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 

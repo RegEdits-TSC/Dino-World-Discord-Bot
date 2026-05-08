@@ -34,11 +34,11 @@ jobs:
           # diffs against the previous tag.
           fetch-depth: 0
 
-      - name: Set up JDK 21 (Temurin)
+      - name: Set up JDK 25 (Temurin)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
 
       - name: Set up Gradle (with build cache)
         uses: gradle/actions/setup-gradle@v4

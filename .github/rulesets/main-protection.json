@@ -37,7 +37,7 @@
         "do_not_enforce_on_create": false,
         "required_status_checks": [
           {
-            "context": "build & test (JDK 21)",
+            "context": "build & test",
             "integration_id": 15368
           },
           {
