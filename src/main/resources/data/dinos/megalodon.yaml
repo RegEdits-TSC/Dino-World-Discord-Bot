@@ -1,0 +1,15 @@
+id: megalodon
+display_name: Megalodon
+category: marine_reptile
+rarity: mythic
+era: Miocene
+tier: 5
+base_cost: 48000
+base_income_per_hour: 1400
+popularity: 100
+danger: 98
+biome: marine
+description: >-
+  Technically a shark — fish, not reptile — but kept in the marine roster
+  because no exhibit puts more bodies in the bleachers. Reinforced glass
+  is non-negotiable.

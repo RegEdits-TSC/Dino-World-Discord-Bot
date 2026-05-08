@@ -1,0 +1,14 @@
+id: ankylosaurus
+display_name: Ankylosaurus
+category: dinosaur
+rarity: rare
+era: Late Cretaceous
+tier: 3
+base_cost: 1900
+base_income_per_hour: 70
+popularity: 82
+danger: 45
+biome: grassland
+description: >-
+  Living tank with a club tail and armored back. Tough on enclosure
+  fixtures but surprisingly placid when fed on time.

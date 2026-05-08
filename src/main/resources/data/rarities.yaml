@@ -1,0 +1,68 @@
+# Per-rarity defaults consumed by RarityCatalog and overridable per-species.
+#
+# fields:
+#   display_name              user-visible label
+#   color                     RGB int for embed accents (hex literal works)
+#   mystery_egg_cost          coins per mystery egg of this rarity
+#   determined_egg_multiplier mystery_cost × multiplier = default determined cost
+#   incubation_minutes        default duration; species YAML may override
+#   hatch_xp                  player XP awarded when an egg of this rarity hatches
+#
+# Pricing curve roughly 3× per tier so each rarity feels meaningfully more
+# valuable than the one below. Incubation doubles each step from common (30m)
+# up to mythic (24h). The min_level curve is gentle early then sharp — keeps
+# the game open at the start, mythic is the long-term goal at level 100.
+# All values are tunable as a balance pass without code.
+common:
+  display_name: Common
+  color: 0x9D9D9D
+  mystery_egg_cost: 200
+  determined_egg_multiplier: 2.5
+  incubation_minutes: 30
+  hatch_xp: 10
+  min_level: 1
+
+uncommon:
+  display_name: Uncommon
+  color: 0x1EFF00
+  mystery_egg_cost: 600
+  determined_egg_multiplier: 2.5
+  incubation_minutes: 60
+  hatch_xp: 30
+  min_level: 5
+
+rare:
+  display_name: Rare
+  color: 0x0070DD
+  mystery_egg_cost: 1800
+  determined_egg_multiplier: 2.5
+  incubation_minutes: 120
+  hatch_xp: 60
+  min_level: 15
+
+epic:
+  display_name: Epic
+  color: 0xA335EE
+  mystery_egg_cost: 5000
+  determined_egg_multiplier: 2.5
+  incubation_minutes: 360
+  hatch_xp: 100
+  min_level: 30
+
+legendary:
+  display_name: Legendary
+  color: 0xFF8000
+  mystery_egg_cost: 14000
+  determined_egg_multiplier: 2.5
+  incubation_minutes: 720
+  hatch_xp: 150
+  min_level: 60
+
+mythic:
+  display_name: Mythic
+  color: 0xE6CC80
+  mystery_egg_cost: 40000
+  determined_egg_multiplier: 2.5
+  incubation_minutes: 1440
+  hatch_xp: 200
+  min_level: 100

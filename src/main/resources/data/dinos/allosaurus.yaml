@@ -1,0 +1,14 @@
+id: allosaurus
+display_name: Allosaurus
+category: dinosaur
+rarity: rare
+era: Late Jurassic
+tier: 3
+base_cost: 2200
+base_income_per_hour: 85
+popularity: 86
+danger: 70
+biome: forest
+description: >-
+  Big Jurassic apex predator with a dramatic skull crest. Stalks the
+  enclosure perimeter when hungry — feeding cooldowns matter here.

@@ -1,0 +1,14 @@
+id: plesiosaurus
+display_name: Plesiosaurus
+category: marine_reptile
+rarity: uncommon
+era: Early Jurassic
+tier: 2
+base_cost: 650
+base_income_per_hour: 26
+popularity: 72
+danger: 30
+biome: marine
+description: >-
+  Long-necked marine reptile gliding through the water on four flippers.
+  A staple of any respectable saltwater wing.

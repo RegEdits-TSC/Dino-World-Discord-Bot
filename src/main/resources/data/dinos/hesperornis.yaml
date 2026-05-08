@@ -1,0 +1,14 @@
+id: hesperornis
+display_name: Hesperornis
+category: marine_reptile
+rarity: common
+era: Late Cretaceous
+tier: 1
+base_cost: 150
+base_income_per_hour: 13
+popularity: 38
+danger: 10
+biome: marine
+description: >-
+  Flightless seabird-like creature that hunted by diving. Technically a
+  bird, but kept here for the marine roster's sake — guests can't tell.

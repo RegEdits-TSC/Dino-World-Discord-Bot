@@ -1,0 +1,14 @@
+id: archaeopteryx
+display_name: Archaeopteryx
+category: pterosaur
+rarity: uncommon
+era: Late Jurassic
+tier: 2
+base_cost: 680
+base_income_per_hour: 27
+popularity: 80
+danger: 15
+biome: aerial
+description: >-
+  The "first bird" — feathered, clawed, and impossibly photogenic.
+  Educational value compounds the visitor draw.

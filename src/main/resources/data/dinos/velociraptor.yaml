@@ -1,0 +1,16 @@
+# Velociraptor — the iconic Late Cretaceous pack hunter.
+id: velociraptor
+display_name: Velociraptor
+category: dinosaur
+rarity: uncommon
+era: Late Cretaceous
+tier: 2
+base_cost: 500
+base_income_per_hour: 25
+popularity: 70
+danger: 60
+biome: forest
+description: >-
+  Small, fast, and famously clever. A breakout star of every dinosaur park
+  brochure ever printed — and a perennial maintenance headache for
+  enclosure designers.

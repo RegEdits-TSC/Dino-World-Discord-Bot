@@ -1,0 +1,14 @@
+id: carnotaurus
+display_name: Carnotaurus
+category: dinosaur
+rarity: epic
+era: Late Cretaceous
+tier: 4
+base_cost: 5200
+base_income_per_hour: 190
+popularity: 87
+danger: 78
+biome: desert
+description: >-
+  Bull-horned theropod with absurdly stubby arms and an alarming top
+  speed. Crowd favorite, danger-level nightmare.

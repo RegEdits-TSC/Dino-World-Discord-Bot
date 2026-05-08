@@ -1,0 +1,14 @@
+id: mosasaurus
+display_name: Mosasaurus
+category: marine_reptile
+rarity: rare
+era: Late Cretaceous
+tier: 3
+base_cost: 2100
+base_income_per_hour: 80
+popularity: 90
+danger: 65
+biome: marine
+description: >-
+  Massive serpentine apex predator of the Late Cretaceous seas.
+  The closer your saltwater viewing windows, the better the gate receipts.

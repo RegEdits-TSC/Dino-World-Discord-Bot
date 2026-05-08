@@ -1,0 +1,14 @@
+id: microraptor
+display_name: Microraptor
+category: dinosaur
+rarity: common
+era: Early Cretaceous
+tier: 1
+base_cost: 140
+base_income_per_hour: 12
+popularity: 35
+danger: 8
+biome: forest
+description: >-
+  A four-winged glider barely larger than a crow. Iridescent feathers
+  in good light — guests with cameras stick around longer.

@@ -1,0 +1,14 @@
+id: brachiosaurus
+display_name: Brachiosaurus
+category: dinosaur
+rarity: epic
+era: Late Jurassic
+tier: 4
+base_cost: 6000
+base_income_per_hour: 225
+popularity: 96
+danger: 30
+biome: grassland
+description: >-
+  Towering long-necked sauropod that browses the canopy. Visible from the
+  parking lot, which is half the marketing budget paying for itself.

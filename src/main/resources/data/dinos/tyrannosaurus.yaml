@@ -1,0 +1,14 @@
+id: tyrannosaurus
+display_name: Tyrannosaurus
+category: dinosaur
+rarity: legendary
+era: Late Cretaceous
+tier: 5
+base_cost: 16000
+base_income_per_hour: 550
+popularity: 99
+danger: 95
+biome: forest
+description: >-
+  The king. Every brochure, every gift-shop hoodie, every bedtime story.
+  Containment costs scale accordingly — and so does the gate.

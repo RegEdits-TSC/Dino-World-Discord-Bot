@@ -1,0 +1,14 @@
+id: quetzalcoatlus
+display_name: Quetzalcoatlus
+category: pterosaur
+rarity: epic
+era: Late Cretaceous
+tier: 4
+base_cost: 5800
+base_income_per_hour: 215
+popularity: 94
+danger: 60
+biome: aerial
+description: >-
+  One of the largest known flying animals — wingspan rivalling a small
+  aircraft. Requires a tall enclosure but draws crowds for blocks.
