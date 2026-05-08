@@ -1,0 +1,52 @@
+name: Feature request
+description: A new command, mechanic, or quality-of-life improvement.
+title: "feat: <one-line summary>"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are most useful when they describe a player-facing
+        problem first, not a solution. "I can't tell which eggs I own" beats
+        "add a /myeggs command".
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the problem?
+      description: What does a player or operator find frustrating, slow, or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: One concrete approach. Don't worry if it's not the final one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways to solve the same problem, even rejected ones.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Rough scope
+      description: Best guess — helps prioritise.
+      options:
+        - Small (a flag, a tweak, a single command)
+        - Medium (a new command + UI surface)
+        - Large (a new module / mechanic with persistence)
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Mockups, similar features in other bots, links to design discussion.
