@@ -1,0 +1,77 @@
+name: Bug report
+description: Something the bot does that it shouldn't, or vice versa.
+title: "bug: <one-line summary>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please fill in as much as you can —
+        unreproducible bugs are usually closed unread.
+
+  - type: input
+    id: version
+    attributes:
+      label: Bot version
+      description: Run `/about` in Discord, or check `Implementation-Version` in the jar manifest.
+      placeholder: e.g. 1.0.0-beta1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where did this happen?
+      options:
+        - A slash command (/shop, /profile, /admin, etc.)
+        - A button or select menu
+        - A modal submit
+        - Bot startup / module load
+        - Database migration
+        - Other (describe in steps)
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. Include the exact command, button label, or input where applicable.
+      placeholder: |
+        1. Run /shop in any guild channel
+        2. Click "Mystery egg → Common"
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the exact error message shown in Discord, or the error_id from the embed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log lines from `logs/dinoworld.log`, the `error_id` lookup, or the developer DM. Redact tokens.
+      render: text
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: JDK version, OS, deployment shape (running locally vs systemd vs docker).
+      placeholder: |
+        - JDK: Temurin 21.0.4
+        - OS: Ubuntu 24.04
+        - Deploy: systemd unit
