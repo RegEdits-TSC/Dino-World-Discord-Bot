@@ -1,0 +1,38 @@
+name: pr-title
+
+# Validates that every PR title follows Conventional Commits.
+# Catches mistakes at PR-open time, before squash-merge bakes a bad
+# subject into main's history.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  lint:
+    name: conventional commit title
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Lint PR title
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            refactor
+            chore
+            docs
+            test
+            perf
+            style
+          requireScope: false
+          subjectPattern: ^[a-z].*[^.]$
+          subjectPatternError: |
+            Subject must start lowercase and not end with a period.
+            Got: "{subject}"
+          wip: true

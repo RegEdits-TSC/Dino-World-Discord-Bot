@@ -1,0 +1,4 @@
+dev.homeology.dinoworld.modules.core.CoreModule
+dev.homeology.dinoworld.modules.notify.NotifyModule
+dev.homeology.dinoworld.modules.players.PlayersModule
+dev.homeology.dinoworld.modules.zoo.ZooModule

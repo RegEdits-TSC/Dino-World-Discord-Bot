@@ -1,0 +1,57 @@
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+.kotlin
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### Claude Code ###
+.claude/
+# Private working-agreement file — local only, never published.
+CLAUDE.md
+
+### Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store
+
+### Dino-World runtime ###
+# Secrets — never commit. Copy .env.example → .env locally.
+.env
+# SQLite database + WAL/SHM sidecar files (runtime dir at project root).
+# Anchored to root with the leading slash so we don't accidentally match
+# `src/main/resources/data/` where game catalog assets live.
+/data/
+# Compressed nightly backups produced by scripts/backup.sh.
+/backups/
+# Rolling log files produced by Logback.
+/logs/

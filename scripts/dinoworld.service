@@ -1,0 +1,41 @@
+# Dino-World systemd unit (production deployment template).
+#
+# Install:
+#   sudo cp scripts/dinoworld.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now dinoworld
+#
+# Logs (journalctl -u dinoworld) capture stdout/stderr; the bot's own
+# rolling file logs land in /opt/dinoworld/logs/.
+#
+# Exit-code policy:
+#   0   /debug system shutdown — clean stop, NO relaunch
+#   64  /debug system restart  — relaunched by RestartForceExitStatus
+#   *   crash — relaunched by Restart=on-failure
+[Unit]
+Description=Dino-World Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dinoworld
+Group=dinoworld
+WorkingDirectory=/opt/dinoworld
+EnvironmentFile=/opt/dinoworld/.env
+Environment=JAVA_OPTS=--enable-native-access=ALL-UNNAMED -Xmx256m -XX:+UseG1GC -Dfile.encoding=UTF-8 -Duser.timezone=UTC
+ExecStart=/usr/bin/java $JAVA_OPTS -jar /opt/dinoworld/build/libs/Dino-World-1.0.0-all.jar
+Restart=on-failure
+RestartForceExitStatus=64
+RestartSec=2
+SuccessExitStatus=0
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/dinoworld/data /opt/dinoworld/logs /opt/dinoworld/backups
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logback configuration for Dino-World.
+
+  Two appenders share the same content but use different patterns:
+
+    - STDOUT applies ANSI color (Logback's %highlight / %cyan / %boldWhite).
+      Works on Linux/macOS terminals, Windows Terminal, PowerShell, and
+      cmd.exe on Windows 10 1909+ (virtual terminal sequences are enabled
+      by default).
+    - FILE keeps the plain pattern so logs/bot.log stays grep-friendly
+      (no ANSI escape bytes in the saved files).
+
+  MDC tags: CommandRouter populates a pre-formatted 'tags' key (with a
+  LEADING space — e.g. " [ping g=12345 u=67890]") while a command is being
+  dispatched, and clears it afterward. The pattern places %X{tags}
+  immediately after [%thread] so it follows a plain `]` literal — Logback's
+  pattern parser has a quirk where a converter placed immediately after a
+  composite converter's closing `)` (like %boldWhite(...) or %highlight(...))
+  is not parsed and prints literally.
+
+  Root level is read from ${LOG_LEVEL} (default INFO). Runtime changes via
+  /debug log set <logger> <level> aren't persisted; /debug log reset
+  re-reads this file via JoranConfigurator.
+-->
+<configuration>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <!-- withJansi=false: Windows 10+ handles ANSI natively. Jansi can
+             corrupt UTF-8 output on modern terminals. -->
+        <withJansi>false</withJansi>
+        <encoder>
+            <pattern>%cyan(%d{HH:mm:ss.SSS}) [%thread]%X{tags} %highlight(%-5level) %boldWhite(%logger{36}) - %msg%n
+            </pattern>
+        </encoder>
+    </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/bot.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/bot.%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <maxHistory>14</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread]%X{tags} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Pin JDA at INFO so DEBUG on root doesn't drown the log in gateway chatter. -->
+    <logger name="net.dv8tion.jda" level="INFO"/>
+    <!-- HikariCP is verbose at DEBUG; pin to INFO. -->
+    <logger name="com.zaxxer.hikari" level="INFO"/>
+
+    <root level="${LOG_LEVEL:-INFO}">
+        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="FILE"/>
+    </root>
+
+</configuration>

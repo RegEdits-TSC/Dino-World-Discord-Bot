@@ -1,0 +1,41 @@
+# Dependabot keeps Gradle deps and Action versions current.
+# Updates are batched into one weekly PR per ecosystem to avoid noise.
+version: 2
+updates:
+  # Java/Gradle dependencies — JDA, HikariCP, Caffeine, etc.
+  - package-ecosystem: gradle
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels: [dependencies, gradle]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      runtime-deps:
+        patterns: ["*"]
+        exclude-patterns:
+          - "org.junit*"
+          - "org.mockito*"
+      test-deps:
+        patterns:
+          - "org.junit*"
+          - "org.mockito*"
+
+  # GitHub Actions versions — keeps actions/checkout, setup-java, etc. current.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    labels: [dependencies, github-actions]
+    commit-message:
+      prefix: chore
+      include: scope
