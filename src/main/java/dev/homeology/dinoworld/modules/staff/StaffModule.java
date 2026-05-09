@@ -7,7 +7,9 @@ import dev.homeology.dinoworld.modules.notify.NotificationService;
 import dev.homeology.dinoworld.modules.players.PlayerService;
 import dev.homeology.dinoworld.modules.zoo.DinoInstanceService;
 import dev.homeology.dinoworld.modules.zoo.EnclosureService;
+import dev.homeology.dinoworld.modules.zoo.IssueDetector;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 
@@ -69,8 +71,13 @@ public final class StaffModule implements Module {
 		DinoInstanceService dinos = ctx.services().get(DinoInstanceService.class);
 		EnclosureService enclosures = ctx.services().get(EnclosureService.class);
 
+		// IssueDetector is registered in ZooModule.onLoad; tryGet keeps the
+		// staff module independently loadable even if zoo is disabled.
+		IssueDetector detector = ctx.services().tryGet(IssueDetector.class).orElse(null);
+
 		this.autoFeedTick = new AutoFeedTickService(effects, memberService, dinos);
-		this.wagesTick = new StaffWagesTickService(memberService, catalog, players, notify);
+		this.wagesTick = new StaffWagesTickService(memberService, catalog, players, notify,
+			detector, Clock.systemUTC());
 
 		this.staffCommand = new StaffCommand(players, memberService, catalog, enclosures);
 		this.handler = new StaffComponentHandler(players, memberService, catalog, enclosures);

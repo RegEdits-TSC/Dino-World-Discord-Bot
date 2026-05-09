@@ -131,7 +131,7 @@ public final class CommandRouter extends ListenerAdapter {
 			// acknowledged even if the worker queue blocks or the handler
 			// is slow on a cold JVM. Ephemerality is locked here per
 			// Command.deferEphemeral(); handlers can no longer choose.
-			event.deferReply(cmd.deferEphemeral()).queue(
+			event.deferReply(cmd.deferEphemeral(event.getSubcommandName())).queue(
 				ok -> {
 				},
 				err -> log.warn("Failed to defer /{}: {}", fullName, err.toString()));

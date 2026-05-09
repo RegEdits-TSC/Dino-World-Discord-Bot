@@ -6,8 +6,10 @@ import dev.homeology.dinoworld.core.ModuleContext;
 import dev.homeology.dinoworld.modules.notify.NotificationService;
 import dev.homeology.dinoworld.modules.players.PlayerService;
 import dev.homeology.dinoworld.modules.staff.StaffEffectsService;
+import dev.homeology.dinoworld.modules.zoo.issues.ZooIssueService;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -34,6 +36,8 @@ public final class ZooModule implements Module {
 	private HappinessTickService happinessTick;
 	private EggReadyNotifyService eggReadyNotify;
 	private EggImageProvider eggImages;
+	private ZooIssueService issues;
+	private IssueDetector issueDetector;
 	private ZooCommand zooCommand;
 	private ShopCommand shopCommand;
 	private EggsCommand eggsCommand;
@@ -75,15 +79,29 @@ public final class ZooModule implements Module {
 			rarities, catalog, playerService, dinos, enclosures, staffEffects);
 		ctx.services().register(EggService.class, eggs);
 
+		// Issues persistence — backs /zoo issues. Built before ParkRatingService
+		// so the rating service can apply the critical-issue penalty.
+		this.issues = new ZooIssueService(ctx.database().dataSource());
+		ctx.services().register(ZooIssueService.class, issues);
+
 		// Pure-derivation rating helper — no persistence.
-		this.parkRating = new ParkRatingService(dinos, enclosures, catalog);
+		this.parkRating = new ParkRatingService(dinos, enclosures, catalog, issues);
 		ctx.services().register(ParkRatingService.class, parkRating);
 
 		// Hourly tick handlers (registered with the scheduler in onEnable).
 		// Staff effects (Marketer income multiplier, Vet decay reduction) are
 		// applied per-tick when the staff module is loaded.
 		this.incomeTick = new IncomeTickService(dinos, catalog, playerService, staffEffects);
-		this.happinessTick = new HappinessTickService(dinos, enclosures, catalog, staffEffects);
+
+		// Issue detector wires happiness/staff/runway detection into the issues
+		// table. IncomeTickService is passed so wage runway can offset wages
+		// against income. Published as a service so StaffWagesTickService (in
+		// staff module) can read it during onEnable.
+		this.issueDetector = new IssueDetector(issues, catalog, incomeTick);
+		ctx.services().register(IssueDetector.class, issueDetector);
+
+		this.happinessTick = new HappinessTickService(dinos, enclosures, catalog,
+			staffEffects, issueDetector, java.time.Clock.systemUTC());
 
 		// Asset cache for shop + egg-ready embeds. Files may be missing —
 		// EggImageProvider returns Optional.empty and embeds skip the image.
@@ -97,7 +115,7 @@ public final class ZooModule implements Module {
 		NotificationService notify = ctx.services().get(NotificationService.class);
 
 		this.zooCommand = new ZooCommand(players, catalog, dinos, enclosures,
-			parkRating, players.leveling());
+			parkRating, players.leveling(), issues);
 		this.shopCommand = new ShopCommand(players, rarities, catalog, eggImages, enclosures);
 		this.eggsCommand = new EggsCommand(players, eggs, rarities, catalog, players.leveling());
 		this.hatchCommand = new HatchCommand(players, eggs, rarities);
@@ -108,7 +126,11 @@ public final class ZooModule implements Module {
 
 		ctx.components().register(ZooComponentHandler.NAMESPACE,
 			new ZooComponentHandler(players, rarities, catalog, eggs, enclosures, eggImages,
-				eggsCommand, dinos, enclosuresCommand, moveCommand));
+				eggsCommand, dinos, enclosuresCommand, moveCommand, issues));
+
+		// One-shot startup cleanup of long-resolved issues (>30 days). Keeps
+		// the zoo_issue table from growing unbounded; open rows are untouched.
+		issues.purgeResolvedOlderThan(Instant.now().minus(Duration.ofDays(30)));
 
 		// Recurring jobs. TickScheduler back-fills missed ticks (capped at 24h)
 		// so a bot outage credits up to one day of offline income/decay on
