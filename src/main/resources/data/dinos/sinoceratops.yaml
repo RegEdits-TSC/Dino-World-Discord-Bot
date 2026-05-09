@@ -1,0 +1,15 @@
+id: sinoceratops
+display_name: Sinoceratops
+category: dinosaur
+rarity: uncommon
+era: Late Cretaceous
+tier: 2
+base_cost: 550
+base_income_per_hour: 28
+popularity: 60
+danger: 35
+biome: grassland
+description: >-
+  Single-horned ceratopsid out of what's now China — bulkier than it
+  looks and surprisingly mobile when annoyed. A solid second-string
+  ticket draw.

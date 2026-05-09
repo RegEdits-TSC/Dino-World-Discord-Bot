@@ -1,0 +1,15 @@
+id: iguanodon
+display_name: Iguanodon
+category: dinosaur
+rarity: common
+era: Early Cretaceous
+tier: 1
+base_cost: 105
+base_income_per_hour: 9
+popularity: 28
+danger: 10
+biome: forest
+description: >-
+  One of the first dinosaurs ever named, with a thumb spike that ended
+  more than a few keepers' careers in the early days. Docile if respected,
+  cheap to maintain, photogenic enough.

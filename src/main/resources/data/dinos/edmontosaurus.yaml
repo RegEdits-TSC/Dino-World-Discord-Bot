@@ -1,0 +1,15 @@
+id: edmontosaurus
+display_name: Edmontosaurus
+category: dinosaur
+rarity: common
+era: Late Cretaceous
+tier: 1
+base_cost: 110
+base_income_per_hour: 9
+popularity: 30
+danger: 5
+biome: grassland
+description: >-
+  Bulk duck-bill that grazed in herds the size of a parking lot. Easy
+  to feed, easy to please — perfect for filling out the herbivore wing
+  on a budget.

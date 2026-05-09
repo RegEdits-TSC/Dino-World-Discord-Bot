@@ -1,0 +1,15 @@
+id: ceratosaurus
+display_name: Ceratosaurus
+category: dinosaur
+rarity: rare
+era: Late Jurassic
+tier: 3
+base_cost: 2200
+base_income_per_hour: 82
+popularity: 80
+danger: 72
+biome: desert
+description: >-
+  Nose horn, brow ridges, a row of bony plates down the spine — looks
+  like every kid's drawing of a dinosaur. Surprisingly camera-friendly
+  for a midsize predator.

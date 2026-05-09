@@ -1,0 +1,15 @@
+id: baryonyx
+display_name: Baryonyx
+category: dinosaur
+rarity: rare
+era: Early Cretaceous
+tier: 3
+base_cost: 2350
+base_income_per_hour: 85
+popularity: 83
+danger: 70
+biome: marine
+description: >-
+  Hook-clawed fish-eater with a crocodile's snout. Wants water access,
+  takes the occasional swipe at the keepers anyway. Pairs well with
+  spinosaurus on the wetlands tour.

@@ -1,0 +1,14 @@
+id: nasutoceratops
+display_name: Nasutoceratops
+category: dinosaur
+rarity: uncommon
+era: Late Cretaceous
+tier: 2
+base_cost: 540
+base_income_per_hour: 27
+popularity: 62
+danger: 30
+biome: grassland
+description: >-
+  Long forward-curving horns and a comically oversized snout. Mostly
+  placid in herds, mostly. The horns are still horns.

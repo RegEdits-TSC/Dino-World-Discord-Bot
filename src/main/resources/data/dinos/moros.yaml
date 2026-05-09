@@ -1,0 +1,15 @@
+id: moros
+display_name: Moros Intrepidus
+category: dinosaur
+rarity: common
+era: Late Cretaceous
+tier: 1
+base_cost: 120
+base_income_per_hour: 10
+popularity: 35
+danger: 15
+biome: forest
+description: >-
+  Pony-sized cousin of the tyrannosaurs, twenty million years before
+  the family got famous. Sells the "everything started small" exhibit
+  panel.

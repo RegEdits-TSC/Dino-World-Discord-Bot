@@ -1,0 +1,14 @@
+id: stygimoloch
+display_name: Stygimoloch
+category: dinosaur
+rarity: uncommon
+era: Late Cretaceous
+tier: 2
+base_cost: 520
+base_income_per_hour: 26
+popularity: 65
+danger: 30
+biome: forest
+description: >-
+  Spiked dome-head that head-butts gates open if you let the enclosure
+  walls drift below spec. Crowd-pleaser; routine escape risk.

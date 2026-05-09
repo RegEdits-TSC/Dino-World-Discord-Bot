@@ -1,0 +1,15 @@
+id: dilophosaurus
+display_name: Dilophosaurus
+category: dinosaur
+rarity: rare
+era: Early Jurassic
+tier: 3
+base_cost: 2300
+base_income_per_hour: 88
+popularity: 90
+danger: 75
+biome: forest
+description: >-
+  Twin-crested theropod with a frill the keepers swear they didn't see
+  on the autopsy table. Spits, hides, ambushes — handle the gift-shop
+  plushies before the live exhibit.
