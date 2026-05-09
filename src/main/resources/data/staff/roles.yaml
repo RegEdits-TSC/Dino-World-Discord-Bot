@@ -1,0 +1,62 @@
+# Staff role catalog. Top-level keys:
+#   roles         — map of role_id → role definition (parsed by StaffCatalog)
+#   reassign_fee  — flat coin cost charged when moving an enclosure-scope
+#                   staff member to a different enclosure (in StaffCatalog
+#                   for tunability without code changes)
+#
+# Effect types recognised by StaffEffectsService:
+#   auto_feed         — per enclosure, zookeeper auto-feeds N lowest-happiness
+#                       dinos / hr (capacity stacks across multiple zookeepers)
+#   decay_reduce      — per enclosure, halves happiness decay (multiple vets
+#                       in same enclosure do NOT compound; effective floor 0.5x)
+#   incubation_speed  — global per player, multiplier^scientistCount with floor
+#   income_multiplier — global per player, 1 + bonus*marketerCount with cap
+
+reassign_fee: 500
+
+roles:
+  zookeeper:
+    display_name: Zookeeper
+    hire_cost: 2000
+    wage_per_hour: 40
+    scope: enclosure
+    max_owned: 6
+    unlock_level: 5
+    effect:
+      type: auto_feed
+      capacity: 5
+
+  vet:
+    display_name: Veterinarian
+    hire_cost: 5000
+    wage_per_hour: 70
+    scope: enclosure
+    max_owned: 4
+    unlock_level: 15
+    effect:
+      type: decay_reduce
+      multiplier: 0.5
+
+  scientist:
+    display_name: Scientist
+    hire_cost: 12000
+    wage_per_hour: 120
+    scope: global
+    max_owned: 3
+    unlock_level: 25
+    effect:
+      type: incubation_speed
+      per_unit_multiplier: 0.75
+      floor: 0.5
+
+  marketer:
+    display_name: Marketer
+    hire_cost: 25000
+    wage_per_hour: 200
+    scope: global
+    max_owned: 3
+    unlock_level: 40
+    effect:
+      type: income_multiplier
+      per_unit_bonus: 0.15
+      cap: 1.45

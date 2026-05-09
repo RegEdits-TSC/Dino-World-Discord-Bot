@@ -2,6 +2,7 @@ package dev.homeology.dinoworld.modules.zoo;
 
 import dev.homeology.dinoworld.modules.players.Player;
 import dev.homeology.dinoworld.modules.players.PlayerService;
+import dev.homeology.dinoworld.modules.staff.StaffEffectsService;
 import dev.homeology.dinoworld.modules.zoo.model.DinoInstance;
 import dev.homeology.dinoworld.modules.zoo.model.EggInstance;
 import dev.homeology.dinoworld.modules.zoo.model.Enclosure;
@@ -62,6 +63,7 @@ public final class EggService {
 	private final EnclosureService enclosures;
 	private final Function<List<DinoSpecies>, DinoSpecies> picker;
 	private final Clock clock;
+	private final StaffEffectsService staffEffects;
 
 	/**
 	 * Production constructor — uses {@link ThreadLocalRandom} for mystery
@@ -75,7 +77,23 @@ public final class EggService {
 	                  EnclosureService enclosures) {
 		this(dataSource, rarities, catalog, players, dinos, enclosures,
 			pool -> pool.get(ThreadLocalRandom.current().nextInt(pool.size())),
-			Clock.systemUTC());
+			Clock.systemUTC(), null);
+	}
+
+	/**
+	 * Production constructor with optional {@link StaffEffectsService}
+	 * (null when staff module is disabled).
+	 */
+	public EggService(DataSource dataSource,
+	                  RarityCatalog rarities,
+	                  DinoCatalog catalog,
+	                  PlayerService players,
+	                  DinoInstanceService dinos,
+	                  EnclosureService enclosures,
+	                  StaffEffectsService staffEffects) {
+		this(dataSource, rarities, catalog, players, dinos, enclosures,
+			pool -> pool.get(ThreadLocalRandom.current().nextInt(pool.size())),
+			Clock.systemUTC(), staffEffects);
 	}
 
 	/**
@@ -89,6 +107,22 @@ public final class EggService {
 	                  EnclosureService enclosures,
 	                  Function<List<DinoSpecies>, DinoSpecies> picker,
 	                  Clock clock) {
+		this(dataSource, rarities, catalog, players, dinos, enclosures, picker, clock, null);
+	}
+
+	/**
+	 * Test seam — inject a deterministic picker, clock, and optional
+	 * {@link StaffEffectsService}.
+	 */
+	public EggService(DataSource dataSource,
+	                  RarityCatalog rarities,
+	                  DinoCatalog catalog,
+	                  PlayerService players,
+	                  DinoInstanceService dinos,
+	                  EnclosureService enclosures,
+	                  Function<List<DinoSpecies>, DinoSpecies> picker,
+	                  Clock clock,
+	                  StaffEffectsService staffEffects) {
 		this.dataSource = dataSource;
 		this.rarities = rarities;
 		this.catalog = catalog;
@@ -97,6 +131,7 @@ public final class EggService {
 		this.enclosures = enclosures;
 		this.picker = picker;
 		this.clock = clock;
+		this.staffEffects = staffEffects;
 	}
 
 	// ─── purchase ────────────────────────────────────────────────────────
@@ -115,7 +150,8 @@ public final class EggService {
 		long cost = r.mysteryEggCost();
 		debitOrThrow(userId, cost, LEDGER_REASON_MYSTERY + ":" + r.id());
 		Instant now = clock.instant();
-		Instant readyAt = now.plus(Duration.ofMinutes(r.incubationMinutes()));
+		long incubationMinutes = scientistAdjusted(userId, r.incubationMinutes());
+		Instant readyAt = now.plus(Duration.ofMinutes(incubationMinutes));
 		long id = insertEggRow(userId, r.id(), null, now, readyAt);
 		log.info("user={} bought mystery {} egg id={} ready_at={}",
 			userId, r.id(), id, readyAt);
@@ -140,7 +176,8 @@ public final class EggService {
 		int incubation = s.effectiveIncubationMinutes(r);
 		debitOrThrow(userId, cost, LEDGER_REASON_DETERMINED + ":" + s.id());
 		Instant now = clock.instant();
-		Instant readyAt = now.plus(Duration.ofMinutes(incubation));
+		long adjusted = scientistAdjusted(userId, incubation);
+		Instant readyAt = now.plus(Duration.ofMinutes(adjusted));
 		long id = insertEggRow(userId, r.id(), s.id(), now, readyAt);
 		log.info("user={} bought determined {} egg id={} ready_at={}",
 			userId, s.id(), id, readyAt);
@@ -389,6 +426,20 @@ public final class EggService {
 				"Your incubation chamber is full (" + pending + " / " + slots
 					+ "). Hatch a ready egg or level up to unlock another slot.");
 		}
+	}
+
+	/**
+	 * @return incubation minutes scaled by the player's
+	 *         {@link StaffEffectsService#incubationMultiplier(long)} (1.0
+	 *         when the staff module is disabled or no scientist is hired).
+	 *         Result floors at 1 minute so a fully-stacked discount can't
+	 *         produce a zero-incubation egg.
+	 */
+	private long scientistAdjusted(long userId, int baseMinutes) {
+		if (staffEffects == null) return baseMinutes;
+		double mult = staffEffects.incubationMultiplier(userId);
+		long minutes = Math.round(baseMinutes * mult);
+		return Math.max(1L, minutes);
 	}
 
 	private void debitOrThrow(long userId, long cost, String reason) {

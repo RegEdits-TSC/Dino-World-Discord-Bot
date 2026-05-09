@@ -5,6 +5,7 @@ import dev.homeology.dinoworld.core.Module;
 import dev.homeology.dinoworld.core.ModuleContext;
 import dev.homeology.dinoworld.modules.notify.NotificationService;
 import dev.homeology.dinoworld.modules.players.PlayerService;
+import dev.homeology.dinoworld.modules.staff.StaffEffectsService;
 
 import java.time.Duration;
 import java.util.List;
@@ -67,8 +68,11 @@ public final class ZooModule implements Module {
 		// EggService composes everything above plus PlayerService (registered
 		// by the `players` module which loads before us alphabetically).
 		PlayerService playerService = ctx.services().get(PlayerService.class);
+		// StaffEffectsService is published by the staff module (loads before
+		// zoo: c < n < p < s < z). tryGet supports staff being disabled.
+		StaffEffectsService staffEffects = ctx.services().tryGet(StaffEffectsService.class).orElse(null);
 		this.eggs = new EggService(ctx.database().dataSource(),
-			rarities, catalog, playerService, dinos, enclosures);
+			rarities, catalog, playerService, dinos, enclosures, staffEffects);
 		ctx.services().register(EggService.class, eggs);
 
 		// Pure-derivation rating helper — no persistence.
@@ -76,8 +80,10 @@ public final class ZooModule implements Module {
 		ctx.services().register(ParkRatingService.class, parkRating);
 
 		// Hourly tick handlers (registered with the scheduler in onEnable).
-		this.incomeTick = new IncomeTickService(dinos, catalog, playerService);
-		this.happinessTick = new HappinessTickService(dinos, enclosures, catalog);
+		// Staff effects (Marketer income multiplier, Vet decay reduction) are
+		// applied per-tick when the staff module is loaded.
+		this.incomeTick = new IncomeTickService(dinos, catalog, playerService, staffEffects);
+		this.happinessTick = new HappinessTickService(dinos, enclosures, catalog, staffEffects);
 
 		// Asset cache for shop + egg-ready embeds. Files may be missing —
 		// EggImageProvider returns Optional.empty and embeds skip the image.
