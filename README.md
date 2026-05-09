@@ -58,8 +58,8 @@ Versions are pinned in a single `val` block at the top of
 
 - **Modules over megafiles.** Each feature is a self-contained package
   registered via `java.util.ServiceLoader`. Current modules:
-  `core`, `notify`, `players`, `zoo`. Adding a new one means a new folder
-  plus an SPI entry — no central wiring file to touch.
+  `core`, `notify`, `players`, `staff`, `zoo`. Adding a new one means a new
+  folder plus an SPI entry — no central wiring file to touch.
 
 - **Per-module SQL migrations.** Each module owns its `V<n>__*.sql` files
   under `src/main/resources/db/migrations/<module>/`. Versions are scoped
@@ -96,6 +96,7 @@ Versions are pinned in a single `val` block at the top of
 | `/ping`                                | everyone          | gateway latency check                        |
 | `/profile`                             | players           | tycoon stats, level, slot usage              |
 | `/shop`                                | players           | buy eggs (level/habitat-gated)               |
+| `/staff {list\|hire\|fire\|...}`       | players           | hire NPC staff: zookeeper, vet, scientist, marketer |
 | `/admin reset player\|tycoon`          | server admins     | reset a player's or all tycoon state         |
 | `/debug log {set\|get\|list\|reset}`   | developer only    | runtime logger control                       |
 | `/debug cache stats`                   | developer only    | per-cache size / hit rate / evictions        |
@@ -116,6 +117,7 @@ src/main/java/dev/homeology/dinoworld/
     ├── core/      # /ping, /debug, error reporting
     ├── notify/    # cross-module notification helpers
     ├── players/   # accounts, levels, profile
+    ├── staff/     # NPC hires: zookeeper, vet, scientist, marketer
     └── zoo/       # tycoon gameplay: shop, eggs, habitats, dinosaurs
 src/main/resources/
 ├── db/migrations/<module>/  # per-module SQL migrations
