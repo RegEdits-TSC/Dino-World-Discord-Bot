@@ -10,6 +10,10 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.Shape;
+import java.awt.Stroke;
+import java.awt.font.TextLayout;
+import java.awt.geom.AffineTransform;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
@@ -68,10 +72,17 @@ public final class RankCardRenderer {
 	private static final Color CARD_BG = new Color(0x2C2F33);
 	private static final Color CARD_INNER = new Color(0x23272A);
 	private static final Color BAR_TRACK = new Color(0x4F545C);
-	private static final Color BAR_FILL = new Color(0x5865F2); // Discord blurple
+	/** Bright HTML gold — chosen to "pop" against the background art rather than
+	 *  blending in like the previous Discord blurple did. Used for the progress
+	 *  bar fill, the LEVEL pill text, and the avatar ring. */
+	private static final Color ACCENT_GOLD = new Color(0xFFD700);
 	private static final Color TEXT_PRIMARY = new Color(0xFFFFFF);
 	private static final Color TEXT_SECONDARY = new Color(0xE6E8EB);
-	private static final Color AVATAR_RING_COLOR = new Color(0x5865F2);
+	/** Black outline applied around all foreground text so it stays legible
+	 *  against any background art — the dark tint alone isn't enough when the
+	 *  background has bright spots behind a glyph. */
+	private static final Color TEXT_OUTLINE = new Color(0, 0, 0, 220);
+	private static final float TEXT_OUTLINE_STROKE = 4f;
 	/** Dark tint composited over the background image — keeps white text readable
 	 *  regardless of how bright the user's background asset is. ~30% opacity. */
 	private static final Color BG_TINT = new Color(0, 0, 0, 80);
@@ -157,8 +168,8 @@ public final class RankCardRenderer {
 	}
 
 	private static void drawAvatar(Graphics2D g, BufferedImage avatar) {
-		// Blurple ring around the avatar circle.
-		g.setColor(AVATAR_RING_COLOR);
+		// Gold ring around the avatar circle — matches the LEVEL/XP accent.
+		g.setColor(ACCENT_GOLD);
 		g.fill(new Ellipse2D.Float(
 			AVATAR_X - AVATAR_RING, AVATAR_Y - AVATAR_RING,
 			AVATAR_SIZE + 2f * AVATAR_RING, AVATAR_SIZE + 2f * AVATAR_RING));
@@ -192,32 +203,36 @@ public final class RankCardRenderer {
 
 	private static void drawText(Graphics2D g, String name, int level,
 	                             long xpInLevel, long xpToNext) {
+		// All foreground text is drawn via drawOutlinedString so it stays
+		// legible against any background art — the dark tint over the banner
+		// isn't enough on its own when bright spots line up behind a glyph.
+
 		// Username (top-left of right column) — truncate so it doesn't
 		// crash into the level pill on the right.
-		g.setColor(TEXT_PRIMARY);
 		g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 52));
 		String shownName = name == null || name.isBlank() ? "Unknown" : name;
 		int nameMaxWidth = WIDTH - RIGHT_COL_X - RIGHT_COL_RIGHT_PAD - 220;
 		shownName = truncateToFit(g, shownName, nameMaxWidth);
-		g.drawString(shownName, RIGHT_COL_X, AVATAR_Y + 60);
+		drawOutlinedString(g, shownName, RIGHT_COL_X, AVATAR_Y + 60,
+			TEXT_PRIMARY, TEXT_OUTLINE, TEXT_OUTLINE_STROKE);
 
 		// Level pill on the right side of the same row, baseline-aligned with name.
 		String levelText = "LEVEL " + level;
 		g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 36));
 		int levelWidth = g.getFontMetrics().stringWidth(levelText);
 		int pillX = WIDTH - RIGHT_COL_RIGHT_PAD - levelWidth;
-		g.setColor(BAR_FILL);
-		g.drawString(levelText, pillX, AVATAR_Y + 56);
+		drawOutlinedString(g, levelText, pillX, AVATAR_Y + 56,
+			ACCENT_GOLD, TEXT_OUTLINE, TEXT_OUTLINE_STROKE);
 
 		// XP text under the username, above the bar.
-		g.setColor(TEXT_SECONDARY);
 		g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 28));
 		String xpText = formatNumber(xpInLevel) + " / " + formatNumber(xpToNext) + " XP";
 		int xpWidth = g.getFontMetrics().stringWidth(xpText);
 		// Right-align XP text above the bar so the eye reads name → xp → bar fill.
-		g.drawString(xpText,
+		drawOutlinedString(g, xpText,
 			WIDTH - RIGHT_COL_RIGHT_PAD - xpWidth,
-			AVATAR_Y + 160);
+			AVATAR_Y + 160,
+			TEXT_SECONDARY, TEXT_OUTLINE, TEXT_OUTLINE_STROKE);
 	}
 
 	private static void drawProgressBar(Graphics2D g, long xpInLevel, long xpToNext) {
@@ -237,7 +252,7 @@ public final class RankCardRenderer {
 		// shows on the bar.
 		if (xpInLevel > 0 && fillWidth < barHeight) fillWidth = barHeight;
 		if (fillWidth > 0) {
-			g.setColor(BAR_FILL);
+			g.setColor(ACCENT_GOLD);
 			g.fill(new RoundRectangle2D.Float(barX, barY, fillWidth, barHeight,
 				barHeight, barHeight));
 		}
@@ -300,6 +315,39 @@ public final class RankCardRenderer {
 	}
 
 	// ─── helpers ─────────────────────────────────────────────────────────
+
+	/**
+	 * Draw text with a stroked outline behind a solid fill, using the
+	 * graphics context's currently-set font. Equivalent to
+	 * {@link Graphics2D#drawString(String, int, int)} when {@code outline}
+	 * is null, but renders glyphs as shapes so the outline can be
+	 * thicker than a typical pixel — keeps the text readable against
+	 * any background art.
+	 */
+	private static void drawOutlinedString(Graphics2D g, String text,
+	                                       int x, int y,
+	                                       Color fill, Color outline,
+	                                       float strokeWidth) {
+		if (text == null || text.isEmpty()) return;
+		TextLayout layout = new TextLayout(text, g.getFont(), g.getFontRenderContext());
+		Shape glyphShape = layout.getOutline(AffineTransform.getTranslateInstance(x, y));
+
+		Stroke oldStroke = g.getStroke();
+		Color oldColor = g.getColor();
+		try {
+			if (outline != null && strokeWidth > 0f) {
+				g.setColor(outline);
+				g.setStroke(new BasicStroke(strokeWidth,
+					BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+				g.draw(glyphShape);
+			}
+			g.setColor(fill);
+			g.fill(glyphShape);
+		} finally {
+			g.setStroke(oldStroke);
+			g.setColor(oldColor);
+		}
+	}
 
 	private static void drawCenteredString(Graphics2D g, String text,
 	                                       int x, int y, int w, int h) {
