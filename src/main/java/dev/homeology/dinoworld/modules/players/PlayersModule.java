@@ -29,6 +29,7 @@ public final class PlayersModule implements Module {
 	private PlayerService playerService;
 	private ProfileCommand profileCommand;
 	private DailyCommand dailyCommand;
+	private RankCommand rankCommand;
 
 	@Override
 	public String name() {
@@ -45,10 +46,11 @@ public final class PlayersModule implements Module {
 
 		this.profileCommand = new ProfileCommand(playerService);
 		this.dailyCommand = new DailyCommand(playerService);
+		this.rankCommand = new RankCommand(playerService);
 	}
 
 	@Override
 	public List<Command> commands() {
-		return List.of(profileCommand, dailyCommand);
+		return List.of(profileCommand, dailyCommand, rankCommand);
 	}
 }

@@ -85,10 +85,10 @@ public final class ProfileCommand implements Command {
 			.addField("Coins", String.valueOf(p.coins()), true)
 			.addField("Level",
 				"**" + p.level() + "**  (" + xpInLevel + " / " + xpToNext + " XP)", true)
-			.addField("Total XP", String.valueOf(p.xp()), true)
 			.addField("Incubation slots", String.valueOf(slots), true)
-			.addField("Park age", days + " day" + (days == 1 ? "" : "s"), true)
-			.addField("​", "​", true); // spacer for grid alignment
+			.addField("Park age", days + " day" + (days == 1 ? "" : "s"), true);
+		// Granular XP progress moved to /rank, which renders a visual progress
+		// bar; /profile keeps the at-a-glance grid clean.
 		Embeds.brand(embed, event.getJDA());
 		event.getHook().editOriginalEmbeds(embed.build()).queue();
 	}
