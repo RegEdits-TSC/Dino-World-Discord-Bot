@@ -89,6 +89,32 @@ class RankCardRendererTest {
 			() -> RankCardRenderer.render("X", -3, 0L, 100L, null));
 	}
 
+	@Test
+	void backgroundLoaderReturnsEmptyWhenAssetMissing() throws Exception {
+		// The test classpath intentionally doesn't ship the background PNG,
+		// so the loader must report "missing" rather than throw — and a
+		// subsequent render must still produce a valid card via the
+		// solid-color fallback path.
+		RankCardRenderer.resetBackgroundCacheForTest();
+		assertTrue(RankCardRenderer.loadBackground().isEmpty(),
+			"no asset on test classpath → loader returns empty");
+
+		byte[] png = RankCardRenderer.render("Fallback", 3, 60L, 300L, dummyAvatar());
+		BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(png));
+		assertEquals(RankCardRenderer.WIDTH, decoded.getWidth());
+		assertEquals(RankCardRenderer.HEIGHT, decoded.getHeight());
+	}
+
+	@Test
+	void canonicalDimensionsMatchAssetAspectRatio() {
+		// Sanity guard: the card is sized to a 3:1 ratio so a 2172×724
+		// (or any 3:1 multiple) background drops in cleanly with no
+		// stretch. If someone bumps WIDTH or HEIGHT without matching the
+		// other, this catches it.
+		assertEquals(3.0, (double) RankCardRenderer.WIDTH / RankCardRenderer.HEIGHT, 0.001,
+			"card is 3:1 to match the shipped background asset");
+	}
+
 	private static BufferedImage dummyAvatar() {
 		// 256-square solid color stand-in for a CDN avatar download — the
 		// renderer's circular clip is what we exercise, not the source pixels.
