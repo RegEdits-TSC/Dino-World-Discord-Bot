@@ -1,0 +1,15 @@
+id: pachycephalosaurus
+display_name: Pachycephalosaurus
+category: dinosaur
+rarity: rare
+era: Late Cretaceous
+tier: 3
+base_cost: 2100
+base_income_per_hour: 78
+popularity: 84
+danger: 45
+biome: forest
+description: >-
+  Eight-inch-thick skull dome built for headbutting rivals — and, when
+  bored, the perimeter fence. Reinforced concrete is line item one in
+  the build budget.

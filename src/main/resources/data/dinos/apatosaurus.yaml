@@ -1,0 +1,15 @@
+id: apatosaurus
+display_name: Apatosaurus
+category: dinosaur
+rarity: epic
+era: Late Jurassic
+tier: 4
+base_cost: 5300
+base_income_per_hour: 195
+popularity: 93
+danger: 25
+biome: grassland
+description: >-
+  Long-necked sauropod, gentle to the point of melancholy. Drinks the
+  lake dry on a hot day; the photo line wraps around the gift shop and
+  back.

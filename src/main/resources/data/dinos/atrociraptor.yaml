@@ -1,0 +1,15 @@
+id: atrociraptor
+display_name: Atrociraptor
+category: dinosaur
+rarity: rare
+era: Late Cretaceous
+tier: 3
+base_cost: 2400
+base_income_per_hour: 90
+popularity: 82
+danger: 80
+biome: desert
+description: >-
+  Stockier and meaner than its raptor cousins, with a heat-tolerant
+  build. Trainable in theory; in practice the trainer signs a longer
+  liability waiver.

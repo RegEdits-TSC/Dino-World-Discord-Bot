@@ -1,0 +1,15 @@
+id: indoraptor
+display_name: Indoraptor
+category: dinosaur
+rarity: mythic
+era: Modern (engineered)
+tier: 5
+base_cost: 49000
+base_income_per_hour: 1420
+popularity: 99
+danger: 100
+biome: mountain
+description: >-
+  Smaller than the indominus, twice as deliberate. Engineered for command
+  response that never quite worked the way the brochure claimed. Two
+  guards on the door, one finger near the panic button.

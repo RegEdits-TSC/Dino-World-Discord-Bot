@@ -1,0 +1,15 @@
+id: indominus_rex
+display_name: Indominus Rex
+category: dinosaur
+rarity: mythic
+era: Modern (engineered)
+tier: 5
+base_cost: 52000
+base_income_per_hour: 1500
+popularity: 100
+danger: 100
+biome: forest
+description: >-
+  Lab-built apex hybrid with theropod bones, raptor cunning, and a
+  thermal-camouflage trick the genetics team didn't list on the spec
+  sheet. Containment costs are not a budget line — they are the budget.

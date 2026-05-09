@@ -1,0 +1,14 @@
+id: pyroraptor
+display_name: Pyroraptor
+category: dinosaur
+rarity: uncommon
+era: Late Cretaceous
+tier: 2
+base_cost: 600
+base_income_per_hour: 30
+popularity: 72
+danger: 55
+biome: mountain
+description: >-
+  Fully feathered raptor adapted to cold, rocky terrain. Swims
+  surprisingly well, climbs better than the perimeter signage suggests.
