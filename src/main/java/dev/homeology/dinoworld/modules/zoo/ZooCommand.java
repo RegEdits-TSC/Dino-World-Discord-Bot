@@ -78,6 +78,12 @@ public final class ZooCommand implements Command {
 	}
 
 	@Override
+	public boolean deferEphemeral() {
+		// Park dashboard is meant to be visible in-channel.
+		return false;
+	}
+
+	@Override
 	public void execute(SlashCommandInteractionEvent event, CommandContext ctx) {
 		long userId = event.getUser().getIdLong();
 		Player p = players.ensure(userId, event.getUser().getEffectiveName());
@@ -91,8 +97,8 @@ public final class ZooCommand implements Command {
 		Embeds.brand(embed, event.getJDA());
 
 		Button[] btns = buttonRow();
-		event.replyEmbeds(embed.build())
-			.addComponents(ActionRow.of(btns[0], btns[1], btns[2], btns[3]))
+		event.getHook().editOriginalEmbeds(embed.build())
+			.setComponents(ActionRow.of(btns[0], btns[1], btns[2], btns[3]))
 			.queue();
 	}
 

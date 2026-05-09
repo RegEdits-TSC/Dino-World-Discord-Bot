@@ -77,9 +77,9 @@ public final class FeedCommand implements Command {
 
 		List<DinoInstance> owned = dinos.findByOwner(userId);
 		if (owned.isEmpty()) {
-			event.replyEmbeds(Embeds.warning("No dinos to feed",
+			event.getHook().editOriginalEmbeds(Embeds.warning("No dinos to feed",
 				"Visit `/shop` and `/hatch` first.").build())
-				.setEphemeral(true).queue();
+				.queue();
 			return;
 		}
 
@@ -98,9 +98,9 @@ public final class FeedCommand implements Command {
 			"Pick from the dropdown below. Each dino has a "
 				+ COOLDOWN_HOURS + "-hour cooldown after feeding.");
 		Embeds.brand(embed, event.getJDA());
-		event.replyEmbeds(embed.build())
-			.addComponents(ActionRow.of(sel.build()))
-			.setEphemeral(true).queue();
+		event.getHook().editOriginalEmbeds(embed.build())
+			.setComponents(ActionRow.of(sel.build()))
+			.queue();
 	}
 
 	// ─── helpers shared with the component handler ───────────────────────

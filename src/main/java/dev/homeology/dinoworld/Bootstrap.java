@@ -216,7 +216,6 @@ public final class Bootstrap {
 			gate,
 			rateLimiter,
 			baseContext,
-			s1.scheduler,
 			s1.commandExecutor,
 			s1.metrics,
 			s1.config);

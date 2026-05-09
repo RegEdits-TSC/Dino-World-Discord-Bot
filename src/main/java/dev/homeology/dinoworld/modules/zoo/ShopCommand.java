@@ -7,7 +7,6 @@ import dev.homeology.dinoworld.modules.players.PlayerService;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
-import net.dv8tion.jda.api.requests.restaction.interactions.ReplyCallbackAction;
 import net.dv8tion.jda.api.utils.FileUpload;
 
 import java.util.Optional;
@@ -66,12 +65,11 @@ public final class ShopCommand implements Command {
 		players.ensure(userId, event.getUser().getEffectiveName());
 
 		ShopUI.View view = ShopUI.render(DEFAULT_TIER, userId, players, rarities, catalog, enclosures);
-		ReplyCallbackAction reply = event.replyEmbeds(view.embed().build())
-			.addComponents(view.components())
-			.setEphemeral(true);
+		var reply = event.getHook().editOriginalEmbeds(view.embed().build())
+			.setComponents(view.components());
 
 		Optional<FileUpload> file = ShopUI.imageAttachment(DEFAULT_TIER, images);
-		file.ifPresent(reply::addFiles);
+		file.ifPresent(f -> reply.setFiles(f));
 		reply.queue();
 	}
 }

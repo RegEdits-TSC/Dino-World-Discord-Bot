@@ -66,14 +66,14 @@ public final class HatchCommand implements Command {
 		try {
 			if (idOpt != null) {
 				EggService.HatchResult r = eggs.hatch(userId, idOpt.getAsLong());
-				event.replyEmbeds(buildSingleEmbed(r, event).build()).queue();
+				event.getHook().editOriginalEmbeds(buildSingleEmbed(r, event).build()).queue();
 			} else {
 				List<EggService.HatchResult> results = eggs.hatchAllReady(userId);
-				event.replyEmbeds(buildBulkEmbed(results, event).build()).queue();
+				event.getHook().editOriginalEmbeds(buildBulkEmbed(results, event).build()).queue();
 			}
 		} catch (GameException ex) {
-			event.replyEmbeds(Embeds.warning(ex.userTitle(), ex.getMessage()).build())
-				.setEphemeral(true).queue();
+			event.getHook().editOriginalEmbeds(Embeds.warning(ex.userTitle(), ex.getMessage()).build())
+				.queue();
 		}
 	}
 

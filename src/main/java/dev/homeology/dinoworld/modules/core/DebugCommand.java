@@ -386,7 +386,7 @@ public final class DebugCommand extends ListenerAdapter implements Command {
 	private void doSystemRestart(SlashCommandInteractionEvent event) {
 		EmbedBuilder embed = Embeds.warning("Restarting", "The bot will be back shortly.");
 		Embeds.brand(embed, event.getJDA());
-		event.replyEmbeds(embed.build()).setEphemeral(true).queue(
+		event.getHook().editOriginalEmbeds(embed.build()).queue(
 			ok -> lifecycle.restart(),
 			err -> lifecycle.restart());
 	}
@@ -394,7 +394,7 @@ public final class DebugCommand extends ListenerAdapter implements Command {
 	private void doSystemShutdown(SlashCommandInteractionEvent event) {
 		EmbedBuilder embed = Embeds.warning("Shutting down", "Goodbye.");
 		Embeds.brand(embed, event.getJDA());
-		event.replyEmbeds(embed.build()).setEphemeral(true).queue(
+		event.getHook().editOriginalEmbeds(embed.build()).queue(
 			ok -> lifecycle.shutdown(dev.homeology.dinoworld.lifecycle.ExitCodes.OK),
 			err -> lifecycle.shutdown(dev.homeology.dinoworld.lifecycle.ExitCodes.OK));
 	}
@@ -526,12 +526,10 @@ public final class DebugCommand extends ListenerAdapter implements Command {
 	// ─── helpers ─────────────────────────────────────────────────────────
 
 	private void replyEmbed(SlashCommandInteractionEvent event, EmbedBuilder embed) {
+		// Router defers every command up front, so the interaction is always
+		// acknowledged here — fill the deferred slot.
 		Embeds.brand(embed, event.getJDA());
-		if (event.isAcknowledged()) {
-			event.getHook().sendMessageEmbeds(embed.build()).setEphemeral(true).queue();
-		} else {
-			event.replyEmbeds(embed.build()).setEphemeral(true).queue();
-		}
+		event.getHook().editOriginalEmbeds(embed.build()).queue();
 	}
 
 	// ─── autocomplete for <logger> ───────────────────────────────────────

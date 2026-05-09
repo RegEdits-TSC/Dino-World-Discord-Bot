@@ -83,8 +83,8 @@ public final class EnclosuresCommand implements Command {
 		Player p = players.ensure(userId, event.getUser().getEffectiveName());
 
 		Rendered r = renderList(p);
-		var reply = event.replyEmbeds(r.embed.build()).setEphemeral(true);
-		if (!r.components.isEmpty()) reply.addComponents(r.components);
+		var reply = event.getHook().editOriginalEmbeds(r.embed.build());
+		if (!r.components.isEmpty()) reply.setComponents(r.components);
 		reply.queue();
 	}
 
