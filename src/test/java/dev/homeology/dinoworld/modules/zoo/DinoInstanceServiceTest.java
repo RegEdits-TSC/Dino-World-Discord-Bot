@@ -135,6 +135,29 @@ class DinoInstanceServiceTest {
 	}
 
 	@Test
+	void renameUpdatesCustomName() {
+		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.empty(), null);
+		assertTrue(dinos.rename(d.id(), "Sharptooth"));
+		assertEquals("Sharptooth",
+			dinos.findById(d.id()).orElseThrow().customName().orElseThrow());
+	}
+
+	@Test
+	void renameTrimsAndAcceptsClearViaBlank() {
+		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.empty(), "Original");
+		assertTrue(dinos.rename(d.id(), "  Trimmed  "));
+		assertEquals("Trimmed",
+			dinos.findById(d.id()).orElseThrow().customName().orElseThrow());
+		assertTrue(dinos.rename(d.id(), "   "), "blank input should clear");
+		assertTrue(dinos.findById(d.id()).orElseThrow().customName().isEmpty());
+	}
+
+	@Test
+	void renameUnknownReturnsFalse() {
+		assertFalse(dinos.rename(99999L, "nope"));
+	}
+
+	@Test
 	void resetFeedCooldownClearsTimestamp() {
 		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.empty(), null);
 		dinos.recordFed(d.id(), Instant.parse("2026-05-07T18:00:00Z"));

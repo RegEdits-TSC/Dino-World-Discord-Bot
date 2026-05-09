@@ -127,6 +127,28 @@ public final class DinoInstanceService {
 	}
 
 	/**
+	 * Update the cosmetic custom name for one dino. Pass {@code null} or
+	 * a blank string to clear it (the row stores NULL, which surfaces as
+	 * {@code Optional.empty()} on read). The caller is responsible for
+	 * any length / character validation.
+	 *
+	 * @return {@code true} if a row was updated
+	 */
+	public boolean rename(long dinoId, String newName) {
+		String stored = (newName == null || newName.isBlank()) ? null : newName.trim();
+		try (Connection c = dataSource.getConnection();
+		     PreparedStatement ps = c.prepareStatement(
+			     "UPDATE dino_instance SET custom_name = ? WHERE id = ?")) {
+			if (stored == null) ps.setNull(1, java.sql.Types.VARCHAR);
+			else ps.setString(1, stored);
+			ps.setLong(2, dinoId);
+			return ps.executeUpdate() > 0;
+		} catch (SQLException e) {
+			throw new IllegalStateException("dino_instance rename(" + dinoId + ") failed", e);
+		}
+	}
+
+	/**
 	 * Permanently remove a dino (used by /sell). Returns true if a row was deleted.
 	 */
 	public boolean delete(long dinoId) {
