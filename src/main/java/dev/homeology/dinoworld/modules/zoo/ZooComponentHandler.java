@@ -4,6 +4,10 @@ import dev.homeology.dinoworld.command.CommandContext;
 import dev.homeology.dinoworld.command.ComponentHandler;
 import dev.homeology.dinoworld.modules.players.Player;
 import dev.homeology.dinoworld.modules.players.PlayerService;
+import dev.homeology.dinoworld.modules.zoo.issues.ZooIssue;
+import dev.homeology.dinoworld.modules.zoo.issues.ZooIssueRenderer;
+import dev.homeology.dinoworld.modules.zoo.issues.ZooIssueService;
+import dev.homeology.dinoworld.modules.zoo.model.DinoInstance;
 import dev.homeology.dinoworld.modules.zoo.model.Enclosure;
 import dev.homeology.dinoworld.util.Embeds;
 import net.dv8tion.jda.api.EmbedBuilder;
@@ -74,6 +78,7 @@ public final class ZooComponentHandler implements ComponentHandler {
 	private final DinoInstanceService dinos;
 	private final EnclosuresCommand enclosuresCommand;
 	private final MoveCommand moveCommand;
+	private final ZooIssueService issues;
 
 	public ZooComponentHandler(PlayerService players,
 	                           RarityCatalog rarities,
@@ -84,7 +89,8 @@ public final class ZooComponentHandler implements ComponentHandler {
 	                           EggsCommand eggsCommand,
 	                           DinoInstanceService dinos,
 	                           EnclosuresCommand enclosuresCommand,
-	                           MoveCommand moveCommand) {
+	                           MoveCommand moveCommand,
+	                           ZooIssueService issues) {
 		this.players = players;
 		this.rarities = rarities;
 		this.catalog = catalog;
@@ -95,6 +101,7 @@ public final class ZooComponentHandler implements ComponentHandler {
 		this.dinos = dinos;
 		this.enclosuresCommand = enclosuresCommand;
 		this.moveCommand = moveCommand;
+		this.issues = issues;
 	}
 
 	@Override
@@ -114,6 +121,7 @@ public final class ZooComponentHandler implements ComponentHandler {
 				case "sell" -> handleSell(event, rc, rest);
 				case "enclosures" -> handleEnclosures(event, rc, rest);
 				case "move" -> handleMove(event, rc, rest);
+				case "issues" -> handleIssues(event, rc, rest);
 				default -> {
 					log.debug("zoo: unknown category '{}'", category);
 					rc.reply("Unknown action.").setEphemeral(true).queue();
@@ -1100,6 +1108,138 @@ public final class ZooComponentHandler implements ComponentHandler {
 		editOrReply(event, rc, ack,
 			java.util.List.of(net.dv8tion.jda.api.components.actionrow.ActionRow.of(follow)),
 			java.util.Optional.empty());
+	}
+
+	// ─── issues ──────────────────────────────────────────────────────────
+
+	private void handleIssues(GenericInteractionCreateEvent event, IReplyCallback rc, String[] rest) {
+		if (rest.length == 0) {
+			rc.reply("Unknown issues action.").setEphemeral(true).queue();
+			return;
+		}
+		String action = rest[0];
+		switch (action) {
+			case "clear" -> issuesClear(event, rc);
+			case "clear-all" -> issuesClearAll(event, rc);
+			case "fix-feed" -> {
+				if (rest.length < 2) {
+					rc.reply("Missing dino id.").setEphemeral(true).queue();
+					return;
+				}
+				try {
+					issuesFixFeed(event, rc, Long.parseLong(rest[1]));
+				} catch (NumberFormatException nfe) {
+					rc.reply("Bad dino id.").setEphemeral(true).queue();
+				}
+			}
+			case "fix-move" -> {
+				if (rest.length < 2) {
+					rc.reply("Missing dino id.").setEphemeral(true).queue();
+					return;
+				}
+				try {
+					issuesFixMove(event, rc, Long.parseLong(rest[1]));
+				} catch (NumberFormatException nfe) {
+					rc.reply("Bad dino id.").setEphemeral(true).queue();
+				}
+			}
+			default -> rc.reply("Unknown issues action.").setEphemeral(true).queue();
+		}
+	}
+
+	private void issuesClear(GenericInteractionCreateEvent event, IReplyCallback rc) {
+		if (!(event instanceof StringSelectInteractionEvent sse) || sse.getValues().isEmpty()) {
+			rc.reply("No issue selected.").setEphemeral(true).queue();
+			return;
+		}
+		long userId = event.getUser().getIdLong();
+		long issueId;
+		try {
+			issueId = Long.parseLong(sse.getValues().get(0));
+		} catch (NumberFormatException nfe) {
+			rc.reply("Bad issue id.").setEphemeral(true).queue();
+			return;
+		}
+		// Owner check is inside resolve() — silently no-ops on cross-user attempts.
+		issues.resolve(issueId, userId);
+		rerenderIssues(event, rc, userId);
+	}
+
+	private void issuesClearAll(GenericInteractionCreateEvent event, IReplyCallback rc) {
+		long userId = event.getUser().getIdLong();
+		issues.resolveAllForOwner(userId);
+		rerenderIssues(event, rc, userId);
+	}
+
+	private void issuesFixFeed(GenericInteractionCreateEvent event, IReplyCallback rc, long dinoId) {
+		long userId = event.getUser().getIdLong();
+		DinoInstance d = dinos.findById(dinoId).orElse(null);
+		if (d == null || d.ownerUserId() != userId) {
+			replyError(rc, event, "Not your dino", "That dino doesn't belong to you.");
+			return;
+		}
+		java.time.Instant now = java.time.Instant.now();
+		if (FeedCommand.isOnCooldown(d, now)) {
+			java.time.Duration left = FeedCommand.cooldownRemaining(d, now);
+			replyError(rc, event, "On cooldown",
+				"Try again in " + (left.toHours() > 0 ? left.toHours() + "h " : "")
+					+ (left.toMinutesPart()) + "m.");
+			return;
+		}
+		dinos.recordFed(dinoId, now);
+		// Resolve immediately so the row vanishes on rerender — happiness sweep
+		// would do this on the next tick anyway, but waiting an hour is bad UX.
+		issues.resolveByMatch(userId, ZooIssue.Type.LOW_HAPPINESS,
+			java.util.Optional.of(IssueDetector.TARGET_DINO),
+			java.util.OptionalLong.of(dinoId));
+		rerenderIssues(event, rc, userId);
+	}
+
+	private void issuesFixMove(GenericInteractionCreateEvent event, IReplyCallback rc, long dinoId) {
+		long userId = event.getUser().getIdLong();
+		DinoInstance d = dinos.findById(dinoId).orElse(null);
+		if (d == null || d.ownerUserId() != userId) {
+			replyError(rc, event, "Not your dino", "That dino doesn't belong to you.");
+			return;
+		}
+		DinoSpecies species = catalog.byId(d.speciesId()).orElse(null);
+		if (species == null) {
+			replyError(rc, event, "Unknown species", "Catalog mismatch — contact the developer.");
+			return;
+		}
+		// Pick the first compatible enclosure: same biome preferred, otherwise
+		// any housing-compatible one with free space and adequate tier. This
+		// is a one-click "get them off the streets" — finer control via /move.
+		int requiredTier = EnclosureService.MIN_TIER_FOR_RARITY.getOrDefault(species.rarity(), 1);
+		java.util.List<Enclosure> candidates = enclosures.findByOwner(userId).stream()
+			.filter(e -> e.tier() >= requiredTier)
+			.filter(e -> Biome.canHouse(e.biome(), species.biome()))
+			.filter(e -> enclosures.slotsAvailable(e) > 0)
+			.sorted((a, b) -> {
+				boolean aMatch = a.biome().equalsIgnoreCase(species.biome());
+				boolean bMatch = b.biome().equalsIgnoreCase(species.biome());
+				if (aMatch != bMatch) return aMatch ? -1 : 1;
+				return Integer.compare(b.tier(), a.tier());
+			})
+			.toList();
+		if (candidates.isEmpty()) {
+			replyError(rc, event, "Nowhere to move",
+				"No enclosure with tier ≥ " + requiredTier
+					+ " and free space can house a " + species.biome()
+					+ " species. Build a " + species.biome() + " habitat in `/shop` first.");
+			return;
+		}
+		Enclosure dest = candidates.get(0);
+		dinos.assignToEnclosure(dinoId, java.util.OptionalLong.of(dest.id()));
+		issues.resolveByMatch(userId, ZooIssue.Type.HOMELESS_DINO,
+			java.util.Optional.of(IssueDetector.TARGET_DINO),
+			java.util.OptionalLong.of(dinoId));
+		rerenderIssues(event, rc, userId);
+	}
+
+	private void rerenderIssues(GenericInteractionCreateEvent event, IReplyCallback rc, long userId) {
+		ZooIssueRenderer.Rendered r = ZooIssueRenderer.render(issues.findOpenForOwner(userId));
+		editOrReply(event, rc, r.embed(), r.components(), Optional.empty());
 	}
 
 	// ─── shared helpers ──────────────────────────────────────────────────

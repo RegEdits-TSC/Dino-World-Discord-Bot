@@ -6,6 +6,9 @@ import dev.homeology.dinoworld.command.CommandContext;
 import dev.homeology.dinoworld.modules.players.LevelingService;
 import dev.homeology.dinoworld.modules.players.Player;
 import dev.homeology.dinoworld.modules.players.PlayerService;
+import dev.homeology.dinoworld.modules.zoo.issues.ZooIssue;
+import dev.homeology.dinoworld.modules.zoo.issues.ZooIssueRenderer;
+import dev.homeology.dinoworld.modules.zoo.issues.ZooIssueService;
 import dev.homeology.dinoworld.modules.zoo.model.DinoInstance;
 import dev.homeology.dinoworld.util.Embeds;
 import net.dv8tion.jda.api.EmbedBuilder;
@@ -14,31 +17,41 @@ import net.dv8tion.jda.api.components.buttons.Button;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
+import net.dv8tion.jda.api.interactions.commands.build.SubcommandData;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
 /**
- * {@code /zoo} — the player's park dashboard.
+ * {@code /zoo …} — the player's park surface, split into two subcommands:
  *
- * <p>Three behaviors keyed off player state:
+ * <ul>
+ *   <li>{@code /zoo dashboard} — public park summary (rating, income,
+ *       coins, level, enclosures). Shows a 🚨 / ⚠️ badge at the top when
+ *       there are open issues so the player notices without running the
+ *       issues command.</li>
+ *   <li>{@code /zoo issues} — ephemeral list of open warnings (low-happiness
+ *       dinos, homeless dinos, fired staff, wage runway low) with per-issue
+ *       Clear buttons and a Clear-all action.</li>
+ * </ul>
+ *
+ * <p>Dashboard has three render states keyed off player state:
  * <ol>
  *   <li><b>First run</b> — within {@link #JUST_CREATED_THRESHOLD} of the
- *       player row's creation, render a welcome embed listing 2–3 things
- *       to try next.</li>
+ *       player row's creation, render a welcome embed.</li>
  *   <li><b>Returning, no dinos</b> — show the park embed with empty stats
  *       and prompt to visit the shop.</li>
- *   <li><b>Returning, has park</b> — render the real summary: rating with
- *       breakdown, hourly income (rate × happiness), coin balance, level
- *       + XP-to-next, slot count, dino count, enclosure count.</li>
+ *   <li><b>Returning, has park</b> — render the real summary.</li>
  * </ol>
- *
- * <p>The buttons below the embed are uniform across cases — Shop, Eggs,
- * and Feed-all — so the player always has a one-click path to the next
- * action regardless of state.
  */
 public final class ZooCommand implements Command {
+
+	/** Subcommand name for the existing park-summary view. */
+	public static final String SUB_DASHBOARD = "dashboard";
+
+	/** Subcommand name for the issues list. */
+	public static final String SUB_ISSUES = "issues";
 
 	/**
 	 * Window after creation during which a player is treated as new and
@@ -52,24 +65,30 @@ public final class ZooCommand implements Command {
 	private final EnclosureService enclosures;
 	private final ParkRatingService rating;
 	private final LevelingService leveling;
+	private final ZooIssueService issues;
 
 	public ZooCommand(PlayerService players,
 	                  DinoCatalog catalog,
 	                  DinoInstanceService dinos,
 	                  EnclosureService enclosures,
 	                  ParkRatingService rating,
-	                  LevelingService leveling) {
+	                  LevelingService leveling,
+	                  ZooIssueService issues) {
 		this.players = players;
 		this.catalog = catalog;
 		this.dinos = dinos;
 		this.enclosures = enclosures;
 		this.rating = rating;
 		this.leveling = leveling;
+		this.issues = issues;
 	}
 
 	@Override
 	public SlashCommandData slashData() {
-		return Commands.slash("zoo", "View your dinosaur park.");
+		return Commands.slash("zoo", "View your dinosaur park.")
+			.addSubcommands(
+				new SubcommandData(SUB_DASHBOARD, "Show your park summary."),
+				new SubcommandData(SUB_ISSUES, "List warnings about your zoo."));
 	}
 
 	@Override
@@ -78,17 +97,32 @@ public final class ZooCommand implements Command {
 	}
 
 	@Override
-	public boolean deferEphemeral() {
-		// Park dashboard is meant to be visible in-channel.
-		return false;
+	public boolean deferEphemeral(String subcommandName) {
+		// Dashboard stays public (current behavior); issues is private to the player.
+		return SUB_ISSUES.equals(subcommandName);
 	}
 
 	@Override
 	public void execute(SlashCommandInteractionEvent event, CommandContext ctx) {
 		long userId = event.getUser().getIdLong();
-		Player p = players.ensure(userId, event.getUser().getEffectiveName());
-		// Auto-create the starter enclosure on first contact.
+		players.ensure(userId, event.getUser().getEffectiveName());
+		// Auto-create the starter enclosure on first contact, regardless of subcommand.
 		enclosures.ensureStarter(userId);
+
+		String sub = event.getSubcommandName();
+		if (SUB_ISSUES.equals(sub)) {
+			handleIssues(event, userId);
+		} else {
+			// Default to dashboard for safety — Discord shouldn't send null
+			// for a subcommand-only command, but be defensive.
+			handleDashboard(event, userId);
+		}
+	}
+
+	// ─── dashboard ───────────────────────────────────────────────────────
+
+	private void handleDashboard(SlashCommandInteractionEvent event, long userId) {
+		Player p = players.get(userId).orElseThrow();
 
 		boolean isNew = Duration.between(p.createdAt(), Instant.now())
 			.compareTo(JUST_CREATED_THRESHOLD) <= 0;
@@ -101,8 +135,6 @@ public final class ZooCommand implements Command {
 			.setComponents(ActionRow.of(btns[0], btns[1], btns[2], btns[3]))
 			.queue();
 	}
-
-	// ─── embeds ──────────────────────────────────────────────────────────
 
 	private static EmbedBuilder welcomeEmbed(Player p) {
 		return Embeds.success("🦖  Welcome to your park, " + p.displayName() + "!",
@@ -134,7 +166,16 @@ public final class ZooCommand implements Command {
 			: "**Park rating: " + r.rating() + "** _("
 				+ formatPercent(r.varietyBonus()) + " variety, "
 				+ formatPercent(r.tierBalanceBonus()) + " tier balance, "
-				+ (r.allBiomesMatch() ? "+10% biome match" : "biome match locked") + ")_";
+				+ (r.allBiomesMatch() ? "+10% biome match" : "biome match locked")
+				+ (r.issuePenalty() > 0
+					? ", −" + Math.round(r.issuePenalty() * 100) + "% issues"
+					: "")
+				+ ")_";
+
+		// Issue badge — surfaces unresolved problems on the dashboard so
+		// the player notices without running /zoo issues. Critical wins icon.
+		String badge = issueBadge(p.userId());
+		if (!badge.isEmpty()) description = badge + "\n" + description;
 
 		EmbedBuilder b = Embeds.info("🦖  " + p.displayName() + "'s park", description);
 		b.addField("Coins", String.valueOf(p.coins()), true);
@@ -146,8 +187,6 @@ public final class ZooCommand implements Command {
 		b.addField("Incubation slots", String.valueOf(slots), true);
 		b.addField("​", "​", true); // spacer for grid alignment
 
-		// One-line summary of each enclosure — keeps the embed scannable
-		// without bloating it. Detailed view is /enclosures.
 		if (!ownedEnclosures.isEmpty()) {
 			StringBuilder summary = new StringBuilder();
 			for (var e : ownedEnclosures) {
@@ -166,6 +205,16 @@ public final class ZooCommand implements Command {
 		return b;
 	}
 
+	private String issueBadge(long userId) {
+		if (issues == null) return "";
+		int total = issues.countOpenForOwner(userId);
+		if (total == 0) return "";
+		int criticals = issues.countOpenForOwner(userId, ZooIssue.Severity.CRITICAL);
+		String icon = criticals > 0 ? "🚨" : "⚠️";
+		return icon + " **" + total + " open issue" + (total == 1 ? "" : "s")
+			+ "** — run `/zoo issues`";
+	}
+
 	private long computeIncomePerHour(List<DinoInstance> ownedDinos) {
 		long total = 0L;
 		for (DinoInstance d : ownedDinos) {
@@ -181,8 +230,6 @@ public final class ZooCommand implements Command {
 		return (pct >= 0 ? "+" : "") + pct + "%";
 	}
 
-	// ─── buttons ─────────────────────────────────────────────────────────
-
 	private static Button[] buttonRow() {
 		return new Button[]{
 			Button.primary(ZooComponentHandler.NAMESPACE + ":" + ZooComponentHandler.ACTION_SHOP_OPEN, "Shop"),
@@ -190,5 +237,17 @@ public final class ZooCommand implements Command {
 			Button.secondary(ZooComponentHandler.NAMESPACE + ":" + ZooComponentHandler.ACTION_ENCLOSURES_OPEN, "Enclosures"),
 			Button.success(ZooComponentHandler.NAMESPACE + ":" + ZooComponentHandler.ACTION_FEED_BULK, "Feed all")
 		};
+	}
+
+	// ─── issues ──────────────────────────────────────────────────────────
+
+	private void handleIssues(SlashCommandInteractionEvent event, long userId) {
+		List<ZooIssue> open = issues.findOpenForOwner(userId);
+		ZooIssueRenderer.Rendered r = ZooIssueRenderer.render(open);
+		Embeds.brand(r.embed(), event.getJDA());
+
+		var reply = event.getHook().editOriginalEmbeds(r.embed().build());
+		if (!r.components().isEmpty()) reply.setComponents(r.components());
+		reply.queue();
 	}
 }

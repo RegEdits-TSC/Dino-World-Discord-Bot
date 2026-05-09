@@ -3,6 +3,7 @@ package dev.homeology.dinoworld.modules.staff;
 import dev.homeology.dinoworld.modules.notify.NotificationService;
 import dev.homeology.dinoworld.modules.players.Player;
 import dev.homeology.dinoworld.modules.players.PlayerService;
+import dev.homeology.dinoworld.modules.zoo.IssueDetector;
 import dev.homeology.dinoworld.util.Embeds;
 import net.dv8tion.jda.api.EmbedBuilder;
 import org.slf4j.Logger;
@@ -51,27 +52,40 @@ public final class StaffWagesTickService {
 	private final StaffCatalog catalog;
 	private final PlayerService players;
 	private final NotificationService notify;
+	private final IssueDetector issueDetector;
 	private final Clock clock;
 
 	public StaffWagesTickService(StaffMemberService staff,
 	                             StaffCatalog catalog,
 	                             PlayerService players,
 	                             NotificationService notify) {
-		this(staff, catalog, players, notify, Clock.systemUTC());
+		this(staff, catalog, players, notify, null, Clock.systemUTC());
 	}
 
 	/**
 	 * Test seam — inject a fixed clock for deterministic last_paid_at.
+	 * {@code issueDetector} may be null in unit tests that don't care
+	 * about the issues table; production wiring always provides it.
 	 */
 	public StaffWagesTickService(StaffMemberService staff,
 	                             StaffCatalog catalog,
 	                             PlayerService players,
 	                             NotificationService notify,
 	                             Clock clock) {
+		this(staff, catalog, players, notify, null, clock);
+	}
+
+	public StaffWagesTickService(StaffMemberService staff,
+	                             StaffCatalog catalog,
+	                             PlayerService players,
+	                             NotificationService notify,
+	                             IssueDetector issueDetector,
+	                             Clock clock) {
 		this.staff = staff;
 		this.catalog = catalog;
 		this.players = players;
 		this.notify = notify;
+		this.issueDetector = issueDetector;
 		this.clock = clock;
 	}
 
@@ -117,6 +131,10 @@ public final class StaffWagesTickService {
 			for (StaffMember m : roster) staff.markPaid(m.id(), now);
 			log.info("wages.tick: paid {} coins for {} staff to user={}",
 				totalDue, roster.size(), userId);
+			// Roster is intact — assess runway against the still-full wage bill.
+			if (issueDetector != null) {
+				issueDetector.applyWageRunwayIssue(userId, balance - totalDue, totalDue);
+			}
 			return;
 		}
 
@@ -140,12 +158,15 @@ public final class StaffWagesTickService {
 			survivingDue = 0;
 		}
 
-		// Apply firings: ledger entry first, then DM, then delete the row.
+		// Apply firings: ledger entry first, then DM + issue snapshot, then delete the row.
 		for (StaffMember m : fired) {
 			StaffRole r = catalog.byId(m.roleId()).orElse(null);
 			String roleLabel = r == null ? m.roleId() : r.displayName();
 			players.addCoins(userId, 0, LEDGER_UNPAID_PREFIX + m.roleId(), null);
 			scheduleQuitDm(userId, roleLabel, m.customName());
+			if (issueDetector != null) {
+				issueDetector.recordStaffQuit(userId, roleLabel, m.customName(), m.id());
+			}
 			staff.delete(m.id());
 		}
 
@@ -158,6 +179,12 @@ public final class StaffWagesTickService {
 		}
 		log.info("wages.tick: user={} could not afford {} wages — fired {} (highest-wage-first), paid {} survivors {} coins",
 			userId, totalDue, fired.size(), roster.size() - fired.size(), survivingDue);
+
+		// Reassess runway against the surviving wage bill — could be 0 (everyone fired).
+		if (issueDetector != null) {
+			long balanceAfter = players.get(userId).map(Player::coins).orElse(balance - survivingDue);
+			issueDetector.applyWageRunwayIssue(userId, balanceAfter, survivingDue);
+		}
 	}
 
 	private long wageOf(StaffMember m) {

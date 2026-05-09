@@ -60,35 +60,39 @@ public final class HappinessTickService {
 	private final EnclosureService enclosures;
 	private final DinoCatalog catalog;
 	private final StaffEffectsService staffEffects;
+	private final IssueDetector issueDetector;
 	private final Clock clock;
 
 	public HappinessTickService(DinoInstanceService dinos,
 	                            EnclosureService enclosures,
 	                            DinoCatalog catalog) {
-		this(dinos, enclosures, catalog, null, Clock.systemUTC());
+		this(dinos, enclosures, catalog, null, null, Clock.systemUTC());
 	}
 
 	public HappinessTickService(DinoInstanceService dinos,
 	                            EnclosureService enclosures,
 	                            DinoCatalog catalog,
 	                            StaffEffectsService staffEffects) {
-		this(dinos, enclosures, catalog, staffEffects, Clock.systemUTC());
+		this(dinos, enclosures, catalog, staffEffects, null, Clock.systemUTC());
 	}
 
 	/**
 	 * Test seam — inject a fixed clock for deterministic last_decay_at.
 	 * {@code staffEffects} may be null when the staff module is disabled,
-	 * in which case decay is unmodified.
+	 * in which case decay is unmodified. {@code issueDetector} may be
+	 * null in unit tests that don't care about the issues sweep.
 	 */
 	public HappinessTickService(DinoInstanceService dinos,
 	                            EnclosureService enclosures,
 	                            DinoCatalog catalog,
 	                            StaffEffectsService staffEffects,
+	                            IssueDetector issueDetector,
 	                            Clock clock) {
 		this.dinos = dinos;
 		this.enclosures = enclosures;
 		this.catalog = catalog;
 		this.staffEffects = staffEffects;
+		this.issueDetector = issueDetector;
 		this.clock = clock;
 	}
 
@@ -101,7 +105,7 @@ public final class HappinessTickService {
 	                            EnclosureService enclosures,
 	                            DinoCatalog catalog,
 	                            Clock clock) {
-		this(dinos, enclosures, catalog, null, clock);
+		this(dinos, enclosures, catalog, null, null, clock);
 	}
 
 	public void runOnce() {
@@ -126,6 +130,12 @@ public final class HappinessTickService {
 			touched++;
 		}
 		log.info("happiness.tick advanced {} dino(s)", touched);
+
+		// Issue sweep runs after decay so the threshold check sees this
+		// tick's happiness. Re-fetch to get the post-update values.
+		if (issueDetector != null) {
+			issueDetector.applyHappinessIssues(dinos.findAll());
+		}
 	}
 
 	/**

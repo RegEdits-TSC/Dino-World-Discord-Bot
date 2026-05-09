@@ -65,6 +65,24 @@ public interface Command {
 	}
 
 	/**
+	 * Subcommand-aware variant called by {@link CommandRouter} when a
+	 * slash command has subcommands (e.g. {@code /zoo dashboard}). The
+	 * default delegates to {@link #deferEphemeral()} so single-command
+	 * implementations don't need to know about this overload.
+	 *
+	 * <p>Override this when one subcommand should be public and another
+	 * ephemeral — e.g. {@code /zoo dashboard} stays in-channel but
+	 * {@code /zoo issues} is private to the player.
+	 *
+	 * @param subcommandName the subcommand from
+	 *                       {@code event.getSubcommandName()}; may be
+	 *                       {@code null} for commands without subcommands
+	 */
+	default boolean deferEphemeral(String subcommandName) {
+		return deferEphemeral();
+	}
+
+	/**
 	 * @return the bucket this command appears under in {@code /help}.
 	 * Defaults to {@link CommandCategory#GENERAL}; developer-only
 	 * commands should override to {@link CommandCategory#DEVELOPER}

@@ -67,6 +67,30 @@ public final class IncomeTickService {
 	}
 
 	/**
+	 * Compute the per-hour income one player would earn this tick — the
+	 * sum across owned dinos of {@code species.baseIncomePerHour ×
+	 * dino.happiness / 100}, scaled by the player's Marketer multiplier
+	 * (1.0 if no Marketer is hired).
+	 *
+	 * <p>Pure derivation; does not write to the ledger or mutate state.
+	 * Used by {@code IssueDetector.applyWageRunwayIssue} to project
+	 * whether income offsets wages.
+	 */
+	public long computeIncomeFor(long userId) {
+		long base = 0L;
+		for (DinoInstance d : dinos.findByOwner(userId)) {
+			Optional<DinoSpecies> speciesOpt = catalog.byId(d.speciesId());
+			if (speciesOpt.isEmpty()) continue;
+			long contribution = speciesOpt.get().baseIncomePerHour() * d.happiness() / 100L;
+			if (contribution <= 0) continue;
+			base += contribution;
+		}
+		if (base == 0) return 0L;
+		double mult = staffEffects == null ? 1.0 : staffEffects.incomeMultiplier(userId);
+		return mult == 1.0 ? base : Math.round(base * mult);
+	}
+
+	/**
 	 * Aggregate one hour of income across all dinos and commit per-player.
 	 */
 	public void runOnce() {
