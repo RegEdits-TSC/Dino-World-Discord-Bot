@@ -163,6 +163,21 @@ class TickSchedulerTest {
 		}
 	}
 
+	// ─── interval formatter ──────────────────────────────────────────────
+
+	@Test
+	void formatIntervalEmitsCompactHumanForm() {
+		assertEquals("30s", TickScheduler.formatInterval(Duration.ofSeconds(30)));
+		assertEquals("5m",  TickScheduler.formatInterval(Duration.ofMinutes(5)));
+		assertEquals("1h",  TickScheduler.formatInterval(Duration.ofHours(1)));
+		assertEquals("24h", TickScheduler.formatInterval(Duration.ofHours(24)));
+		assertEquals("1h 30m", TickScheduler.formatInterval(Duration.ofMinutes(90)));
+		assertEquals("2m 10s", TickScheduler.formatInterval(Duration.ofSeconds(130)));
+		assertEquals("0s",  TickScheduler.formatInterval(Duration.ZERO));
+		assertEquals("0s",  TickScheduler.formatInterval(null));
+		assertEquals("0s",  TickScheduler.formatInterval(Duration.ofSeconds(-1)));
+	}
+
 	private Instant readLastTick(String name) {
 		try (Connection c = ds.getConnection();
 		     PreparedStatement ps = c.prepareStatement(

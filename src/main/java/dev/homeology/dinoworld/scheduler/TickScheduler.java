@@ -107,7 +107,7 @@ public final class TickScheduler {
 		Instant earliest = now.minus(MAX_BACKFILL);
 		if (last.isBefore(earliest)) {
 			log.info("Job '{}' last_tick_at {} is older than MAX_BACKFILL ({}); capping",
-				jobName, last, MAX_BACKFILL);
+				jobName, last, formatInterval(MAX_BACKFILL));
 			last = earliest;
 		}
 
@@ -135,8 +135,34 @@ public final class TickScheduler {
 		registeredJobs.add(jobName);
 
 		log.info("Registered tick job '{}' interval={} (back-filled {} tick(s))",
-			jobName, interval, catchUp);
+			jobName, formatInterval(interval), catchUp);
 		return catchUp;
+	}
+
+	/**
+	 * Render a {@link Duration} in compact human form ({@code 30s},
+	 * {@code 5m}, {@code 1h}, {@code 1h 30m}, {@code 24h}) for log output.
+	 * Avoids the ISO-8601 default ({@code PT30S}, {@code PT1H}) that
+	 * shows up when a {@code Duration} is passed through SLF4J's {@code {}}.
+	 *
+	 * <p>Package-private so {@link TickSchedulerTest} can pin the format.
+	 */
+	static String formatInterval(Duration d) {
+		if (d == null || d.isZero() || d.isNegative()) return "0s";
+		long h = d.toHours();
+		long m = d.toMinutesPart();
+		long s = d.toSecondsPart();
+		StringBuilder sb = new StringBuilder();
+		if (h > 0) {
+			sb.append(h).append('h');
+			if (m > 0) sb.append(' ').append(m).append('m');
+		} else if (m > 0) {
+			sb.append(m).append('m');
+			if (s > 0) sb.append(' ').append(s).append('s');
+		} else {
+			sb.append(s).append('s');
+		}
+		return sb.toString();
 	}
 
 	/**
