@@ -1,6 +1,7 @@
 package dev.homeology.dinoworld.modules.zoo;
 
 import dev.homeology.dinoworld.modules.players.PlayerService;
+import dev.homeology.dinoworld.modules.staff.StaffEffectsService;
 import dev.homeology.dinoworld.modules.zoo.model.DinoInstance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,13 +44,26 @@ public final class IncomeTickService {
 	private final DinoInstanceService dinos;
 	private final DinoCatalog catalog;
 	private final PlayerService players;
+	private final StaffEffectsService staffEffects;
 
 	public IncomeTickService(DinoInstanceService dinos,
 	                         DinoCatalog catalog,
 	                         PlayerService players) {
+		this(dinos, catalog, players, null);
+	}
+
+	/**
+	 * {@code staffEffects} may be null when the staff module is disabled,
+	 * in which case income is not modified.
+	 */
+	public IncomeTickService(DinoInstanceService dinos,
+	                         DinoCatalog catalog,
+	                         PlayerService players,
+	                         StaffEffectsService staffEffects) {
 		this.dinos = dinos;
 		this.catalog = catalog;
 		this.players = players;
+		this.staffEffects = staffEffects;
 	}
 
 	/**
@@ -71,10 +85,22 @@ public final class IncomeTickService {
 			log.debug("income.tick: no positive contributions");
 			return;
 		}
+		long totalCredited = 0;
+		int credited = 0;
 		for (Map.Entry<Long, Long> e : perPlayer.entrySet()) {
-			players.addCoins(e.getKey(), e.getValue(), LEDGER_REASON, null);
+			long payout = e.getValue();
+			// Marketer effect: scale per-player payout by their income
+			// multiplier (1.0 if no marketer is employed).
+			if (staffEffects != null) {
+				double mult = staffEffects.incomeMultiplier(e.getKey());
+				if (mult != 1.0) payout = Math.round(payout * mult);
+			}
+			if (payout > 0) {
+				players.addCoins(e.getKey(), payout, LEDGER_REASON, null);
+				totalCredited += payout;
+				credited++;
+			}
 		}
-		log.info("income.tick credited {} player(s) total {} coins",
-			perPlayer.size(), perPlayer.values().stream().mapToLong(Long::longValue).sum());
+		log.info("income.tick credited {} player(s) total {} coins", credited, totalCredited);
 	}
 }

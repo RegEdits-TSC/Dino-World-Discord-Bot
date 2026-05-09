@@ -1,5 +1,6 @@
 package dev.homeology.dinoworld.modules.zoo;
 
+import dev.homeology.dinoworld.modules.staff.StaffEffectsService;
 import dev.homeology.dinoworld.modules.zoo.model.DinoInstance;
 import dev.homeology.dinoworld.modules.zoo.model.Enclosure;
 import org.slf4j.Logger;
@@ -58,25 +59,49 @@ public final class HappinessTickService {
 	private final DinoInstanceService dinos;
 	private final EnclosureService enclosures;
 	private final DinoCatalog catalog;
+	private final StaffEffectsService staffEffects;
 	private final Clock clock;
 
 	public HappinessTickService(DinoInstanceService dinos,
 	                            EnclosureService enclosures,
 	                            DinoCatalog catalog) {
-		this(dinos, enclosures, catalog, Clock.systemUTC());
+		this(dinos, enclosures, catalog, null, Clock.systemUTC());
+	}
+
+	public HappinessTickService(DinoInstanceService dinos,
+	                            EnclosureService enclosures,
+	                            DinoCatalog catalog,
+	                            StaffEffectsService staffEffects) {
+		this(dinos, enclosures, catalog, staffEffects, Clock.systemUTC());
 	}
 
 	/**
 	 * Test seam — inject a fixed clock for deterministic last_decay_at.
+	 * {@code staffEffects} may be null when the staff module is disabled,
+	 * in which case decay is unmodified.
+	 */
+	public HappinessTickService(DinoInstanceService dinos,
+	                            EnclosureService enclosures,
+	                            DinoCatalog catalog,
+	                            StaffEffectsService staffEffects,
+	                            Clock clock) {
+		this.dinos = dinos;
+		this.enclosures = enclosures;
+		this.catalog = catalog;
+		this.staffEffects = staffEffects;
+		this.clock = clock;
+	}
+
+	/**
+	 * Backwards-compatible 4-arg constructor for the existing test that
+	 * passes {@code (dinos, enclosures, catalog, clock)} positionally —
+	 * keeps the suite green without rewriting it.
 	 */
 	public HappinessTickService(DinoInstanceService dinos,
 	                            EnclosureService enclosures,
 	                            DinoCatalog catalog,
 	                            Clock clock) {
-		this.dinos = dinos;
-		this.enclosures = enclosures;
-		this.catalog = catalog;
-		this.clock = clock;
+		this(dinos, enclosures, catalog, null, clock);
 	}
 
 	public void runOnce() {
@@ -89,6 +114,13 @@ public final class HappinessTickService {
 		int touched = 0;
 		for (DinoInstance d : all) {
 			int decay = decayFor(d, enclosureById);
+			// Vet effect: apply per-enclosure decay multiplier (1.0 if no vet,
+			// 0.5 with at least one vet). Defaulted to 1.0 when staff module
+			// is disabled.
+			if (staffEffects != null && d.enclosureId().isPresent()) {
+				double mult = staffEffects.happinessDecayMultiplier(d.enclosureId().getAsLong());
+				decay = (int) Math.round(decay * mult);
+			}
 			int newHappiness = Math.max(0, d.happiness() - decay);
 			dinos.applyHappiness(d.id(), newHappiness, now);
 			touched++;

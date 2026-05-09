@@ -11,12 +11,36 @@ policy.
 ## [Unreleased]
 
 ### Added
-- _Track here as work lands on `main` between releases._
+- New `staff` module with four hireable NPC roles (data-driven via
+  `data/staff/roles.yaml`):
+  - **Zookeeper** — auto-feeds the lowest-happiness dinos in an
+    enclosure each hour, bypassing the human feed cooldown; capacity
+    stacks across multiple zookeepers.
+  - **Vet** — halves happiness decay in the assigned enclosure.
+  - **Scientist** — multiplicative incubation speedup at egg purchase
+    (0.75× per hire, floored at 0.5×).
+  - **Marketer** — additive boost to dino hourly income (+15% per
+    hire, capped at +45%).
+- `/staff list|hire|fire|assign|rename|roles` — slash surface with
+  autocomplete on `staff_id` and `enclosure_id`.
+- Hourly `staff.wages` tick: pays staff via `wages.tick` ledger entries.
+  Underpaid players have staff fired highest-wage-first (tie-break:
+  most-recent-hire), with `wages.unpaid:<role>` ledger entries and
+  durable DMs; balances never go negative.
+- Hourly `staff.autofeed` tick: zookeepers reset happiness on the
+  lowest-happiness dinos in their assigned enclosure.
 
 ### Changed
 - Bumped JDK toolchain and CI from 21 (LTS) to 25 (current LTS).
   Java is forward-compatible so existing JDK 21 deployments will keep
   running, but new builds and `/about` will report Java 25.
+- `HappinessTickService` now consults `StaffEffectsService` for a
+  per-enclosure decay multiplier (vet effect; identity 1.0 when staff
+  module is disabled).
+- `IncomeTickService` applies the per-player marketer income multiplier
+  before crediting the ledger.
+- `EggService` applies the per-player scientist incubation multiplier
+  at purchase time; eggs already incubating are unaffected.
 
 ### Fixed
 
