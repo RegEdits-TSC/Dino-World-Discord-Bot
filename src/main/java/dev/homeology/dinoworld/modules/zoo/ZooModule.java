@@ -46,7 +46,9 @@ public final class ZooModule implements Module {
 	private SellCommand sellCommand;
 	private EnclosuresCommand enclosuresCommand;
 	private MoveCommand moveCommand;
+	private DinoCommand dinoCommand;
 	private AdminCommand adminCommand;
+	private StaffEffectsService staffEffects;
 	private ModuleContext ctx;
 
 	@Override
@@ -74,7 +76,8 @@ public final class ZooModule implements Module {
 		PlayerService playerService = ctx.services().get(PlayerService.class);
 		// StaffEffectsService is published by the staff module (loads before
 		// zoo: c < n < p < s < z). tryGet supports staff being disabled.
-		StaffEffectsService staffEffects = ctx.services().tryGet(StaffEffectsService.class).orElse(null);
+		// Stashed as a field so onEnable can pass it to DinoCommand without re-fetching.
+		this.staffEffects = ctx.services().tryGet(StaffEffectsService.class).orElse(null);
 		this.eggs = new EggService(ctx.database().dataSource(),
 			rarities, catalog, playerService, dinos, enclosures, staffEffects);
 		ctx.services().register(EggService.class, eggs);
@@ -123,6 +126,7 @@ public final class ZooModule implements Module {
 		this.sellCommand = new SellCommand(players, dinos, catalog);
 		this.enclosuresCommand = new EnclosuresCommand(players, enclosures, dinos, catalog);
 		this.moveCommand = new MoveCommand(players, dinos, enclosures, catalog);
+		this.dinoCommand = new DinoCommand(players, dinos, enclosures, catalog, staffEffects);
 
 		ctx.components().register(ZooComponentHandler.NAMESPACE,
 			new ZooComponentHandler(players, rarities, catalog, eggs, enclosures, eggImages,
@@ -156,8 +160,9 @@ public final class ZooModule implements Module {
 
 	@Override
 	public List<Object> listeners() {
-		// AdminCommand is also a ListenerAdapter for slash autocomplete.
-		return adminCommand == null ? List.of() : List.of(adminCommand);
+		// AdminCommand and DinoCommand are also ListenerAdapters for slash autocomplete.
+		if (adminCommand == null) return List.of();
+		return List.of(adminCommand, dinoCommand);
 	}
 
 	@Override
@@ -165,6 +170,7 @@ public final class ZooModule implements Module {
 		// commands() is queried after onEnable, so commands are non-null by then.
 		if (zooCommand == null) return List.of();
 		return List.of(zooCommand, shopCommand, eggsCommand, hatchCommand,
-			feedCommand, sellCommand, enclosuresCommand, moveCommand, adminCommand);
+			feedCommand, sellCommand, enclosuresCommand, moveCommand,
+			dinoCommand, adminCommand);
 	}
 }
