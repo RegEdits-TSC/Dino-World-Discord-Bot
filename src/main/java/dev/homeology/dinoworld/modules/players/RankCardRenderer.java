@@ -72,10 +72,10 @@ public final class RankCardRenderer {
 	private static final Color CARD_BG = new Color(0x2C2F33);
 	private static final Color CARD_INNER = new Color(0x23272A);
 	private static final Color BAR_TRACK = new Color(0x4F545C);
-	/** Bright HTML gold — chosen to "pop" against the background art rather than
-	 *  blending in like the previous Discord blurple did. Used for the progress
-	 *  bar fill, the LEVEL pill text, and the avatar ring. */
-	private static final Color ACCENT_GOLD = new Color(0xFFD700);
+	/** Deep saturated gold — reads as "rich" rather than "highlighter yellow"
+	 *  against the banner art. Used for the progress bar fill, the LEVEL pill
+	 *  text, and the avatar ring. */
+	private static final Color ACCENT_GOLD = new Color(0xEFBF04);
 	private static final Color TEXT_PRIMARY = new Color(0xFFFFFF);
 	private static final Color TEXT_SECONDARY = new Color(0xE6E8EB);
 	/** Black outline applied around all foreground text so it stays legible
@@ -88,8 +88,11 @@ public final class RankCardRenderer {
 	private static final Color BG_TINT = new Color(0, 0, 0, 80);
 
 	/** Lazily-loaded shared background image. {@link Optional#empty()} after a
-	 *  failed load means "no asset" — the renderer falls back to {@link #CARD_BG}. */
-	private static volatile Optional<BufferedImage> backgroundCache;
+	 *  failed load means "no asset" — the renderer falls back to {@link #CARD_BG}.
+	 *  Initialized to {@code Optional.empty()} so the first {@code isPresent()}
+	 *  check in {@link #loadBackground()} doesn't NPE before the cache is
+	 *  populated; the readBackground call still runs once per process. */
+	private static volatile Optional<BufferedImage> backgroundCache = Optional.empty();
 
 	private RankCardRenderer() {}
 
@@ -245,7 +248,7 @@ public final class RankCardRenderer {
 		g.fill(new RoundRectangle2D.Float(barX, barY, barWidth, barHeight,
 			barHeight, barHeight));
 
-		double frac = Math.max(0.0, Math.min(1.0, (double) xpInLevel / (double) xpToNext));
+		double frac = Math.clamp((double) xpInLevel / (double) xpToNext, 0.0, 1.0);
 		int fillWidth = (int) Math.round(frac * barWidth);
 		// Below ~5% the rounded corners would render as a sliver; clamp to a
 		// minimum visible nub when there's any progress at all so 1 XP still
@@ -270,9 +273,9 @@ public final class RankCardRenderer {
 	 */
 	static Optional<BufferedImage> loadBackground() {
 		Optional<BufferedImage> snapshot = backgroundCache;
-		if (snapshot != null) return snapshot;
+		if (snapshot.isPresent()) return snapshot;
 		synchronized (RankCardRenderer.class) {
-			if (backgroundCache != null) return backgroundCache;
+			if (backgroundCache.isPresent()) return backgroundCache;
 			Optional<BufferedImage> loaded = readBackgroundResource();
 			backgroundCache = loaded;
 			return loaded;
@@ -286,7 +289,7 @@ public final class RankCardRenderer {
 	 */
 	static void resetBackgroundCacheForTest() {
 		synchronized (RankCardRenderer.class) {
-			backgroundCache = null;
+			backgroundCache = Optional.empty();
 		}
 	}
 
