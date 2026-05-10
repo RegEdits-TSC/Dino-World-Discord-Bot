@@ -136,13 +136,20 @@ class PlayerServiceTest {
 	@Test
 	void addXpRecomputesLevel() {
 		players.ensure(42L, "Alice");
-		// Level 2 starts at 100 XP.
-		players.addXp(42L, 99L);
+		LevelingService leveling = players.leveling();
+		long level2 = leveling.cumulativeXpForLevel(2);
+		long level3 = leveling.cumulativeXpForLevel(3);
+
+		// Just below the level-2 threshold stays at level 1.
+		players.addXp(42L, level2 - 1);
 		assertEquals(1, players.get(42L).orElseThrow().level());
+
+		// One more XP crosses into level 2.
 		players.addXp(42L, 1L);
 		assertEquals(2, players.get(42L).orElseThrow().level());
-		// Level 3 starts at 300 XP — currently at 100, push to 300.
-		players.addXp(42L, 200L);
+
+		// Top up to the level-3 threshold.
+		players.addXp(42L, level3 - level2);
 		assertEquals(3, players.get(42L).orElseThrow().level());
 	}
 
@@ -173,7 +180,8 @@ class PlayerServiceTest {
 	@Test
 	void setXpRecomputesLevel() {
 		players.ensure(42L, "Alice");
-		players.setXp(42L, 600L);  // start of level 4
+		long level4 = players.leveling().cumulativeXpForLevel(4);
+		players.setXp(42L, level4); // exact start of level 4 under the live curve
 		assertEquals(4, players.get(42L).orElseThrow().level());
 	}
 
