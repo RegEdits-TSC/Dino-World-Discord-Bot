@@ -174,9 +174,11 @@ class EggServiceTest {
 
 	@Test
 	void buyMysteryAcceptsRarityAtExactUnlockLevel() {
-		// Edge case — unlock is "level >= minLevel", inclusive.
+		// Edge case — unlock is "level >= minLevel", inclusive. We grant
+		// XP via the live LevelingService rather than a hardcoded number
+		// so this test survives any rebalance of the curve.
 		players.addCoins(42L, 100_000L, "test", null);
-		players.addXp(42L, 50L * 5 * 4); // cumulativeXpForLevel(5) → exactly level 5
+		players.addXp(42L, players.leveling().cumulativeXpForLevel(5));
 		assertEquals(5, players.get(42L).orElseThrow().level());
 
 		assertDoesNotThrow(() -> eggs.buyMystery(42L, "uncommon"));

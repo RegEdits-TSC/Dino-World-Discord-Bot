@@ -99,6 +99,10 @@ public final class RankCardRenderer {
 	/**
 	 * Render one rank card to a PNG byte array.
 	 *
+	 * <p>Convenience overload — equivalent to
+	 * {@link #render(String, int, long, long, BufferedImage, boolean)} with
+	 * {@code maxLevel = false}.
+	 *
 	 * @param displayName user-visible name (truncated to fit if too long)
 	 * @param level       current level (≥ 1)
 	 * @param xpInLevel   XP earned within the current level (≥ 0)
@@ -111,8 +115,34 @@ public final class RankCardRenderer {
 	public static byte[] render(String displayName, int level,
 	                            long xpInLevel, long xpToNext,
 	                            BufferedImage avatar) {
-		if (xpToNext <= 0) throw new IllegalArgumentException("xpToNext must be > 0");
+		return render(displayName, level, xpInLevel, xpToNext, avatar, false);
+	}
+
+	/**
+	 * Render one rank card to a PNG byte array.
+	 *
+	 * @param displayName user-visible name (truncated to fit if too long)
+	 * @param level       current level (≥ 1)
+	 * @param xpInLevel   XP earned within the current level (≥ 0); ignored
+	 *                    when {@code maxLevel} is true
+	 * @param xpToNext    XP needed to advance from {@code level} to
+	 *                    {@code level + 1} (must be &gt; 0); ignored when
+	 *                    {@code maxLevel} is true
+	 * @param avatar      square avatar image; pass {@code null} to render
+	 *                    a placeholder ring with a "?" glyph
+	 * @param maxLevel    true to render in "MAX" state — the XP text shows
+	 *                    {@code "MAX"} and the progress bar fills to 100%.
+	 *                    XP arguments are not validated in this mode so the
+	 *                    caller can pass placeholders.
+	 * @return PNG-encoded bytes ready to attach to a Discord message
+	 */
+	public static byte[] render(String displayName, int level,
+	                            long xpInLevel, long xpToNext,
+	                            BufferedImage avatar, boolean maxLevel) {
 		if (level < 1) throw new IllegalArgumentException("level must be ≥ 1");
+		if (!maxLevel && xpToNext <= 0) {
+			throw new IllegalArgumentException("xpToNext must be > 0 when not at max level");
+		}
 
 		BufferedImage img = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = img.createGraphics();
@@ -125,8 +155,8 @@ public final class RankCardRenderer {
 
 			drawBackground(g);
 			drawAvatar(g, avatar);
-			drawText(g, displayName, level, xpInLevel, xpToNext);
-			drawProgressBar(g, xpInLevel, xpToNext);
+			drawText(g, displayName, level, xpInLevel, xpToNext, maxLevel);
+			drawProgressBar(g, xpInLevel, xpToNext, maxLevel);
 		} finally {
 			g.dispose();
 		}
@@ -205,7 +235,7 @@ public final class RankCardRenderer {
 	}
 
 	private static void drawText(Graphics2D g, String name, int level,
-	                             long xpInLevel, long xpToNext) {
+	                             long xpInLevel, long xpToNext, boolean maxLevel) {
 		// All foreground text is drawn via drawOutlinedString so it stays
 		// legible against any background art — the dark tint over the banner
 		// isn't enough on its own when bright spots line up behind a glyph.
@@ -227,18 +257,21 @@ public final class RankCardRenderer {
 		drawOutlinedString(g, levelText, pillX, AVATAR_Y + 56,
 			ACCENT_GOLD, TEXT_OUTLINE, TEXT_OUTLINE_STROKE);
 
-		// XP text under the username, above the bar.
+		// XP text under the username, above the bar — "MAX" at the cap so we
+		// don't show a meaningless "0 / 0 XP" or pretend more is available.
 		g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 28));
-		String xpText = formatNumber(xpInLevel) + " / " + formatNumber(xpToNext) + " XP";
+		String xpText = maxLevel
+			? "MAX"
+			: formatNumber(xpInLevel) + " / " + formatNumber(xpToNext) + " XP";
 		int xpWidth = g.getFontMetrics().stringWidth(xpText);
 		// Right-align XP text above the bar so the eye reads name → xp → bar fill.
 		drawOutlinedString(g, xpText,
 			WIDTH - RIGHT_COL_RIGHT_PAD - xpWidth,
 			AVATAR_Y + 160,
-			TEXT_SECONDARY, TEXT_OUTLINE, TEXT_OUTLINE_STROKE);
+			maxLevel ? ACCENT_GOLD : TEXT_SECONDARY, TEXT_OUTLINE, TEXT_OUTLINE_STROKE);
 	}
 
-	private static void drawProgressBar(Graphics2D g, long xpInLevel, long xpToNext) {
+	private static void drawProgressBar(Graphics2D g, long xpInLevel, long xpToNext, boolean maxLevel) {
 		int barX = RIGHT_COL_X;
 		int barY = AVATAR_Y + 185;
 		int barWidth = WIDTH - RIGHT_COL_RIGHT_PAD - barX;
@@ -247,6 +280,14 @@ public final class RankCardRenderer {
 		g.setColor(BAR_TRACK);
 		g.fill(new RoundRectangle2D.Float(barX, barY, barWidth, barHeight,
 			barHeight, barHeight));
+
+		if (maxLevel) {
+			// Solid full bar at the cap.
+			g.setColor(ACCENT_GOLD);
+			g.fill(new RoundRectangle2D.Float(barX, barY, barWidth, barHeight,
+				barHeight, barHeight));
+			return;
+		}
 
 		double frac = Math.clamp((double) xpInLevel / (double) xpToNext, 0.0, 1.0);
 		int fillWidth = (int) Math.round(frac * barWidth);

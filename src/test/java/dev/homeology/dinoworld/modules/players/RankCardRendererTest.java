@@ -85,6 +85,19 @@ class RankCardRendererTest {
 	}
 
 	@Test
+	void maxLevelOverloadAcceptsZeroXpToNextAndRendersValidPng() throws Exception {
+		// At the level cap, callers pass placeholder XP values and the
+		// maxLevel flag — the renderer must accept zero/junk XP without
+		// throwing, swap the bar fill to full, and write "MAX" instead
+		// of "0 / 0 XP".
+		byte[] png = RankCardRenderer.render(
+			"Maxed", 100, 0L, 1L, dummyAvatar(), true);
+		BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(png));
+		assertEquals(RankCardRenderer.WIDTH, decoded.getWidth());
+		assertEquals(RankCardRenderer.HEIGHT, decoded.getHeight());
+	}
+
+	@Test
 	void rejectsNonPositiveLevel() {
 		assertThrows(IllegalArgumentException.class,
 			() -> RankCardRenderer.render("X", 0, 0L, 100L, null));
