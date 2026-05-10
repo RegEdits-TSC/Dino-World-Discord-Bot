@@ -121,4 +121,31 @@ public final class StaffEffectsService {
 		double total = IDENTITY + bonus;
 		return Math.min(total, cap);
 	}
+
+	/**
+	 * Sum of {@link StaffRole#wagePerHour()} across every staff member
+	 * owned by {@code userId}. Returns 0 when the player has no staff
+	 * (and therefore no wage drain).
+	 *
+	 * <p>Used by {@code /zoo income} to project net gain/loss without
+	 * having to reach into the wages tick service for the same arithmetic
+	 * the wage payment loop already performs.
+	 */
+	public long totalWagesPerHour(long userId) {
+		long total = 0L;
+		for (StaffMember m : staff.findByOwner(userId)) {
+			StaffRole r = catalog.byId(m.roleId()).orElse(null);
+			if (r != null) total += r.wagePerHour();
+		}
+		return total;
+	}
+
+	/**
+	 * Number of staff members owned by {@code userId} — exposed as a
+	 * cross-module convenience so consumers like {@code /zoo income}
+	 * don't need to import {@link StaffMemberService} directly.
+	 */
+	public int staffCountForOwner(long userId) {
+		return staff.findByOwner(userId).size();
+	}
 }

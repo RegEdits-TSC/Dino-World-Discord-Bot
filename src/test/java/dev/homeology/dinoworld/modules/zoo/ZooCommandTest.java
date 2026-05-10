@@ -46,9 +46,14 @@ class ZooCommandTest {
 		EnclosureService enclosures = new EnclosureService(ds);
 		ZooIssueService issues = new ZooIssueService(ds);
 		ParkRatingService rating = new ParkRatingService(dinos, enclosures, catalog, issues);
+		IncomeTickService incomeTick = new IncomeTickService(dinos, catalog, players);
 
+		// staffEffects is null here — staff module migrations aren't loaded
+		// in this fixture, so /zoo income would treat staff count + wages
+		// as zero. ZooCommand handles the null cleanly (matches production
+		// behavior when the staff module is disabled).
 		cmd = new ZooCommand(players, catalog, dinos, enclosures, rating,
-			new LevelingService(), issues);
+			new LevelingService(), issues, incomeTick, null);
 	}
 
 	@AfterEach
@@ -57,7 +62,7 @@ class ZooCommandTest {
 	}
 
 	@Test
-	void slashDataDeclaresDashboardAndIssuesSubcommands() {
+	void slashDataDeclaresAllThreeSubcommands() {
 		var data = cmd.slashData();
 		assertEquals("zoo", data.getName());
 		List<String> subNames = data.getSubcommands().stream()
@@ -65,12 +70,15 @@ class ZooCommandTest {
 			.toList();
 		assertTrue(subNames.contains(ZooCommand.SUB_DASHBOARD), "dashboard subcommand registered");
 		assertTrue(subNames.contains(ZooCommand.SUB_ISSUES), "issues subcommand registered");
+		assertTrue(subNames.contains(ZooCommand.SUB_INCOME), "income subcommand registered");
 	}
 
 	@Test
-	void deferEphemeralIsTrueForIssuesAndFalseForDashboard() {
+	void deferEphemeralIsPrivateForIssuesAndIncomeButNotDashboard() {
 		assertTrue(cmd.deferEphemeral(ZooCommand.SUB_ISSUES),
 			"/zoo issues should reply privately");
+		assertTrue(cmd.deferEphemeral(ZooCommand.SUB_INCOME),
+			"/zoo income should reply privately");
 		assertFalse(cmd.deferEphemeral(ZooCommand.SUB_DASHBOARD),
 			"/zoo dashboard should remain public");
 		// Defensive: null subcommand falls through to the no-arg default,

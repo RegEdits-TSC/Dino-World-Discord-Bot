@@ -118,7 +118,7 @@ public final class ZooModule implements Module {
 		NotificationService notify = ctx.services().get(NotificationService.class);
 
 		this.zooCommand = new ZooCommand(players, catalog, dinos, enclosures,
-			parkRating, players.leveling(), issues);
+			parkRating, players.leveling(), issues, incomeTick, staffEffects);
 		this.shopCommand = new ShopCommand(players, rarities, catalog, eggImages, enclosures);
 		this.eggsCommand = new EggsCommand(players, eggs, rarities, catalog, players.leveling());
 		this.hatchCommand = new HatchCommand(players, eggs, rarities);
