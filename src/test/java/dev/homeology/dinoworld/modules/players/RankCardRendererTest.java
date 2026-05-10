@@ -7,6 +7,9 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -114,6 +117,38 @@ class RankCardRendererTest {
 		// other, this catches it.
 		assertEquals(3.0, (double) RankCardRenderer.WIDTH / RankCardRenderer.HEIGHT, 0.001,
 			"card is 3:1 to match the shipped background asset");
+	}
+
+	@Test
+	void writePreviewPngsToBuildDir() throws Exception {
+		// Local-iteration helper: every `./gradlew test` writes a handful of
+		// representative rank cards to build/rank-preview/ so a developer
+		// tweaking colors, fonts, or layout can open the PNGs in any image
+		// viewer for instant visual feedback — no need to run the bot
+		// against a live Discord guild.
+		//
+		// Asserts only that the files land on disk; visual review is by eye.
+		Path outDir = Path.of("build", "rank-preview");
+		Files.createDirectories(outDir);
+
+		record Scenario(String filename, String name, int level,
+		                long xpInLevel, long xpToNext, boolean withAvatar) {}
+
+		var scenarios = List.of(
+			new Scenario("01-fresh.png",          "Alice",                    1,    0L,  100L, true),
+			new Scenario("02-mid-progress.png",   "Bob",                      5,  250L,  500L, true),
+			new Scenario("03-near-levelup.png",   "Charlie",                 12, 1100L, 1200L, true),
+			new Scenario("04-long-name.png",      "VeryLongDinoWranglerName", 8,  400L,  800L, true),
+			new Scenario("05-no-avatar.png",      "Placeholder",              4,  150L,  400L, false));
+
+		for (var s : scenarios) {
+			byte[] png = RankCardRenderer.render(s.name(), s.level(),
+				s.xpInLevel(), s.xpToNext(),
+				s.withAvatar() ? dummyAvatar() : null);
+			Path target = outDir.resolve(s.filename());
+			Files.write(target, png);
+			assertTrue(Files.size(target) > 100, "preview PNG written");
+		}
 	}
 
 	private static BufferedImage dummyAvatar() {
