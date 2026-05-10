@@ -72,10 +72,10 @@ public final class RankCardRenderer {
 	private static final Color CARD_BG = new Color(0x2C2F33);
 	private static final Color CARD_INNER = new Color(0x23272A);
 	private static final Color BAR_TRACK = new Color(0x4F545C);
-	/** Bright HTML gold — chosen to "pop" against the background art rather than
-	 *  blending in like the previous Discord blurple did. Used for the progress
-	 *  bar fill, the LEVEL pill text, and the avatar ring. */
-	private static final Color ACCENT_GOLD = new Color(0xFFD700);
+	/** Warm amber-gold — biased a touch toward orange so it reads as "rich
+	 *  golden yellow" rather than bright lemon-yellow against the banner art.
+	 *  Used for the progress bar fill, the LEVEL pill text, and the avatar ring. */
+	private static final Color ACCENT_GOLD = new Color(0xFFB300);
 	private static final Color TEXT_PRIMARY = new Color(0xFFFFFF);
 	private static final Color TEXT_SECONDARY = new Color(0xE6E8EB);
 	/** Black outline applied around all foreground text so it stays legible
