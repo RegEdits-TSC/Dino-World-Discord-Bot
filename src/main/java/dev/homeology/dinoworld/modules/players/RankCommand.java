@@ -90,11 +90,15 @@ public final class RankCommand implements Command {
 		}
 
 		LevelingService leveling = players.leveling();
-		long xpInLevel = leveling.xpProgressInLevel(p.xp());
-		long xpToNext = leveling.xpToNextLevel(p.level());
+		boolean maxLevel = leveling.isMaxLevel(p.level());
+		long xpInLevel = maxLevel ? 0L : leveling.xpProgressInLevel(p.xp());
+		// xpToNext is forced to 1 at max so the renderer's overload doesn't
+		// reject a 0 — the maxLevel flag tells it to show "MAX" anyway.
+		long xpToNext = maxLevel ? 1L : leveling.xpToNextLevel(p.level());
 
 		BufferedImage avatar = fetchAvatar(target);
-		byte[] png = RankCardRenderer.render(p.displayName(), p.level(), xpInLevel, xpToNext, avatar);
+		byte[] png = RankCardRenderer.render(p.displayName(), p.level(),
+			xpInLevel, xpToNext, avatar, maxLevel);
 
 		String filename = "rank-" + target.getId() + ".png";
 		event.getHook()

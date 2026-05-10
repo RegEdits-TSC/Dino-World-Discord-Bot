@@ -76,15 +76,21 @@ public final class ProfileCommand implements Command {
 		}
 
 		LevelingService leveling = players.leveling();
-		long xpInLevel = leveling.xpProgressInLevel(p.xp());
-		long xpToNext = leveling.xpToNextLevel(p.level());
 		int slots = leveling.slotsForLevel(p.level());
 		long days = Math.max(0, Duration.between(p.createdAt(), Instant.now()).toDays());
 
+		String levelLine;
+		if (leveling.isMaxLevel(p.level())) {
+			levelLine = "**" + p.level() + "**  (MAX)";
+		} else {
+			long xpInLevel = leveling.xpProgressInLevel(p.xp());
+			long xpToNext = leveling.xpToNextLevel(p.level());
+			levelLine = "**" + p.level() + "**  (" + xpInLevel + " / " + xpToNext + " XP)";
+		}
+
 		EmbedBuilder embed = Embeds.info("🦖  " + p.displayName() + "'s park", "")
 			.addField("Coins", String.valueOf(p.coins()), true)
-			.addField("Level",
-				"**" + p.level() + "**  (" + xpInLevel + " / " + xpToNext + " XP)", true)
+			.addField("Level", levelLine, true)
 			.addField("Incubation slots", String.valueOf(slots), true)
 			.addField("Park age", days + " day" + (days == 1 ? "" : "s"), true);
 		// Granular XP progress moved to /rank, which renders a visual progress

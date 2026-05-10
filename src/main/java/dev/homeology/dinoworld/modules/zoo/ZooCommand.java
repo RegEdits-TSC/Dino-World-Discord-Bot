@@ -175,9 +175,12 @@ public final class ZooCommand implements Command {
 		long incomePerHour = computeIncomePerHour(ownedDinos);
 		ParkRatingService.ParkRating r = rating.compute(p.userId());
 
-		long xpInLevel = leveling.xpProgressInLevel(p.xp());
-		long xpToNext = leveling.xpToNextLevel(p.level());
 		int slots = leveling.slotsForLevel(p.level());
+		String levelDisplay = leveling.isMaxLevel(p.level())
+			? "**" + p.level() + "**  (MAX)"
+			: "**" + p.level() + "**  ("
+				+ leveling.xpProgressInLevel(p.xp()) + " / "
+				+ leveling.xpToNextLevel(p.level()) + " XP)";
 
 		String description = ownedDinos.isEmpty()
 			? "Your park is empty. Visit `/shop` to buy your first egg."
@@ -200,8 +203,7 @@ public final class ZooCommand implements Command {
 		b.addField("Income / hr", String.valueOf(incomePerHour), true);
 		b.addField("Dinos", ownedDinos.size() + " in " + enclosureCount + " enclosure"
 			+ (enclosureCount == 1 ? "" : "s"), true);
-		b.addField("Level",
-			"**" + p.level() + "**  (" + xpInLevel + " / " + xpToNext + " XP)", true);
+		b.addField("Level", levelDisplay, true);
 		b.addField("Incubation slots", String.valueOf(slots), true);
 		b.addField("​", "​", true); // spacer for grid alignment
 
