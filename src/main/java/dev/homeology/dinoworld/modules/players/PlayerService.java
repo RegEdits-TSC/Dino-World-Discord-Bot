@@ -235,6 +235,19 @@ public final class PlayerService {
 	}
 
 	/**
+	 * Drop the cached {@link Player} entry for {@code userId} so the next
+	 * read goes back to the database. Needed by callers that mutate the
+	 * {@code player} table out-of-band (notably {@code AdminWipeService},
+	 * which deletes / resets via raw SQL outside this service's write
+	 * paths) — without this, downstream consumers like the wages tick
+	 * could observe a stale Player row and act on data the wipe was
+	 * supposed to erase.
+	 */
+	public void invalidate(long userId) {
+		cache.invalidate(userId);
+	}
+
+	/**
 	 * Set the player's coin balance to an exact value, ledgering the delta
 	 * with the given reason. Used by {@code /admin coins set} so the new
 	 * balance still leaves an auditable trail.

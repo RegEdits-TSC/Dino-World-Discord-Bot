@@ -152,7 +152,7 @@ public final class ZooModule implements Module {
 		// Dev-only utility command — built last so it can reference every
 		// service registered above. AdminWipeService spans every table the
 		// bot owns, so it lives here too.
-		AdminWipeService wipe = new AdminWipeService(ctx.database().dataSource());
+		AdminWipeService wipe = new AdminWipeService(ctx.database().dataSource(), players);
 		ctx.services().register(AdminWipeService.class, wipe);
 		this.adminCommand = new AdminCommand(players, eggs, dinos, rarities, catalog,
 			incomeTick, happinessTick, eggReadyNotify, wipe);
