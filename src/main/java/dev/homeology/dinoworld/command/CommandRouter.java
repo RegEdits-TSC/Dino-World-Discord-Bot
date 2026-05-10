@@ -174,11 +174,32 @@ public final class CommandRouter extends ListenerAdapter {
 			metrics.recordDuration(topName, elapsedNs);
 			metrics.recordInvocation(topName, "ok");
 			log.debug("Completed /{} in {} ms", fullName, elapsedNs / 1_000_000L);
+			runMissionHook(event, topName);
 		} catch (Exception e) {
 			metrics.recordInvocation(topName, "error");
 			handleUncaught(event, topName, e);
 		} finally {
 			MDC.clear();
+		}
+	}
+
+	/**
+	 * Best-effort post-command hook for the missions awarder. Resolved
+	 * lazily on first call from {@code baseContext.services()} so the
+	 * hook stays opt-in: if the missions module isn't loaded, the lookup
+	 * returns empty and we never invoke anything.
+	 *
+	 * <p>Wrapped in its own try/catch — a mission-detection failure must
+	 * never roll back the command's own response or surface as an
+	 * error embed.
+	 */
+	private void runMissionHook(SlashCommandInteractionEvent event, String topName) {
+		try {
+			baseContext.services()
+				.tryGet(dev.homeology.dinoworld.modules.players.missions.MissionAwarder.class)
+				.ifPresent(a -> a.afterCommand(event, topName));
+		} catch (Exception e) {
+			log.warn("mission awarder failed for /{}: {}", topName, e.toString());
 		}
 	}
 
