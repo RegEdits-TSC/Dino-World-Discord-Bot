@@ -332,6 +332,7 @@ public final class AdminCommand extends ListenerAdapter implements Command {
 		replyOk(event, "🔁  Tycoon state reset for " + target.getEffectiveName(),
 			"Eggs deleted: " + stats.eggs() + "\n"
 				+ "Dinos deleted: " + stats.dinos() + "\n"
+				+ "Staff fired: " + stats.staff() + "\n"
 				+ "Enclosures deleted: " + stats.enclosures() + "\n"
 				+ "Player row reset: " + (stats.playerReset() ? "yes" : "no (no row existed)"));
 	}
@@ -349,6 +350,7 @@ public final class AdminCommand extends ListenerAdapter implements Command {
 			+ "\n"
 			+ "• egg_instance: " + stats.eggs() + "\n"
 			+ "• dino_instance: " + stats.dinos() + "\n"
+			+ "• staff_member: " + stats.staff() + "\n"
 			+ "• enclosure: " + stats.enclosures() + "\n"
 			+ "• coin_ledger: " + stats.ledger() + "\n"
 			+ "• notification_queue: " + stats.notifications() + "\n"

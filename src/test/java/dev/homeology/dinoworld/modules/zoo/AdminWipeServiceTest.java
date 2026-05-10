@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import dev.homeology.dinoworld.cache.CacheManager;
 import dev.homeology.dinoworld.database.MigrationRunner;
 import dev.homeology.dinoworld.modules.players.PlayerService;
+import dev.homeology.dinoworld.modules.staff.StaffMemberService;
 import dev.homeology.dinoworld.modules.zoo.model.Enclosure;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +43,7 @@ class AdminWipeServiceTest {
 	private EggService eggs;
 	private DinoInstanceService dinos;
 	private EnclosureService enclosures;
+	private StaffMemberService staff;
 	private DinoCatalog catalog;
 	private RarityCatalog rarities;
 
@@ -54,7 +56,7 @@ class AdminWipeServiceTest {
 		cfg.setMaximumPoolSize(1);
 		cfg.setConnectionInitSql("PRAGMA foreign_keys=ON;");
 		ds = new HikariDataSource(cfg);
-		new MigrationRunner(ds).run(List.of("core", "players", "notify", "zoo"));
+		new MigrationRunner(ds).run(List.of("core", "players", "notify", "staff", "zoo"));
 
 		players = new PlayerService(ds, new CacheManager());
 		players.ensure(42L, "Alice");
@@ -64,11 +66,12 @@ class AdminWipeServiceTest {
 		catalog = new DinoCatalog(rarities);
 		dinos = new DinoInstanceService(ds);
 		enclosures = new EnclosureService(ds);
+		staff = new StaffMemberService(ds);
 		eggs = new EggService(ds, rarities, catalog, players, dinos, enclosures,
 			pool -> pool.get(0),
 			Clock.fixed(NOW.minus(Duration.ofHours(2)), ZoneOffset.UTC));
 
-		wipe = new AdminWipeService(ds);
+		wipe = new AdminWipeService(ds, players);
 	}
 
 	@AfterEach
@@ -158,6 +161,63 @@ class AdminWipeServiceTest {
 		wipe.resetTycoon(42L);
 		long after = count("coin_ledger", "user_id", 42L);
 		assertEquals(before, after, "ledger should be untouched by tycoon reset");
+	}
+
+	// ─── staff orphan-leak regression ────────────────────────────────────
+
+	@Test
+	void wipePlayerClearsStaffMemberRoster() throws Exception {
+		// Reproduces the bug where /admin reset player left staff_member
+		// rows behind, so the next wages tick fired on orphaned staff and
+		// DM'd a "X quit because wages weren't paid" notice the operator
+		// expected to never see again.
+		Enclosure enc = enclosures.create(42L, "forest", 5, 5, "Home");
+		staff.create(42L, "zookeeper", OptionalLong.of(enc.id()));
+		staff.create(42L, "vet", OptionalLong.of(enc.id()));
+		staff.create(42L, "marketer", OptionalLong.empty());
+		assertEquals(3, count("staff_member", "owner_user_id", 42L));
+
+		AdminWipeService.WipeStats stats = wipe.wipePlayer(42L);
+		assertEquals(3, stats.staff(), "wipe stats record the cleared staff count");
+		assertEquals(0, count("staff_member", "owner_user_id", 42L),
+			"every staff_member row for the wiped user is gone");
+	}
+
+	@Test
+	void resetTycoonClearsStaffMemberRoster() throws Exception {
+		// Same regression on the tycoon-only reset path.
+		Enclosure enc = enclosures.create(42L, "forest", 5, 5, "Home");
+		staff.create(42L, "zookeeper", OptionalLong.of(enc.id()));
+		staff.create(42L, "scientist", OptionalLong.empty());
+		assertEquals(2, count("staff_member", "owner_user_id", 42L));
+
+		AdminWipeService.TycoonResetStats stats = wipe.resetTycoon(42L);
+		assertEquals(2, stats.staff(), "reset stats record the cleared staff count");
+		assertEquals(0, count("staff_member", "owner_user_id", 42L),
+			"resetting tycoon state also clears the roster — otherwise the wages "
+				+ "tick fires on orphaned staff and DMs the user");
+	}
+
+	@Test
+	void wipePlayerInvalidatesPlayerServiceCache() {
+		// Prime the cache, then wipe. PlayerService.get() must miss cache
+		// and hit the DB (which now has no row), reporting empty. Without
+		// the post-commit invalidate, the wages tick could see a stale
+		// non-null Player and skip its "unknown player → bail" guard.
+		players.get(42L); // populate cache
+		wipe.wipePlayer(42L);
+		assertTrue(players.get(42L).isEmpty(),
+			"cache must not return a stale Player after the wipe");
+	}
+
+	@Test
+	void resetTycoonInvalidatesPlayerServiceCache() {
+		// Cached coins/xp from before the reset would otherwise survive
+		// the SQL UPDATE — admin tooling bypasses PlayerService writes.
+		players.get(42L); // 5000 coins from setUp
+		wipe.resetTycoon(42L);
+		assertEquals(0L, players.get(42L).orElseThrow().coins(),
+			"reset zeroes coins and the next read must reflect that");
 	}
 
 	private long count(String table, String column, long value) throws Exception {
