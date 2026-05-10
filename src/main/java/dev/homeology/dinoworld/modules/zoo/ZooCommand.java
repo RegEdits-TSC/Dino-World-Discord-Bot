@@ -6,6 +6,7 @@ import dev.homeology.dinoworld.command.CommandContext;
 import dev.homeology.dinoworld.modules.players.LevelingService;
 import dev.homeology.dinoworld.modules.players.Player;
 import dev.homeology.dinoworld.modules.players.PlayerService;
+import dev.homeology.dinoworld.modules.staff.StaffEffectsService;
 import dev.homeology.dinoworld.modules.zoo.issues.ZooIssue;
 import dev.homeology.dinoworld.modules.zoo.issues.ZooIssueRenderer;
 import dev.homeology.dinoworld.modules.zoo.issues.ZooIssueService;
@@ -22,9 +23,10 @@ import net.dv8tion.jda.api.interactions.commands.build.SubcommandData;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 
 /**
- * {@code /zoo …} — the player's park surface, split into two subcommands:
+ * {@code /zoo …} — the player's park surface, split into three subcommands:
  *
  * <ul>
  *   <li>{@code /zoo dashboard} — public park summary (rating, income,
@@ -34,6 +36,10 @@ import java.util.List;
  *   <li>{@code /zoo issues} — ephemeral list of open warnings (low-happiness
  *       dinos, homeless dinos, fired staff, wage runway low) with per-issue
  *       Clear buttons and a Clear-all action.</li>
+ *   <li>{@code /zoo income} — ephemeral profit/loss view: hourly income from
+ *       dinos, hourly staff wages, hourly net, and a 24-hour projection with
+ *       a 🟢/🔴/⚖️ verdict so the player knows at a glance whether their
+ *       park is sustainable.</li>
  * </ul>
  *
  * <p>Dashboard has three render states keyed off player state:
@@ -53,6 +59,9 @@ public final class ZooCommand implements Command {
 	/** Subcommand name for the issues list. */
 	public static final String SUB_ISSUES = "issues";
 
+	/** Subcommand name for the income / profit-loss view. */
+	public static final String SUB_INCOME = "income";
+
 	/**
 	 * Window after creation during which a player is treated as new and
 	 * gets the welcome flow.
@@ -66,6 +75,8 @@ public final class ZooCommand implements Command {
 	private final ParkRatingService rating;
 	private final LevelingService leveling;
 	private final ZooIssueService issues;
+	private final IncomeTickService incomeTick;
+	private final StaffEffectsService staffEffects;
 
 	public ZooCommand(PlayerService players,
 	                  DinoCatalog catalog,
@@ -73,7 +84,9 @@ public final class ZooCommand implements Command {
 	                  EnclosureService enclosures,
 	                  ParkRatingService rating,
 	                  LevelingService leveling,
-	                  ZooIssueService issues) {
+	                  ZooIssueService issues,
+	                  IncomeTickService incomeTick,
+	                  StaffEffectsService staffEffects) {
 		this.players = players;
 		this.catalog = catalog;
 		this.dinos = dinos;
@@ -81,6 +94,8 @@ public final class ZooCommand implements Command {
 		this.rating = rating;
 		this.leveling = leveling;
 		this.issues = issues;
+		this.incomeTick = incomeTick;
+		this.staffEffects = staffEffects;
 	}
 
 	@Override
@@ -88,7 +103,9 @@ public final class ZooCommand implements Command {
 		return Commands.slash("zoo", "View your dinosaur park.")
 			.addSubcommands(
 				new SubcommandData(SUB_DASHBOARD, "Show your park summary."),
-				new SubcommandData(SUB_ISSUES, "List warnings about your zoo."));
+				new SubcommandData(SUB_ISSUES, "List warnings about your zoo."),
+				new SubcommandData(SUB_INCOME,
+					"See if your park is making or losing money over a 24h window."));
 	}
 
 	@Override
@@ -98,8 +115,9 @@ public final class ZooCommand implements Command {
 
 	@Override
 	public boolean deferEphemeral(String subcommandName) {
-		// Dashboard stays public (current behavior); issues is private to the player.
-		return SUB_ISSUES.equals(subcommandName);
+		// Dashboard stays public (current behavior); issues and income are
+		// private — they're for the player to consult, not channel chatter.
+		return SUB_ISSUES.equals(subcommandName) || SUB_INCOME.equals(subcommandName);
 	}
 
 	@Override
@@ -110,12 +128,12 @@ public final class ZooCommand implements Command {
 		enclosures.ensureStarter(userId);
 
 		String sub = event.getSubcommandName();
-		if (SUB_ISSUES.equals(sub)) {
-			handleIssues(event, userId);
-		} else {
+		switch (sub == null ? SUB_DASHBOARD : sub) {
+			case SUB_ISSUES -> handleIssues(event, userId);
+			case SUB_INCOME -> handleIncome(event, userId);
 			// Default to dashboard for safety — Discord shouldn't send null
 			// for a subcommand-only command, but be defensive.
-			handleDashboard(event, userId);
+			default -> handleDashboard(event, userId);
 		}
 	}
 
@@ -249,5 +267,106 @@ public final class ZooCommand implements Command {
 		var reply = event.getHook().editOriginalEmbeds(r.embed().build());
 		if (!r.components().isEmpty()) reply.setComponents(r.components());
 		reply.queue();
+	}
+
+	// ─── income ──────────────────────────────────────────────────────────
+
+	/** Hours in the projection window — change here if the subcommand
+	 *  ever needs to expose other windows (12h, 7d, etc.). */
+	private static final int PROJECTION_HOURS = 24;
+
+	private void handleIncome(SlashCommandInteractionEvent event, long userId) {
+		Player p = players.get(userId).orElseThrow();
+		int dinoCount = dinos.findByOwner(userId).size();
+		int staffCount = staffEffects == null ? 0 : staffEffects.staffCountForOwner(userId);
+
+		long incomePerHour = incomeTick.computeIncomeFor(userId);
+		long wagesPerHour = staffEffects == null ? 0L : staffEffects.totalWagesPerHour(userId);
+		long netPerHour = incomePerHour - wagesPerHour;
+		long netProjected = netPerHour * PROJECTION_HOURS;
+
+		EmbedBuilder embed = incomeEmbed(p, dinoCount, staffCount,
+			incomePerHour, wagesPerHour, netPerHour, netProjected);
+		Embeds.brand(embed, event.getJDA());
+		event.getHook().editOriginalEmbeds(embed.build()).queue();
+	}
+
+	private EmbedBuilder incomeEmbed(Player p, int dinoCount, int staffCount,
+	                                 long incomePerHour, long wagesPerHour,
+	                                 long netPerHour, long netProjected) {
+		// Empty-park short-circuit so the verdict line doesn't say "breaking
+		// even" when the player has literally nothing yet.
+		if (dinoCount == 0 && staffCount == 0) {
+			return Embeds.info("💰  Park income",
+				"Your park is empty — no dinos earning, no staff to pay.\n"
+					+ "Visit `/shop` to buy your first egg and start earning.");
+		}
+
+		String verdict;
+		EmbedBuilder embed;
+		if (netPerHour > 0) {
+			verdict = "🟢 **Making money: +" + formatNumber(netProjected)
+				+ " coins / " + PROJECTION_HOURS + "h**";
+			embed = Embeds.success("💰  Park income", verdict);
+		} else if (netPerHour < 0) {
+			verdict = "🔴 **Losing money: " + formatNumber(netProjected)
+				+ " coins / " + PROJECTION_HOURS + "h**";
+			embed = Embeds.error("💰  Park income", verdict);
+		} else {
+			verdict = "⚖️ **Breaking even: 0 coins / " + PROJECTION_HOURS + "h**";
+			embed = Embeds.warning("💰  Park income", verdict);
+		}
+
+		embed.addField("Income / hr",
+			"+" + formatNumber(incomePerHour) + " coins"
+				+ (dinoCount > 0
+					? " _(from " + dinoCount + " dino" + (dinoCount == 1 ? "" : "s") + ")_"
+					: ""),
+			true);
+		embed.addField("Wages / hr",
+			(wagesPerHour > 0 ? "−" + formatNumber(wagesPerHour) : "0") + " coins"
+				+ (staffCount > 0
+					? " _(for " + staffCount + " staff)_"
+					: " _(no staff)_"),
+			true);
+		embed.addField("Net / hr",
+			signed(netPerHour) + " coins",
+			true);
+
+		// Runway only matters when we're losing — show how many hours of
+		// current balance buffer the player has before staff start quitting.
+		// Mirrors the math IssueDetector.applyWageRunwayIssue uses.
+		if (netPerHour < 0) {
+			long drainPerHour = -netPerHour;
+			long runwayHours = p.coins() <= 0 ? 0 : p.coins() / drainPerHour;
+			String runwayDetail;
+			if (runwayHours == 0) {
+				runwayDetail = "**0 hours** — staff will quit at the next wage tick. Top up via `/sell` or `/daily`.";
+			} else if (runwayHours < 24) {
+				runwayDetail = "**" + runwayHours + " hour"
+					+ (runwayHours == 1 ? "" : "s") + "** of buffer at current rates.";
+			} else {
+				runwayDetail = "**" + (runwayHours / 24) + " day"
+					+ (runwayHours / 24 == 1 ? "" : "s") + "** of buffer at current rates.";
+			}
+			embed.addField("Runway", runwayDetail, false);
+		}
+
+		embed.addField("Current balance",
+			formatNumber(p.coins()) + " coins · projected after " + PROJECTION_HOURS + "h: **"
+				+ formatNumber(p.coins() + netProjected) + "**",
+			false);
+		return embed;
+	}
+
+	/** Format with thousand-separators and an explicit sign for the net field. */
+	private static String signed(long n) {
+		if (n > 0) return "+" + formatNumber(n);
+		if (n < 0) return "−" + formatNumber(-n); // U+2212 minus, matches verdict line
+		return "0";
+	}
+
+	private static String formatNumber(long n) {
+		return String.format(Locale.ROOT, "%,d", n);
 	}
 }

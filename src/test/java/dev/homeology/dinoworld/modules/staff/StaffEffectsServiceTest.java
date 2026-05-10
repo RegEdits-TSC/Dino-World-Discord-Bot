@@ -142,4 +142,43 @@ class StaffEffectsServiceTest {
 		// (Cap is 1.45 in the shipped catalog, so we can't easily test "above"
 		// without rewriting the catalog — three marketers is the live max.)
 	}
+
+	// ─── total wages + staff count ──────────────────────────────────────
+
+	@Test
+	void totalWagesIsZeroWithoutStaff() {
+		assertEquals(0L, effects.totalWagesPerHour(42L));
+	}
+
+	@Test
+	void totalWagesSumsAcrossRoster() {
+		// Per the shipped catalog: zookeeper=40/hr, vet=70/hr, marketer=50/hr.
+		long zookeeperWage = catalog.byId("zookeeper").orElseThrow().wagePerHour();
+		long vetWage = catalog.byId("vet").orElseThrow().wagePerHour();
+		long marketerWage = catalog.byId("marketer").orElseThrow().wagePerHour();
+
+		memberService.create(42L, "zookeeper", OptionalLong.of(encId));
+		memberService.create(42L, "vet", OptionalLong.of(encId));
+		memberService.create(42L, "marketer", OptionalLong.empty());
+
+		assertEquals(zookeeperWage + vetWage + marketerWage,
+			effects.totalWagesPerHour(42L));
+	}
+
+	@Test
+	void totalWagesIsolatedPerOwner() {
+		PlayerService players = new PlayerService(ds, new CacheManager());
+		players.ensure(99L, "Bob");
+		memberService.create(42L, "vet", OptionalLong.of(encId));
+		assertEquals(0L, effects.totalWagesPerHour(99L),
+			"another player's roster doesn't bleed into this one");
+	}
+
+	@Test
+	void staffCountForOwnerCountsRoster() {
+		assertEquals(0, effects.staffCountForOwner(42L));
+		memberService.create(42L, "vet", OptionalLong.of(encId));
+		memberService.create(42L, "marketer", OptionalLong.empty());
+		assertEquals(2, effects.staffCountForOwner(42L));
+	}
 }
