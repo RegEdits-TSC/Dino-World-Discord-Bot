@@ -1,0 +1,73 @@
+# Dino-World: tutorial mission set.
+#
+# Loaded by MissionCatalog at module startup. Each mission auto-awards
+# its coin/XP reward the first time MissionAwarder sees the trigger
+# condition satisfied for a player; the player gets a follow-up
+# ephemeral with the milestone right after the triggering action.
+#
+# Total tutorial reward: 500 coins, 220 XP.
+# Sized so a brand-new player who works through this list ends with
+# enough coins to buy a Common egg (200) AND have ~300 left over for
+# the second hatch — the early-game wall the operator flagged.
+#
+# Trigger format:
+#   state:claimed_daily   — player.last_daily IS NOT NULL
+#   state:owns_egg        — egg_instance count > 0 for the player
+#   state:owns_dino       — dino_instance count > 0 for the player
+#   state:fed_dino        — any dino has last_fed_at set
+#   command:<name>        — the player ran /<name> (any subcommand)
+#   command:<name>:<sub>  — the player ran /<name> <sub> specifically
+
+set_id: tutorial
+display_name: New Park Keeper
+description: Get rolling with these onboarding missions. Each one auto-awards coins and XP the first time you complete the action.
+
+missions:
+  - id: claim_first_daily
+    display_name: Claim your first daily
+    description: Run `/daily` for your first 100 coins.
+    trigger: state:claimed_daily
+    reward_coins: 50
+    reward_xp: 25
+
+  - id: visit_shop
+    display_name: Browse the shop
+    description: Run `/shop` to see what eggs are for sale.
+    trigger: command:shop
+    reward_coins: 50
+    reward_xp: 10
+
+  - id: buy_first_egg
+    display_name: Buy your first egg
+    description: Spend coins on a Common egg from `/shop`.
+    trigger: state:owns_egg
+    reward_coins: 100
+    reward_xp: 25
+
+  - id: hatch_first_dino
+    display_name: Hatch your first dinosaur
+    description: Wait for the egg to be ready and run `/eggs` to hatch it.
+    trigger: state:owns_dino
+    reward_coins: 100
+    reward_xp: 50
+
+  - id: feed_first_dino
+    display_name: Feed your dinosaur
+    description: Use `/feed` to keep your dino happy and earning coins.
+    trigger: state:fed_dino
+    reward_coins: 50
+    reward_xp: 25
+
+  - id: check_park_dashboard
+    display_name: Check your park dashboard
+    description: Run `/zoo dashboard` to see your park summary.
+    trigger: command:zoo:dashboard
+    reward_coins: 50
+    reward_xp: 25
+
+  - id: inspect_a_dino
+    display_name: Inspect one of your dinos
+    description: Use `/dino inspect` to see why a dino isn't 100% happy.
+    trigger: command:dino:inspect
+    reward_coins: 100
+    reward_xp: 60
