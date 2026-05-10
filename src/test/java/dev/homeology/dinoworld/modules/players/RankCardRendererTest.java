@@ -90,16 +90,17 @@ class RankCardRendererTest {
 	}
 
 	@Test
-	void backgroundLoaderReturnsEmptyWhenAssetMissing() throws Exception {
-		// The test classpath intentionally doesn't ship the background PNG,
-		// so the loader must report "missing" rather than throw — and a
-		// subsequent render must still produce a valid card via the
-		// solid-color fallback path.
+	void backgroundLoaderFindsShippedAsset() throws Exception {
+		// data/rank/background.png ships with the bot, so the loader must
+		// find and decode it — and the rendered card must come out at the
+		// canonical canvas dimensions regardless of source-asset size.
 		RankCardRenderer.resetBackgroundCacheForTest();
-		assertTrue(RankCardRenderer.loadBackground().isEmpty(),
-			"no asset on test classpath → loader returns empty");
+		var loaded = RankCardRenderer.loadBackground();
+		assertTrue(loaded.isPresent(), "shipped asset present on classpath");
+		assertTrue(loaded.get().getWidth() > 0 && loaded.get().getHeight() > 0,
+			"asset decoded as a real image");
 
-		byte[] png = RankCardRenderer.render("Fallback", 3, 60L, 300L, dummyAvatar());
+		byte[] png = RankCardRenderer.render("Banner", 3, 60L, 300L, dummyAvatar());
 		BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(png));
 		assertEquals(RankCardRenderer.WIDTH, decoded.getWidth());
 		assertEquals(RankCardRenderer.HEIGHT, decoded.getHeight());
