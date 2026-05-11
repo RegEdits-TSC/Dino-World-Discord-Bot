@@ -43,15 +43,60 @@ class MissionCatalogTest {
 		assertTrue(ids.contains("tutorial.feed_first_dino"));
 	}
 
+	/**
+	 * Cheapest Common egg currently available in the live shop. Pinned
+	 * here so the affordability invariants below have a single knob to
+	 * update if egg pricing rebalances. If you bump this, also bump
+	 * tutorial reward sizing in {@code data/missions/tutorial.yaml} so
+	 * the assertions still pass.
+	 */
+	private static final long CHEAPEST_COMMON_EGG = 500L;
+
 	@Test
-	void rewardsSumIsLargeEnoughForAFirstEgg() {
+	void firstTwoMissionsLeaveComfortableBufferForFirstEgg() {
 		// The whole reason this feature exists: a new player should be able
-		// to clear the first few missions and afford a Common egg (200c).
+		// to clear the first two missions and afford the cheapest Common
+		// egg with room to spare. Exact-change sizing reads as "I can't
+		// afford this" against the slightly-stale balance the shop UI
+		// displays before mission 2's reward credits.
 		long claim = catalog.byId("tutorial.claim_first_daily").orElseThrow().rewardCoins();
 		long visit = catalog.byId("tutorial.visit_shop").orElseThrow().rewardCoins();
 		long dailyGrant = 100L; // /daily itself gives 100c
-		assertTrue(claim + visit + dailyGrant >= 200L,
-			"daily + first two missions must cover the 200c Common egg");
+		long target = CHEAPEST_COMMON_EGG + 100L; // egg cost + 100c buffer
+		assertTrue(claim + visit + dailyGrant >= target,
+			"daily + first two missions should put the player at ≥" + target
+				+ "c (cheapest egg " + CHEAPEST_COMMON_EGG + "c + 100c buffer); got "
+				+ (claim + visit + dailyGrant));
+	}
+
+	@Test
+	void afterEachMissionPlayerCanAffordTheNextRequiredAction() {
+		// Walk the tutorial in YAML order, applying coin grants and the
+		// one mandatory spend (the first egg), and assert the running
+		// balance never goes negative. Catches a future edit that makes a
+		// step unaffordable in sequence.
+		long balance = 100L; // /daily before mission 1 fires
+		for (Mission m : catalog.all()) {
+			if ("tutorial.buy_first_egg".equals(m.id())) {
+				assertTrue(balance >= CHEAPEST_COMMON_EGG,
+					"player must have ≥" + CHEAPEST_COMMON_EGG
+						+ "c before the buy_first_egg step (had " + balance + ")");
+				balance -= CHEAPEST_COMMON_EGG;
+			}
+			balance += m.rewardCoins();
+		}
+		assertTrue(balance > 0, "running balance must stay positive through the tutorial");
+	}
+
+	@Test
+	void afterFullTutorialPlayerHasHeadroomForFollowUp() {
+		// After the full tutorial + buying one Common egg, the player
+		// should comfortably afford a follow-up purchase (second egg,
+		// Zookeeper hire, or saving toward Uncommon at L5).
+		long totalRewards = catalog.all().stream().mapToLong(Mission::rewardCoins).sum();
+		long endBalance = 100L /* daily */ + totalRewards - CHEAPEST_COMMON_EGG;
+		assertTrue(endBalance >= 500L,
+			"end-of-tutorial balance should be ≥500c, got " + endBalance);
 	}
 
 	@Test
