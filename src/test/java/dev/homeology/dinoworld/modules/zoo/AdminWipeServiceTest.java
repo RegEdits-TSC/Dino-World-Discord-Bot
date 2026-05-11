@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import dev.homeology.dinoworld.cache.CacheManager;
 import dev.homeology.dinoworld.database.MigrationRunner;
 import dev.homeology.dinoworld.modules.players.PlayerService;
+import dev.homeology.dinoworld.modules.players.missions.MissionProgressService;
 import dev.homeology.dinoworld.modules.staff.StaffMemberService;
 import dev.homeology.dinoworld.modules.zoo.model.Enclosure;
 import org.junit.jupiter.api.AfterEach;
@@ -44,6 +45,7 @@ class AdminWipeServiceTest {
 	private DinoInstanceService dinos;
 	private EnclosureService enclosures;
 	private StaffMemberService staff;
+	private MissionProgressService missions;
 	private DinoCatalog catalog;
 	private RarityCatalog rarities;
 
@@ -67,6 +69,7 @@ class AdminWipeServiceTest {
 		dinos = new DinoInstanceService(ds);
 		enclosures = new EnclosureService(ds);
 		staff = new StaffMemberService(ds);
+		missions = new MissionProgressService(ds);
 		eggs = new EggService(ds, rarities, catalog, players, dinos, enclosures,
 			pool -> pool.get(0),
 			Clock.fixed(NOW.minus(Duration.ofHours(2)), ZoneOffset.UTC));
@@ -218,6 +221,38 @@ class AdminWipeServiceTest {
 		wipe.resetTycoon(42L);
 		assertEquals(0L, players.get(42L).orElseThrow().coins(),
 			"reset zeroes coins and the next read must reflect that");
+	}
+
+	// ─── mission_progress orphan-leak regression ─────────────────────────
+
+	@Test
+	void wipePlayerClearsMissionProgress() throws Exception {
+		// Reproduces the bug where /admin reset player left mission_progress
+		// rows behind, so the player's tutorial still showed as completed
+		// after a fresh start — defeating the whole point of the wipe.
+		missions.markCompleted(42L, "tutorial.claim_first_daily");
+		missions.markCompleted(42L, "tutorial.visit_shop");
+		missions.markCompleted(42L, "tutorial.buy_first_egg");
+		assertEquals(3, count("mission_progress", "user_id", 42L));
+
+		AdminWipeService.WipeStats stats = wipe.wipePlayer(42L);
+		assertEquals(3, stats.missions(), "wipe stats record the cleared mission count");
+		assertEquals(0, count("mission_progress", "user_id", 42L),
+			"every mission_progress row for the wiped user is gone");
+	}
+
+	@Test
+	void resetTycoonClearsMissionProgress() throws Exception {
+		// Same regression on the tycoon-only reset path — without this
+		// the player runs through /daily again expecting a fresh tutorial
+		// and gets no missions because they're all already marked done.
+		missions.markCompleted(42L, "tutorial.claim_first_daily");
+		missions.markCompleted(42L, "tutorial.visit_shop");
+
+		AdminWipeService.TycoonResetStats stats = wipe.resetTycoon(42L);
+		assertEquals(2, stats.missions(), "reset stats record the cleared mission count");
+		assertEquals(0, count("mission_progress", "user_id", 42L),
+			"resetting tycoon state also clears mission progress so the tutorial replays");
 	}
 
 	private long count(String table, String column, long value) throws Exception {

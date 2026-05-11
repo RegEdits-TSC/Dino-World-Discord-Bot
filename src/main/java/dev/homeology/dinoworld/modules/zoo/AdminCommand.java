@@ -334,6 +334,7 @@ public final class AdminCommand extends ListenerAdapter implements Command {
 				+ "Dinos deleted: " + stats.dinos() + "\n"
 				+ "Staff fired: " + stats.staff() + "\n"
 				+ "Enclosures deleted: " + stats.enclosures() + "\n"
+				+ "Missions cleared: " + stats.missions() + "\n"
 				+ "Player row reset: " + (stats.playerReset() ? "yes" : "no (no row existed)"));
 	}
 
@@ -353,6 +354,7 @@ public final class AdminCommand extends ListenerAdapter implements Command {
 			+ "• staff_member: " + stats.staff() + "\n"
 			+ "• enclosure: " + stats.enclosures() + "\n"
 			+ "• coin_ledger: " + stats.ledger() + "\n"
+			+ "• mission_progress: " + stats.missions() + "\n"
 			+ "• notification_queue: " + stats.notifications() + "\n"
 			+ "• feedback_log: " + stats.feedback() + "\n"
 			+ "• feedback_blacklist: " + stats.blacklist() + "\n"
