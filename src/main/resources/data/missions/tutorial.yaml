@@ -5,10 +5,14 @@
 # condition satisfied for a player; the player gets a follow-up
 # ephemeral with the milestone right after the triggering action.
 #
-# Total tutorial reward: 500 coins, 220 XP.
-# Sized so a brand-new player who works through this list ends with
-# enough coins to buy a Common egg (200) AND have ~300 left over for
-# the second hatch — the early-game wall the operator flagged.
+# Total tutorial reward: 850 coins, 315 XP.
+# Sized so each step has comfortable buffer for the next:
+#   - After /daily (100c) + claim mission (+100c)               = 200c
+#   - After /shop + browse mission (+100c)                      = 300c  ← buys a 200c Common mystery with 100c spare, no scary "exact change" UX
+#   - After buying egg (-200c) + buy_first_egg mission (+200c)  = 300c
+#   - After hatch + hatch mission (+200c)                       = 500c
+#   - Plus +100/+50/+100 from feed / dashboard / inspect        = 750c at end of tutorial
+# Enough for a second mystery Common, a Zookeeper hire (150c), or saving up for an Uncommon (600c, level 5).
 #
 # Trigger format:
 #   state:claimed_daily   — player.last_daily IS NOT NULL
@@ -27,36 +31,36 @@ missions:
     display_name: Claim your first daily
     description: Run `/daily` for your first 100 coins.
     trigger: state:claimed_daily
-    reward_coins: 50
-    reward_xp: 25
+    reward_coins: 100
+    reward_xp: 50
 
   - id: visit_shop
     display_name: Browse the shop
     description: Run `/shop` to see what eggs are for sale.
     trigger: command:shop
-    reward_coins: 50
-    reward_xp: 10
+    reward_coins: 100
+    reward_xp: 25
 
   - id: buy_first_egg
     display_name: Buy your first egg
-    description: Spend coins on a Common egg from `/shop`.
+    description: Spend coins on a Common egg from `/shop` (200c).
     trigger: state:owns_egg
-    reward_coins: 100
-    reward_xp: 25
+    reward_coins: 200
+    reward_xp: 50
 
   - id: hatch_first_dino
     display_name: Hatch your first dinosaur
     description: Wait for the egg to be ready and run `/eggs` to hatch it.
     trigger: state:owns_dino
-    reward_coins: 100
-    reward_xp: 50
+    reward_coins: 200
+    reward_xp: 75
 
   - id: feed_first_dino
     display_name: Feed your dinosaur
     description: Use `/feed` to keep your dino happy and earning coins.
     trigger: state:fed_dino
-    reward_coins: 50
-    reward_xp: 25
+    reward_coins: 100
+    reward_xp: 30
 
   - id: check_park_dashboard
     display_name: Check your park dashboard
