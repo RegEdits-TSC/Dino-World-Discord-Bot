@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 2
     steps:
       - name: Apply labels
-        uses: actions/labeler@v5
+        uses: actions/labeler@v6
         with:
           # Don't strip labels that don't match a rule — Dependabot
           # pre-applies labels we want to keep, and humans may add
