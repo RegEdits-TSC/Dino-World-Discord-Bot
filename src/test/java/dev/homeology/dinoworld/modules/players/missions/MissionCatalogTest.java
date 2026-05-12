@@ -38,6 +38,7 @@ class MissionCatalogTest {
 		// just the headline ones so a careless YAML edit stands out.
 		var ids = catalog.all().stream().map(Mission::id).toList();
 		assertTrue(ids.contains("tutorial.check_profile"));
+		assertTrue(ids.contains("tutorial.see_rank"));
 		assertTrue(ids.contains("tutorial.claim_first_daily"));
 		assertTrue(ids.contains("tutorial.buy_first_egg"));
 		assertTrue(ids.contains("tutorial.hatch_first_dino"));

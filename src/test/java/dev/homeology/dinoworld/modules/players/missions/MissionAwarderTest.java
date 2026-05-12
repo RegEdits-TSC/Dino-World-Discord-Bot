@@ -83,8 +83,21 @@ class MissionAwarderTest {
 	}
 
 	@Test
+	void rankCommandAwardsSeeRankMission() {
+		seedCompleted("tutorial.check_profile");
+
+		List<Mission> awarded = awarder.detectAndAward(42L, "rank", null);
+		assertEquals(1, awarded.size());
+		assertEquals("tutorial.see_rank", awarded.get(0).id());
+
+		long expected = catalog.byId("tutorial.see_rank").orElseThrow().rewardCoins();
+		assertEquals(expected, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
 	void shopCommandAwardsVisitShopMission() {
-		seedCompleted("tutorial.check_profile", "tutorial.claim_first_daily");
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
+			"tutorial.claim_first_daily");
 
 		List<Mission> awarded = awarder.detectAndAward(42L, "shop", null);
 		assertEquals(1, awarded.size());
@@ -96,8 +109,8 @@ class MissionAwarderTest {
 
 	@Test
 	void zooDashboardSubcommandAwardsCheckDashboardMission() {
-		seedCompleted("tutorial.check_profile", "tutorial.claim_first_daily",
-			"tutorial.visit_shop", "tutorial.buy_first_egg",
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
+			"tutorial.claim_first_daily", "tutorial.visit_shop", "tutorial.buy_first_egg",
 			"tutorial.hatch_first_dino", "tutorial.feed_first_dino");
 
 		List<Mission> awarded = awarder.detectAndAward(42L, "zoo", "dashboard");
@@ -107,8 +120,8 @@ class MissionAwarderTest {
 
 	@Test
 	void zooIssuesSubcommandDoesNotAwardCheckDashboardMission() {
-		seedCompleted("tutorial.check_profile", "tutorial.claim_first_daily",
-			"tutorial.visit_shop", "tutorial.buy_first_egg",
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
+			"tutorial.claim_first_daily", "tutorial.visit_shop", "tutorial.buy_first_egg",
 			"tutorial.hatch_first_dino", "tutorial.feed_first_dino");
 
 		// dashboard mission requires the dashboard subcommand specifically.
@@ -120,7 +133,7 @@ class MissionAwarderTest {
 
 	@Test
 	void claimedDailyMissionFiresOnceLastDailySet() {
-		seedCompleted("tutorial.check_profile");
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank");
 
 		// State trigger — runs even when the triggering command isn't /daily,
 		// since the awarder scans state on every command.
@@ -133,8 +146,8 @@ class MissionAwarderTest {
 
 	@Test
 	void ownsDinoMissionFiresAfterHatch() {
-		seedCompleted("tutorial.check_profile", "tutorial.claim_first_daily",
-			"tutorial.visit_shop", "tutorial.buy_first_egg");
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
+			"tutorial.claim_first_daily", "tutorial.visit_shop", "tutorial.buy_first_egg");
 		Enclosure enc = enclosures.create(42L, "forest", 5, 5, "Home");
 		dinos.create(42L, "velociraptor", OptionalLong.of(enc.id()), null);
 
@@ -145,8 +158,8 @@ class MissionAwarderTest {
 
 	@Test
 	void fedDinoMissionFiresAfterFeed() {
-		seedCompleted("tutorial.check_profile", "tutorial.claim_first_daily",
-			"tutorial.visit_shop", "tutorial.buy_first_egg",
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
+			"tutorial.claim_first_daily", "tutorial.visit_shop", "tutorial.buy_first_egg",
 			"tutorial.hatch_first_dino");
 		Enclosure enc = enclosures.create(42L, "forest", 5, 5, "Home");
 		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.of(enc.id()), null);
@@ -172,16 +185,18 @@ class MissionAwarderTest {
 
 	@Test
 	void cascadingStateMissionsFireInOneAwarderPass() {
-		// check_profile is incomplete; claim_first_daily's state is already
-		// true. Running /profile satisfies check_profile's command trigger;
-		// claim_first_daily's state-trigger should fire on the same pass
-		// because its only prereq just completed.
+		// check_profile is already done; see_rank is the gate. Running
+		// /rank satisfies see_rank's command trigger, and
+		// claim_first_daily's state is already true — it should cascade
+		// on the same pass because its only remaining prereq just
+		// completed.
+		seedCompleted("tutorial.check_profile");
 		players.recordDailyClaim(42L, Instant.now());
 
-		List<Mission> awarded = awarder.detectAndAward(42L, "profile", null);
+		List<Mission> awarded = awarder.detectAndAward(42L, "rank", null);
 		var ids = awarded.stream().map(Mission::id).toList();
-		assertTrue(ids.contains("tutorial.check_profile"),
-			"check_profile fires first (command trigger)");
+		assertTrue(ids.contains("tutorial.see_rank"),
+			"see_rank fires first (command trigger)");
 		assertTrue(ids.contains("tutorial.claim_first_daily"),
 			"claim_first_daily cascades on the same pass once its prereq is done");
 	}
@@ -200,14 +215,15 @@ class MissionAwarderTest {
 
 	@Test
 	void priorCommandRunSatisfiesGatedMissionOnLaterPass() {
-		// The reported UX scenario: /shop and /daily run before /profile.
-		// Each early awarder pass is gated by check_profile, so nothing
-		// awards — but command_runs preserves the fact that /shop
-		// happened. When /profile finally runs and unblocks the set, the
-		// awarder finds visit_shop's trigger satisfied retroactively via
-		// command_runs and awards it on the same pass without forcing
-		// the player to re-run /shop.
+		// The reported UX scenario, extended with see_rank: /shop, /rank,
+		// and /daily run before /profile. Each early awarder pass is gated
+		// by check_profile, so nothing awards — but command_runs preserves
+		// the fact that /shop and /rank happened. When /profile finally
+		// runs and unblocks the set, every gated trigger fires
+		// retroactively on the same pass without forcing the player to
+		// re-run anything.
 		commandRuns.record(42L, "shop", null);
+		commandRuns.record(42L, "rank", null);
 		commandRuns.record(42L, "daily", null);
 		players.recordDailyClaim(42L, Instant.now());
 
@@ -215,6 +231,8 @@ class MissionAwarderTest {
 		var ids = awarded.stream().map(Mission::id).toList();
 		assertTrue(ids.contains("tutorial.check_profile"),
 			"check_profile fires on the current command");
+		assertTrue(ids.contains("tutorial.see_rank"),
+			"see_rank cascades on the command_runs history");
 		assertTrue(ids.contains("tutorial.claim_first_daily"),
 			"claim_first_daily cascades on persistent state");
 		assertTrue(ids.contains("tutorial.visit_shop"),
@@ -241,8 +259,8 @@ class MissionAwarderTest {
 	void subcommandSpecificTriggerOnlyMatchesRecordedSubcommand() {
 		// command:zoo:dashboard must NOT fire just because the user ran
 		// /zoo income earlier — the subcommand has to match exactly.
-		seedCompleted("tutorial.check_profile", "tutorial.claim_first_daily",
-			"tutorial.visit_shop", "tutorial.buy_first_egg",
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
+			"tutorial.claim_first_daily", "tutorial.visit_shop", "tutorial.buy_first_egg",
 			"tutorial.hatch_first_dino", "tutorial.feed_first_dino");
 		commandRuns.record(42L, "zoo", "income");
 
@@ -279,7 +297,7 @@ class MissionAwarderTest {
 
 	@Test
 	void rerunningAwarderDoesNotDoublePay() {
-		seedCompleted("tutorial.check_profile");
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank");
 		players.recordDailyClaim(42L, Instant.now());
 		List<Mission> first = awarder.detectAndAward(42L, "daily", null);
 		long after = players.get(42L).orElseThrow().coins();
@@ -293,7 +311,7 @@ class MissionAwarderTest {
 
 	@Test
 	void rewardLedgersUseMissionScopedReason() throws Exception {
-		seedCompleted("tutorial.check_profile");
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank");
 		players.recordDailyClaim(42L, Instant.now());
 		awarder.detectAndAward(42L, "daily", null);
 

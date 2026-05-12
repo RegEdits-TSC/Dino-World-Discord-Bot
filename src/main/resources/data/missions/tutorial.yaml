@@ -5,14 +5,15 @@
 # condition satisfied for a player; the player gets a follow-up
 # ephemeral with the milestone right after the triggering action.
 #
-# Total tutorial reward: 1400 coins, 415 XP.
+# Total tutorial reward: 1450 coins, 440 XP.
 # Sized for the live shop where the cheapest Common egg is 500c:
 #   - After /profile + check_profile (+250c)                    = 250c
-#   - After /daily (100c) + claim mission (+250c)               = 600c  ← 500c egg + 100c buffer at shop time
-#   - After /shop + browse mission (+250c)                      = 850c
-#   - After buying egg (-500c) + buy_first_egg mission (+200c)  = 550c
-#   - After hatch + hatch mission (+200c)                       = 750c
-#   - Plus +100/+50/+100 from feed / dashboard / inspect        = 1000c at end of tutorial
+#   - After /rank + see_rank (+50c)                             = 300c
+#   - After /daily (100c) + claim mission (+250c)               = 650c  ← 500c egg + 150c buffer at shop time
+#   - After /shop + browse mission (+250c)                      = 900c
+#   - After buying egg (-500c) + buy_first_egg mission (+200c)  = 600c
+#   - After hatch + hatch mission (+200c)                       = 800c
+#   - Plus +100/+50/+100 from feed / dashboard / inspect        = 1050c at end of tutorial
 # The /profile step is intentional: it puts the player at ≥500c by the
 # time /shop renders, so the "Your balance" line and the per-egg Buy
 # button are correct on first view even if the visit_shop mission
@@ -38,6 +39,13 @@ missions:
     trigger: command:profile
     reward_coins: 250
     reward_xp: 50
+
+  - id: see_rank
+    display_name: See your rank
+    description: Run `/rank` to check your level and XP progress.
+    trigger: command:rank
+    reward_coins: 50
+    reward_xp: 25
 
   - id: claim_first_daily
     display_name: Claim your first daily
