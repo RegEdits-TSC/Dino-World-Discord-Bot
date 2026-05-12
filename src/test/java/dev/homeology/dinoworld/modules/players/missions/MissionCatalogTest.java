@@ -37,6 +37,7 @@ class MissionCatalogTest {
 		// Pin the milestones the operator scoped — not an exhaustive check,
 		// just the headline ones so a careless YAML edit stands out.
 		var ids = catalog.all().stream().map(Mission::id).toList();
+		assertTrue(ids.contains("tutorial.check_profile"));
 		assertTrue(ids.contains("tutorial.claim_first_daily"));
 		assertTrue(ids.contains("tutorial.buy_first_egg"));
 		assertTrue(ids.contains("tutorial.hatch_first_dino"));
@@ -53,20 +54,24 @@ class MissionCatalogTest {
 	private static final long CHEAPEST_COMMON_EGG = 500L;
 
 	@Test
-	void firstTwoMissionsLeaveComfortableBufferForFirstEgg() {
-		// The whole reason this feature exists: a new player should be able
-		// to clear the first two missions and afford the cheapest Common
-		// egg with room to spare. Exact-change sizing reads as "I can't
-		// afford this" against the slightly-stale balance the shop UI
-		// displays before mission 2's reward credits.
-		long claim = catalog.byId("tutorial.claim_first_daily").orElseThrow().rewardCoins();
-		long visit = catalog.byId("tutorial.visit_shop").orElseThrow().rewardCoins();
+	void missionsBeforeShopLeaveComfortableBufferForFirstEgg() {
+		// By the time the player reaches the /shop step, the sum of every
+		// mission reward ordered before visit_shop in YAML — plus the 100c
+		// daily grant — must clear the cheapest Common egg with room to
+		// spare. Exact-change sizing reads as "I can't afford this"
+		// against the slightly-stale balance the shop UI displays before
+		// visit_shop's own reward has credited from a concurrent worker.
+		long beforeShop = 0L;
+		for (Mission m : catalog.all()) {
+			if ("tutorial.visit_shop".equals(m.id())) break;
+			beforeShop += m.rewardCoins();
+		}
 		long dailyGrant = 100L; // /daily itself gives 100c
 		long target = CHEAPEST_COMMON_EGG + 100L; // egg cost + 100c buffer
-		assertTrue(claim + visit + dailyGrant >= target,
-			"daily + first two missions should put the player at ≥" + target
+		assertTrue(beforeShop + dailyGrant >= target,
+			"missions ordered before visit_shop + daily should sum to ≥" + target
 				+ "c (cheapest egg " + CHEAPEST_COMMON_EGG + "c + 100c buffer); got "
-				+ (claim + visit + dailyGrant));
+				+ (beforeShop + dailyGrant));
 	}
 
 	@Test
