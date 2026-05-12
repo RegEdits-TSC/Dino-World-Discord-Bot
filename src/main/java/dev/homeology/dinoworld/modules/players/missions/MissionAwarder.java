@@ -13,6 +13,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -69,23 +70,43 @@ public final class MissionAwarder {
 
 	/**
 	 * Pure work — split out so tests can drive the awarder without
-	 * mocking a full JDA event. Walks every mission in the catalog,
-	 * asks {@link #isSatisfied} whether it's now true, and INSERT-or-
-	 * NO-OPs the progress row. Returns only the missions whose INSERT
-	 * actually happened, so duplicate calls (or races) don't double-pay.
+	 * mocking a full JDA event. Walks each mission set in YAML order,
+	 * asks {@link #isSatisfied} whether the current mission is true, and
+	 * INSERT-or-NO-OPs the progress row. Returns only the missions whose
+	 * INSERT actually happened, so duplicate calls (or races) don't
+	 * double-pay.
+	 *
+	 * <p>Per-set ordering is implicit: within a set, a mission is only
+	 * considered after every earlier mission in the same set is
+	 * completed. Hitting an incomplete-and-unsatisfied mission stops
+	 * scanning the rest of that set on this pass — later missions wait
+	 * for their predecessor regardless of their own trigger state.
+	 * Multiple sets are independent, so a seasonal set's progress
+	 * doesn't gate the tutorial's.
 	 */
 	List<Mission> detectAndAward(long userId, String commandName, String subcommandName) {
-		Set<String> alreadyDone = progress.completedFor(userId);
+		Set<String> done = new HashSet<>(progress.completedFor(userId));
 		List<Mission> awarded = new ArrayList<>();
-		for (Mission m : catalog.all()) {
-			if (alreadyDone.contains(m.id())) continue;
-			if (!isSatisfied(m.trigger(), userId, commandName, subcommandName)) continue;
-			// Race-safe: markCompleted INSERTs ON CONFLICT DO NOTHING and
-			// returns false if another path already inserted. Only grant
-			// the reward when our INSERT actually happened.
-			if (!progress.markCompleted(userId, m.id())) continue;
-			grantReward(userId, m);
-			awarded.add(m);
+		for (MissionCatalog.MissionSet set : catalog.sets()) {
+			for (Mission m : set.missions()) {
+				if (done.contains(m.id())) continue;
+				// First undone mission in this set. If its trigger is
+				// satisfied right now, fire it and let the loop continue
+				// so a cascading state change (e.g. owns_egg already true
+				// when buy_first_egg unlocks) can award the next one too.
+				// Otherwise stop scanning this set — later missions wait.
+				if (!isSatisfied(m.trigger(), userId, commandName, subcommandName)) break;
+				// Race-safe: markCompleted INSERTs ON CONFLICT DO NOTHING and
+				// returns false if another path already inserted. Only grant
+				// the reward when our INSERT actually happened.
+				if (!progress.markCompleted(userId, m.id())) {
+					done.add(m.id());
+					continue;
+				}
+				grantReward(userId, m);
+				awarded.add(m);
+				done.add(m.id());
+			}
 		}
 		return awarded;
 	}

@@ -69,7 +69,20 @@ class MissionAwarderTest {
 	// ─── command-trigger missions ────────────────────────────────────────
 
 	@Test
+	void profileCommandAwardsCheckProfileMission() {
+		// First mission in the tutorial set — no prerequisites to seed.
+		List<Mission> awarded = awarder.detectAndAward(42L, "profile", null);
+		assertEquals(1, awarded.size());
+		assertEquals("tutorial.check_profile", awarded.get(0).id());
+
+		long expected = catalog.byId("tutorial.check_profile").orElseThrow().rewardCoins();
+		assertEquals(expected, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
 	void shopCommandAwardsVisitShopMission() {
+		seedCompleted("tutorial.check_profile", "tutorial.claim_first_daily");
+
 		List<Mission> awarded = awarder.detectAndAward(42L, "shop", null);
 		assertEquals(1, awarded.size());
 		assertEquals("tutorial.visit_shop", awarded.get(0).id());
@@ -80,6 +93,10 @@ class MissionAwarderTest {
 
 	@Test
 	void zooDashboardSubcommandAwardsCheckDashboardMission() {
+		seedCompleted("tutorial.check_profile", "tutorial.claim_first_daily",
+			"tutorial.visit_shop", "tutorial.buy_first_egg",
+			"tutorial.hatch_first_dino", "tutorial.feed_first_dino");
+
 		List<Mission> awarded = awarder.detectAndAward(42L, "zoo", "dashboard");
 		assertTrue(awarded.stream().anyMatch(m -> "tutorial.check_park_dashboard".equals(m.id())),
 			"command:zoo:dashboard trigger fires only when subcommand matches");
@@ -87,6 +104,10 @@ class MissionAwarderTest {
 
 	@Test
 	void zooIssuesSubcommandDoesNotAwardCheckDashboardMission() {
+		seedCompleted("tutorial.check_profile", "tutorial.claim_first_daily",
+			"tutorial.visit_shop", "tutorial.buy_first_egg",
+			"tutorial.hatch_first_dino", "tutorial.feed_first_dino");
+
 		// dashboard mission requires the dashboard subcommand specifically.
 		List<Mission> awarded = awarder.detectAndAward(42L, "zoo", "issues");
 		assertFalse(awarded.stream().anyMatch(m -> "tutorial.check_park_dashboard".equals(m.id())));
@@ -96,6 +117,8 @@ class MissionAwarderTest {
 
 	@Test
 	void claimedDailyMissionFiresOnceLastDailySet() {
+		seedCompleted("tutorial.check_profile");
+
 		// State trigger — runs even when the triggering command isn't /daily,
 		// since the awarder scans state on every command.
 		assertFalse(playerHasCompleted("tutorial.claim_first_daily"));
@@ -107,6 +130,8 @@ class MissionAwarderTest {
 
 	@Test
 	void ownsDinoMissionFiresAfterHatch() {
+		seedCompleted("tutorial.check_profile", "tutorial.claim_first_daily",
+			"tutorial.visit_shop", "tutorial.buy_first_egg");
 		Enclosure enc = enclosures.create(42L, "forest", 5, 5, "Home");
 		dinos.create(42L, "velociraptor", OptionalLong.of(enc.id()), null);
 
@@ -117,6 +142,9 @@ class MissionAwarderTest {
 
 	@Test
 	void fedDinoMissionFiresAfterFeed() {
+		seedCompleted("tutorial.check_profile", "tutorial.claim_first_daily",
+			"tutorial.visit_shop", "tutorial.buy_first_egg",
+			"tutorial.hatch_first_dino");
 		Enclosure enc = enclosures.create(42L, "forest", 5, 5, "Home");
 		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.of(enc.id()), null);
 		dinos.recordFed(d.id(), Instant.now());
@@ -126,10 +154,50 @@ class MissionAwarderTest {
 		assertTrue(ids.contains("tutorial.feed_first_dino"));
 	}
 
+	// ─── implicit per-set ordering ───────────────────────────────────────
+
+	@Test
+	void laterMissionDoesNotFireWhenEarlierMissionPending() {
+		// visit_shop's trigger is satisfied (the user ran /shop) but
+		// check_profile and claim_first_daily are still pending. The
+		// implicit-order rule must withhold visit_shop's award.
+		List<Mission> awarded = awarder.detectAndAward(42L, "shop", null);
+		assertTrue(awarded.isEmpty(),
+			"visit_shop must not fire while earlier missions are pending; got " + awarded);
+		assertFalse(playerHasCompleted("tutorial.visit_shop"));
+	}
+
+	@Test
+	void cascadingStateMissionsFireInOneAwarderPass() {
+		// check_profile is incomplete; claim_first_daily's state is already
+		// true. Running /profile satisfies check_profile's command trigger;
+		// claim_first_daily's state-trigger should fire on the same pass
+		// because its only prereq just completed.
+		players.recordDailyClaim(42L, Instant.now());
+
+		List<Mission> awarded = awarder.detectAndAward(42L, "profile", null);
+		var ids = awarded.stream().map(Mission::id).toList();
+		assertTrue(ids.contains("tutorial.check_profile"),
+			"check_profile fires first (command trigger)");
+		assertTrue(ids.contains("tutorial.claim_first_daily"),
+			"claim_first_daily cascades on the same pass once its prereq is done");
+	}
+
+	@Test
+	void pendingPrereqStopsScanEvenIfLaterMissionSatisfied() {
+		// check_profile is pending. /zoo dashboard is run, which would
+		// normally satisfy check_park_dashboard. Implicit order requires
+		// us to halt the set at check_profile and award nothing.
+		List<Mission> awarded = awarder.detectAndAward(42L, "zoo", "dashboard");
+		assertTrue(awarded.isEmpty(),
+			"no mission should fire while check_profile blocks the set; got " + awarded);
+	}
+
 	// ─── idempotency ─────────────────────────────────────────────────────
 
 	@Test
 	void rerunningAwarderDoesNotDoublePay() {
+		seedCompleted("tutorial.check_profile");
 		players.recordDailyClaim(42L, Instant.now());
 		List<Mission> first = awarder.detectAndAward(42L, "daily", null);
 		long after = players.get(42L).orElseThrow().coins();
@@ -143,6 +211,7 @@ class MissionAwarderTest {
 
 	@Test
 	void rewardLedgersUseMissionScopedReason() throws Exception {
+		seedCompleted("tutorial.check_profile");
 		players.recordDailyClaim(42L, Instant.now());
 		awarder.detectAndAward(42L, "daily", null);
 
@@ -159,5 +228,14 @@ class MissionAwarderTest {
 
 	private boolean playerHasCompleted(String missionId) {
 		return progress.completedFor(42L).contains(missionId);
+	}
+
+	private void seedCompleted(String... missionIds) {
+		// Skip the awarder's reward path — we just need the progress rows
+		// in place so later missions are eligible under the implicit-order
+		// rule. Used by tests that exercise a single mission in isolation.
+		for (String id : missionIds) {
+			progress.markCompleted(42L, id);
+		}
 	}
 }
