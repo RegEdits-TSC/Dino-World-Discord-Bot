@@ -11,6 +11,7 @@ import dev.homeology.dinoworld.modules.zoo.EnclosureService;
 import dev.homeology.dinoworld.modules.zoo.RarityCatalog;
 import dev.homeology.dinoworld.modules.zoo.model.DinoInstance;
 import dev.homeology.dinoworld.modules.zoo.model.Enclosure;
+import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,7 @@ class MissionAwarderTest {
 	private EnclosureService enclosures;
 	private MissionCatalog catalog;
 	private MissionProgressService progress;
+	private CommandRunsService commandRuns;
 	private MissionAwarder awarder;
 
 	@BeforeEach
@@ -58,7 +60,8 @@ class MissionAwarderTest {
 
 		catalog = new MissionCatalog();
 		progress = new MissionProgressService(ds);
-		awarder = new MissionAwarder(ds, catalog, progress, players);
+		commandRuns = new CommandRunsService(ds);
+		awarder = new MissionAwarder(ds, catalog, progress, players, commandRuns);
 	}
 
 	@AfterEach
@@ -191,6 +194,85 @@ class MissionAwarderTest {
 		List<Mission> awarded = awarder.detectAndAward(42L, "zoo", "dashboard");
 		assertTrue(awarded.isEmpty(),
 			"no mission should fire while check_profile blocks the set; got " + awarded);
+	}
+
+	// ─── persistent command-trigger history ──────────────────────────────
+
+	@Test
+	void priorCommandRunSatisfiesGatedMissionOnLaterPass() {
+		// The reported UX scenario: /shop and /daily run before /profile.
+		// Each early awarder pass is gated by check_profile, so nothing
+		// awards — but command_runs preserves the fact that /shop
+		// happened. When /profile finally runs and unblocks the set, the
+		// awarder finds visit_shop's trigger satisfied retroactively via
+		// command_runs and awards it on the same pass without forcing
+		// the player to re-run /shop.
+		commandRuns.record(42L, "shop", null);
+		commandRuns.record(42L, "daily", null);
+		players.recordDailyClaim(42L, Instant.now());
+
+		List<Mission> awarded = awarder.detectAndAward(42L, "profile", null);
+		var ids = awarded.stream().map(Mission::id).toList();
+		assertTrue(ids.contains("tutorial.check_profile"),
+			"check_profile fires on the current command");
+		assertTrue(ids.contains("tutorial.claim_first_daily"),
+			"claim_first_daily cascades on persistent state");
+		assertTrue(ids.contains("tutorial.visit_shop"),
+			"visit_shop cascades on the command_runs history without /shop being rerun");
+	}
+
+	@Test
+	void priorCommandRunDoesNotBypassOrderingRule() {
+		// /zoo dashboard was run early — command_runs has the row — but
+		// the implicit-order rule still requires every earlier mission
+		// in the set to complete first. Running /profile alone unlocks
+		// check_profile only; check_park_dashboard waits for the rest of
+		// the chain.
+		commandRuns.record(42L, "zoo", "dashboard");
+
+		List<Mission> awarded = awarder.detectAndAward(42L, "profile", null);
+		var ids = awarded.stream().map(Mission::id).toList();
+		assertTrue(ids.contains("tutorial.check_profile"));
+		assertFalse(ids.contains("tutorial.check_park_dashboard"),
+			"command_runs alone does not bypass the order rule");
+	}
+
+	@Test
+	void subcommandSpecificTriggerOnlyMatchesRecordedSubcommand() {
+		// command:zoo:dashboard must NOT fire just because the user ran
+		// /zoo income earlier — the subcommand has to match exactly.
+		seedCompleted("tutorial.check_profile", "tutorial.claim_first_daily",
+			"tutorial.visit_shop", "tutorial.buy_first_egg",
+			"tutorial.hatch_first_dino", "tutorial.feed_first_dino");
+		commandRuns.record(42L, "zoo", "income");
+
+		List<Mission> awarded = awarder.detectAndAward(42L, "dino", "inspect");
+		assertFalse(awarded.stream().anyMatch(m -> "tutorial.check_park_dashboard".equals(m.id())),
+			"recording /zoo income must not satisfy a command:zoo:dashboard trigger");
+	}
+
+	@Test
+	void afterCommandRecordsTheCommandForFutureRuns() {
+		// Drive the public surface to make sure CommandRouter's call into
+		// afterCommand actually writes the command_runs row that later
+		// awarder passes rely on. Without this, the retroactive
+		// satisfaction tests above would be vacuous — they'd assert the
+		// service works in isolation but miss the integration point.
+		assertFalse(commandRuns.hasRun(42L, "shop", null));
+		awarder.afterCommand(stubSlashEvent(42L, "Alice"), "shop");
+		assertTrue(commandRuns.hasRun(42L, "shop", null),
+			"afterCommand must record the command before running the awarder");
+	}
+
+	private static SlashCommandInteractionEvent stubSlashEvent(long userId, String name) {
+		SlashCommandInteractionEvent event = org.mockito.Mockito.mock(SlashCommandInteractionEvent.class);
+		net.dv8tion.jda.api.entities.User user = org.mockito.Mockito.mock(
+			net.dv8tion.jda.api.entities.User.class);
+		org.mockito.Mockito.when(user.getIdLong()).thenReturn(userId);
+		org.mockito.Mockito.when(user.getEffectiveName()).thenReturn(name);
+		org.mockito.Mockito.when(event.getUser()).thenReturn(user);
+		org.mockito.Mockito.when(event.getSubcommandName()).thenReturn(null);
+		return event;
 	}
 
 	// ─── idempotency ─────────────────────────────────────────────────────

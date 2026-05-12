@@ -43,28 +43,37 @@ public final class MissionAwarder {
 	private final MissionCatalog catalog;
 	private final MissionProgressService progress;
 	private final PlayerService players;
+	private final CommandRunsService commandRuns;
 
 	public MissionAwarder(DataSource dataSource,
 	                      MissionCatalog catalog,
 	                      MissionProgressService progress,
-	                      PlayerService players) {
+	                      PlayerService players,
+	                      CommandRunsService commandRuns) {
 		this.dataSource = dataSource;
 		this.catalog = catalog;
 		this.progress = progress;
 		this.players = players;
+		this.commandRuns = commandRuns;
 	}
 
 	/**
 	 * Run the awarder pass after a slash command body has completed.
 	 * Sends one combined follow-up if any missions newly satisfied so
 	 * the player isn't spammed with several DMs in quick succession.
+	 *
+	 * <p>Records the command in {@code command_runs} before the
+	 * detection sweep so a future awarder pass — possibly on a
+	 * different command — can satisfy a {@code command:<name>}
+	 * mission whose trigger fired while an earlier mission was still
+	 * pending.
 	 */
 	public void afterCommand(SlashCommandInteractionEvent event,
 	                         String topCommandName) {
-		List<Mission> awarded = detectAndAward(
-			event.getUser().getIdLong(),
-			topCommandName,
-			event.getSubcommandName());
+		long userId = event.getUser().getIdLong();
+		String subcommand = event.getSubcommandName();
+		commandRuns.record(userId, topCommandName, subcommand);
+		List<Mission> awarded = detectAndAward(userId, topCommandName, subcommand);
 		if (!awarded.isEmpty()) sendFollowUp(event, awarded);
 	}
 
@@ -114,9 +123,16 @@ public final class MissionAwarder {
 	private boolean isSatisfied(MissionTrigger trigger, long userId,
 	                            String commandName, String subcommandName) {
 		return switch (trigger) {
-			case MissionTrigger.RanCommand rc ->
-				commandName.equals(rc.command())
+			case MissionTrigger.RanCommand rc -> {
+				// Match on the current command OR on the persistent
+				// command_runs history: if the player ran /shop before
+				// the visit_shop mission was eligible, they shouldn't
+				// have to run /shop again — the row in command_runs
+				// keeps that fact alive across awarder passes.
+				boolean nowMatch = commandName.equals(rc.command())
 					&& (rc.subcommand() == null || rc.subcommand().equals(subcommandName));
+				yield nowMatch || commandRuns.hasRun(userId, rc.command(), rc.subcommand());
+			}
 			case MissionTrigger.StateTrigger st -> switch (st.state()) {
 				case CLAIMED_DAILY -> hasClaimedDaily(userId);
 				case OWNS_EGG -> count("egg_instance", "owner_user_id", userId) > 0;
