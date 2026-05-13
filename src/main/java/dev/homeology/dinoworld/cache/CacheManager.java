@@ -51,7 +51,12 @@ public final class CacheManager {
 		Entry e = caches.computeIfAbsent(name, n -> {
 			Caffeine<Object, Object> builder = Caffeine.newBuilder();
 			Caffeine<Object, Object> tuned = spec == null ? builder : spec.apply(builder);
-			return new Entry(tuned.recordStats().build(), keyType, valueType);
+			// Wrap in LoggingCache so DEBUG-level access logging is
+			// available per-cache via logger "dinoworld.cache.<name>".
+			// Wrapper is transparent — stats(), estimatedSize() and the
+			// rest forward to the underlying Caffeine instance.
+			Cache<Object, Object> wrapped = new LoggingCache<>(tuned.recordStats().build(), n);
+			return new Entry(wrapped, keyType, valueType);
 		});
 		if (!e.keyType.equals(keyType) || !e.valueType.equals(valueType)) {
 			throw new IllegalStateException(

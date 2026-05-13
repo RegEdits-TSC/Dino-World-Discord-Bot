@@ -114,8 +114,12 @@ public final class PlayerService {
 			     """)) {
 			ps.setLong(1, userId);
 			try (ResultSet rs = ps.executeQuery()) {
-				if (!rs.next()) return Optional.empty();
+				if (!rs.next()) {
+					log.debug("player db read user={} → no row", userId);
+					return Optional.empty();
+				}
 				Player p = mapRow(rs);
+				log.debug("player db read user={} → loaded", userId);
 				cache.put(userId, p);
 				return Optional.of(p);
 			}
