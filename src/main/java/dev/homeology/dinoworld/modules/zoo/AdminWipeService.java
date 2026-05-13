@@ -33,6 +33,11 @@ import java.sql.SQLException;
  *   <li>{@code mission_progress} — references {@code player.user_id};
  *       cleared so /admin reset doesn't leave the tutorial showing as
  *       already-completed for what should look like a fresh account.</li>
+ *   <li>{@code command_runs} — references {@code player.user_id};
+ *       cleared for the same reason as {@code mission_progress} —
+ *       otherwise a reset player would have command-trigger missions
+ *       cascade-fire on their next prereq because the awarder still
+ *       sees the pre-reset command history.</li>
  *   <li>{@code notification_queue} (no FK).</li>
  *   <li>{@code feedback_log} / {@code feedback_blacklist} (no FK).</li>
  *   <li>{@code player} — last, since everything else points back to it.</li>
@@ -78,13 +83,14 @@ public final class AdminWipeService {
 				int enclosures = deleteWhere(c, "enclosure", "owner_user_id", userId);
 				int ledger = deleteWhere(c, "coin_ledger", "user_id", userId);
 				int missions = deleteWhere(c, "mission_progress", "user_id", userId);
+				int commandRuns = deleteWhere(c, "command_runs", "user_id", userId);
 				int notifs = deleteWhere(c, "notification_queue", "user_id", userId);
 				int feedback = deleteWhere(c, "feedback_log", "user_id", userId);
 				int blacklist = deleteWhere(c, "feedback_blacklist", "user_id", userId);
 				int player = deleteWhere(c, "player", "user_id", userId);
 				c.commit();
 				WipeStats stats = new WipeStats(eggs, dinos, enclosures, staff, ledger, missions,
-					notifs, feedback, blacklist, player);
+					commandRuns, notifs, feedback, blacklist, player);
 				log.warn("admin wipePlayer({}) completed: {}", userId, stats);
 				return stats;
 			} catch (SQLException e) {
@@ -121,6 +127,7 @@ public final class AdminWipeService {
 				int staff = deleteWhere(c, "staff_member", "owner_user_id", userId);
 				int enclosures = deleteWhere(c, "enclosure", "owner_user_id", userId);
 				int missions = deleteWhere(c, "mission_progress", "user_id", userId);
+				int commandRuns = deleteWhere(c, "command_runs", "user_id", userId);
 				int playerUpdated;
 				try (PreparedStatement ps = c.prepareStatement(
 					"UPDATE player SET coins = 0, xp = 0, level = 1, last_daily = NULL WHERE user_id = ?")) {
@@ -129,7 +136,7 @@ public final class AdminWipeService {
 				}
 				c.commit();
 				TycoonResetStats stats = new TycoonResetStats(
-					eggs, dinos, enclosures, staff, missions, playerUpdated > 0);
+					eggs, dinos, enclosures, staff, missions, commandRuns, playerUpdated > 0);
 				log.warn("admin resetTycoon({}) completed: {}", userId, stats);
 				return stats;
 			} catch (SQLException e) {
@@ -161,7 +168,8 @@ public final class AdminWipeService {
 	 * confirmation embed.
 	 */
 	public record WipeStats(int eggs, int dinos, int enclosures, int staff, int ledger,
-	                        int missions, int notifications, int feedback, int blacklist, int player) {
+	                        int missions, int commandRuns, int notifications, int feedback,
+	                        int blacklist, int player) {
 		public boolean playerExisted() {
 			return player > 0;
 		}
@@ -172,6 +180,6 @@ public final class AdminWipeService {
 	 * {@link #resetTycoon}.
 	 */
 	public record TycoonResetStats(int eggs, int dinos, int enclosures, int staff,
-	                               int missions, boolean playerReset) {
+	                               int missions, int commandRuns, boolean playerReset) {
 	}
 }

@@ -11,6 +11,7 @@ import dev.homeology.dinoworld.modules.zoo.EnclosureService;
 import dev.homeology.dinoworld.modules.zoo.RarityCatalog;
 import dev.homeology.dinoworld.modules.zoo.model.DinoInstance;
 import dev.homeology.dinoworld.modules.zoo.model.Enclosure;
+import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,7 @@ class MissionAwarderTest {
 	private EnclosureService enclosures;
 	private MissionCatalog catalog;
 	private MissionProgressService progress;
+	private CommandRunsService commandRuns;
 	private MissionAwarder awarder;
 
 	@BeforeEach
@@ -58,7 +60,8 @@ class MissionAwarderTest {
 
 		catalog = new MissionCatalog();
 		progress = new MissionProgressService(ds);
-		awarder = new MissionAwarder(ds, catalog, progress, players);
+		commandRuns = new CommandRunsService(ds);
+		awarder = new MissionAwarder(ds, catalog, progress, players, commandRuns);
 	}
 
 	@AfterEach
@@ -69,7 +72,33 @@ class MissionAwarderTest {
 	// ─── command-trigger missions ────────────────────────────────────────
 
 	@Test
+	void profileCommandAwardsCheckProfileMission() {
+		// First mission in the tutorial set — no prerequisites to seed.
+		List<Mission> awarded = awarder.detectAndAward(42L, "profile", null);
+		assertEquals(1, awarded.size());
+		assertEquals("tutorial.check_profile", awarded.get(0).id());
+
+		long expected = catalog.byId("tutorial.check_profile").orElseThrow().rewardCoins();
+		assertEquals(expected, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
+	void rankCommandAwardsSeeRankMission() {
+		seedCompleted("tutorial.check_profile");
+
+		List<Mission> awarded = awarder.detectAndAward(42L, "rank", null);
+		assertEquals(1, awarded.size());
+		assertEquals("tutorial.see_rank", awarded.get(0).id());
+
+		long expected = catalog.byId("tutorial.see_rank").orElseThrow().rewardCoins();
+		assertEquals(expected, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
 	void shopCommandAwardsVisitShopMission() {
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
+			"tutorial.claim_first_daily");
+
 		List<Mission> awarded = awarder.detectAndAward(42L, "shop", null);
 		assertEquals(1, awarded.size());
 		assertEquals("tutorial.visit_shop", awarded.get(0).id());
@@ -80,6 +109,10 @@ class MissionAwarderTest {
 
 	@Test
 	void zooDashboardSubcommandAwardsCheckDashboardMission() {
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
+			"tutorial.claim_first_daily", "tutorial.visit_shop", "tutorial.buy_first_egg",
+			"tutorial.hatch_first_dino", "tutorial.feed_first_dino");
+
 		List<Mission> awarded = awarder.detectAndAward(42L, "zoo", "dashboard");
 		assertTrue(awarded.stream().anyMatch(m -> "tutorial.check_park_dashboard".equals(m.id())),
 			"command:zoo:dashboard trigger fires only when subcommand matches");
@@ -87,6 +120,10 @@ class MissionAwarderTest {
 
 	@Test
 	void zooIssuesSubcommandDoesNotAwardCheckDashboardMission() {
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
+			"tutorial.claim_first_daily", "tutorial.visit_shop", "tutorial.buy_first_egg",
+			"tutorial.hatch_first_dino", "tutorial.feed_first_dino");
+
 		// dashboard mission requires the dashboard subcommand specifically.
 		List<Mission> awarded = awarder.detectAndAward(42L, "zoo", "issues");
 		assertFalse(awarded.stream().anyMatch(m -> "tutorial.check_park_dashboard".equals(m.id())));
@@ -96,6 +133,8 @@ class MissionAwarderTest {
 
 	@Test
 	void claimedDailyMissionFiresOnceLastDailySet() {
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank");
+
 		// State trigger — runs even when the triggering command isn't /daily,
 		// since the awarder scans state on every command.
 		assertFalse(playerHasCompleted("tutorial.claim_first_daily"));
@@ -107,6 +146,8 @@ class MissionAwarderTest {
 
 	@Test
 	void ownsDinoMissionFiresAfterHatch() {
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
+			"tutorial.claim_first_daily", "tutorial.visit_shop", "tutorial.buy_first_egg");
 		Enclosure enc = enclosures.create(42L, "forest", 5, 5, "Home");
 		dinos.create(42L, "velociraptor", OptionalLong.of(enc.id()), null);
 
@@ -117,6 +158,9 @@ class MissionAwarderTest {
 
 	@Test
 	void fedDinoMissionFiresAfterFeed() {
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
+			"tutorial.claim_first_daily", "tutorial.visit_shop", "tutorial.buy_first_egg",
+			"tutorial.hatch_first_dino");
 		Enclosure enc = enclosures.create(42L, "forest", 5, 5, "Home");
 		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.of(enc.id()), null);
 		dinos.recordFed(d.id(), Instant.now());
@@ -126,10 +170,134 @@ class MissionAwarderTest {
 		assertTrue(ids.contains("tutorial.feed_first_dino"));
 	}
 
+	// ─── implicit per-set ordering ───────────────────────────────────────
+
+	@Test
+	void laterMissionDoesNotFireWhenEarlierMissionPending() {
+		// visit_shop's trigger is satisfied (the user ran /shop) but
+		// check_profile and claim_first_daily are still pending. The
+		// implicit-order rule must withhold visit_shop's award.
+		List<Mission> awarded = awarder.detectAndAward(42L, "shop", null);
+		assertTrue(awarded.isEmpty(),
+			"visit_shop must not fire while earlier missions are pending; got " + awarded);
+		assertFalse(playerHasCompleted("tutorial.visit_shop"));
+	}
+
+	@Test
+	void cascadingStateMissionsFireInOneAwarderPass() {
+		// check_profile is already done; see_rank is the gate. Running
+		// /rank satisfies see_rank's command trigger, and
+		// claim_first_daily's state is already true — it should cascade
+		// on the same pass because its only remaining prereq just
+		// completed.
+		seedCompleted("tutorial.check_profile");
+		players.recordDailyClaim(42L, Instant.now());
+
+		List<Mission> awarded = awarder.detectAndAward(42L, "rank", null);
+		var ids = awarded.stream().map(Mission::id).toList();
+		assertTrue(ids.contains("tutorial.see_rank"),
+			"see_rank fires first (command trigger)");
+		assertTrue(ids.contains("tutorial.claim_first_daily"),
+			"claim_first_daily cascades on the same pass once its prereq is done");
+	}
+
+	@Test
+	void pendingPrereqStopsScanEvenIfLaterMissionSatisfied() {
+		// check_profile is pending. /zoo dashboard is run, which would
+		// normally satisfy check_park_dashboard. Implicit order requires
+		// us to halt the set at check_profile and award nothing.
+		List<Mission> awarded = awarder.detectAndAward(42L, "zoo", "dashboard");
+		assertTrue(awarded.isEmpty(),
+			"no mission should fire while check_profile blocks the set; got " + awarded);
+	}
+
+	// ─── persistent command-trigger history ──────────────────────────────
+
+	@Test
+	void priorCommandRunSatisfiesGatedMissionOnLaterPass() {
+		// The reported UX scenario, extended with see_rank: /shop, /rank,
+		// and /daily run before /profile. Each early awarder pass is gated
+		// by check_profile, so nothing awards — but command_runs preserves
+		// the fact that /shop and /rank happened. When /profile finally
+		// runs and unblocks the set, every gated trigger fires
+		// retroactively on the same pass without forcing the player to
+		// re-run anything.
+		commandRuns.record(42L, "shop", null);
+		commandRuns.record(42L, "rank", null);
+		commandRuns.record(42L, "daily", null);
+		players.recordDailyClaim(42L, Instant.now());
+
+		List<Mission> awarded = awarder.detectAndAward(42L, "profile", null);
+		var ids = awarded.stream().map(Mission::id).toList();
+		assertTrue(ids.contains("tutorial.check_profile"),
+			"check_profile fires on the current command");
+		assertTrue(ids.contains("tutorial.see_rank"),
+			"see_rank cascades on the command_runs history");
+		assertTrue(ids.contains("tutorial.claim_first_daily"),
+			"claim_first_daily cascades on persistent state");
+		assertTrue(ids.contains("tutorial.visit_shop"),
+			"visit_shop cascades on the command_runs history without /shop being rerun");
+	}
+
+	@Test
+	void priorCommandRunDoesNotBypassOrderingRule() {
+		// /zoo dashboard was run early — command_runs has the row — but
+		// the implicit-order rule still requires every earlier mission
+		// in the set to complete first. Running /profile alone unlocks
+		// check_profile only; check_park_dashboard waits for the rest of
+		// the chain.
+		commandRuns.record(42L, "zoo", "dashboard");
+
+		List<Mission> awarded = awarder.detectAndAward(42L, "profile", null);
+		var ids = awarded.stream().map(Mission::id).toList();
+		assertTrue(ids.contains("tutorial.check_profile"));
+		assertFalse(ids.contains("tutorial.check_park_dashboard"),
+			"command_runs alone does not bypass the order rule");
+	}
+
+	@Test
+	void subcommandSpecificTriggerOnlyMatchesRecordedSubcommand() {
+		// command:zoo:dashboard must NOT fire just because the user ran
+		// /zoo income earlier — the subcommand has to match exactly.
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
+			"tutorial.claim_first_daily", "tutorial.visit_shop", "tutorial.buy_first_egg",
+			"tutorial.hatch_first_dino", "tutorial.feed_first_dino");
+		commandRuns.record(42L, "zoo", "income");
+
+		List<Mission> awarded = awarder.detectAndAward(42L, "dino", "inspect");
+		assertFalse(awarded.stream().anyMatch(m -> "tutorial.check_park_dashboard".equals(m.id())),
+			"recording /zoo income must not satisfy a command:zoo:dashboard trigger");
+	}
+
+	@Test
+	void afterCommandRecordsTheCommandForFutureRuns() {
+		// Drive the public surface to make sure CommandRouter's call into
+		// afterCommand actually writes the command_runs row that later
+		// awarder passes rely on. Without this, the retroactive
+		// satisfaction tests above would be vacuous — they'd assert the
+		// service works in isolation but miss the integration point.
+		assertFalse(commandRuns.hasRun(42L, "shop", null));
+		awarder.afterCommand(stubSlashEvent(42L, "Alice"), "shop");
+		assertTrue(commandRuns.hasRun(42L, "shop", null),
+			"afterCommand must record the command before running the awarder");
+	}
+
+	private static SlashCommandInteractionEvent stubSlashEvent(long userId, String name) {
+		SlashCommandInteractionEvent event = org.mockito.Mockito.mock(SlashCommandInteractionEvent.class);
+		net.dv8tion.jda.api.entities.User user = org.mockito.Mockito.mock(
+			net.dv8tion.jda.api.entities.User.class);
+		org.mockito.Mockito.when(user.getIdLong()).thenReturn(userId);
+		org.mockito.Mockito.when(user.getEffectiveName()).thenReturn(name);
+		org.mockito.Mockito.when(event.getUser()).thenReturn(user);
+		org.mockito.Mockito.when(event.getSubcommandName()).thenReturn(null);
+		return event;
+	}
+
 	// ─── idempotency ─────────────────────────────────────────────────────
 
 	@Test
 	void rerunningAwarderDoesNotDoublePay() {
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank");
 		players.recordDailyClaim(42L, Instant.now());
 		List<Mission> first = awarder.detectAndAward(42L, "daily", null);
 		long after = players.get(42L).orElseThrow().coins();
@@ -143,6 +311,7 @@ class MissionAwarderTest {
 
 	@Test
 	void rewardLedgersUseMissionScopedReason() throws Exception {
+		seedCompleted("tutorial.check_profile", "tutorial.see_rank");
 		players.recordDailyClaim(42L, Instant.now());
 		awarder.detectAndAward(42L, "daily", null);
 
@@ -159,5 +328,14 @@ class MissionAwarderTest {
 
 	private boolean playerHasCompleted(String missionId) {
 		return progress.completedFor(42L).contains(missionId);
+	}
+
+	private void seedCompleted(String... missionIds) {
+		// Skip the awarder's reward path — we just need the progress rows
+		// in place so later missions are eligible under the implicit-order
+		// rule. Used by tests that exercise a single mission in isolation.
+		for (String id : missionIds) {
+			progress.markCompleted(42L, id);
+		}
 	}
 }

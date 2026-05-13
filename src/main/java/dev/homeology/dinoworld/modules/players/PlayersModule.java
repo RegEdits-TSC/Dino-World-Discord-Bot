@@ -3,6 +3,7 @@ package dev.homeology.dinoworld.modules.players;
 import dev.homeology.dinoworld.command.Command;
 import dev.homeology.dinoworld.core.Module;
 import dev.homeology.dinoworld.core.ModuleContext;
+import dev.homeology.dinoworld.modules.players.missions.CommandRunsService;
 import dev.homeology.dinoworld.modules.players.missions.MissionAwarder;
 import dev.homeology.dinoworld.modules.players.missions.MissionCatalog;
 import dev.homeology.dinoworld.modules.players.missions.MissionProgressService;
@@ -36,6 +37,7 @@ public final class PlayersModule implements Module {
 	private PlayerService playerService;
 	private MissionCatalog missionCatalog;
 	private MissionProgressService missionProgress;
+	private CommandRunsService commandRuns;
 	private MissionAwarder missionAwarder;
 	private ProfileCommand profileCommand;
 	private DailyCommand dailyCommand;
@@ -63,8 +65,10 @@ public final class PlayersModule implements Module {
 		ctx.services().register(MissionCatalog.class, missionCatalog);
 		this.missionProgress = new MissionProgressService(ctx.database().dataSource());
 		ctx.services().register(MissionProgressService.class, missionProgress);
+		this.commandRuns = new CommandRunsService(ctx.database().dataSource());
+		ctx.services().register(CommandRunsService.class, commandRuns);
 		this.missionAwarder = new MissionAwarder(
-			ctx.database().dataSource(), missionCatalog, missionProgress, playerService);
+			ctx.database().dataSource(), missionCatalog, missionProgress, playerService, commandRuns);
 		ctx.services().register(MissionAwarder.class, missionAwarder);
 
 		this.profileCommand = new ProfileCommand(playerService);

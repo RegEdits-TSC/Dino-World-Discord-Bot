@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import dev.homeology.dinoworld.cache.CacheManager;
 import dev.homeology.dinoworld.database.MigrationRunner;
 import dev.homeology.dinoworld.modules.players.PlayerService;
+import dev.homeology.dinoworld.modules.players.missions.CommandRunsService;
 import dev.homeology.dinoworld.modules.players.missions.MissionProgressService;
 import dev.homeology.dinoworld.modules.staff.StaffMemberService;
 import dev.homeology.dinoworld.modules.zoo.model.Enclosure;
@@ -46,6 +47,7 @@ class AdminWipeServiceTest {
 	private EnclosureService enclosures;
 	private StaffMemberService staff;
 	private MissionProgressService missions;
+	private CommandRunsService commandRuns;
 	private DinoCatalog catalog;
 	private RarityCatalog rarities;
 
@@ -70,6 +72,7 @@ class AdminWipeServiceTest {
 		enclosures = new EnclosureService(ds);
 		staff = new StaffMemberService(ds);
 		missions = new MissionProgressService(ds);
+		commandRuns = new CommandRunsService(ds);
 		eggs = new EggService(ds, rarities, catalog, players, dinos, enclosures,
 			pool -> pool.get(0),
 			Clock.fixed(NOW.minus(Duration.ofHours(2)), ZoneOffset.UTC));
@@ -253,6 +256,40 @@ class AdminWipeServiceTest {
 		assertEquals(2, stats.missions(), "reset stats record the cleared mission count");
 		assertEquals(0, count("mission_progress", "user_id", 42L),
 			"resetting tycoon state also clears mission progress so the tutorial replays");
+	}
+
+	// ─── command_runs orphan-leak regression ─────────────────────────────
+
+	@Test
+	void wipePlayerClearsCommandRuns() throws Exception {
+		// command_runs feeds the awarder's retroactive command-trigger
+		// match. A wipe must clear it or the next "fresh" player will
+		// cascade-fire command-trigger missions as their prereqs unlock
+		// without ever running the command — defeating the whole point
+		// of the wipe.
+		commandRuns.record(42L, "shop", null);
+		commandRuns.record(42L, "daily", null);
+		commandRuns.record(42L, "zoo", "dashboard");
+		assertEquals(3, count("command_runs", "user_id", 42L));
+
+		AdminWipeService.WipeStats stats = wipe.wipePlayer(42L);
+		assertEquals(3, stats.commandRuns(), "wipe stats record the cleared command-run count");
+		assertEquals(0, count("command_runs", "user_id", 42L),
+			"every command_runs row for the wiped user is gone");
+	}
+
+	@Test
+	void resetTycoonClearsCommandRuns() throws Exception {
+		// Same on the tycoon-only path — otherwise after /admin reset
+		// tycoon, running /profile would cascade-fire visit_shop
+		// because the pre-reset /shop run is still in command_runs.
+		commandRuns.record(42L, "shop", null);
+		commandRuns.record(42L, "profile", null);
+
+		AdminWipeService.TycoonResetStats stats = wipe.resetTycoon(42L);
+		assertEquals(2, stats.commandRuns(), "reset stats record the cleared command-run count");
+		assertEquals(0, count("command_runs", "user_id", 42L),
+			"resetting tycoon state also clears command_runs so the tutorial replays");
 	}
 
 	private long count(String table, String column, long value) throws Exception {
