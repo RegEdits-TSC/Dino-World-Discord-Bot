@@ -48,26 +48,22 @@ public final class StaffCatalog {
 				throw new IllegalStateException("Missing required resource: " + RESOURCE_PATH);
 			}
 			try (InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
-				Map<String, Object> raw = new Yaml().load(reader);
+				Map<?, ?> raw = new Yaml().load(reader);
 				if (raw == null) {
 					throw new IllegalStateException(RESOURCE_PATH + " is empty");
 				}
 
 				Object rolesNode = raw.get("roles");
-				if (!(rolesNode instanceof Map)) {
+				if (!(rolesNode instanceof Map<?, ?> rolesMap)) {
 					throw new IllegalStateException(
 						"Missing top-level 'roles' map in " + RESOURCE_PATH);
 				}
-				@SuppressWarnings("unchecked")
-				Map<String, Object> rolesMap = (Map<String, Object>) rolesNode;
-				for (Map.Entry<String, Object> entry : rolesMap.entrySet()) {
-					String id = entry.getKey();
-					if (!(entry.getValue() instanceof Map)) {
+				for (Map.Entry<?, ?> entry : rolesMap.entrySet()) {
+					String id = String.valueOf(entry.getKey());
+					if (!(entry.getValue() instanceof Map<?, ?> body)) {
 						throw new IllegalStateException(
 							"Role '" + id + "' must be a map in " + RESOURCE_PATH);
 					}
-					@SuppressWarnings("unchecked")
-					Map<String, Object> body = (Map<String, Object>) entry.getValue();
 					byId.put(id, parseRole(id, body));
 				}
 
@@ -139,7 +135,7 @@ public final class StaffCatalog {
 
 	// ─── parsing ─────────────────────────────────────────────────────────
 
-	private static StaffRole parseRole(String id, Map<String, Object> raw) {
+	private static StaffRole parseRole(String id, Map<?, ?> raw) {
 		String displayName = requireStr(raw, "display_name", id);
 		long hireCost = requireLong(raw, "hire_cost", id, 0);
 		long wagePerHour = requireLong(raw, "wage_per_hour", id, 0);
@@ -155,12 +151,10 @@ public final class StaffCatalog {
 		int unlockLevel = requireInt(raw, "unlock_level", id, 1);
 
 		Object effectNode = raw.get("effect");
-		if (!(effectNode instanceof Map)) {
+		if (!(effectNode instanceof Map<?, ?> effectBody)) {
 			throw new IllegalStateException(
 				"Role '" + id + "' is missing 'effect' map");
 		}
-		@SuppressWarnings("unchecked")
-		Map<String, Object> effectBody = (Map<String, Object>) effectNode;
 		StaffEffect effect = parseEffect(id, scope, effectBody);
 
 		return new StaffRole(id, displayName, hireCost, wagePerHour, scope,
@@ -168,7 +162,7 @@ public final class StaffCatalog {
 	}
 
 	private static StaffEffect parseEffect(String id, StaffRole.Scope scope,
-	                                       Map<String, Object> raw) {
+	                                       Map<?, ?> raw) {
 		String type = requireStr(raw, "type", id + ".effect");
 		return switch (type) {
 			case "auto_feed" -> {
@@ -226,7 +220,7 @@ public final class StaffCatalog {
 		};
 	}
 
-	private static String requireStr(Map<String, Object> raw, String key, String ctx) {
+	private static String requireStr(Map<?, ?> raw, String key, String ctx) {
 		Object v = raw.get(key);
 		if (v == null || v.toString().isBlank()) {
 			throw new IllegalStateException(
@@ -235,7 +229,7 @@ public final class StaffCatalog {
 		return v.toString();
 	}
 
-	private static long requireLong(Map<String, Object> raw, String key, String ctx, long min) {
+	private static long requireLong(Map<?, ?> raw, String key, String ctx, long min) {
 		Object v = raw.get(key);
 		if (!(v instanceof Number n)) {
 			throw new IllegalStateException(
@@ -249,11 +243,11 @@ public final class StaffCatalog {
 		return x;
 	}
 
-	private static int requireInt(Map<String, Object> raw, String key, String ctx, int min) {
+	private static int requireInt(Map<?, ?> raw, String key, String ctx, int min) {
 		return Math.toIntExact(requireLong(raw, key, ctx, min));
 	}
 
-	private static double requireDouble(Map<String, Object> raw, String key, String ctx, double min) {
+	private static double requireDouble(Map<?, ?> raw, String key, String ctx, double min) {
 		Object v = raw.get(key);
 		if (!(v instanceof Number n)) {
 			throw new IllegalStateException(
