@@ -42,9 +42,7 @@ final class LoggingCache<K, V> implements Cache<K, V> {
 	@Override
 	public V getIfPresent(K key) {
 		V v = delegate.getIfPresent(key);
-		if (log.isDebugEnabled()) {
-			log.debug("[{}] {} key={}", name, v == null ? "miss" : "hit", key);
-		}
+		log.debug("[{}] {} key={}", name, v == null ? "miss" : "hit", key);
 		return v;
 	}
 
@@ -58,18 +56,14 @@ final class LoggingCache<K, V> implements Cache<K, V> {
 			loaded[0] = true;
 			return mappingFunction.apply(k);
 		});
-		if (log.isDebugEnabled()) {
-			log.debug("[{}] {} key={}", name, loaded[0] ? "miss→loaded" : "hit", key);
-		}
+		log.debug("[{}] {} key={}", name, loaded[0] ? "miss→loaded" : "hit", key);
 		return v;
 	}
 
 	@Override
 	public Map<K, V> getAllPresent(Iterable<? extends K> keys) {
 		Map<K, V> out = delegate.getAllPresent(keys);
-		if (log.isDebugEnabled()) {
-			log.debug("[{}] getAllPresent → {} matched", name, out.size());
-		}
+		log.debug("[{}] getAllPresent → {} matched", name, out.size());
 		return out;
 	}
 
