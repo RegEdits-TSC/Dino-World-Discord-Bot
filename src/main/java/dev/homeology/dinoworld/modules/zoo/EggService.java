@@ -203,6 +203,7 @@ public final class EggService {
 		} catch (SQLException e) {
 			log.warn("egg findPending({}) failed: {}", userId, e.toString());
 		}
+		log.debug("egg_instance db read pending owner={} → {} rows", userId, out.size());
 		return out;
 	}
 
@@ -223,6 +224,7 @@ public final class EggService {
 		} catch (SQLException e) {
 			log.warn("egg findReadyButUnnotified failed: {}", e.toString());
 		}
+		log.debug("egg_instance db read ready-but-unnotified → {} rows", out.size());
 		return out;
 	}
 
@@ -303,7 +305,11 @@ public final class EggService {
 		     PreparedStatement ps = c.prepareStatement(SELECT_ALL + " WHERE id = ?")) {
 			ps.setLong(1, eggId);
 			try (ResultSet rs = ps.executeQuery()) {
-				if (!rs.next()) return Optional.empty();
+				if (!rs.next()) {
+					log.debug("egg_instance db read id={} → no row", eggId);
+					return Optional.empty();
+				}
+				log.debug("egg_instance db read id={} → loaded", eggId);
 				return Optional.of(mapRow(rs));
 			}
 		} catch (SQLException e) {

@@ -153,7 +153,11 @@ public final class StaffMemberService {
 		     PreparedStatement ps = c.prepareStatement(SELECT_ALL + " WHERE id = ?")) {
 			ps.setLong(1, staffId);
 			try (ResultSet rs = ps.executeQuery()) {
-				if (!rs.next()) return Optional.empty();
+				if (!rs.next()) {
+					log.debug("staff_member db read id={} → no row", staffId);
+					return Optional.empty();
+				}
+				log.debug("staff_member db read id={} → loaded", staffId);
 				return Optional.of(mapRow(rs));
 			}
 		} catch (SQLException e) {
@@ -174,6 +178,7 @@ public final class StaffMemberService {
 		} catch (SQLException e) {
 			log.warn("staff_member findByOwner({}) failed: {}", ownerUserId, e.toString());
 		}
+		log.debug("staff_member db read owner={} → {} rows", ownerUserId, out.size());
 		return out;
 	}
 
@@ -193,6 +198,7 @@ public final class StaffMemberService {
 		} catch (SQLException e) {
 			log.warn("staff_member findByEnclosure({}) failed: {}", enclosureId, e.toString());
 		}
+		log.debug("staff_member db read enclosure={} → {} rows", enclosureId, out.size());
 		return out;
 	}
 
@@ -213,6 +219,7 @@ public final class StaffMemberService {
 		} catch (SQLException e) {
 			log.warn("staff_member findGlobalByOwner({}) failed: {}", ownerUserId, e.toString());
 		}
+		log.debug("staff_member db read global owner={} → {} rows", ownerUserId, out.size());
 		return out;
 	}
 

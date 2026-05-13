@@ -178,6 +178,7 @@ public final class ZooIssueService {
 		} catch (SQLException e) {
 			log.warn("zoo_issue findOpenForOwner({}) failed: {}", ownerUserId, e.toString());
 		}
+		log.debug("zoo_issue db read open owner={} → {} rows", ownerUserId, out.size());
 		return out;
 	}
 
@@ -186,7 +187,11 @@ public final class ZooIssueService {
 		     PreparedStatement ps = c.prepareStatement(SELECT_ALL + " WHERE id = ?")) {
 			ps.setLong(1, id);
 			try (ResultSet rs = ps.executeQuery()) {
-				if (!rs.next()) return Optional.empty();
+				if (!rs.next()) {
+					log.debug("zoo_issue db read id={} → no row", id);
+					return Optional.empty();
+				}
+				log.debug("zoo_issue db read id={} → loaded", id);
 				return Optional.of(mapRow(rs));
 			}
 		} catch (SQLException e) {
