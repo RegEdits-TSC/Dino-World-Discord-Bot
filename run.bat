@@ -29,7 +29,9 @@ REM where partial multi-byte sequences at I/O buffer boundaries can drop
 REM bytes, merging lines together.
 
 if not defined JAR (
-    for /f "delims=" %%f in ('dir /b /a-d "build\libs\Dino-World-*-all.jar" 2^>nul') do if not defined JAR set "JAR=build\libs\%%f"
+    REM /o-d: newest first, so a fresh shadowJar wins over leftover
+    REM version-suffixed jars in build\libs.
+    for /f "delims=" %%f in ('dir /b /o-d /a-d "build\libs\Dino-World-*-all.jar" 2^>nul') do if not defined JAR set "JAR=build\libs\%%f"
 )
 if not defined JAVA_OPTS set "JAVA_OPTS=--enable-native-access=ALL-UNNAMED -Xmx256m -XX:+UseG1GC -Dfile.encoding=UTF-8 -Duser.timezone=UTC"
 

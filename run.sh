@@ -19,10 +19,21 @@
 #   JAR        path to the shadow jar
 #   JAVA_OPTS  JVM flags
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
-JAR="${JAR:-$(ls -1 build/libs/Dino-World-*-all.jar 2>/dev/null | head -1)}"
-JAVA_OPTS="${JAVA_OPTS:---enable-native-access=ALL-UNNAMED -Xmx256m -XX:+UseG1GC -Dfile.encoding=UTF-8 -Duser.timezone=UTC}"
+# Pick the newest shaded jar via a shell glob (parsing `ls` is fragile
+# and shellcheck-noisy). The loop short-circuits on first match.
+if [ -z "${JAR:-}" ]; then
+    for f in build/libs/Dino-World-*-all.jar; do
+        [ -f "$f" ] && JAR="$f" && break
+    done
+fi
+
+# JAVA_OPTS is the conventional space-separated flag list. Split it
+# into an array so each token becomes a separate java argument —
+# `java "$JAVA_OPTS"` would pass the whole string as one argument and
+# java would reject it.
+read -r -a JAVA_OPTS_ARR <<< "${JAVA_OPTS:---enable-native-access=ALL-UNNAMED -Xmx256m -XX:+UseG1GC -Dfile.encoding=UTF-8 -Duser.timezone=UTC}"
 
 if [ -z "$JAR" ] || [ ! -f "$JAR" ]; then
     echo "[run.sh] no shadow jar found at build/libs/Dino-World-*-all.jar."
@@ -45,7 +56,7 @@ crash_t=(0 0 0 0 0)
 
 while true; do
     start_s=$(date +%s)
-    java $JAVA_OPTS -jar "$JAR"
+    java "${JAVA_OPTS_ARR[@]}" -jar "$JAR"
     code=$?
     end_s=$(date +%s)
     uptime=$((end_s - start_s))
