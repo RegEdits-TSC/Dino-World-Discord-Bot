@@ -66,7 +66,6 @@ class AppConfigTest {
 		assertEquals(42L, cfg.developerId());
 		assertEquals("data/dinoworld.db", cfg.databasePath());
 		assertNull(cfg.devGuildId());
-		assertEquals("INFO", cfg.logLevel());
 		assertEquals(AppConfig.ActivityType.NONE, cfg.activityType());
 		assertTrue(cfg.disabledModules().isEmpty());
 	}
@@ -78,7 +77,6 @@ class AppConfigTest {
 			DEVELOPER_ID=42
 			DATABASE_PATH=/tmp/foo.db
 			DEV_GUILD_ID=999
-			LOG_LEVEL=DEBUG
 			BOT_ACTIVITY_TYPE=watching
 			BOT_ACTIVITY_TEXT=stuff
 			DISABLED_MODULES=Foo, Bar ,baz
@@ -86,7 +84,6 @@ class AppConfigTest {
 		AppConfig cfg = new AppConfig(dotenv);
 		assertEquals("/tmp/foo.db", cfg.databasePath());
 		assertEquals(999L, cfg.devGuildId());
-		assertEquals("DEBUG", cfg.logLevel());
 		assertEquals(AppConfig.ActivityType.WATCHING, cfg.activityType());
 		assertEquals("stuff", cfg.activityText());
 		assertEquals(java.util.Set.of("foo", "bar", "baz"), cfg.disabledModules());
