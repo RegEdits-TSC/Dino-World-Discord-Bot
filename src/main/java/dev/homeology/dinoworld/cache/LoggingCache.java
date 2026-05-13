@@ -3,6 +3,7 @@ package dev.homeology.dinoworld.cache;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Policy;
 import com.github.benmanes.caffeine.cache.stats.CacheStats;
+import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,25 +63,25 @@ final class LoggingCache<K, V extends @Nullable Object> implements Cache<K, V> {
 	}
 
 	@Override
-	public Map<K, V> getAllPresent(Iterable<? extends K> keys) {
-		Map<K, V> out = delegate.getAllPresent(keys);
+	public Map<K, @NonNull V> getAllPresent(Iterable<? extends K> keys) {
+		Map<K, @NonNull V> out = delegate.getAllPresent(keys);
 		log.debug("[{}] getAllPresent → {} matched", name, out.size());
 		return out;
 	}
 
 	@Override
-	public Map<K, V> getAll(Iterable<? extends K> keys,
-	                        Function<? super Set<? extends K>, ? extends Map<? extends K, ? extends V>> mappingFunction) {
+	public Map<K, @NonNull V> getAll(Iterable<? extends K> keys,
+	                                 Function<? super Set<? extends K>, ? extends Map<? extends K, ? extends @NonNull V>> mappingFunction) {
 		return delegate.getAll(keys, mappingFunction);
 	}
 
 	@Override
-	public void put(K key, V value) {
+	public void put(K key, @NonNull V value) {
 		delegate.put(key, value);
 	}
 
 	@Override
-	public void putAll(Map<? extends K, ? extends V> map) {
+	public void putAll(Map<? extends K, ? extends @NonNull V> map) {
 		delegate.putAll(map);
 	}
 
@@ -110,7 +111,7 @@ final class LoggingCache<K, V extends @Nullable Object> implements Cache<K, V> {
 	}
 
 	@Override
-	public ConcurrentMap<K, V> asMap() {
+	public ConcurrentMap<K, @NonNull V> asMap() {
 		return delegate.asMap();
 	}
 
@@ -120,7 +121,7 @@ final class LoggingCache<K, V extends @Nullable Object> implements Cache<K, V> {
 	}
 
 	@Override
-	public Policy<K, V> policy() {
+	public Policy<K, @NonNull V> policy() {
 		return delegate.policy();
 	}
 }
