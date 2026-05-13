@@ -19,9 +19,23 @@
   composite converter's closing `)` (like %boldWhite(...) or %highlight(...))
   is not parsed and prints literally.
 
-  Root level is read from ${LOG_LEVEL} (default INFO). Runtime changes via
-  /debug log set <logger> <level> aren't persisted; /debug log reset
-  re-reads this file via JoranConfigurator.
+  Root logger level
+  -----------------
+  Level is read from the ${LOG_LEVEL} substitution variable, falling back
+  to INFO. Logback resolves variables against JVM system properties first,
+  then OS environment variables. Bootstrap's static initializer copies
+  LOG_LEVEL out of .env into a system property *before* any logger is
+  constructed, so editing .env and restarting is enough to flip the level.
+
+  Precedence (first match wins):
+    1. -DLOG_LEVEL=... JVM flag (in JAVA_OPTS)
+    2. $LOG_LEVEL OS environment variable
+    3. LOG_LEVEL in .env (bridged by dev.homeology.dinoworld.config.EarlyLogConfig)
+    4. INFO (default in this file)
+
+  Runtime changes via /debug log set <logger> <level> aren't persisted;
+  /debug log reset re-reads this file via JoranConfigurator (which picks
+  up the same system property again).
 -->
 <configuration>
 
