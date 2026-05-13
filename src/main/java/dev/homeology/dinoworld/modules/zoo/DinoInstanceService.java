@@ -227,7 +227,11 @@ public final class DinoInstanceService {
 		     PreparedStatement ps = c.prepareStatement(SELECT_ALL + " WHERE id = ?")) {
 			ps.setLong(1, dinoId);
 			try (ResultSet rs = ps.executeQuery()) {
-				if (!rs.next()) return Optional.empty();
+				if (!rs.next()) {
+					log.debug("dino_instance db read id={} → no row", dinoId);
+					return Optional.empty();
+				}
+				log.debug("dino_instance db read id={} → loaded", dinoId);
 				return Optional.of(mapRow(rs));
 			}
 		} catch (SQLException e) {
@@ -248,6 +252,7 @@ public final class DinoInstanceService {
 		} catch (SQLException e) {
 			log.warn("dino_instance findByOwner({}) failed: {}", ownerUserId, e.toString());
 		}
+		log.debug("dino_instance db read owner={} → {} rows", ownerUserId, out.size());
 		return out;
 	}
 
@@ -278,6 +283,7 @@ public final class DinoInstanceService {
 		} catch (SQLException e) {
 			log.warn("dino_instance findAll failed: {}", e.toString());
 		}
+		log.debug("dino_instance db read all → {} rows", out.size());
 		return out;
 	}
 

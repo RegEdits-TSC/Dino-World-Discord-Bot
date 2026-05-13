@@ -56,8 +56,12 @@ public final class GuildSettings {
 			ps.setLong(1, guildId);
 			ps.setString(2, key);
 			try (ResultSet rs = ps.executeQuery()) {
-				if (!rs.next()) return Optional.empty();
+				if (!rs.next()) {
+					log.debug("guild_settings db read guild={} key={} → no row", guildId, key);
+					return Optional.empty();
+				}
 				String value = rs.getString(1);
+				log.debug("guild_settings db read guild={} key={} → loaded", guildId, key);
 				if (value != null) cache.put(cacheKey, value);
 				return Optional.ofNullable(value);
 			}

@@ -3,6 +3,7 @@ package dev.homeology.dinoworld.cache;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.stats.CacheStats;
+import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
 import java.util.Map;
@@ -47,11 +48,16 @@ public final class CacheManager {
 	public <K, V> Cache<K, V> get(String name,
 	                              Class<K> keyType,
 	                              Class<V> valueType,
-	                              Function<Caffeine<Object, Object>, Caffeine<Object, Object>> spec) {
+	                              @Nullable Function<Caffeine<Object, Object>, Caffeine<Object, Object>> spec) {
 		Entry e = caches.computeIfAbsent(name, n -> {
 			Caffeine<Object, Object> builder = Caffeine.newBuilder();
 			Caffeine<Object, Object> tuned = spec == null ? builder : spec.apply(builder);
-			return new Entry(tuned.recordStats().build(), keyType, valueType);
+			// Wrap in LoggingCache so DEBUG-level access logging is
+			// available per-cache via logger "dinoworld.cache.<name>".
+			// Wrapper is transparent — stats(), estimatedSize() and the
+			// rest forward to the underlying Caffeine instance.
+			Cache<Object, Object> wrapped = new LoggingCache<>(tuned.recordStats().build(), n);
+			return new Entry(wrapped, keyType, valueType);
 		});
 		if (!e.keyType.equals(keyType) || !e.valueType.equals(valueType)) {
 			throw new IllegalStateException(

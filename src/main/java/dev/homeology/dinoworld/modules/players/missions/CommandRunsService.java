@@ -83,7 +83,11 @@ public final class CommandRunsService {
 			ps.setString(2, command);
 			if (subcommand != null) ps.setString(3, subcommand);
 			try (ResultSet rs = ps.executeQuery()) {
-				return rs.next();
+				boolean found = rs.next();
+				log.debug("command_runs db read user={} cmd={}/{} → {}",
+					userId, command, subcommand == null ? "*" : subcommand,
+					found ? "found" : "no row");
+				return found;
 			}
 		} catch (SQLException e) {
 			log.warn("command_runs hasRun({}, {}, {}) failed: {}",

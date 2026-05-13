@@ -130,7 +130,11 @@ public final class EnclosureService {
 				     "FROM enclosure WHERE id = ?")) {
 			ps.setLong(1, id);
 			try (ResultSet rs = ps.executeQuery()) {
-				if (!rs.next()) return Optional.empty();
+				if (!rs.next()) {
+					log.debug("enclosure db read id={} → no row", id);
+					return Optional.empty();
+				}
+				log.debug("enclosure db read id={} → loaded", id);
 				return Optional.of(mapRow(rs));
 			}
 		} catch (SQLException e) {
@@ -152,6 +156,7 @@ public final class EnclosureService {
 		} catch (SQLException e) {
 			log.warn("enclosure findByOwner({}) failed: {}", ownerUserId, e.toString());
 		}
+		log.debug("enclosure db read owner={} → {} rows", ownerUserId, out.size());
 		return out;
 	}
 

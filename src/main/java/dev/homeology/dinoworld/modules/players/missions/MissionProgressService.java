@@ -74,6 +74,7 @@ public final class MissionProgressService {
 		} catch (SQLException e) {
 			log.warn("mission_progress completedFor({}) failed: {}", userId, e.toString());
 		}
+		log.debug("mission_progress db read user={} → {} completed", userId, out.size());
 		return out;
 	}
 }
