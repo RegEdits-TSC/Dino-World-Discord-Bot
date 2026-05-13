@@ -19,8 +19,7 @@
   composite converter's closing `)` (like %boldWhite(...) or %highlight(...))
   is not parsed and prints literally.
 
-  Root logger level
-  -----------------
+  Root logger level.
   Level is read from the ${LOG_LEVEL} substitution variable, falling back
   to INFO. Logback resolves variables against JVM system properties first,
   then OS environment variables. Bootstrap's static initializer copies
