@@ -207,7 +207,7 @@ public final class DinoInstanceService {
 	 * advance {@code last_decay_at}. Used by the hourly decay tick.
 	 */
 	public void applyHappiness(long dinoId, int newHappiness, Instant decayAt) {
-		int clamped = Math.max(0, Math.min(100, newHappiness));
+		int clamped = Math.clamp(newHappiness, 0, 100);
 		try (Connection c = dataSource.getConnection();
 		     PreparedStatement ps = c.prepareStatement(
 			     "UPDATE dino_instance SET happiness = ?, last_decay_at = ? WHERE id = ?")) {

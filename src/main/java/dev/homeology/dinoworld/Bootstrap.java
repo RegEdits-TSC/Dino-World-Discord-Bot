@@ -64,7 +64,7 @@ public final class Bootstrap {
 	 */
 	private static final int COMMAND_EXECUTOR_THREADS = 8;
 
-	public static void main(String[] args) {
+	static void main() {
 		// JVM-wide uncaught exception handler — catches anything that
 		// escapes JDA listeners or background threads.
 		Thread.setDefaultUncaughtExceptionHandler((t, e) ->
