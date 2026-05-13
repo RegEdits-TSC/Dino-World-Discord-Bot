@@ -3,6 +3,7 @@ package dev.homeology.dinoworld.cache;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.stats.CacheStats;
+import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
 import java.util.Map;
@@ -47,7 +48,7 @@ public final class CacheManager {
 	public <K, V> Cache<K, V> get(String name,
 	                              Class<K> keyType,
 	                              Class<V> valueType,
-	                              Function<Caffeine<Object, Object>, Caffeine<Object, Object>> spec) {
+	                              @Nullable Function<Caffeine<Object, Object>, Caffeine<Object, Object>> spec) {
 		Entry e = caches.computeIfAbsent(name, n -> {
 			Caffeine<Object, Object> builder = Caffeine.newBuilder();
 			Caffeine<Object, Object> tuned = spec == null ? builder : spec.apply(builder);

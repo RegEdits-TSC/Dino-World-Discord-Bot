@@ -3,6 +3,7 @@ package dev.homeology.dinoworld.cache;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Policy;
 import com.github.benmanes.caffeine.cache.stats.CacheStats;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,7 +28,7 @@ import java.util.function.Function;
  * stay quiet to avoid double-counting (a put always follows a miss,
  * which is already logged).
  */
-final class LoggingCache<K, V> implements Cache<K, V> {
+final class LoggingCache<K, V extends @Nullable Object> implements Cache<K, V> {
 
 	private final Cache<K, V> delegate;
 	private final String name;
@@ -40,7 +41,7 @@ final class LoggingCache<K, V> implements Cache<K, V> {
 	}
 
 	@Override
-	public V getIfPresent(K key) {
+	public @Nullable V getIfPresent(K key) {
 		V v = delegate.getIfPresent(key);
 		log.debug("[{}] {} key={}", name, v == null ? "miss" : "hit", key);
 		return v;
