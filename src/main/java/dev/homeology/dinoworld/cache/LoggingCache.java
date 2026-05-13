@@ -25,9 +25,11 @@ import java.util.function.Function;
  * <p>The wrapper is otherwise transparent — every {@link Cache} method
  * delegates verbatim, including {@link #stats()} and
  * {@link #estimatedSize()} so {@code /debug cache stats} keeps working.
- * Only the read paths log; writes ({@link #put}, {@link #invalidate})
- * stay quiet to avoid double-counting (a put always follows a miss,
- * which is already logged).
+ * Reads ({@link #getIfPresent}, {@link #get}) log hit/miss; writes
+ * ({@link #put}, {@link #invalidate}, etc.) log too — the latter is
+ * how an operator answers "why is this entry already in the cache?"
+ * when a service warms the cache from a write path (e.g.
+ * {@code PlayerService.ensure} UPSERTs and then {@code cache.put}s).
  */
 final class LoggingCache<K, V extends @Nullable Object> implements Cache<K, V> {
 
@@ -78,26 +80,31 @@ final class LoggingCache<K, V extends @Nullable Object> implements Cache<K, V> {
 	@Override
 	public void put(K key, @NonNull V value) {
 		delegate.put(key, value);
+		log.debug("[{}] put key={}", name, key);
 	}
 
 	@Override
 	public void putAll(Map<? extends K, ? extends @NonNull V> map) {
 		delegate.putAll(map);
+		log.debug("[{}] putAll → {} entries", name, map.size());
 	}
 
 	@Override
 	public void invalidate(K key) {
 		delegate.invalidate(key);
+		log.debug("[{}] invalidate key={}", name, key);
 	}
 
 	@Override
 	public void invalidateAll(Iterable<? extends K> keys) {
 		delegate.invalidateAll(keys);
+		log.debug("[{}] invalidateAll(keys)", name);
 	}
 
 	@Override
 	public void invalidateAll() {
 		delegate.invalidateAll();
+		log.debug("[{}] invalidateAll()", name);
 	}
 
 	@Override
