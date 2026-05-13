@@ -148,7 +148,10 @@ public final class MissionAwarder {
 			     "SELECT 1 FROM player WHERE user_id = ? AND last_daily IS NOT NULL")) {
 			ps.setLong(1, userId);
 			try (ResultSet rs = ps.executeQuery()) {
-				return rs.next();
+				boolean claimed = rs.next();
+				log.debug("missions probe db read user={} hasClaimedDaily → {}",
+					userId, claimed);
+				return claimed;
 			}
 		} catch (SQLException e) {
 			log.warn("missions: hasClaimedDaily({}) failed: {}", userId, e.toString());
@@ -162,7 +165,10 @@ public final class MissionAwarder {
 			     "SELECT 1 FROM dino_instance WHERE owner_user_id = ? AND last_fed_at IS NOT NULL LIMIT 1")) {
 			ps.setLong(1, userId);
 			try (ResultSet rs = ps.executeQuery()) {
-				return rs.next();
+				boolean fed = rs.next();
+				log.debug("missions probe db read user={} hasFedAnyDino → {}",
+					userId, fed);
+				return fed;
 			}
 		} catch (SQLException e) {
 			log.warn("missions: hasFedAnyDino({}) failed: {}", userId, e.toString());
@@ -176,7 +182,10 @@ public final class MissionAwarder {
 			     "SELECT COUNT(*) FROM " + table + " WHERE " + column + " = ?")) {
 			ps.setLong(1, value);
 			try (ResultSet rs = ps.executeQuery()) {
-				return rs.next() ? rs.getLong(1) : 0;
+				long n = rs.next() ? rs.getLong(1) : 0;
+				log.debug("missions probe db read count({} where {}={}) → {}",
+					table, column, value, n);
+				return n;
 			}
 		} catch (SQLException e) {
 			log.warn("missions: count({}) failed: {}", table, e.toString());

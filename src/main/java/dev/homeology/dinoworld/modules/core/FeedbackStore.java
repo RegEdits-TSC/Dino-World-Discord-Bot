@@ -49,7 +49,11 @@ public final class FeedbackStore {
 			     "SELECT last_sent_at FROM feedback_log WHERE user_id = ?")) {
 			ps.setLong(1, userId);
 			try (ResultSet rs = ps.executeQuery()) {
-				if (!rs.next()) return Optional.empty();
+				if (!rs.next()) {
+					log.debug("feedback_log db read user={} → no row", userId);
+					return Optional.empty();
+				}
+				log.debug("feedback_log db read user={} → loaded", userId);
 				return Optional.of(Instant.parse(rs.getString(1)));
 			}
 		} catch (SQLException e) {
@@ -89,7 +93,10 @@ public final class FeedbackStore {
 			     "SELECT 1 FROM feedback_blacklist WHERE user_id = ?")) {
 			ps.setLong(1, userId);
 			try (ResultSet rs = ps.executeQuery()) {
-				return rs.next();
+				boolean blocked = rs.next();
+				log.debug("feedback_blacklist db read user={} → {}",
+					userId, blocked ? "blocked" : "no row");
+				return blocked;
 			}
 		} catch (SQLException e) {
 			log.warn("feedback_blacklist read failed for user={}: {}", userId, e.toString());
@@ -155,6 +162,7 @@ public final class FeedbackStore {
 		} catch (SQLException e) {
 			log.warn("feedback_blacklist list failed: {}", e.toString());
 		}
+		log.debug("feedback_blacklist db read all → {} rows", out.size());
 		return out;
 	}
 
