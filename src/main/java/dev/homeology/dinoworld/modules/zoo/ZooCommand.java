@@ -159,7 +159,7 @@ public final class ZooCommand implements Command {
 			"""
 				A starter habitat is ready for your first dinosaur. Try:
 
-				• `/shop` — buy your first egg (Common eggs cost 200 coins)
+				• `/shop` — buy your first egg (Common eggs cost 500 coins)
 				• `/daily` — claim 100 coins (every 22 hours; +25 XP)
 				• `/eggs` — see what's incubating, hatch when ready
 

@@ -97,7 +97,7 @@ class MissionAwarderTest {
 	@Test
 	void shopCommandAwardsVisitShopMission() {
 		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
-			"tutorial.claim_first_daily");
+			"tutorial.claim_first_daily", "tutorial.check_park_dashboard");
 
 		List<Mission> awarded = awarder.detectAndAward(42L, "shop", null);
 		assertEquals(1, awarded.size());
@@ -147,7 +147,8 @@ class MissionAwarderTest {
 	@Test
 	void ownsDinoMissionFiresAfterHatch() {
 		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
-			"tutorial.claim_first_daily", "tutorial.visit_shop", "tutorial.buy_first_egg");
+			"tutorial.claim_first_daily", "tutorial.check_park_dashboard",
+			"tutorial.visit_shop", "tutorial.buy_first_egg");
 		Enclosure enc = enclosures.create(42L, "forest", 5, 5, "Home");
 		dinos.create(42L, "velociraptor", OptionalLong.of(enc.id()), null);
 
@@ -159,7 +160,8 @@ class MissionAwarderTest {
 	@Test
 	void fedDinoMissionFiresAfterFeed() {
 		seedCompleted("tutorial.check_profile", "tutorial.see_rank",
-			"tutorial.claim_first_daily", "tutorial.visit_shop", "tutorial.buy_first_egg",
+			"tutorial.claim_first_daily", "tutorial.check_park_dashboard",
+			"tutorial.visit_shop", "tutorial.buy_first_egg",
 			"tutorial.hatch_first_dino");
 		Enclosure enc = enclosures.create(42L, "forest", 5, 5, "Home");
 		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.of(enc.id()), null);
@@ -215,16 +217,17 @@ class MissionAwarderTest {
 
 	@Test
 	void priorCommandRunSatisfiesGatedMissionOnLaterPass() {
-		// The reported UX scenario, extended with see_rank: /shop, /rank,
-		// and /daily run before /profile. Each early awarder pass is gated
-		// by check_profile, so nothing awards — but command_runs preserves
-		// the fact that /shop and /rank happened. When /profile finally
-		// runs and unblocks the set, every gated trigger fires
-		// retroactively on the same pass without forcing the player to
-		// re-run anything.
+		// The reported UX scenario, extended with the see_rank and
+		// check_park_dashboard prerequisites: /shop, /rank, /daily, and
+		// /zoo dashboard run before /profile. Each early awarder pass is
+		// gated by check_profile, so nothing awards — but command_runs
+		// preserves every prior invocation. When /profile finally runs
+		// and unblocks the set, every gated trigger fires retroactively
+		// on the same pass without forcing the player to re-run anything.
 		commandRuns.record(42L, "shop", null);
 		commandRuns.record(42L, "rank", null);
 		commandRuns.record(42L, "daily", null);
+		commandRuns.record(42L, "zoo", "dashboard");
 		players.recordDailyClaim(42L, Instant.now());
 
 		List<Mission> awarded = awarder.detectAndAward(42L, "profile", null);
@@ -235,6 +238,8 @@ class MissionAwarderTest {
 			"see_rank cascades on the command_runs history");
 		assertTrue(ids.contains("tutorial.claim_first_daily"),
 			"claim_first_daily cascades on persistent state");
+		assertTrue(ids.contains("tutorial.check_park_dashboard"),
+			"check_park_dashboard cascades on the command_runs history");
 		assertTrue(ids.contains("tutorial.visit_shop"),
 			"visit_shop cascades on the command_runs history without /shop being rerun");
 	}

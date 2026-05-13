@@ -9,15 +9,22 @@
 # Sized for the live shop where the cheapest Common egg is 500c:
 #   - After /profile + check_profile (+250c)                    = 250c
 #   - After /rank + see_rank (+50c)                             = 300c
-#   - After /daily (100c) + claim mission (+250c)               = 650c  ← 500c egg + 150c buffer at shop time
-#   - After /shop + browse mission (+250c)                      = 900c
-#   - After buying egg (-500c) + buy_first_egg mission (+200c)  = 600c
-#   - After hatch + hatch mission (+200c)                       = 800c
-#   - Plus +100/+50/+100 from feed / dashboard / inspect        = 1050c at end of tutorial
-# The /profile step is intentional: it puts the player at ≥500c by the
-# time /shop renders, so the "Your balance" line and the per-egg Buy
-# button are correct on first view even if the visit_shop mission
-# reward is still in flight on another worker thread.
+#   - After /daily (100c) + claim mission (+250c)               = 650c
+#   - After /zoo dashboard + dashboard mission (+50c)           = 700c
+#   - After /shop + browse mission (+250c)                      = 950c  ← 500c egg + 200c buffer at shop time
+#   - After buying egg (-500c) + buy_first_egg mission (+200c)  = 650c
+#   - After hatch + hatch mission (+200c)                       = 850c
+#   - Plus +100/+100 from feed / inspect                        = 1050c at end of tutorial
+# Two ordering invariants the awarder relies on:
+#   * /profile + /rank put the player at ≥500c by the time /shop
+#     renders, so the "Your balance" line and per-egg Buy buttons
+#     are correct on first view even if visit_shop's reward is
+#     still in flight on another worker thread.
+#   * /zoo dashboard sits before /shop because the starter habitat
+#     is auto-created the first time the player runs /zoo (see
+#     EnclosureService.ensureStarter) — by the time they open the
+#     shop their forest dinos are unlocked instead of every species
+#     showing "🔒 build a habitat first."
 # Enough for a second Common, a Zookeeper hire, or saving up for an Uncommon at level 5.
 #
 # Trigger format:
@@ -54,6 +61,13 @@ missions:
     reward_coins: 250
     reward_xp: 75
 
+  - id: check_park_dashboard
+    display_name: Check your park dashboard
+    description: Run `/zoo dashboard` to see your park summary — also provisions your starter habitat.
+    trigger: command:zoo:dashboard
+    reward_coins: 50
+    reward_xp: 25
+
   - id: visit_shop
     display_name: Browse the shop
     description: Run `/shop` to see what Common eggs are for sale (cheapest is 500c).
@@ -81,13 +95,6 @@ missions:
     trigger: state:fed_dino
     reward_coins: 100
     reward_xp: 30
-
-  - id: check_park_dashboard
-    display_name: Check your park dashboard
-    description: Run `/zoo dashboard` to see your park summary.
-    trigger: command:zoo:dashboard
-    reward_coins: 50
-    reward_xp: 25
 
   - id: inspect_a_dino
     display_name: Inspect one of your dinos
