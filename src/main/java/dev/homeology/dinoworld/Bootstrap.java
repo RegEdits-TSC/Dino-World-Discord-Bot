@@ -8,6 +8,7 @@ import dev.homeology.dinoworld.command.ComponentRouter;
 import dev.homeology.dinoworld.command.PermissionGate;
 import dev.homeology.dinoworld.command.RateLimiter;
 import dev.homeology.dinoworld.config.AppConfig;
+import dev.homeology.dinoworld.config.EarlyLogConfig;
 import dev.homeology.dinoworld.core.Module;
 import dev.homeology.dinoworld.core.ModuleContext;
 import dev.homeology.dinoworld.core.ModuleManager;
@@ -56,6 +57,15 @@ import java.util.concurrent.atomic.AtomicInteger;
  * scroll; the order between them is still load-bearing.
  */
 public final class Bootstrap {
+
+	static {
+		// Copy LOG_LEVEL from .env into JVM system properties BEFORE the
+		// `log` field below initializes Logback. Logback's
+		// ${LOG_LEVEL} substitution checks system properties and OS env
+		// vars but never .env — without this bridge the LOG_LEVEL line
+		// in .env would silently do nothing.
+		EarlyLogConfig.applyFromDotenv();
+	}
 
 	private static final Logger log = LoggerFactory.getLogger(Bootstrap.class);
 

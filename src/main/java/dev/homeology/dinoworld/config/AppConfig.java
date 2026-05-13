@@ -30,7 +30,6 @@ public final class AppConfig {
 	private final long developerId;
 	private final String databasePath;
 	private final Long devGuildId; // null when unset
-	private final String logLevel;
 	private final ActivityType activityType;
 	private final String activityText;
 	private final Set<String> disabledModules;
@@ -49,7 +48,10 @@ public final class AppConfig {
 		String devGuild = dotenv.get("DEV_GUILD_ID", "").trim();
 		this.devGuildId = devGuild.isEmpty() ? null : parseLong(devGuild, "DEV_GUILD_ID");
 
-		this.logLevel = orDefault(dotenv, "LOG_LEVEL", "INFO");
+		// LOG_LEVEL is bridged to a JVM system property by
+		// EarlyLogConfig before any logger initializes, so AppConfig does
+		// not store it — Logback consumes it directly via ${LOG_LEVEL} in
+		// logback.xml.
 		this.activityType = parseActivityType(orDefault(dotenv, "BOT_ACTIVITY_TYPE", "NONE"));
 		this.activityText = orDefault(dotenv, "BOT_ACTIVITY_TEXT", "");
 
@@ -93,13 +95,6 @@ public final class AppConfig {
 	 */
 	public Long devGuildId() {
 		return devGuildId;
-	}
-
-	/**
-	 * @return root logger level configured in the env (also overridable at runtime)
-	 */
-	public String logLevel() {
-		return logLevel;
 	}
 
 	/**
