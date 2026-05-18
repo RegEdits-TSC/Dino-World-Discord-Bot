@@ -141,9 +141,8 @@ public final class IncomeTickService {
 	 * Per-dino contribution before the per-player Marketer multiplier.
 	 *
 	 * <p>Multiplier order (applied left-to-right): species base × happiness
-	 * × trait flat × SOCIAL bonus × dino level. Future shiny multiplier
-	 * slots in between level and Marketer — keep the chain documented when
-	 * new factors are added.
+	 * × trait flat × SOCIAL bonus × dino level × shiny. Marketer wraps the
+	 * sum at runOnce. Document any new factors here when added.
 	 *
 	 * @param ownerRoster every dino owned by the same player; used by the
 	 *                    SOCIAL trait to count enclosure-mates
@@ -175,6 +174,11 @@ public final class IncomeTickService {
 		// a high-level Proud dino compounds its trait bonus on top of level,
 		// not the other way around.
 		mult *= DinoLeveling.incomeMultiplier(d.level());
+
+		// Shiny: permanent +50%. Slots after level so the bonus is felt
+		// equally at L1 and L50 (multiplicatively, the rare moment still
+		// matters).
+		if (d.shiny()) mult *= ShinyRoller.SHINY_INCOME_MULTIPLIER;
 
 		return mult == 1.0 ? baseContribution : Math.round(baseContribution * mult);
 	}

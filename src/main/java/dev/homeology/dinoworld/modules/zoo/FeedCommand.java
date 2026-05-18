@@ -110,8 +110,9 @@ public final class FeedCommand implements Command {
 	 */
 	String buildLabel(DinoInstance d, Instant now) {
 		DinoSpecies s = catalog.byId(d.speciesId()).orElse(null);
-		String name = d.customName().orElseGet(() ->
+		String baseName = d.customName().orElseGet(() ->
 			(s == null ? d.speciesId() : s.displayName()) + " #" + d.id());
+		String name = (d.shiny() ? "✨ " : "") + baseName;
 		String suffix;
 		if (isOnCooldown(d, now)) {
 			Duration remaining = cooldownRemaining(d, now);

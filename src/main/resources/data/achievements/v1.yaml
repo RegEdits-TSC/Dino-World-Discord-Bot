@@ -1,0 +1,237 @@
+# Dino-World: v1 achievements catalog.
+#
+# Loaded by AchievementCatalog at module startup. Each entry's id is
+# scoped under the catalog id (e.g. v1.first_hatch). The awarder
+# auto-unlocks an achievement the first time its trigger predicate is
+# satisfied, grants the coin/XP reward, auto-equips the title if the
+# player has no title yet, and DMs the player via NotificationService.
+#
+# Trigger formats (see AchievementTrigger.parse):
+#   event:first_hatch                — fires once on the first hatch ever
+#   event:first_shiny                — first shiny hatched
+#   event:first_feed                 — first /feed action taken
+#   event:first_staff_hire           — first staff hired
+#   event:first_enclosure            — first non-starter enclosure built
+#   level:5                          — player level reaches N
+#   dino_level:50                    — at least one owned dino at level N
+#   feeds_total:100                  — feeds-this-player counted via coin_ledger reasons / mission triggers
+#   hatches_total:25                 — total dinos hatched (count of dino_instance)
+#   keep_dinos:10                    — currently owns >= N dinos
+#   own_enclosures:3                 — currently owns >= N enclosures
+#   coins_earned:100000              — lifetime positive coin_ledger sum
+#   coins_held:500000                — current player.coins >= N
+#   wages_paid:10                    — staff wage payouts >= N (counted via coin_ledger reason 'wages.tick')
+#   hatched_rarity:uncommon          — has ever hatched a dino of this rarity (one per tier)
+#   trait_diversity:7                — owns at least one dino of each trait (excluding plain)
+#   tutorial_complete                — all tutorial.* mission rows present
+
+catalog_id: v1
+display_name: Park Keeper Achievements
+description: One-shot milestones that reward titles and small coin/XP bonuses.
+
+achievements:
+
+  # ─── Onboarding ────────────────────────────────────────────────────────
+  - id: first_hatch
+    display_name: First Hatch
+    description: Hatch your very first dinosaur.
+    title: Hatcher
+    trigger: event:first_hatch
+    reward_coins: 50
+    reward_xp: 10
+
+  - id: first_enclosure
+    display_name: First Habitat
+    description: Build your first non-starter enclosure.
+    title: Architect
+    trigger: event:first_enclosure
+    reward_coins: 50
+    reward_xp: 10
+
+  - id: first_staff_hire
+    display_name: First Hire
+    description: Bring on your first staff member.
+    title: Foreman
+    trigger: event:first_staff_hire
+    reward_coins: 50
+    reward_xp: 10
+
+  - id: first_feed
+    display_name: First Feed
+    description: Feed a dinosaur for the first time.
+    title: Caretaker
+    trigger: event:first_feed
+    reward_coins: 50
+    reward_xp: 10
+
+  - id: reach_level_5
+    display_name: Park Keeper
+    description: Reach player level 5.
+    title: Keeper
+    trigger: level:5
+    reward_coins: 50
+    reward_xp: 10
+
+  # ─── Park-keeping ──────────────────────────────────────────────────────
+  - id: feed_100_times
+    display_name: Hand That Feeds
+    description: Feed dinosaurs 100 times in total.
+    title: Forager
+    trigger: feeds_total:100
+    reward_coins: 250
+    reward_xp: 50
+
+  - id: hatch_25_dinos
+    display_name: Twenty-Five
+    description: Hatch 25 dinosaurs.
+    title: Breeder
+    trigger: hatches_total:25
+    reward_coins: 250
+    reward_xp: 50
+
+  - id: keep_10_dinos
+    display_name: A Real Park
+    description: Keep 10 dinosaurs in your park at the same time.
+    title: Curator
+    trigger: keep_dinos:10
+    reward_coins: 250
+    reward_xp: 50
+
+  - id: reach_level_25
+    display_name: Veteran
+    description: Reach player level 25.
+    title: Veteran
+    trigger: level:25
+    reward_coins: 250
+    reward_xp: 50
+
+  - id: reach_level_50
+    display_name: Master Keeper
+    description: Reach player level 50.
+    title: Master Keeper
+    trigger: level:50
+    reward_coins: 500
+    reward_xp: 100
+
+  - id: own_3_enclosures
+    display_name: Three Habitats
+    description: Own three enclosures simultaneously.
+    title: Landscaper
+    trigger: own_enclosures:3
+    reward_coins: 250
+    reward_xp: 50
+
+  - id: pay_10_wages
+    display_name: Payroll Manager
+    description: Pay staff wages 10 times.
+    title: Payroll
+    trigger: wages_paid:10
+    reward_coins: 250
+    reward_xp: 50
+
+  # ─── Wealth ────────────────────────────────────────────────────────────
+  - id: earn_100k_coins
+    display_name: First Hundred K
+    description: Earn 100,000 coins in lifetime income.
+    title: Saver
+    trigger: coins_earned:100000
+    reward_coins: 500
+    reward_xp: 100
+
+  - id: earn_1m_coins
+    display_name: Millionaire
+    description: Earn 1,000,000 coins in lifetime income.
+    title: Magnate
+    trigger: coins_earned:1000000
+    reward_coins: 500
+    reward_xp: 100
+
+  - id: earn_10m_coins
+    display_name: Park Tycoon
+    description: Earn 10,000,000 coins in lifetime income.
+    title: Tycoon
+    trigger: coins_earned:10000000
+    reward_coins: 500
+    reward_xp: 100
+
+  - id: hold_500k_coins
+    display_name: Liquidity
+    description: Have 500,000 coins in your wallet at once.
+    title: Banker
+    trigger: coins_held:500000
+    reward_coins: 500
+    reward_xp: 100
+
+  # ─── Collection ────────────────────────────────────────────────────────
+  - id: hatch_uncommon
+    display_name: Uncommon Find
+    description: Hatch your first Uncommon dinosaur.
+    title: Collector
+    trigger: hatched_rarity:uncommon
+    reward_coins: 200
+    reward_xp: 40
+
+  - id: hatch_rare
+    display_name: Rare Acquisition
+    description: Hatch your first Rare dinosaur.
+    title: Connoisseur
+    trigger: hatched_rarity:rare
+    reward_coins: 200
+    reward_xp: 40
+
+  - id: hatch_epic
+    display_name: Epic Sighting
+    description: Hatch your first Epic dinosaur.
+    title: Hunter
+    trigger: hatched_rarity:epic
+    reward_coins: 200
+    reward_xp: 40
+
+  - id: hatch_legendary
+    display_name: Legendary Bond
+    description: Hatch your first Legendary dinosaur.
+    title: Legendkeeper
+    trigger: hatched_rarity:legendary
+    reward_coins: 200
+    reward_xp: 40
+
+  - id: hatch_mythic
+    display_name: Mythic Discovery
+    description: Hatch your first Mythic dinosaur.
+    title: Mythkeeper
+    trigger: hatched_rarity:mythic
+    reward_coins: 200
+    reward_xp: 40
+
+  # ─── Stretch ───────────────────────────────────────────────────────────
+  - id: hatch_shiny
+    display_name: Shiny!
+    description: Hatch a shiny dinosaur (1/512 chance).
+    title: Lucky
+    trigger: event:first_shiny
+    reward_coins: 1000
+    reward_xp: 200
+
+  - id: dino_to_level_50
+    display_name: Apex
+    description: Train a single dinosaur to level 50.
+    title: Trainer
+    trigger: dino_level:50
+    reward_coins: 1000
+    reward_xp: 200
+
+  - id: own_one_of_each_trait
+    display_name: Personality Plus
+    description: Own a dinosaur of every personality trait at the same time.
+    title: Behaviorist
+    trigger: trait_diversity:7
+    reward_coins: 1000
+    reward_xp: 200
+
+  - id: complete_all_tutorial_missions
+    display_name: Graduate
+    description: Complete every tutorial mission.
+    title: Graduate
+    trigger: tutorial_complete
+    reward_coins: 1000
+    reward_xp: 200

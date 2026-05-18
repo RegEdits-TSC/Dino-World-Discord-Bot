@@ -69,12 +69,13 @@ public final class ZooComponentHandler implements ComponentHandler {
 	private static final String MODAL_BUILD_ENCLOSURE = NAMESPACE + ":shop:build-enclosure-submit";
 
 	/**
-	 * XP granted to a dino per successful (non-cooldowned) player feed. Same
-	 * value across the three feed entry points so a bulk-feed and a per-dino
-	 * pick are economically identical. Staff auto-feeds intentionally don't
+	 * XP granted to a dino per successful (non-cooldowned) player feed.
+	 * Re-exported as a local alias of
+	 * {@link DinoInstanceService#FEED_XP_AWARD} so the three feed entry
+	 * points read identically; staff auto-feeds intentionally don't
 	 * grant XP — see {@link DinoInstanceService#awardXp}.
 	 */
-	static final int FEED_XP_AWARD = 12;
+	static final int FEED_XP_AWARD = DinoInstanceService.FEED_XP_AWARD;
 
 	private final PlayerService players;
 	private final RarityCatalog rarities;
@@ -511,9 +512,14 @@ public final class ZooComponentHandler implements ComponentHandler {
 		long userId = event.getUser().getIdLong();
 		EggService.HatchResult result = eggs.hatch(userId, eggId);
 		Rarity rar = rarities.require(result.species().rarity());
-		EmbedBuilder ack = Embeds.success(
-			"🦖  Hatched " + rar.displayName() + " " + result.species().displayName() + "!",
-			result.species().description() + "\n_+" + result.xpAwarded() + " XP._");
+		boolean shiny = result.dino().shiny();
+		String title = shiny
+			? "✨🦖  Shiny " + rar.displayName() + " " + result.species().displayName() + "!"
+			: "🦖  Hatched " + rar.displayName() + " " + result.species().displayName() + "!";
+		String description = result.species().description()
+			+ (shiny ? "\n**A shiny variant!** +50% income for life." : "")
+			+ "\n_+" + result.xpAwarded() + " XP._";
+		EmbedBuilder ack = Embeds.success(title, description);
 		editOrReply(event, rc, ack,
 			java.util.List.of(net.dv8tion.jda.api.components.actionrow.ActionRow.of(
 				net.dv8tion.jda.api.components.buttons.Button.secondary(
@@ -536,15 +542,20 @@ public final class ZooComponentHandler implements ComponentHandler {
 		}
 		StringBuilder body = new StringBuilder();
 		long totalXp = 0;
+		int shinies = 0;
 		for (EggService.HatchResult r : results) {
+			boolean shiny = r.dino().shiny();
+			if (shiny) shinies++;
 			body.append("• ").append(rarities.require(r.species().rarity()).displayName())
-				.append(" **").append(r.species().displayName()).append("** (+")
+				.append(" ").append(shiny ? "✨ " : "")
+				.append("**").append(r.species().displayName()).append("** (+")
 				.append(r.xpAwarded()).append(" XP)\n");
 			totalXp += r.xpAwarded();
 		}
+		String shinyLine = shinies > 0 ? "\n**" + shinies + " shiny!** ✨" : "";
 		EmbedBuilder ack = Embeds.success(
 			"🦖  Hatched " + results.size() + " egg" + (results.size() == 1 ? "" : "s") + "!",
-			body.toString() + "\n_+" + totalXp + " XP total._");
+			body.toString() + shinyLine + "\n_+" + totalXp + " XP total._");
 		editOrReply(event, rc, ack,
 			java.util.List.of(net.dv8tion.jda.api.components.actionrow.ActionRow.of(
 				net.dv8tion.jda.api.components.buttons.Button.secondary(

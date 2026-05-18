@@ -1,3 +1,4 @@
+dev.homeology.dinoworld.modules.achievements.AchievementsModule
 dev.homeology.dinoworld.modules.core.CoreModule
 dev.homeology.dinoworld.modules.notify.NotifyModule
 dev.homeology.dinoworld.modules.players.PlayersModule

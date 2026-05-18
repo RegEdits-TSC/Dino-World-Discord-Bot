@@ -52,6 +52,14 @@ public final class DinoInstanceService {
 	 */
 	public static final int STARTING_LEVEL = 1;
 
+	/**
+	 * XP granted to a dino per successful (non-cooldowned) player feed.
+	 * Pinned here so the achievements module can derive total feeds
+	 * from {@code SUM(dino.xp) / FEED_XP_AWARD} without taking a
+	 * cross-module dependency on the feed handlers.
+	 */
+	public static final int FEED_XP_AWARD = 12;
+
 	private final DataSource dataSource;
 
 	public DinoInstanceService(DataSource dataSource) {
@@ -62,35 +70,46 @@ public final class DinoInstanceService {
 
 	/**
 	 * Convenience: create a freshly-hatched dino with no personality
-	 * trait (the "plain" outcome — see {@link TraitRoller}). Kept so test
-	 * fixtures don't have to thread a null through every call site.
+	 * trait (the "plain" outcome — see {@link TraitRoller}) and no shiny
+	 * flag. Kept so test fixtures don't have to thread null/false through
+	 * every call site.
 	 */
 	public DinoInstance create(long ownerUserId, String speciesId,
 	                           OptionalLong enclosureId, String customName) {
-		return create(ownerUserId, speciesId, enclosureId, customName, null);
+		return create(ownerUserId, speciesId, enclosureId, customName, null, false);
 	}
 
 	/**
-	 * Create a freshly-hatched dino with default stats and the given
-	 * personality trait (or no trait if {@code trait} is null).
+	 * Convenience: create a freshly-hatched dino with a trait but no shiny.
+	 */
+	public DinoInstance create(long ownerUserId, String speciesId,
+	                           OptionalLong enclosureId, String customName,
+	                           DinoTrait trait) {
+		return create(ownerUserId, speciesId, enclosureId, customName, trait, false);
+	}
+
+	/**
+	 * Create a freshly-hatched dino with default stats, the given
+	 * personality trait (or none), and the given shiny flag.
 	 *
 	 * @param ownerUserId  player who owns it
 	 * @param speciesId    matches a {@link DinoSpecies#id()} in {@link DinoCatalog}
 	 * @param enclosureId  optional starting enclosure (caller resolves via {@link EnclosureService#findCompatibleForSpecies})
 	 * @param customName   optional player-supplied name; null/blank means unnamed
 	 * @param trait        rolled by {@link TraitRoller}; null means "plain"
+	 * @param shiny        rolled by {@link ShinyRoller}; true on the 1/512 outcome
 	 */
 	public DinoInstance create(long ownerUserId, String speciesId,
 	                           OptionalLong enclosureId, String customName,
-	                           DinoTrait trait) {
+	                           DinoTrait trait, boolean shiny) {
 		long now = Instant.now().toEpochMilli();
 		try (Connection c = dataSource.getConnection();
 		     PreparedStatement ps = c.prepareStatement("""
 			     INSERT INTO dino_instance(
-			         owner_user_id, species_id, enclosure_id, custom_name, trait,
+			         owner_user_id, species_id, enclosure_id, custom_name, trait, is_shiny,
 			         level, xp, current_hp, happiness,
 			         last_fed_at, last_decay_at, acquired_at)
-			     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, NULL, ?, ?)
+			     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL, ?, ?)
 			     """, Statement.RETURN_GENERATED_KEYS)) {
 			ps.setLong(1, ownerUserId);
 			ps.setString(2, speciesId);
@@ -99,11 +118,12 @@ public final class DinoInstanceService {
 			ps.setString(4, (customName == null || customName.isBlank()) ? null : customName.trim());
 			if (trait == null) ps.setNull(5, java.sql.Types.VARCHAR);
 			else ps.setString(5, trait.id());
-			ps.setInt(6, STARTING_LEVEL);
-			ps.setInt(7, STARTING_HP);
-			ps.setInt(8, STARTING_HAPPINESS);
-			ps.setLong(9, now);
+			ps.setInt(6, shiny ? 1 : 0);
+			ps.setInt(7, STARTING_LEVEL);
+			ps.setInt(8, STARTING_HP);
+			ps.setInt(9, STARTING_HAPPINESS);
 			ps.setLong(10, now);
+			ps.setLong(11, now);
 			ps.executeUpdate();
 			try (ResultSet rs = ps.getGeneratedKeys()) {
 				if (!rs.next()) throw new IllegalStateException("INSERT did not return a key");
@@ -112,6 +132,7 @@ public final class DinoInstanceService {
 					id, ownerUserId, speciesId, enclosureId,
 					Optional.ofNullable((customName == null || customName.isBlank()) ? null : customName.trim()),
 					Optional.ofNullable(trait),
+					shiny,
 					STARTING_LEVEL, 0L, STARTING_HP, STARTING_HAPPINESS,
 					Optional.empty(),
 					Instant.ofEpochMilli(now),
@@ -354,7 +375,7 @@ public final class DinoInstanceService {
 	// ─── helpers ─────────────────────────────────────────────────────────
 
 	private static final String SELECT_ALL = """
-		SELECT id, owner_user_id, species_id, enclosure_id, custom_name, trait,
+		SELECT id, owner_user_id, species_id, enclosure_id, custom_name, trait, is_shiny,
 		       level, xp, current_hp, happiness,
 		       last_fed_at, last_decay_at, acquired_at
 		FROM dino_instance
@@ -370,6 +391,8 @@ public final class DinoInstanceService {
 
 		Optional<DinoTrait> trait = DinoTrait.byId(rs.getString("trait"));
 
+		boolean shiny = rs.getInt("is_shiny") != 0;
+
 		long fedRaw = rs.getLong("last_fed_at");
 		Optional<Instant> lastFed = rs.wasNull()
 			? Optional.empty() : Optional.of(Instant.ofEpochMilli(fedRaw));
@@ -381,6 +404,7 @@ public final class DinoInstanceService {
 			enclosure,
 			customName,
 			trait,
+			shiny,
 			rs.getInt("level"),
 			rs.getLong("xp"),
 			rs.getInt("current_hp"),

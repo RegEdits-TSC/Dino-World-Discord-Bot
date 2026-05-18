@@ -81,7 +81,7 @@ public final class PlayerService {
 			     ON CONFLICT(user_id) DO UPDATE SET
 			         display_name = excluded.display_name,
 			         last_seen    = excluded.last_seen
-			     RETURNING user_id, display_name, coins, xp, level, created_at, last_seen, last_daily
+			     RETURNING user_id, display_name, coins, xp, level, created_at, last_seen, last_daily, equipped_title
 			     """)) {
 			ps.setLong(1, userId);
 			ps.setString(2, displayName);
@@ -109,7 +109,7 @@ public final class PlayerService {
 
 		try (Connection c = dataSource.getConnection();
 		     PreparedStatement ps = c.prepareStatement("""
-			     SELECT user_id, display_name, coins, xp, level, created_at, last_seen, last_daily
+			     SELECT user_id, display_name, coins, xp, level, created_at, last_seen, last_daily, equipped_title
 			     FROM player WHERE user_id = ?
 			     """)) {
 			ps.setLong(1, userId);
@@ -312,10 +312,38 @@ public final class PlayerService {
 
 	// ─── internals ───────────────────────────────────────────────────────
 
+	/**
+	 * Set or clear the player's equipped achievement title. Pass
+	 * {@code null} or empty to unequip. The caller is responsible for
+	 * verifying the title is actually unlocked — this method does no
+	 * cross-reference against {@code achievement_progress}.
+	 */
+	public void setEquippedTitle(long userId, String title) {
+		String stored = (title == null || title.isBlank()) ? null : title.trim();
+		try (Connection c = dataSource.getConnection();
+		     PreparedStatement ps = c.prepareStatement(
+			     "UPDATE player SET equipped_title = ? WHERE user_id = ?")) {
+			if (stored == null) ps.setNull(1, java.sql.Types.VARCHAR);
+			else ps.setString(1, stored);
+			ps.setLong(2, userId);
+			int affected = ps.executeUpdate();
+			if (affected == 0) {
+				throw new IllegalStateException(
+					"setEquippedTitle: no player row for user=" + userId + " — call ensure() first");
+			}
+			cache.invalidate(userId);
+		} catch (SQLException e) {
+			throw new IllegalStateException("setEquippedTitle failed for user=" + userId, e);
+		}
+	}
+
 	private static Player mapRow(ResultSet rs) throws SQLException {
 		long ldRaw = rs.getLong("last_daily");
 		Optional<Instant> lastDaily = rs.wasNull() ? Optional.empty()
 			: Optional.of(Instant.ofEpochMilli(ldRaw));
+		String titleRaw = rs.getString("equipped_title");
+		Optional<String> equippedTitle = (titleRaw == null || titleRaw.isBlank())
+			? Optional.empty() : Optional.of(titleRaw);
 		return new Player(
 			rs.getLong("user_id"),
 			rs.getString("display_name"),
@@ -324,6 +352,7 @@ public final class PlayerService {
 			rs.getInt("level"),
 			Instant.ofEpochMilli(rs.getLong("created_at")),
 			Instant.ofEpochMilli(rs.getLong("last_seen")),
-			lastDaily);
+			lastDaily,
+			equippedTitle);
 	}
 }
