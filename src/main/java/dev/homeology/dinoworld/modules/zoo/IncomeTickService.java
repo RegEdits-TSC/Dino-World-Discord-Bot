@@ -6,6 +6,7 @@ import dev.homeology.dinoworld.modules.zoo.model.DinoInstance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -77,11 +78,12 @@ public final class IncomeTickService {
 	 * whether income offsets wages.
 	 */
 	public long computeIncomeFor(long userId) {
+		List<DinoInstance> owned = dinos.findByOwner(userId);
 		long base = 0L;
-		for (DinoInstance d : dinos.findByOwner(userId)) {
+		for (DinoInstance d : owned) {
 			Optional<DinoSpecies> speciesOpt = catalog.byId(d.speciesId());
 			if (speciesOpt.isEmpty()) continue;
-			long contribution = speciesOpt.get().baseIncomePerHour() * d.happiness() / 100L;
+			long contribution = contributionFor(d, speciesOpt.get(), owned);
 			if (contribution <= 0) continue;
 			base += contribution;
 		}
@@ -97,13 +99,20 @@ public final class IncomeTickService {
 		List<DinoInstance> all = dinos.findAll();
 		if (all.isEmpty()) return;
 
+		// Group by owner so the SOCIAL trait can count enclosure-mates
+		// within the same owner without a per-dino query.
+		Map<Long, List<DinoInstance>> byOwner = new HashMap<>();
+		for (DinoInstance d : all) byOwner.computeIfAbsent(d.ownerUserId(), k -> new ArrayList<>()).add(d);
+
 		Map<Long, Long> perPlayer = new HashMap<>();
-		for (DinoInstance d : all) {
-			Optional<DinoSpecies> speciesOpt = catalog.byId(d.speciesId());
-			if (speciesOpt.isEmpty()) continue;
-			long contribution = speciesOpt.get().baseIncomePerHour() * d.happiness() / 100L;
-			if (contribution <= 0) continue;
-			perPlayer.merge(d.ownerUserId(), contribution, Long::sum);
+		for (Map.Entry<Long, List<DinoInstance>> e : byOwner.entrySet()) {
+			for (DinoInstance d : e.getValue()) {
+				Optional<DinoSpecies> speciesOpt = catalog.byId(d.speciesId());
+				if (speciesOpt.isEmpty()) continue;
+				long contribution = contributionFor(d, speciesOpt.get(), e.getValue());
+				if (contribution <= 0) continue;
+				perPlayer.merge(d.ownerUserId(), contribution, Long::sum);
+			}
 		}
 		if (perPlayer.isEmpty()) {
 			log.debug("income.tick: no positive contributions");
@@ -126,5 +135,39 @@ public final class IncomeTickService {
 			}
 		}
 		log.info("income.tick credited {} player(s) total {} coins", credited, totalCredited);
+	}
+
+	/**
+	 * Per-dino contribution before the per-player Marketer multiplier.
+	 *
+	 * <p>Multiplier order (applied left-to-right): species base × happiness
+	 * × trait flat × SOCIAL bonus. Future shiny and level multipliers slot
+	 * in between trait and Marketer — keep the chain documented when new
+	 * factors are added.
+	 *
+	 * @param ownerRoster every dino owned by the same player; used by the
+	 *                    SOCIAL trait to count enclosure-mates
+	 */
+	private long contributionFor(DinoInstance d, DinoSpecies species,
+	                             List<DinoInstance> ownerRoster) {
+		long baseContribution = (long) species.baseIncomePerHour() * d.happiness() / 100L;
+		if (baseContribution <= 0) return 0L;
+
+		DinoTrait trait = d.trait().orElse(null);
+		if (trait == null) return baseContribution;
+
+		double mult = trait.incomeMult();
+		if (trait == DinoTrait.SOCIAL && d.enclosureId().isPresent()) {
+			long enclosureId = d.enclosureId().getAsLong();
+			int mates = 0;
+			for (DinoInstance other : ownerRoster) {
+				if (other.id() == d.id()) continue;
+				if (other.enclosureId().isPresent() && other.enclosureId().getAsLong() == enclosureId) {
+					mates++;
+				}
+			}
+			mult *= trait.socialBonus(mates + 1); // +1 so the count includes d itself
+		}
+		return Math.round(baseContribution * mult);
 	}
 }

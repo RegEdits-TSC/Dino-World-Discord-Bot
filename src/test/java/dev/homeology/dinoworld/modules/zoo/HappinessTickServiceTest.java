@@ -150,4 +150,39 @@ class HappinessTickServiceTest {
 	void emptyParkIsHarmless() {
 		assertDoesNotThrow(() -> svc().runOnce());
 	}
+
+	// ─── trait-modified decay ────────────────────────────────────────────
+
+	@Test
+	void vigorousTraitSlowsDecayBy20Percent() {
+		Enclosure forest = enclosures.create(42L, "forest", 5, 5, "Home");
+		DinoInstance d = dinos.create(42L, "velociraptor",
+			OptionalLong.of(forest.id()), null, DinoTrait.VIGOROUS);
+
+		svc().runOnce();
+		// base 4 × 0.80 = 3.2 → round = 3
+		assertEquals(100 - 3, dinos.findById(d.id()).orElseThrow().happiness());
+	}
+
+	@Test
+	void gluttonousTraitSpeedsDecayBy25Percent() {
+		Enclosure forest = enclosures.create(42L, "forest", 5, 5, "Home");
+		DinoInstance d = dinos.create(42L, "velociraptor",
+			OptionalLong.of(forest.id()), null, DinoTrait.GLUTTONOUS);
+
+		svc().runOnce();
+		// base 4 × 1.25 = 5
+		assertEquals(100 - 5, dinos.findById(d.id()).orElseThrow().happiness());
+	}
+
+	@Test
+	void traitDecayMultiplierStacksOnMismatch() {
+		Enclosure desert = enclosures.create(42L, "desert", 5, 5, "Sand");
+		DinoInstance d = dinos.create(42L, "velociraptor",
+			OptionalLong.of(desert.id()), null, DinoTrait.VIGOROUS);
+
+		svc().runOnce();
+		// mismatch 8 × 0.80 = 6.4 → round = 6
+		assertEquals(100 - 6, dinos.findById(d.id()).orElseThrow().happiness());
+	}
 }
