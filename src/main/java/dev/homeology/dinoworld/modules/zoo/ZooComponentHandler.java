@@ -511,9 +511,14 @@ public final class ZooComponentHandler implements ComponentHandler {
 		long userId = event.getUser().getIdLong();
 		EggService.HatchResult result = eggs.hatch(userId, eggId);
 		Rarity rar = rarities.require(result.species().rarity());
-		EmbedBuilder ack = Embeds.success(
-			"🦖  Hatched " + rar.displayName() + " " + result.species().displayName() + "!",
-			result.species().description() + "\n_+" + result.xpAwarded() + " XP._");
+		boolean shiny = result.dino().shiny();
+		String title = shiny
+			? "✨🦖  Shiny " + rar.displayName() + " " + result.species().displayName() + "!"
+			: "🦖  Hatched " + rar.displayName() + " " + result.species().displayName() + "!";
+		String description = result.species().description()
+			+ (shiny ? "\n**A shiny variant!** +50% income for life." : "")
+			+ "\n_+" + result.xpAwarded() + " XP._";
+		EmbedBuilder ack = Embeds.success(title, description);
 		editOrReply(event, rc, ack,
 			java.util.List.of(net.dv8tion.jda.api.components.actionrow.ActionRow.of(
 				net.dv8tion.jda.api.components.buttons.Button.secondary(
@@ -536,15 +541,20 @@ public final class ZooComponentHandler implements ComponentHandler {
 		}
 		StringBuilder body = new StringBuilder();
 		long totalXp = 0;
+		int shinies = 0;
 		for (EggService.HatchResult r : results) {
+			boolean shiny = r.dino().shiny();
+			if (shiny) shinies++;
 			body.append("• ").append(rarities.require(r.species().rarity()).displayName())
-				.append(" **").append(r.species().displayName()).append("** (+")
+				.append(" ").append(shiny ? "✨ " : "")
+				.append("**").append(r.species().displayName()).append("** (+")
 				.append(r.xpAwarded()).append(" XP)\n");
 			totalXp += r.xpAwarded();
 		}
+		String shinyLine = shinies > 0 ? "\n**" + shinies + " shiny!** ✨" : "";
 		EmbedBuilder ack = Embeds.success(
 			"🦖  Hatched " + results.size() + " egg" + (results.size() == 1 ? "" : "s") + "!",
-			body.toString() + "\n_+" + totalXp + " XP total._");
+			body.toString() + shinyLine + "\n_+" + totalXp + " XP total._");
 		editOrReply(event, rc, ack,
 			java.util.List.of(net.dv8tion.jda.api.components.actionrow.ActionRow.of(
 				net.dv8tion.jda.api.components.buttons.Button.secondary(

@@ -217,6 +217,37 @@ class IncomeTickServiceTest {
 		assertEquals(46L, players.get(42L).orElseThrow().coins());
 	}
 
+	// ─── shiny multiplier ────────────────────────────────────────────────
+
+	@Test
+	void shinyDinoEarns150PercentBaseIncome() throws Exception {
+		dinos.create(42L, "velociraptor", OptionalLong.empty(), null, null, true);
+		incomeTick.runOnce();
+		// 25 × 1.5 = 37.5 → 38
+		assertEquals(38L, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
+	void shinyStacksOnTraitAndLevel() throws Exception {
+		// Proud (×1.15), L25 (×1.6), Shiny (×1.5) → 25 × 1.15 × 1.6 × 1.5
+		// = 69.0
+		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.empty(), null,
+			DinoTrait.PROUD, true);
+		int toL25 = (int) DinoLeveling.cumulativeXpForLevel(25);
+		dinos.awardXp(d.id(), toL25);
+
+		incomeTick.runOnce();
+		assertEquals(69L, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
+	void normalDinoIsUnaffectedByShinyMultiplier() throws Exception {
+		// Sanity: explicit shiny=false yields plain baseline.
+		dinos.create(42L, "velociraptor", OptionalLong.empty(), null, null, false);
+		incomeTick.runOnce();
+		assertEquals(25L, players.get(42L).orElseThrow().coins());
+	}
+
 	private int ledgerCount(long userId) throws Exception {
 		try (Connection c = ds.getConnection();
 		     PreparedStatement ps = c.prepareStatement(

@@ -12,7 +12,7 @@ import java.util.OptionalLong;
  * <p>Stats fall into three groups:
  * <ul>
  *   <li><b>Identity</b> — id, owner, species, enclosure assignment, optional
- *       custom name, optional personality trait.</li>
+ *       custom name, optional personality trait, optional shiny flag.</li>
  *   <li><b>Progression (placeholders for /battle)</b> — level, xp,
  *       currentHp. Stored now so the schema doesn't need to change when
  *       battle ships in v2.</li>
@@ -27,6 +27,7 @@ import java.util.OptionalLong;
  * @param enclosureId   id of the enclosure currently housing this dino, or empty if homeless
  * @param customName    optional player-supplied name
  * @param trait         personality trait rolled at hatch; empty = "plain"
+ * @param shiny         rare 1/512 hatch outcome — permanent ✨ + 50% income
  * @param level         current battle level (placeholder; stays 1 in v1)
  * @param xp            accumulated battle XP (placeholder; stays 0 in v1)
  * @param currentHp     persistent HP (placeholder; stays 100 in v1)
@@ -42,6 +43,7 @@ public record DinoInstance(
 	OptionalLong enclosureId,
 	Optional<String> customName,
 	Optional<DinoTrait> trait,
+	boolean shiny,
 	int level,
 	long xp,
 	int currentHp,

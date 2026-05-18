@@ -79,13 +79,22 @@ public final class HatchCommand implements Command {
 
 	private EmbedBuilder buildSingleEmbed(EggService.HatchResult r, SlashCommandInteractionEvent event) {
 		Rarity rar = rarities.require(r.species().rarity());
-		EmbedBuilder e = Embeds.success(
-			"🦖  Hatched a " + rar.displayName() + " " + r.species().displayName() + "!",
-			r.species().description() + "\n\n_+" + r.xpAwarded() + " XP._");
+		boolean shiny = r.dino().shiny();
+		String title = shiny
+			? "✨🦖  Shiny " + rar.displayName() + " " + r.species().displayName() + "!"
+			: "🦖  Hatched a " + rar.displayName() + " " + r.species().displayName() + "!";
+		String description = r.species().description()
+			+ (shiny ? "\n\n**A shiny variant!** +50% income for life."
+			: "")
+			+ "\n\n_+" + r.xpAwarded() + " XP._";
+		EmbedBuilder e = Embeds.success(title, description);
 		e.setColor(new Color(rar.color()));
 		e.addField("Era", r.species().era(), true);
 		e.addField("Biome", r.species().biome(), true);
-		e.addField("Income / hr", String.valueOf(r.species().baseIncomePerHour()), true);
+		long incomePerHour = shiny
+			? Math.round(r.species().baseIncomePerHour() * ShinyRoller.SHINY_INCOME_MULTIPLIER)
+			: r.species().baseIncomePerHour();
+		e.addField("Income / hr", shiny ? incomePerHour + " ✨" : String.valueOf(incomePerHour), true);
 		Embeds.brand(e, event.getJDA());
 		return e;
 	}
@@ -98,15 +107,22 @@ public final class HatchCommand implements Command {
 		}
 		StringBuilder body = new StringBuilder();
 		long totalXp = 0;
+		int shinies = 0;
 		for (EggService.HatchResult r : results) {
+			boolean shiny = r.dino().shiny();
+			if (shiny) shinies++;
 			body.append("• ").append(rarities.require(r.species().rarity()).displayName())
-				.append(" **").append(r.species().displayName()).append("** (+")
+				.append(" ").append(shiny ? "✨ " : "")
+				.append("**").append(r.species().displayName()).append("** (+")
 				.append(r.xpAwarded()).append(" XP)\n");
 			totalXp += r.xpAwarded();
 		}
+		String shinyLine = shinies > 0
+			? "\n**" + shinies + " shiny!** ✨"
+			: "";
 		EmbedBuilder e = Embeds.success(
 			"🦖  Hatched " + results.size() + " egg" + (results.size() == 1 ? "" : "s") + "!",
-			body.toString() + "\n_Total: +" + totalXp + " XP._");
+			body.toString() + shinyLine + "\n_Total: +" + totalXp + " XP._");
 		Embeds.brand(e, event.getJDA());
 		return e;
 	}
