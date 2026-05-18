@@ -152,6 +152,7 @@ public final class DinoCommand extends ListenerAdapter implements Command {
 		long incomePerHour = (long) s.baseIncomePerHour() * d.happiness() / 100L;
 		embed.addField("Happiness", happinessLabel(d.happiness()), true);
 		embed.addField("Income / hr", incomePerHour + " coins", true);
+		embed.addField("Personality", personalityLabel(d), true);
 		embed.addField("Level", "**" + d.level() + "** _(battle: v2)_", true);
 
 		// Location block.
@@ -204,6 +205,12 @@ public final class DinoCommand extends ListenerAdapter implements Command {
 
 	// ─── render helpers ──────────────────────────────────────────────────
 
+	private static String personalityLabel(DinoInstance d) {
+		return d.trait()
+			.map(t -> t.emoji() + " " + t.displayName())
+			.orElse("_Plain_");
+	}
+
 	private String happinessLabel(int happiness) {
 		String emoji;
 		if (happiness >= 80) emoji = "😊";
@@ -250,17 +257,28 @@ public final class DinoCommand extends ListenerAdapter implements Command {
 			reason = "biome mismatch (" + s.biome() + " dino in " + enc.biome() + ")";
 		}
 
+		double traitMult = d.trait().map(DinoTrait::decayMult).orElse(1.0);
 		double vetMult = (staffEffects != null && enc != null)
 			? staffEffects.happinessDecayMultiplier(enc.id())
 			: StaffEffectsService.IDENTITY;
-		int effective = (int) Math.round(base * vetMult);
+		int effective = (int) Math.round(base * traitMult * vetMult);
 
 		b.append("• Base decay: **−").append(base).append("%/hr** (").append(reason).append(")\n");
+		if (d.trait().isPresent() && traitMult != 1.0) {
+			DinoTrait t = d.trait().get();
+			int delta = (int) Math.round((traitMult - 1.0) * 100);
+			String sign = delta > 0 ? "+" : "";
+			b.append("• Personality: ").append(t.emoji()).append(" ").append(t.displayName())
+				.append(" **×").append(formatMult(traitMult))
+				.append("** (").append(sign).append(delta).append("% decay)\n");
+		}
 		if (vetMult < StaffEffectsService.IDENTITY) {
 			int pctOff = (int) Math.round((1 - vetMult) * 100);
 			b.append("• Vet on duty: **×").append(formatMult(vetMult))
-				.append("** (−").append(pctOff).append("% decay) → effective **−")
-				.append(effective).append("%/hr**\n");
+				.append("** (−").append(pctOff).append("% decay)\n");
+		}
+		if (traitMult != 1.0 || vetMult < StaffEffectsService.IDENTITY) {
+			b.append("• Effective decay: **−").append(effective).append("%/hr**\n");
 		}
 		b.append("• Current: **").append(d.happiness()).append("%**");
 		if (d.happiness() < 100) {

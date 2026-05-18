@@ -117,15 +117,21 @@ public final class HappinessTickService {
 		Map<Long, Enclosure> enclosureById = new HashMap<>();
 		int touched = 0;
 		for (DinoInstance d : all) {
-			int decay = decayFor(d, enclosureById);
+			double decay = decayFor(d, enclosureById);
+			// Trait effect: a small per-dino multiplier on the biome/mismatch
+			// base. Lazy/vigorous slow decay; gluttonous/proud speed it up.
+			if (d.trait().isPresent()) {
+				decay *= d.trait().get().decayMult();
+			}
 			// Vet effect: apply per-enclosure decay multiplier (1.0 if no vet,
 			// 0.5 with at least one vet). Defaulted to 1.0 when staff module
 			// is disabled.
 			if (staffEffects != null && d.enclosureId().isPresent()) {
 				double mult = staffEffects.happinessDecayMultiplier(d.enclosureId().getAsLong());
-				decay = (int) Math.round(decay * mult);
+				decay *= mult;
 			}
-			int newHappiness = Math.max(0, d.happiness() - decay);
+			int applied = (int) Math.round(decay);
+			int newHappiness = Math.max(0, d.happiness() - applied);
 			dinos.applyHappiness(d.id(), newHappiness, now);
 			touched++;
 		}

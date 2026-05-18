@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import dev.homeology.dinoworld.cache.CacheManager;
 import dev.homeology.dinoworld.database.MigrationRunner;
 import dev.homeology.dinoworld.modules.players.PlayerService;
+import dev.homeology.dinoworld.modules.zoo.model.DinoInstance;
 import dev.homeology.dinoworld.modules.zoo.model.EggInstance;
 import dev.homeology.dinoworld.modules.zoo.model.Enclosure;
 import org.junit.jupiter.api.AfterEach;
@@ -18,6 +19,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -321,6 +323,69 @@ class EggServiceTest {
 		EggService.HatchResult result = eggs.hatch(42L, egg.id());
 
 		assertEquals("velociraptor", result.species().id());
+	}
+
+	@Test
+	void hatchPersistsRolledTrait() {
+		players.addCoins(42L, 5000L, "test", null);
+		enclosures.create(42L, "forest", 5, 5, "Big");
+		// Buy with a backdated clock so ready_at is in the past at NOW,
+		// then hatch with a NOW-clocked EggService that holds the deterministic roller.
+		EggService backdated = new EggService(ds, rarities, catalog, players, dinos, enclosures,
+			pool -> pool.get(0),
+			Clock.fixed(NOW.minus(Duration.ofHours(2)), ZoneOffset.UTC));
+		EggInstance egg = backdated.buyMystery(42L, "common");
+		EggService withTrait = new EggService(ds, rarities, catalog, players, dinos, enclosures,
+			pool -> pool.get(0),
+			Clock.fixed(NOW, ZoneOffset.UTC),
+			null,
+			fixedTraitRoller(DinoTrait.GLUTTONOUS));
+
+		EggService.HatchResult result = withTrait.hatch(42L, egg.id());
+
+		assertEquals(Optional.of(DinoTrait.GLUTTONOUS), result.dino().trait(),
+			"trait from the injected roller should be persisted");
+		// Round-trip through the row mapper to confirm the column was written.
+		DinoInstance reloaded = dinos.findById(result.dino().id()).orElseThrow();
+		assertEquals(Optional.of(DinoTrait.GLUTTONOUS), reloaded.trait());
+	}
+
+	@Test
+	void hatchPersistsPlainWhenRollerReturnsEmpty() {
+		players.addCoins(42L, 5000L, "test", null);
+		enclosures.create(42L, "forest", 5, 5, "Big");
+		EggService backdated = new EggService(ds, rarities, catalog, players, dinos, enclosures,
+			pool -> pool.get(0),
+			Clock.fixed(NOW.minus(Duration.ofHours(2)), ZoneOffset.UTC));
+		EggInstance egg = backdated.buyMystery(42L, "common");
+		EggService plain = new EggService(ds, rarities, catalog, players, dinos, enclosures,
+			pool -> pool.get(0),
+			Clock.fixed(NOW, ZoneOffset.UTC),
+			null,
+			alwaysPlainRoller());
+
+		EggService.HatchResult result = plain.hatch(42L, egg.id());
+
+		assertTrue(result.dino().trait().isEmpty(), "no trait when roller returns empty");
+	}
+
+	/** Always returns {@code trait}; used to pin hatch outcomes in tests. */
+	private static TraitRoller fixedTraitRoller(DinoTrait trait) {
+		int idx = trait.ordinal();
+		return new TraitRoller(new java.util.random.RandomGenerator() {
+			@Override public double nextDouble() { return 0.99; }
+			@Override public int nextInt(int bound) { return idx; }
+			@Override public long nextLong() { throw new UnsupportedOperationException(); }
+		});
+	}
+
+	/** Always returns {@link Optional#empty()} (the "plain" outcome). */
+	private static TraitRoller alwaysPlainRoller() {
+		return new TraitRoller(new java.util.random.RandomGenerator() {
+			@Override public double nextDouble() { return 0.0; }
+			@Override public int nextInt(int bound) { return 0; }
+			@Override public long nextLong() { throw new UnsupportedOperationException(); }
+		});
 	}
 
 	@Test

@@ -61,34 +61,49 @@ public final class DinoInstanceService {
 	// ─── lifecycle ───────────────────────────────────────────────────────
 
 	/**
-	 * Create a freshly-hatched dino with default stats.
+	 * Convenience: create a freshly-hatched dino with no personality
+	 * trait (the "plain" outcome — see {@link TraitRoller}). Kept so test
+	 * fixtures don't have to thread a null through every call site.
+	 */
+	public DinoInstance create(long ownerUserId, String speciesId,
+	                           OptionalLong enclosureId, String customName) {
+		return create(ownerUserId, speciesId, enclosureId, customName, null);
+	}
+
+	/**
+	 * Create a freshly-hatched dino with default stats and the given
+	 * personality trait (or no trait if {@code trait} is null).
 	 *
 	 * @param ownerUserId  player who owns it
 	 * @param speciesId    matches a {@link DinoSpecies#id()} in {@link DinoCatalog}
 	 * @param enclosureId  optional starting enclosure (caller resolves via {@link EnclosureService#findCompatibleForSpecies})
 	 * @param customName   optional player-supplied name; null/blank means unnamed
+	 * @param trait        rolled by {@link TraitRoller}; null means "plain"
 	 */
 	public DinoInstance create(long ownerUserId, String speciesId,
-	                           OptionalLong enclosureId, String customName) {
+	                           OptionalLong enclosureId, String customName,
+	                           DinoTrait trait) {
 		long now = Instant.now().toEpochMilli();
 		try (Connection c = dataSource.getConnection();
 		     PreparedStatement ps = c.prepareStatement("""
 			     INSERT INTO dino_instance(
-			         owner_user_id, species_id, enclosure_id, custom_name,
+			         owner_user_id, species_id, enclosure_id, custom_name, trait,
 			         level, xp, current_hp, happiness,
 			         last_fed_at, last_decay_at, acquired_at)
-			     VALUES (?, ?, ?, ?, ?, 0, ?, ?, NULL, ?, ?)
+			     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, NULL, ?, ?)
 			     """, Statement.RETURN_GENERATED_KEYS)) {
 			ps.setLong(1, ownerUserId);
 			ps.setString(2, speciesId);
 			if (enclosureId.isPresent()) ps.setLong(3, enclosureId.getAsLong());
 			else ps.setNull(3, java.sql.Types.INTEGER);
 			ps.setString(4, (customName == null || customName.isBlank()) ? null : customName.trim());
-			ps.setInt(5, STARTING_LEVEL);
-			ps.setInt(6, STARTING_HP);
-			ps.setInt(7, STARTING_HAPPINESS);
-			ps.setLong(8, now);
+			if (trait == null) ps.setNull(5, java.sql.Types.VARCHAR);
+			else ps.setString(5, trait.id());
+			ps.setInt(6, STARTING_LEVEL);
+			ps.setInt(7, STARTING_HP);
+			ps.setInt(8, STARTING_HAPPINESS);
 			ps.setLong(9, now);
+			ps.setLong(10, now);
 			ps.executeUpdate();
 			try (ResultSet rs = ps.getGeneratedKeys()) {
 				if (!rs.next()) throw new IllegalStateException("INSERT did not return a key");
@@ -96,6 +111,7 @@ public final class DinoInstanceService {
 				return new DinoInstance(
 					id, ownerUserId, speciesId, enclosureId,
 					Optional.ofNullable((customName == null || customName.isBlank()) ? null : customName.trim()),
+					Optional.ofNullable(trait),
 					STARTING_LEVEL, 0L, STARTING_HP, STARTING_HAPPINESS,
 					Optional.empty(),
 					Instant.ofEpochMilli(now),
@@ -290,7 +306,7 @@ public final class DinoInstanceService {
 	// ─── helpers ─────────────────────────────────────────────────────────
 
 	private static final String SELECT_ALL = """
-		SELECT id, owner_user_id, species_id, enclosure_id, custom_name,
+		SELECT id, owner_user_id, species_id, enclosure_id, custom_name, trait,
 		       level, xp, current_hp, happiness,
 		       last_fed_at, last_decay_at, acquired_at
 		FROM dino_instance
@@ -304,6 +320,8 @@ public final class DinoInstanceService {
 		Optional<String> customName = (name == null || name.isBlank())
 			? Optional.empty() : Optional.of(name);
 
+		Optional<DinoTrait> trait = DinoTrait.byId(rs.getString("trait"));
+
 		long fedRaw = rs.getLong("last_fed_at");
 		Optional<Instant> lastFed = rs.wasNull()
 			? Optional.empty() : Optional.of(Instant.ofEpochMilli(fedRaw));
@@ -314,6 +332,7 @@ public final class DinoInstanceService {
 			rs.getString("species_id"),
 			enclosure,
 			customName,
+			trait,
 			rs.getInt("level"),
 			rs.getLong("xp"),
 			rs.getInt("current_hp"),

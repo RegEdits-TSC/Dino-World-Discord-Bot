@@ -64,6 +64,7 @@ public final class EggService {
 	private final Function<List<DinoSpecies>, DinoSpecies> picker;
 	private final Clock clock;
 	private final StaffEffectsService staffEffects;
+	private final TraitRoller traitRoller;
 
 	/**
 	 * Production constructor — uses {@link ThreadLocalRandom} for mystery
@@ -77,7 +78,7 @@ public final class EggService {
 	                  EnclosureService enclosures) {
 		this(dataSource, rarities, catalog, players, dinos, enclosures,
 			pool -> pool.get(ThreadLocalRandom.current().nextInt(pool.size())),
-			Clock.systemUTC(), null);
+			Clock.systemUTC(), null, new TraitRoller());
 	}
 
 	/**
@@ -93,7 +94,7 @@ public final class EggService {
 	                  StaffEffectsService staffEffects) {
 		this(dataSource, rarities, catalog, players, dinos, enclosures,
 			pool -> pool.get(ThreadLocalRandom.current().nextInt(pool.size())),
-			Clock.systemUTC(), staffEffects);
+			Clock.systemUTC(), staffEffects, new TraitRoller());
 	}
 
 	/**
@@ -107,7 +108,7 @@ public final class EggService {
 	                  EnclosureService enclosures,
 	                  Function<List<DinoSpecies>, DinoSpecies> picker,
 	                  Clock clock) {
-		this(dataSource, rarities, catalog, players, dinos, enclosures, picker, clock, null);
+		this(dataSource, rarities, catalog, players, dinos, enclosures, picker, clock, null, new TraitRoller());
 	}
 
 	/**
@@ -123,6 +124,24 @@ public final class EggService {
 	                  Function<List<DinoSpecies>, DinoSpecies> picker,
 	                  Clock clock,
 	                  StaffEffectsService staffEffects) {
+		this(dataSource, rarities, catalog, players, dinos, enclosures, picker, clock, staffEffects, new TraitRoller());
+	}
+
+	/**
+	 * Test seam — inject every collaborator including the
+	 * {@link TraitRoller}. Tests that want to pin a specific trait
+	 * outcome use this constructor with a seeded RNG.
+	 */
+	public EggService(DataSource dataSource,
+	                  RarityCatalog rarities,
+	                  DinoCatalog catalog,
+	                  PlayerService players,
+	                  DinoInstanceService dinos,
+	                  EnclosureService enclosures,
+	                  Function<List<DinoSpecies>, DinoSpecies> picker,
+	                  Clock clock,
+	                  StaffEffectsService staffEffects,
+	                  TraitRoller traitRoller) {
 		this.dataSource = dataSource;
 		this.rarities = rarities;
 		this.catalog = catalog;
@@ -132,6 +151,7 @@ public final class EggService {
 		this.picker = picker;
 		this.clock = clock;
 		this.staffEffects = staffEffects;
+		this.traitRoller = traitRoller;
 	}
 
 	// ─── purchase ────────────────────────────────────────────────────────
@@ -370,16 +390,18 @@ public final class EggService {
 					+ ", biome '" + species.biome() + "')");
 		}
 
-		// Create the dino, then stamp the egg.
+		// Roll personality trait, then create the dino, then stamp the egg.
+		DinoTrait trait = traitRoller.roll().orElse(null);
 		DinoInstance dino = dinos.create(
-			userId, species.id(), OptionalLong.of(enclosure.get().id()), null);
+			userId, species.id(), OptionalLong.of(enclosure.get().id()), null, trait);
 		stampHatched(eggId, dino.id(), now);
 
 		// XP reward.
 		Rarity r = rarities.require(egg.rarity());
 		players.addXp(userId, r.hatchXp());
-		log.info("user={} hatched egg={} → species={} dino={} (+{} xp)",
-			userId, eggId, species.id(), dino.id(), r.hatchXp());
+		log.info("user={} hatched egg={} → species={} dino={} trait={} (+{} xp)",
+			userId, eggId, species.id(), dino.id(),
+			trait == null ? "plain" : trait.id(), r.hatchXp());
 
 		return new HatchResult(eggId, species, dino, r.hatchXp());
 	}

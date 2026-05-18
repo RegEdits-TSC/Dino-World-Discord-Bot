@@ -123,6 +123,56 @@ class IncomeTickServiceTest {
 		assertEquals(3, ledgerCount(42L), "one ledger row per tick");
 	}
 
+	@Test
+	void proudTraitBoostsIncomeBy15Percent() throws Exception {
+		dinos.create(42L, "velociraptor", OptionalLong.empty(), null, DinoTrait.PROUD);
+		incomeTick.runOnce();
+		// 25 × 1.15 = 28.75 → round-half-up = 29
+		assertEquals(29L, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
+	void lazyTraitReducesIncomeBy5Percent() throws Exception {
+		dinos.create(42L, "velociraptor", OptionalLong.empty(), null, DinoTrait.LAZY);
+		incomeTick.runOnce();
+		// 25 × 0.95 = 23.75 → round-half-up = 24
+		assertEquals(24L, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
+	void plainTraitFieldYieldsBaseIncome() throws Exception {
+		// Explicit null trait — confirms the contribution path handles the
+		// "no trait rolled" outcome the same as a missing column.
+		dinos.create(42L, "velociraptor", OptionalLong.empty(), null, null);
+		incomeTick.runOnce();
+		assertEquals(25L, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
+	void socialTraitWithEnclosureMatesAdds5Percent() throws Exception {
+		EnclosureService enclosures = new EnclosureService(ds);
+		var enc = enclosures.create(42L, "forest", 5, 5, "Pack");
+		dinos.create(42L, "velociraptor", OptionalLong.of(enc.id()), null, DinoTrait.SOCIAL);
+		// A second raptor to satisfy the "≥ 2 dinos in this enclosure" rule.
+		dinos.create(42L, "velociraptor", OptionalLong.of(enc.id()), null);
+
+		incomeTick.runOnce();
+		// Social raptor: 25 × 1.0 × 1.05 = 26.25 → 26
+		// Plain raptor : 25
+		// Sum: 51
+		assertEquals(51L, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
+	void socialTraitAloneInEnclosureGetsNoBonus() throws Exception {
+		EnclosureService enclosures = new EnclosureService(ds);
+		var enc = enclosures.create(42L, "forest", 5, 5, "Solo");
+		dinos.create(42L, "velociraptor", OptionalLong.of(enc.id()), null, DinoTrait.SOCIAL);
+
+		incomeTick.runOnce();
+		assertEquals(25L, players.get(42L).orElseThrow().coins());
+	}
+
 	private int ledgerCount(long userId) throws Exception {
 		try (Connection c = ds.getConnection();
 		     PreparedStatement ps = c.prepareStatement(

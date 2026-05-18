@@ -1,5 +1,7 @@
 package dev.homeology.dinoworld.modules.zoo.model;
 
+import dev.homeology.dinoworld.modules.zoo.DinoTrait;
+
 import java.time.Instant;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -10,7 +12,7 @@ import java.util.OptionalLong;
  * <p>Stats fall into three groups:
  * <ul>
  *   <li><b>Identity</b> — id, owner, species, enclosure assignment, optional
- *       custom name.</li>
+ *       custom name, optional personality trait.</li>
  *   <li><b>Progression (placeholders for /battle)</b> — level, xp,
  *       currentHp. Stored now so the schema doesn't need to change when
  *       battle ships in v2.</li>
@@ -24,6 +26,7 @@ import java.util.OptionalLong;
  * @param speciesId     {@link dev.homeology.dinoworld.modules.zoo.DinoSpecies#id()} key
  * @param enclosureId   id of the enclosure currently housing this dino, or empty if homeless
  * @param customName    optional player-supplied name
+ * @param trait         personality trait rolled at hatch; empty = "plain"
  * @param level         current battle level (placeholder; stays 1 in v1)
  * @param xp            accumulated battle XP (placeholder; stays 0 in v1)
  * @param currentHp     persistent HP (placeholder; stays 100 in v1)
@@ -38,6 +41,7 @@ public record DinoInstance(
 	String speciesId,
 	OptionalLong enclosureId,
 	Optional<String> customName,
+	Optional<DinoTrait> trait,
 	int level,
 	long xp,
 	int currentHp,
