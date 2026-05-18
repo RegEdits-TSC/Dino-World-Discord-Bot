@@ -153,7 +153,7 @@ public final class DinoCommand extends ListenerAdapter implements Command {
 		embed.addField("Happiness", happinessLabel(d.happiness()), true);
 		embed.addField("Income / hr", incomePerHour + " coins", true);
 		embed.addField("Personality", personalityLabel(d), true);
-		embed.addField("Level", "**" + d.level() + "** _(battle: v2)_", true);
+		embed.addField("Level", levelLabel(d), true);
 
 		// Location block.
 		embed.addField("Location", locationLine(s, enc), false);
@@ -209,6 +209,23 @@ public final class DinoCommand extends ListenerAdapter implements Command {
 		return d.trait()
 			.map(t -> t.emoji() + " " + t.displayName())
 			.orElse("_Plain_");
+	}
+
+	/**
+	 * @return a "Lv N · X/Y XP ▰▰▰▱▱▱▱▱▱▱" line, or "MAX" at the cap.
+	 *         The bar is a 10-segment unicode strip so the grid stays
+	 *         legible inside the inline field cell.
+	 */
+	private static String levelLabel(DinoInstance d) {
+		int level = d.level();
+		if (DinoLeveling.isMaxLevel(level)) {
+			return "**Lv " + level + "** · MAX";
+		}
+		long toNext = DinoLeveling.xpToNextLevel(level);
+		long inLevel = DinoLeveling.xpProgressInLevel(d.xp());
+		int filled = toNext == 0 ? 10 : (int) Math.clamp(inLevel * 10L / toNext, 0L, 10L);
+		String bar = "▰".repeat(filled) + "▱".repeat(10 - filled);
+		return "**Lv " + level + "** · " + inLevel + "/" + toNext + " XP\n" + bar;
 	}
 
 	private String happinessLabel(int happiness) {

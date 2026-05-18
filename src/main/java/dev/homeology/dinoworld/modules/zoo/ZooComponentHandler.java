@@ -68,6 +68,14 @@ public final class ZooComponentHandler implements ComponentHandler {
 	 */
 	private static final String MODAL_BUILD_ENCLOSURE = NAMESPACE + ":shop:build-enclosure-submit";
 
+	/**
+	 * XP granted to a dino per successful (non-cooldowned) player feed. Same
+	 * value across the three feed entry points so a bulk-feed and a per-dino
+	 * pick are economically identical. Staff auto-feeds intentionally don't
+	 * grant XP — see {@link DinoInstanceService#awardXp}.
+	 */
+	static final int FEED_XP_AWARD = 12;
+
 	private final PlayerService players;
 	private final RarityCatalog rarities;
 	private final DinoCatalog catalog;
@@ -585,11 +593,16 @@ public final class ZooComponentHandler implements ComponentHandler {
 			return;
 		}
 		dinos.recordFed(dinoId, now);
+		DinoInstanceService.AwardResult xp = dinos.awardXp(dinoId, FEED_XP_AWARD).orElse(null);
 		String name = dino.customName().orElseGet(() ->
 			catalog.byId(dino.speciesId()).map(DinoSpecies::displayName).orElse(dino.speciesId())
 				+ " #" + dino.id());
-		EmbedBuilder ack = Embeds.success("🍖  Fed " + name,
-			"Happiness restored to 100. Next feed in " + FeedCommand.COOLDOWN_HOURS + " hours.");
+		String description = "Happiness restored to 100. Next feed in "
+			+ FeedCommand.COOLDOWN_HOURS + " hours.";
+		if (xp != null && xp.leveledUp()) {
+			description += "\n🎉 **Level up!** " + name + " is now level " + xp.newLevel() + ".";
+		}
+		EmbedBuilder ack = Embeds.success("🍖  Fed " + name, description);
 		editOrReply(event, rc, ack, java.util.List.of(), java.util.Optional.empty());
 	}
 
@@ -600,12 +613,15 @@ public final class ZooComponentHandler implements ComponentHandler {
 		var owned = dinos.findByOwner(userId);
 		int fed = 0;
 		int skipped = 0;
+		int levelUps = 0;
 		for (var d : owned) {
 			if (FeedCommand.isOnCooldown(d, now)) {
 				skipped++;
 				continue;
 			}
 			dinos.recordFed(d.id(), now);
+			DinoInstanceService.AwardResult xp = dinos.awardXp(d.id(), FEED_XP_AWARD).orElse(null);
+			if (xp != null && xp.leveledUp()) levelUps++;
 			fed++;
 		}
 		EmbedBuilder ack;
@@ -617,9 +633,13 @@ public final class ZooComponentHandler implements ComponentHandler {
 				skipped + " dino" + (skipped == 1 ? " is" : "s are") + " still on cooldown. "
 					+ "Try `/feed` to see when each is ready.");
 		} else {
-			ack = Embeds.success("🍖  Fed " + fed + " dino" + (fed == 1 ? "" : "s"),
-				"Happiness restored to 100"
-					+ (skipped > 0 ? "; " + skipped + " on cooldown skipped." : "."));
+			String description = "Happiness restored to 100"
+				+ (skipped > 0 ? "; " + skipped + " on cooldown skipped." : ".");
+			if (levelUps > 0) {
+				description += "\n🎉 **" + levelUps + " level-up"
+					+ (levelUps == 1 ? "" : "s") + "** — see `/dino inspect` for details.";
+			}
+			ack = Embeds.success("🍖  Fed " + fed + " dino" + (fed == 1 ? "" : "s"), description);
 		}
 		editOrReply(event, rc, ack, java.util.List.of(), java.util.Optional.empty());
 	}
@@ -1187,6 +1207,7 @@ public final class ZooComponentHandler implements ComponentHandler {
 			return;
 		}
 		dinos.recordFed(dinoId, now);
+		dinos.awardXp(dinoId, FEED_XP_AWARD);
 		// Resolve immediately so the row vanishes on rerender — happiness sweep
 		// would do this on the next tick anyway, but waiting an hour is bad UX.
 		issues.resolveByMatch(userId, ZooIssue.Type.LOW_HAPPINESS,

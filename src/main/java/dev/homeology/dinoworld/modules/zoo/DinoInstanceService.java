@@ -219,6 +219,54 @@ public final class DinoInstanceService {
 	}
 
 	/**
+	 * Grant XP to one dino and recompute its level via {@link DinoLeveling}.
+	 * Caller is responsible for ensuring the source is a real player action
+	 * (e.g. {@code /feed} that actually reset happiness) — auto-feeds and
+	 * idle ticks should not call this, otherwise leveling becomes
+	 * AFK-grindable.
+	 *
+	 * <p>If the dino is already at {@link DinoLeveling#MAX_LEVEL}, XP is
+	 * still accumulated (so the column stays meaningful as a lifetime
+	 * total) but {@link AwardResult#leveledUp} is always false.
+	 *
+	 * @param dinoId target dino
+	 * @param xpDelta non-negative XP to add
+	 * @return the post-write level and whether a level boundary was crossed,
+	 *         or {@link Optional#empty()} if the dino doesn't exist
+	 * @throws IllegalArgumentException if {@code xpDelta} is negative
+	 */
+	public Optional<AwardResult> awardXp(long dinoId, int xpDelta) {
+		if (xpDelta < 0) {
+			throw new IllegalArgumentException("xpDelta must be non-negative, got: " + xpDelta);
+		}
+		Optional<DinoInstance> before = findById(dinoId);
+		if (before.isEmpty()) return Optional.empty();
+		DinoInstance d = before.get();
+		long newXp = d.xp() + xpDelta;
+		int newLevel = DinoLeveling.levelForTotalXp(newXp);
+		boolean leveledUp = newLevel > d.level();
+		try (Connection c = dataSource.getConnection();
+		     PreparedStatement ps = c.prepareStatement(
+			     "UPDATE dino_instance SET xp = ?, level = ? WHERE id = ?")) {
+			ps.setLong(1, newXp);
+			ps.setInt(2, newLevel);
+			ps.setLong(3, dinoId);
+			ps.executeUpdate();
+		} catch (SQLException e) {
+			throw new IllegalStateException("dino_instance awardXp(" + dinoId + ") failed", e);
+		}
+		return Optional.of(new AwardResult(newLevel, leveledUp));
+	}
+
+	/**
+	 * Outcome of {@link #awardXp(long, int)}. {@code leveledUp} lets the
+	 * caller emit a celebratory follow-up message without re-querying the
+	 * row.
+	 */
+	public record AwardResult(int newLevel, boolean leveledUp) {
+	}
+
+	/**
 	 * Apply a new happiness value (typically lower than current) and
 	 * advance {@code last_decay_at}. Used by the hourly decay tick.
 	 */
