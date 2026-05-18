@@ -52,6 +52,14 @@ public final class DinoInstanceService {
 	 */
 	public static final int STARTING_LEVEL = 1;
 
+	/**
+	 * XP granted to a dino per successful (non-cooldowned) player feed.
+	 * Pinned here so the achievements module can derive total feeds
+	 * from {@code SUM(dino.xp) / FEED_XP_AWARD} without taking a
+	 * cross-module dependency on the feed handlers.
+	 */
+	public static final int FEED_XP_AWARD = 12;
+
 	private final DataSource dataSource;
 
 	public DinoInstanceService(DataSource dataSource) {

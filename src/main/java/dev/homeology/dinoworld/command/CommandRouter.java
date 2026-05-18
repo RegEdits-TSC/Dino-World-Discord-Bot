@@ -175,6 +175,7 @@ public final class CommandRouter extends ListenerAdapter {
 			metrics.recordInvocation(topName, "ok");
 			log.debug("Completed /{} in {} ms", fullName, elapsedNs / 1_000_000L);
 			runMissionHook(event, topName);
+			runAchievementHook(event, topName);
 		} catch (Exception e) {
 			metrics.recordInvocation(topName, "error");
 			handleUncaught(event, topName, e);
@@ -200,6 +201,21 @@ public final class CommandRouter extends ListenerAdapter {
 				.ifPresent(a -> a.afterCommand(event, topName));
 		} catch (Exception e) {
 			log.warn("mission awarder failed for /{}: {}", topName, e.toString());
+		}
+	}
+
+	/**
+	 * Sibling of {@link #runMissionHook}. Best-effort post-command pass for
+	 * the achievements awarder. Same lookup-and-swallow contract: a probe
+	 * failure must not roll back the command's own reply.
+	 */
+	private void runAchievementHook(SlashCommandInteractionEvent event, String topName) {
+		try {
+			baseContext.services()
+				.tryGet(dev.homeology.dinoworld.modules.achievements.AchievementAwarder.class)
+				.ifPresent(a -> a.afterCommand(event, topName));
+		} catch (Exception e) {
+			log.warn("achievement awarder failed for /{}: {}", topName, e.toString());
 		}
 	}
 

@@ -69,12 +69,13 @@ public final class ZooComponentHandler implements ComponentHandler {
 	private static final String MODAL_BUILD_ENCLOSURE = NAMESPACE + ":shop:build-enclosure-submit";
 
 	/**
-	 * XP granted to a dino per successful (non-cooldowned) player feed. Same
-	 * value across the three feed entry points so a bulk-feed and a per-dino
-	 * pick are economically identical. Staff auto-feeds intentionally don't
+	 * XP granted to a dino per successful (non-cooldowned) player feed.
+	 * Re-exported as a local alias of
+	 * {@link DinoInstanceService#FEED_XP_AWARD} so the three feed entry
+	 * points read identically; staff auto-feeds intentionally don't
 	 * grant XP — see {@link DinoInstanceService#awardXp}.
 	 */
-	static final int FEED_XP_AWARD = 12;
+	static final int FEED_XP_AWARD = DinoInstanceService.FEED_XP_AWARD;
 
 	private final PlayerService players;
 	private final RarityCatalog rarities;
