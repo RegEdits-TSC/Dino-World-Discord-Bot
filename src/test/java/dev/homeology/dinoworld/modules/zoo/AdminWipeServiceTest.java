@@ -60,7 +60,7 @@ class AdminWipeServiceTest {
 		cfg.setMaximumPoolSize(1);
 		cfg.setConnectionInitSql("PRAGMA foreign_keys=ON;");
 		ds = new HikariDataSource(cfg);
-		new MigrationRunner(ds).run(List.of("core", "players", "notify", "staff", "zoo"));
+		new MigrationRunner(ds).run(List.of("core", "players", "notify", "staff", "zoo", "achievements"));
 
 		players = new PlayerService(ds, new CacheManager());
 		players.ensure(42L, "Alice");
@@ -290,6 +290,44 @@ class AdminWipeServiceTest {
 		assertEquals(2, stats.commandRuns(), "reset stats record the cleared command-run count");
 		assertEquals(0, count("command_runs", "user_id", 42L),
 			"resetting tycoon state also clears command_runs so the tutorial replays");
+	}
+
+	// ─── achievements + equipped_title leak regression ───────────────────
+
+	@Test
+	void wipePlayerClearsAchievementProgressAndTitle() throws Exception {
+		// Achievements ride on the same memory rule as missions: a wipe must
+		// erase progress so the next "fresh" player doesn't see the unlocks
+		// fire cascading, and the equipped_title column must be cleared too.
+		try (Connection c = ds.getConnection();
+		     PreparedStatement ps = c.prepareStatement(
+			     "INSERT INTO achievement_progress(user_id, achievement_id, unlocked_at) VALUES (?, ?, ?)")) {
+			ps.setLong(1, 42L); ps.setString(2, "v1.first_hatch"); ps.setLong(3, 1L); ps.executeUpdate();
+			ps.setLong(1, 42L); ps.setString(2, "v1.first_feed"); ps.setLong(3, 2L); ps.executeUpdate();
+		}
+		players.setEquippedTitle(42L, "Hatcher");
+		assertEquals(2, count("achievement_progress", "user_id", 42L));
+
+		AdminWipeService.WipeStats stats = wipe.wipePlayer(42L);
+		assertEquals(2, stats.achievements(), "wipe stats include the cleared achievement count");
+		assertEquals(0, count("achievement_progress", "user_id", 42L));
+		// player row itself is gone after a full wipe, so equipped_title is moot.
+	}
+
+	@Test
+	void resetTycoonClearsAchievementsAndEquippedTitle() throws Exception {
+		try (Connection c = ds.getConnection();
+		     PreparedStatement ps = c.prepareStatement(
+			     "INSERT INTO achievement_progress(user_id, achievement_id, unlocked_at) VALUES (?, ?, ?)")) {
+			ps.setLong(1, 42L); ps.setString(2, "v1.first_hatch"); ps.setLong(3, 1L); ps.executeUpdate();
+		}
+		players.setEquippedTitle(42L, "Hatcher");
+
+		AdminWipeService.TycoonResetStats stats = wipe.resetTycoon(42L);
+		assertEquals(1, stats.achievements());
+		assertEquals(0, count("achievement_progress", "user_id", 42L));
+		assertTrue(players.get(42L).orElseThrow().equippedTitle().isEmpty(),
+			"resetTycoon must clear equipped_title so a fresh start looks fresh");
 	}
 
 	private long count(String table, String column, long value) throws Exception {

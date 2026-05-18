@@ -83,6 +83,7 @@ public final class AdminWipeService {
 				int enclosures = deleteWhere(c, "enclosure", "owner_user_id", userId);
 				int ledger = deleteWhere(c, "coin_ledger", "user_id", userId);
 				int missions = deleteWhere(c, "mission_progress", "user_id", userId);
+				int achievements = deleteIfTableExists(c, "achievement_progress", "user_id", userId);
 				int commandRuns = deleteWhere(c, "command_runs", "user_id", userId);
 				int notifs = deleteWhere(c, "notification_queue", "user_id", userId);
 				int feedback = deleteWhere(c, "feedback_log", "user_id", userId);
@@ -90,7 +91,7 @@ public final class AdminWipeService {
 				int player = deleteWhere(c, "player", "user_id", userId);
 				c.commit();
 				WipeStats stats = new WipeStats(eggs, dinos, enclosures, staff, ledger, missions,
-					commandRuns, notifs, feedback, blacklist, player);
+					achievements, commandRuns, notifs, feedback, blacklist, player);
 				log.warn("admin wipePlayer({}) completed: {}", userId, stats);
 				return stats;
 			} catch (SQLException e) {
@@ -127,16 +128,18 @@ public final class AdminWipeService {
 				int staff = deleteWhere(c, "staff_member", "owner_user_id", userId);
 				int enclosures = deleteWhere(c, "enclosure", "owner_user_id", userId);
 				int missions = deleteWhere(c, "mission_progress", "user_id", userId);
+				int achievements = deleteIfTableExists(c, "achievement_progress", "user_id", userId);
 				int commandRuns = deleteWhere(c, "command_runs", "user_id", userId);
 				int playerUpdated;
 				try (PreparedStatement ps = c.prepareStatement(
-					"UPDATE player SET coins = 0, xp = 0, level = 1, last_daily = NULL WHERE user_id = ?")) {
+					"UPDATE player SET coins = 0, xp = 0, level = 1, last_daily = NULL, equipped_title = NULL WHERE user_id = ?")) {
 					ps.setLong(1, userId);
 					playerUpdated = ps.executeUpdate();
 				}
 				c.commit();
 				TycoonResetStats stats = new TycoonResetStats(
-					eggs, dinos, enclosures, staff, missions, commandRuns, playerUpdated > 0);
+					eggs, dinos, enclosures, staff, missions, achievements,
+					commandRuns, playerUpdated > 0);
 				log.warn("admin resetTycoon({}) completed: {}", userId, stats);
 				return stats;
 			} catch (SQLException e) {
@@ -163,13 +166,31 @@ public final class AdminWipeService {
 	}
 
 	/**
+	 * Same as {@link #deleteWhere} but tolerates a missing table — used for
+	 * tables owned by optional modules (achievements is optional), so the
+	 * wipe still works when the module is disabled via DISABLED_MODULES
+	 * and its migrations haven't been applied.
+	 */
+	private static int deleteIfTableExists(Connection c, String table, String column, long value)
+			throws SQLException {
+		try (PreparedStatement ps = c.prepareStatement(
+			"SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")) {
+			ps.setString(1, table);
+			try (var rs = ps.executeQuery()) {
+				if (!rs.next()) return 0;
+			}
+		}
+		return deleteWhere(c, table, column, value);
+	}
+
+	/**
 	 * Per-table delete counts produced by {@link #wipePlayer}. Recorded
 	 * in the audit log and surfaced in the {@code /admin reset player}
 	 * confirmation embed.
 	 */
 	public record WipeStats(int eggs, int dinos, int enclosures, int staff, int ledger,
-	                        int missions, int commandRuns, int notifications, int feedback,
-	                        int blacklist, int player) {
+	                        int missions, int achievements, int commandRuns,
+	                        int notifications, int feedback, int blacklist, int player) {
 		public boolean playerExisted() {
 			return player > 0;
 		}
@@ -180,6 +201,7 @@ public final class AdminWipeService {
 	 * {@link #resetTycoon}.
 	 */
 	public record TycoonResetStats(int eggs, int dinos, int enclosures, int staff,
-	                               int missions, int commandRuns, boolean playerReset) {
+	                               int missions, int achievements, int commandRuns,
+	                               boolean playerReset) {
 	}
 }

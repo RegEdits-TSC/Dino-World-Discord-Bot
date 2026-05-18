@@ -115,7 +115,18 @@ public final class RankCardRenderer {
 	public static byte[] render(String displayName, int level,
 	                            long xpInLevel, long xpToNext,
 	                            BufferedImage avatar) {
-		return render(displayName, level, xpInLevel, xpToNext, avatar, false);
+		return render(displayName, level, xpInLevel, xpToNext, avatar, false, null);
+	}
+
+	/**
+	 * Convenience overload — equivalent to
+	 * {@link #render(String, int, long, long, BufferedImage, boolean, String)}
+	 * with {@code equippedTitle = null}.
+	 */
+	public static byte[] render(String displayName, int level,
+	                            long xpInLevel, long xpToNext,
+	                            BufferedImage avatar, boolean maxLevel) {
+		return render(displayName, level, xpInLevel, xpToNext, avatar, maxLevel, null);
 	}
 
 	/**
@@ -138,7 +149,8 @@ public final class RankCardRenderer {
 	 */
 	public static byte[] render(String displayName, int level,
 	                            long xpInLevel, long xpToNext,
-	                            BufferedImage avatar, boolean maxLevel) {
+	                            BufferedImage avatar, boolean maxLevel,
+	                            String equippedTitle) {
 		if (level < 1) throw new IllegalArgumentException("level must be ≥ 1");
 		if (!maxLevel && xpToNext <= 0) {
 			throw new IllegalArgumentException("xpToNext must be > 0 when not at max level");
@@ -155,7 +167,7 @@ public final class RankCardRenderer {
 
 			drawBackground(g);
 			drawAvatar(g, avatar);
-			drawText(g, displayName, level, xpInLevel, xpToNext, maxLevel);
+			drawText(g, displayName, level, xpInLevel, xpToNext, maxLevel, equippedTitle);
 			drawProgressBar(g, xpInLevel, xpToNext, maxLevel);
 		} finally {
 			g.dispose();
@@ -235,7 +247,8 @@ public final class RankCardRenderer {
 	}
 
 	private static void drawText(Graphics2D g, String name, int level,
-	                             long xpInLevel, long xpToNext, boolean maxLevel) {
+	                             long xpInLevel, long xpToNext, boolean maxLevel,
+	                             String equippedTitle) {
 		// All foreground text is drawn via drawOutlinedString so it stays
 		// legible against any background art — the dark tint over the banner
 		// isn't enough on its own when bright spots line up behind a glyph.
@@ -248,6 +261,16 @@ public final class RankCardRenderer {
 		shownName = truncateToFit(g, shownName, nameMaxWidth);
 		drawOutlinedString(g, shownName, RIGHT_COL_X, AVATAR_Y + 60,
 			TEXT_PRIMARY, TEXT_OUTLINE, TEXT_OUTLINE_STROKE);
+
+		// Equipped title (one line under the username, italic, smaller) —
+		// rendered only when actually set, so the existing layout stays
+		// identical for users with no title.
+		if (equippedTitle != null && !equippedTitle.isBlank()) {
+			g.setFont(new Font(Font.SANS_SERIF, Font.ITALIC, 28));
+			String shownTitle = truncateToFit(g, equippedTitle, nameMaxWidth);
+			drawOutlinedString(g, shownTitle, RIGHT_COL_X, AVATAR_Y + 100,
+				ACCENT_GOLD, TEXT_OUTLINE, TEXT_OUTLINE_STROKE);
+		}
 
 		// Level pill on the right side of the same row, baseline-aligned with name.
 		String levelText = "LEVEL " + level;

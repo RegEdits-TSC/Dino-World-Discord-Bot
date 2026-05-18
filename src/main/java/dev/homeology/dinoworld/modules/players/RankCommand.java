@@ -98,7 +98,8 @@ public final class RankCommand implements Command {
 
 		BufferedImage avatar = fetchAvatar(target);
 		byte[] png = RankCardRenderer.render(p.displayName(), p.level(),
-			xpInLevel, xpToNext, avatar, maxLevel);
+			xpInLevel, xpToNext, avatar, maxLevel,
+			p.equippedTitle().orElse(null));
 
 		String filename = "rank-" + target.getId() + ".png";
 		event.getHook()
