@@ -84,8 +84,7 @@ public final class AchievementAwarder {
 	 * any achievements unlock — pass {@code null} to skip the follow-up
 	 * (e.g. when called from a tick or a test).
 	 */
-	public void afterCommand(SlashCommandInteractionEvent event,
-	                         @SuppressWarnings("unused") String topCommandName) {
+	public void afterCommand(SlashCommandInteractionEvent event) {
 		long userId = event.getUser().getIdLong();
 		List<Achievement> unlocked = detectAndAward(userId);
 		if (unlocked.isEmpty()) return;
