@@ -132,7 +132,7 @@ public final class AchievementAwarder {
 			case AchievementTrigger.WagesPaid wp -> countWagePayments(userId) >= wp.threshold();
 			case AchievementTrigger.HatchedRarity hr -> hasHatchedRarity(userId, hr.rarityId());
 			case AchievementTrigger.TraitDiversity td -> distinctTraits(userId) >= td.threshold();
-			case AchievementTrigger.TutorialComplete __ -> tutorialComplete(userId);
+			case AchievementTrigger.TutorialComplete -> tutorialComplete(userId);
 		};
 	}
 
