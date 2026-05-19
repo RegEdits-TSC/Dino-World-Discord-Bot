@@ -140,7 +140,8 @@ public final class DinoCommand extends ListenerAdapter implements Command {
 			? enclosures.findById(d.enclosureId().getAsLong()).orElse(null)
 			: null;
 
-		String displayName = d.customName().orElseGet(() -> s.displayName() + " #" + d.id());
+		String baseName = d.customName().orElseGet(() -> s.displayName() + " #" + d.id());
+		String displayName = (d.shiny() ? "✨ " : "") + baseName;
 		String header = "🦖  " + displayName;
 		String description = "**" + s.displayName() + "** · " + capitalize(s.rarity())
 			+ " · " + capitalize(s.category()) + " · " + capitalize(s.biome()) + " biome\n_"
@@ -150,10 +151,16 @@ public final class DinoCommand extends ListenerAdapter implements Command {
 
 		// Top-level stats grid.
 		long incomePerHour = (long) s.baseIncomePerHour() * d.happiness() / 100L;
+		if (d.shiny()) {
+			// Reflect the +50% bonus in the surfaced rate so the inspect
+			// embed matches what the income tick actually credits.
+			incomePerHour = Math.round(incomePerHour * ShinyRoller.SHINY_INCOME_MULTIPLIER);
+		}
 		embed.addField("Happiness", happinessLabel(d.happiness()), true);
-		embed.addField("Income / hr", incomePerHour + " coins", true);
+		embed.addField("Income / hr",
+			d.shiny() ? incomePerHour + " coins ✨" : incomePerHour + " coins", true);
 		embed.addField("Personality", personalityLabel(d), true);
-		embed.addField("Level", "**" + d.level() + "** _(battle: v2)_", true);
+		embed.addField("Level", levelLabel(d), true);
 
 		// Location block.
 		embed.addField("Location", locationLine(s, enc), false);
@@ -209,6 +216,23 @@ public final class DinoCommand extends ListenerAdapter implements Command {
 		return d.trait()
 			.map(t -> t.emoji() + " " + t.displayName())
 			.orElse("_Plain_");
+	}
+
+	/**
+	 * @return a "Lv N · X/Y XP ▰▰▰▱▱▱▱▱▱▱" line, or "MAX" at the cap.
+	 *         The bar is a 10-segment unicode strip so the grid stays
+	 *         legible inside the inline field cell.
+	 */
+	private static String levelLabel(DinoInstance d) {
+		int level = d.level();
+		if (DinoLeveling.isMaxLevel(level)) {
+			return "**Lv " + level + "** · MAX";
+		}
+		long toNext = DinoLeveling.xpToNextLevel(level);
+		long inLevel = DinoLeveling.xpProgressInLevel(d.xp());
+		int filled = toNext == 0 ? 10 : (int) Math.clamp(inLevel * 10L / toNext, 0L, 10L);
+		String bar = "▰".repeat(filled) + "▱".repeat(10 - filled);
+		return "**Lv " + level + "** · " + inLevel + "/" + toNext + " XP\n" + bar;
 	}
 
 	private String happinessLabel(int happiness) {
@@ -370,7 +394,7 @@ public final class DinoCommand extends ListenerAdapter implements Command {
 				&& !display.toLowerCase(Locale.ROOT).contains(prefix)) {
 				continue;
 			}
-			String label = "#" + d.id() + " · " + display
+			String label = "#" + d.id() + " · " + (d.shiny() ? "✨ " : "") + display
 				+ " (" + d.happiness() + "% happy)";
 			if (label.length() > 100) label = label.substring(0, 97) + "…";
 			out.add(new Choice(label, d.id()));

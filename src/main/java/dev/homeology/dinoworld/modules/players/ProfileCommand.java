@@ -93,6 +93,22 @@ public final class ProfileCommand implements Command {
 			.addField("Level", levelLine, true)
 			.addField("Incubation slots", String.valueOf(slots), true)
 			.addField("Park age", days + " day" + (days == 1 ? "" : "s"), true);
+
+		// Achievements + title — sourced lazily from the service registry so
+		// ProfileCommand keeps its constructor stable and the achievements
+		// module stays optional. If the module isn't loaded, the fields just
+		// don't render.
+		var ach = ctx.services().tryGet(
+			dev.homeology.dinoworld.modules.achievements.AchievementCatalog.class);
+		var progress = ctx.services().tryGet(
+			dev.homeology.dinoworld.modules.achievements.AchievementProgressService.class);
+		if (ach.isPresent() && progress.isPresent()) {
+			int unlocked = progress.get().unlockedFor(p.userId()).size();
+			embed.addField("Achievements", unlocked + " / " + ach.get().size(), true);
+		}
+		embed.addField("Title",
+			p.equippedTitle().map(t -> "_" + t + "_").orElse("_(none)_"), true);
+
 		// Granular XP progress moved to /rank, which renders a visual progress
 		// bar; /profile keeps the at-a-glance grid clean.
 		Embeds.brand(embed, event.getJDA());

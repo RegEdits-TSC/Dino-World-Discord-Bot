@@ -65,6 +65,7 @@ public final class EggService {
 	private final Clock clock;
 	private final StaffEffectsService staffEffects;
 	private final TraitRoller traitRoller;
+	private final ShinyRoller shinyRoller;
 
 	/**
 	 * Production constructor — uses {@link ThreadLocalRandom} for mystery
@@ -78,7 +79,7 @@ public final class EggService {
 	                  EnclosureService enclosures) {
 		this(dataSource, rarities, catalog, players, dinos, enclosures,
 			pool -> pool.get(ThreadLocalRandom.current().nextInt(pool.size())),
-			Clock.systemUTC(), null, new TraitRoller());
+			Clock.systemUTC(), null, new TraitRoller(), new ShinyRoller());
 	}
 
 	/**
@@ -94,7 +95,7 @@ public final class EggService {
 	                  StaffEffectsService staffEffects) {
 		this(dataSource, rarities, catalog, players, dinos, enclosures,
 			pool -> pool.get(ThreadLocalRandom.current().nextInt(pool.size())),
-			Clock.systemUTC(), staffEffects, new TraitRoller());
+			Clock.systemUTC(), staffEffects, new TraitRoller(), new ShinyRoller());
 	}
 
 	/**
@@ -108,7 +109,8 @@ public final class EggService {
 	                  EnclosureService enclosures,
 	                  Function<List<DinoSpecies>, DinoSpecies> picker,
 	                  Clock clock) {
-		this(dataSource, rarities, catalog, players, dinos, enclosures, picker, clock, null, new TraitRoller());
+		this(dataSource, rarities, catalog, players, dinos, enclosures, picker, clock,
+			null, new TraitRoller(), new ShinyRoller());
 	}
 
 	/**
@@ -124,13 +126,14 @@ public final class EggService {
 	                  Function<List<DinoSpecies>, DinoSpecies> picker,
 	                  Clock clock,
 	                  StaffEffectsService staffEffects) {
-		this(dataSource, rarities, catalog, players, dinos, enclosures, picker, clock, staffEffects, new TraitRoller());
+		this(dataSource, rarities, catalog, players, dinos, enclosures, picker, clock,
+			staffEffects, new TraitRoller(), new ShinyRoller());
 	}
 
 	/**
-	 * Test seam — inject every collaborator including the
-	 * {@link TraitRoller}. Tests that want to pin a specific trait
-	 * outcome use this constructor with a seeded RNG.
+	 * Test seam — inject every collaborator including {@link TraitRoller}.
+	 * Defaults the {@link ShinyRoller} to production. Tests that need to
+	 * pin shiny outcomes use the 11-arg constructor below.
 	 */
 	public EggService(DataSource dataSource,
 	                  RarityCatalog rarities,
@@ -142,6 +145,25 @@ public final class EggService {
 	                  Clock clock,
 	                  StaffEffectsService staffEffects,
 	                  TraitRoller traitRoller) {
+		this(dataSource, rarities, catalog, players, dinos, enclosures, picker, clock,
+			staffEffects, traitRoller, new ShinyRoller());
+	}
+
+	/**
+	 * Test seam — inject every collaborator including both rollers. Tests
+	 * that pin shiny outcomes use this constructor with a seeded RNG.
+	 */
+	public EggService(DataSource dataSource,
+	                  RarityCatalog rarities,
+	                  DinoCatalog catalog,
+	                  PlayerService players,
+	                  DinoInstanceService dinos,
+	                  EnclosureService enclosures,
+	                  Function<List<DinoSpecies>, DinoSpecies> picker,
+	                  Clock clock,
+	                  StaffEffectsService staffEffects,
+	                  TraitRoller traitRoller,
+	                  ShinyRoller shinyRoller) {
 		this.dataSource = dataSource;
 		this.rarities = rarities;
 		this.catalog = catalog;
@@ -152,6 +174,7 @@ public final class EggService {
 		this.clock = clock;
 		this.staffEffects = staffEffects;
 		this.traitRoller = traitRoller;
+		this.shinyRoller = shinyRoller;
 	}
 
 	// ─── purchase ────────────────────────────────────────────────────────
@@ -390,18 +413,19 @@ public final class EggService {
 					+ ", biome '" + species.biome() + "')");
 		}
 
-		// Roll personality trait, then create the dino, then stamp the egg.
+		// Roll personality trait and shiny, then create the dino, then stamp the egg.
 		DinoTrait trait = traitRoller.roll().orElse(null);
+		boolean shiny = shinyRoller.roll();
 		DinoInstance dino = dinos.create(
-			userId, species.id(), OptionalLong.of(enclosure.get().id()), null, trait);
+			userId, species.id(), OptionalLong.of(enclosure.get().id()), null, trait, shiny);
 		stampHatched(eggId, dino.id(), now);
 
 		// XP reward.
 		Rarity r = rarities.require(egg.rarity());
 		players.addXp(userId, r.hatchXp());
-		log.info("user={} hatched egg={} → species={} dino={} trait={} (+{} xp)",
+		log.info("user={} hatched egg={} → species={} dino={} trait={} shiny={} (+{} xp)",
 			userId, eggId, species.id(), dino.id(),
-			trait == null ? "plain" : trait.id(), r.hatchXp());
+			trait == null ? "plain" : trait.id(), shiny, r.hatchXp());
 
 		return new HatchResult(eggId, species, dino, r.hatchXp());
 	}

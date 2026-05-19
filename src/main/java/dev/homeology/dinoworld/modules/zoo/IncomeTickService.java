@@ -141,9 +141,8 @@ public final class IncomeTickService {
 	 * Per-dino contribution before the per-player Marketer multiplier.
 	 *
 	 * <p>Multiplier order (applied left-to-right): species base × happiness
-	 * × trait flat × SOCIAL bonus. Future shiny and level multipliers slot
-	 * in between trait and Marketer — keep the chain documented when new
-	 * factors are added.
+	 * × trait flat × SOCIAL bonus × dino level × shiny. Marketer wraps the
+	 * sum at runOnce. Document any new factors here when added.
 	 *
 	 * @param ownerRoster every dino owned by the same player; used by the
 	 *                    SOCIAL trait to count enclosure-mates
@@ -153,21 +152,34 @@ public final class IncomeTickService {
 		long baseContribution = (long) species.baseIncomePerHour() * d.happiness() / 100L;
 		if (baseContribution <= 0) return 0L;
 
-		DinoTrait trait = d.trait().orElse(null);
-		if (trait == null) return baseContribution;
+		double mult = 1.0;
 
-		double mult = trait.incomeMult();
-		if (trait == DinoTrait.SOCIAL && d.enclosureId().isPresent()) {
-			long enclosureId = d.enclosureId().getAsLong();
-			int mates = 0;
-			for (DinoInstance other : ownerRoster) {
-				if (other.id() == d.id()) continue;
-				if (other.enclosureId().isPresent() && other.enclosureId().getAsLong() == enclosureId) {
-					mates++;
+		DinoTrait trait = d.trait().orElse(null);
+		if (trait != null) {
+			mult *= trait.incomeMult();
+			if (trait == DinoTrait.SOCIAL && d.enclosureId().isPresent()) {
+				long enclosureId = d.enclosureId().getAsLong();
+				int mates = 0;
+				for (DinoInstance other : ownerRoster) {
+					if (other.id() == d.id()) continue;
+					if (other.enclosureId().isPresent() && other.enclosureId().getAsLong() == enclosureId) {
+						mates++;
+					}
 				}
+				mult *= trait.socialBonus(mates + 1); // +1 so the count includes d itself
 			}
-			mult *= trait.socialBonus(mates + 1); // +1 so the count includes d itself
 		}
-		return Math.round(baseContribution * mult);
+
+		// Dino level: L1 is identity, L50 is +122.5%. Applied after trait so
+		// a high-level Proud dino compounds its trait bonus on top of level,
+		// not the other way around.
+		mult *= DinoLeveling.incomeMultiplier(d.level());
+
+		// Shiny: permanent +50%. Slots after level so the bonus is felt
+		// equally at L1 and L50 (multiplicatively, the rare moment still
+		// matters).
+		if (d.shiny()) mult *= ShinyRoller.SHINY_INCOME_MULTIPLIER;
+
+		return mult == 1.0 ? baseContribution : Math.round(baseContribution * mult);
 	}
 }

@@ -173,6 +173,81 @@ class IncomeTickServiceTest {
 		assertEquals(25L, players.get(42L).orElseThrow().coins());
 	}
 
+	// ─── level multiplier ────────────────────────────────────────────────
+
+	@Test
+	void l1DinoGetsIdentityMultiplier() throws Exception {
+		// Sanity check that nothing about adding the level multiplier
+		// regressed the baseline expectation at L1.
+		dinos.create(42L, "velociraptor", OptionalLong.empty(), null);
+		incomeTick.runOnce();
+		assertEquals(25L, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
+	void l25DinoEarns60PercentMore() throws Exception {
+		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.empty(), null);
+		int toL25 = (int) DinoLeveling.cumulativeXpForLevel(25);
+		dinos.awardXp(d.id(), toL25);
+
+		incomeTick.runOnce();
+		// 25 base × happiness 1.0 × 1.6 (L25 mult) = 40
+		assertEquals(40L, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
+	void l50DinoEarnsCapMultiplier() throws Exception {
+		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.empty(), null);
+		int toCap = (int) DinoLeveling.cumulativeXpForLevel(DinoLeveling.MAX_LEVEL);
+		dinos.awardXp(d.id(), toCap);
+
+		incomeTick.runOnce();
+		// 25 × 2.225 = 55.625 → round = 56
+		assertEquals(56L, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
+	void levelStacksMultiplicativelyOnTraitBonus() throws Exception {
+		// Proud (×1.15) at L25 (×1.6) → 25 × 1.15 × 1.6 = 46.0 → 46
+		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.empty(), null, DinoTrait.PROUD);
+		int toL25 = (int) DinoLeveling.cumulativeXpForLevel(25);
+		dinos.awardXp(d.id(), toL25);
+
+		incomeTick.runOnce();
+		assertEquals(46L, players.get(42L).orElseThrow().coins());
+	}
+
+	// ─── shiny multiplier ────────────────────────────────────────────────
+
+	@Test
+	void shinyDinoEarns150PercentBaseIncome() throws Exception {
+		dinos.create(42L, "velociraptor", OptionalLong.empty(), null, null, true);
+		incomeTick.runOnce();
+		// 25 × 1.5 = 37.5 → 38
+		assertEquals(38L, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
+	void shinyStacksOnTraitAndLevel() throws Exception {
+		// Proud (×1.15), L25 (×1.6), Shiny (×1.5) → 25 × 1.15 × 1.6 × 1.5
+		// = 69.0
+		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.empty(), null,
+			DinoTrait.PROUD, true);
+		int toL25 = (int) DinoLeveling.cumulativeXpForLevel(25);
+		dinos.awardXp(d.id(), toL25);
+
+		incomeTick.runOnce();
+		assertEquals(69L, players.get(42L).orElseThrow().coins());
+	}
+
+	@Test
+	void normalDinoIsUnaffectedByShinyMultiplier() throws Exception {
+		// Sanity: explicit shiny=false yields plain baseline.
+		dinos.create(42L, "velociraptor", OptionalLong.empty(), null, null, false);
+		incomeTick.runOnce();
+		assertEquals(25L, players.get(42L).orElseThrow().coins());
+	}
+
 	private int ledgerCount(long userId) throws Exception {
 		try (Connection c = ds.getConnection();
 		     PreparedStatement ps = c.prepareStatement(

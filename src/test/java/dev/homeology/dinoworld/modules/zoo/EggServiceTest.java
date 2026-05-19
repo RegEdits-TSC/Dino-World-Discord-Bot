@@ -369,6 +369,64 @@ class EggServiceTest {
 		assertTrue(result.dino().trait().isEmpty(), "no trait when roller returns empty");
 	}
 
+	@Test
+	void hatchPersistsShinyFlagWhenRollerHits() {
+		players.addCoins(42L, 5000L, "test", null);
+		enclosures.create(42L, "forest", 5, 5, "Big");
+		EggService backdated = new EggService(ds, rarities, catalog, players, dinos, enclosures,
+			pool -> pool.get(0),
+			Clock.fixed(NOW.minus(Duration.ofHours(2)), ZoneOffset.UTC));
+		EggInstance egg = backdated.buyMystery(42L, "common");
+		EggService withShiny = new EggService(ds, rarities, catalog, players, dinos, enclosures,
+			pool -> pool.get(0),
+			Clock.fixed(NOW, ZoneOffset.UTC),
+			null,
+			alwaysPlainRoller(),
+			alwaysShinyRoller());
+
+		EggService.HatchResult result = withShiny.hatch(42L, egg.id());
+
+		assertTrue(result.dino().shiny(), "shiny flag from roller must be persisted");
+		DinoInstance reloaded = dinos.findById(result.dino().id()).orElseThrow();
+		assertTrue(reloaded.shiny(), "shiny flag round-trips through the row mapper");
+	}
+
+	@Test
+	void hatchProducesNormalDinoWhenShinyRollerMisses() {
+		players.addCoins(42L, 5000L, "test", null);
+		enclosures.create(42L, "forest", 5, 5, "Big");
+		EggService backdated = new EggService(ds, rarities, catalog, players, dinos, enclosures,
+			pool -> pool.get(0),
+			Clock.fixed(NOW.minus(Duration.ofHours(2)), ZoneOffset.UTC));
+		EggInstance egg = backdated.buyMystery(42L, "common");
+		EggService neverShiny = new EggService(ds, rarities, catalog, players, dinos, enclosures,
+			pool -> pool.get(0),
+			Clock.fixed(NOW, ZoneOffset.UTC),
+			null,
+			alwaysPlainRoller(),
+			neverShinyRoller());
+
+		EggService.HatchResult result = neverShiny.hatch(42L, egg.id());
+
+		assertFalse(result.dino().shiny());
+	}
+
+	/** Always returns true — pins a guaranteed-shiny outcome. */
+	private static ShinyRoller alwaysShinyRoller() {
+		return new ShinyRoller(new java.util.random.RandomGenerator() {
+			@Override public int nextInt(int bound) { return 0; }
+			@Override public long nextLong() { throw new UnsupportedOperationException(); }
+		});
+	}
+
+	/** Always returns false — pins a guaranteed-normal outcome. */
+	private static ShinyRoller neverShinyRoller() {
+		return new ShinyRoller(new java.util.random.RandomGenerator() {
+			@Override public int nextInt(int bound) { return 1; }
+			@Override public long nextLong() { throw new UnsupportedOperationException(); }
+		});
+	}
+
 	/** Always returns {@code trait}; used to pin hatch outcomes in tests. */
 	private static TraitRoller fixedTraitRoller(DinoTrait trait) {
 		int idx = trait.ordinal();

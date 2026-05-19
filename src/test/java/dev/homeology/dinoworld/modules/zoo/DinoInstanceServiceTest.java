@@ -174,4 +174,66 @@ class DinoInstanceServiceTest {
 		dinos.create(43L, "velociraptor", OptionalLong.empty(), null);
 		assertEquals(2, dinos.findAll().size());
 	}
+
+	// ─── awardXp ──────────────────────────────────────────────────────────
+
+	@Test
+	void awardXpAccumulatesWithoutLevelUpBelowFirstThreshold() {
+		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.empty(), null);
+		DinoInstanceService.AwardResult r = dinos.awardXp(d.id(), 10).orElseThrow();
+
+		assertEquals(1, r.newLevel());
+		assertFalse(r.leveledUp(), "10 XP < first level threshold (53)");
+		DinoInstance after = dinos.findById(d.id()).orElseThrow();
+		assertEquals(10L, after.xp());
+		assertEquals(1, after.level());
+	}
+
+	@Test
+	void awardXpCrossingThresholdSetsLeveledUp() {
+		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.empty(), null);
+		// Award exactly enough to hit L2 boundary.
+		long step = DinoLeveling.xpToNextLevel(1);
+		DinoInstanceService.AwardResult r = dinos.awardXp(d.id(), (int) step).orElseThrow();
+
+		assertEquals(2, r.newLevel());
+		assertTrue(r.leveledUp());
+		assertEquals(2, dinos.findById(d.id()).orElseThrow().level());
+	}
+
+	@Test
+	void awardXpCanCrossMultipleLevelsInOneCall() {
+		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.empty(), null);
+		// Enough total XP to reach L5.
+		int target = (int) DinoLeveling.cumulativeXpForLevel(5);
+		DinoInstanceService.AwardResult r = dinos.awardXp(d.id(), target).orElseThrow();
+
+		assertEquals(5, r.newLevel());
+		assertTrue(r.leveledUp());
+	}
+
+	@Test
+	void awardXpAtCapDoesNotLevelUpButAccumulates() {
+		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.empty(), null);
+		int toCap = (int) DinoLeveling.cumulativeXpForLevel(DinoLeveling.MAX_LEVEL);
+		dinos.awardXp(d.id(), toCap);
+		// Already at MAX_LEVEL; further awards must report leveledUp=false.
+		DinoInstanceService.AwardResult r = dinos.awardXp(d.id(), 100).orElseThrow();
+
+		assertEquals(DinoLeveling.MAX_LEVEL, r.newLevel());
+		assertFalse(r.leveledUp());
+		// XP still ticks up so the column stays a lifetime total.
+		assertEquals(toCap + 100L, dinos.findById(d.id()).orElseThrow().xp());
+	}
+
+	@Test
+	void awardXpRejectsNegativeDelta() {
+		DinoInstance d = dinos.create(42L, "velociraptor", OptionalLong.empty(), null);
+		assertThrows(IllegalArgumentException.class, () -> dinos.awardXp(d.id(), -1));
+	}
+
+	@Test
+	void awardXpReturnsEmptyForMissingDino() {
+		assertTrue(dinos.awardXp(999_999L, 10).isEmpty());
+	}
 }
