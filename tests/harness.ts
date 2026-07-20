@@ -1,7 +1,7 @@
 import { createDb, migrateDb } from '../src/core/db/index.js';
 import { EconomyService } from '../src/core/economy.js';
 import type { Ctx } from '../src/core/context.js';
-import type { ChatInputCommandInteraction, Interaction, ButtonInteraction } from 'discord.js';
+import type { ChatInputCommandInteraction, Interaction } from 'discord.js';
 
 export function mulberry32(seed: number): () => number {
   let a = seed;

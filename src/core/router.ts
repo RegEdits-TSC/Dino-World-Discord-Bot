@@ -23,8 +23,8 @@ export async function routeInteraction(
   const isCommand = interaction.isChatInputCommand();
   const isButton = interaction.isButton();
   if (!isCommand && !isButton) return;
-  touchPresence(ctx, interaction.user.id, interaction.user.displayName, interaction.guildId);
   try {
+    touchPresence(ctx, interaction.user.id, interaction.user.displayName, interaction.guildId);
     if (isCommand) {
       const cmd = registry.findCommand((interaction as ChatInputCommandInteraction).commandName);
       if (cmd) await cmd.execute(ctx, interaction as ChatInputCommandInteraction);

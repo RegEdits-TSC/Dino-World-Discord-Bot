@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { routeInteraction } from '../src/core/router.js';
 import { ModuleRegistry } from '../src/core/modules.js';
 import { makeCtx, fakeCommand, fakeButton } from './harness.js';
@@ -45,7 +45,25 @@ describe('routeInteraction', () => {
     const i = fakeCommand({ name: 'boom', user: 'u1' });
     await routeInteraction(ctx, registry, i.asInteraction());
     const payload = i.replies[0] as { flags?: unknown };
-    expect(payload.flags).toBeDefined();          // ephemeral flag set
+    expect(payload.flags).toBe(MessageFlags.Ephemeral);
+  });
+
+  it('upserts user_guilds on repeated interactions from the same user+guild (update path)', async () => {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    const registry = new ModuleRegistry([{
+      name: 'm', components: [],
+      commands: [{ data: new SlashCommandBuilder().setName('ping').setDescription('x'),
+        execute: async () => {} }],
+    }], { m: true });
+
+    ctx.setNow(1000);
+    await routeInteraction(ctx, registry, fakeCommand({ name: 'ping', user: 'u1', guild: 'g1' }).asInteraction());
+    ctx.setNow(2000);
+    await routeInteraction(ctx, registry, fakeCommand({ name: 'ping', user: 'u1', guild: 'g1' }).asInteraction());
+
+    const rows = ctx.db.select().from(schema.userGuilds).all();
+    expect(rows).toMatchObject([{ userId: 'u1', guildId: 'g1', lastSeenAt: 2000 }]);
   });
 
   it('throws on duplicate command names across enabled modules', () => {
@@ -54,5 +72,15 @@ describe('routeInteraction', () => {
       commands: [{ data: new SlashCommandBuilder().setName('dup').setDescription('x'), execute: async () => {} }],
     });
     expect(() => new ModuleRegistry([mk('a'), mk('b')], { a: true, b: true })).toThrow(/Duplicate command/);
+  });
+
+  it('throws on duplicate component prefixes across enabled modules', () => {
+    const mk = (name: string, cmdName: string) => ({
+      name,
+      commands: [{ data: new SlashCommandBuilder().setName(cmdName).setDescription('x'), execute: async () => {} }],
+      components: [{ prefix: 'shared', execute: async () => {} }],
+    });
+    expect(() => new ModuleRegistry([mk('a', 'cmda'), mk('b', 'cmdb')], { a: true, b: true }))
+      .toThrow(/Duplicate component prefix/);
   });
 });

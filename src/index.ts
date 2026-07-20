@@ -18,6 +18,8 @@ const ctx: Ctx = {
 const registry = new ModuleRegistry([parkModule], config.modules);
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-client.on(Events.InteractionCreate, (i) => void routeInteraction(ctx, registry, i));
+client.on(Events.InteractionCreate, (i) => {
+  routeInteraction(ctx, registry, i).catch((e) => console.error('route failed', e));
+});
 client.once(Events.ClientReady, (c) => console.log(`Logged in as ${c.user.tag}`));
 await client.login(config.token);
