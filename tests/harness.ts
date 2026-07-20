@@ -1,7 +1,7 @@
 import { createDb, migrateDb } from '../src/core/db/index.js';
 import { EconomyService } from '../src/core/economy.js';
 import type { Ctx } from '../src/core/context.js';
-import type { ChatInputCommandInteraction } from 'discord.js';
+import type { ChatInputCommandInteraction, Interaction, ButtonInteraction } from 'discord.js';
 
 export function mulberry32(seed: number): () => number {
   let a = seed;
@@ -29,6 +29,7 @@ export function makeCtx(overrides: Partial<Ctx> & { nowMs?: number } = {}): Ctx 
 export interface FakeInteraction {
   replies: unknown[];
   asChatInput(): ChatInputCommandInteraction;
+  asInteraction(): Interaction;
 }
 
 export function fakeCommand(opts: {
@@ -42,6 +43,7 @@ export function fakeCommand(opts: {
     user: { id: opts.user, displayName: opts.user },
     guildId: opts.guild ?? null,
     deferred: false, replied: false,
+    isChatInputCommand: () => true, isButton: () => false,
     options: {
       getSubcommand: () => opts.sub ?? null,
       getString: (k: string) => (opts.options?.[k] as string) ?? null,
@@ -51,5 +53,28 @@ export function fakeCommand(opts: {
     reply: record, editReply: record, followUp: record,
     deferReply: async () => { (raw as { deferred: boolean }).deferred = true; },
   };
-  return { replies, asChatInput: () => raw as unknown as ChatInputCommandInteraction };
+  return {
+    replies,
+    asChatInput: () => raw as unknown as ChatInputCommandInteraction,
+    asInteraction: () => raw as unknown as Interaction,
+  };
+}
+
+export function fakeButton(opts: { customId: string; user: string; guild?: string }): FakeInteraction {
+  const replies: unknown[] = [];
+  const record = async (payload: unknown) => { replies.push(payload); };
+  const raw = {
+    customId: opts.customId,
+    user: { id: opts.user, displayName: opts.user },
+    guildId: opts.guild ?? null,
+    deferred: false, replied: false,
+    isChatInputCommand: () => false, isButton: () => true,
+    reply: record, editReply: record, followUp: record,
+    deferReply: async () => { (raw as { deferred: boolean }).deferred = true; },
+  };
+  return {
+    replies,
+    asChatInput: () => raw as unknown as ChatInputCommandInteraction,
+    asInteraction: () => raw as unknown as Interaction,
+  };
 }
