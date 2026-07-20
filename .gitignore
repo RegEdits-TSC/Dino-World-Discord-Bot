@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Build output
+dist/
+
+# Logs
+*.log
+
+# Brainstorming session artifacts
+.superpowers/
