@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { loadConfig } from '../src/core/config.js';
+import { loadConfig, parseModules } from '../src/core/config.js';
 
 const good = {
   DISCORD_TOKEN: 't', DISCORD_CLIENT_ID: 'c',
@@ -16,5 +16,18 @@ describe('loadConfig', () => {
   it('throws naming the missing variable', () => {
     expect(() => loadConfig({ ...good, DISCORD_TOKEN: undefined }))
       .toThrowError(/DISCORD_TOKEN/);
+  });
+  it('loads modules.json validated as string->boolean (regression)', () => {
+    const cfg = loadConfig(good);
+    expect(cfg.modules).toEqual({ park: true });
+  });
+});
+
+describe('parseModules', () => {
+  it('accepts an object of string->boolean', () => {
+    expect(parseModules({ park: true, zoo: false })).toEqual({ park: true, zoo: false });
+  });
+  it('rejects a non-boolean module value', () => {
+    expect(() => parseModules({ park: 'yes' })).toThrowError(/park/);
   });
 });
