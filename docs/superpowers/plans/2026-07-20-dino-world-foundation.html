@@ -1,0 +1,1400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dino World — Plan 1: Foundation</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2328; --muted:#656d76; --line:#d0d7de; --accent:#1a7f37; --code-bg:#f6f8fa; --warn:#9a6700; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --accent:#3fb950; --code-bg:#161b22; --warn:#d29922; }
+  }
+  body { background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,"Segoe UI",sans-serif; max-width:900px; margin:0 auto; padding:24px 20px 80px; }
+  h1 { font-size:26px; border-bottom:2px solid var(--line); padding-bottom:8px; }
+  h2 { font-size:20px; margin-top:40px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+  h3 { font-size:16px; margin-top:28px; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:13px; background:var(--code-bg); padding:1px 5px; border-radius:4px; }
+  pre { background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:12px; overflow-x:auto; }
+  pre code { background:none; padding:0; font-size:12.5px; line-height:1.5; }
+  .callout { border-left:4px solid var(--accent); background:var(--code-bg); padding:10px 14px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .callout.warn { border-left-color:var(--warn); }
+  table { border-collapse:collapse; width:100%; font-size:13.5px; }
+  td, th { border:1px solid var(--line); padding:6px 10px; text-align:left; }
+  th { background:var(--code-bg); }
+  .step { margin:14px 0; }
+  .step label { font-weight:600; }
+  .files { font-size:13.5px; }
+  .iface { font-size:13.5px; background:var(--code-bg); border:1px dashed var(--line); border-radius:8px; padding:8px 12px; }
+  .muted { color:var(--muted); }
+  input[type=checkbox] { transform:scale(1.15); margin-right:8px; }
+</style>
+</head>
+<body>
+
+<h1>🦕 Dino World Discord Bot — Plan 1: Foundation</h1>
+
+<div class="callout">
+<b>For agentic workers:</b> REQUIRED SUB-SKILL: Use <code>superpowers:subagent-driven-development</code> (recommended) or <code>superpowers:executing-plans</code> to implement this plan task-by-task. Steps use checkboxes for tracking.
+</div>
+
+<p><b>Goal:</b> A running Discord bot with the full kernel (DB, economy, game clock, module registry, interaction router, scheduler, test harness) and a working <code>park</code> module — build lots and facilities, assign-free park dashboard with income collection.</p>
+
+<p><b>Architecture:</b> Modular monolith per the approved spec (<code>docs/superpowers/specs/2026-07-20-dino-world-discord-bot-design.md</code>). Kernel in <code>src/core/</code> contains zero gameplay; gameplay lives in <code>src/modules/*</code> behind manifests; static game content in <code>src/data/</code>. SQLite via Drizzle, single process.</p>
+
+<p><b>Tech Stack:</b> TypeScript (strict), Node.js (current LTS), discord.js v14, better-sqlite3, drizzle-orm, zod, pino, vitest.</p>
+
+<p><b>Roadmap context:</b> This is Plan 1 of 5. Plan 2: hatchery + expeditions + 30-species roster + shop. Plan 3: care module. Plan 4: trading + leaderboards. Plan 5: renderer + admin + release polish. Each later plan is written after the previous one executes.</p>
+
+<h2>Global Constraints</h2>
+<ul>
+<li>All commits authored by <b>RegEdits-TSC</b> — never any other identity, never any tool attribution. Repo-local <code>git config user.name</code> is already set; do not change it.</li>
+<li>Every dependency installed at <b>latest stable</b> (<code>npm i pkg@latest</code>) — never pre-releases; do not hardcode remembered versions.</li>
+<li>TypeScript <code>strict: true</code>. No <code>any</code> unless interfacing with untyped discord.js internals, and then isolated to the router.</li>
+<li>Tests ship in the same commit as the behavior they cover. Never weaken or skip a test to get green.</li>
+<li>Validation at boundaries (interaction entry) only; internal code trusts validated state.</li>
+<li>All wallet mutations via EconomyService; never write cash/food/shards columns directly outside it.</li>
+<li>All game-tunable numbers live in <code>src/data/</code> files, never inline in module code.</li>
+</ul>
+
+<h2>Task 1: Project scaffold</h2>
+<p class="files"><b>Files:</b> Create <code>package.json</code>, <code>tsconfig.json</code>, <code>vitest.config.ts</code>, <code>.env.example</code>, <code>README.md</code>, <code>modules.json</code>, <code>src/index.ts</code> (stub)</p>
+<div class="iface"><b>Produces:</b> npm scripts <code>dev</code>, <code>test</code>, <code>build</code>, <code>deploy-commands</code>; env contract <code>DISCORD_TOKEN</code>, <code>DISCORD_CLIENT_ID</code>, <code>DATABASE_PATH</code>, <code>OWNER_ID</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Init package and install dependencies (latest stable)</label>
+<pre><code>npm init -y
+npm i discord.js@latest better-sqlite3@latest drizzle-orm@latest zod@latest pino@latest dotenv@latest
+npm i -D typescript@latest tsx@latest vitest@latest drizzle-kit@latest @types/better-sqlite3@latest @types/node@latest</code></pre>
+Expected: clean install, no peer warnings that mention version conflicts.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Write configs</label>
+<p><code>package.json</code> — set these fields (keep npm-generated rest):</p>
+<pre><code>{
+  "name": "dino-world-bot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "deploy-commands": "tsx src/deploy-commands.ts"
+  }
+}</code></pre>
+<p><code>tsconfig.json</code>:</p>
+<pre><code>{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src"]
+}</code></pre>
+<p><code>vitest.config.ts</code>:</p>
+<pre><code>import { defineConfig } from 'vitest/config';
+export default defineConfig({ test: { include: ['tests/**/*.test.ts'] } });</code></pre>
+<p><code>.env.example</code>:</p>
+<pre><code>DISCORD_TOKEN=your-bot-token
+DISCORD_CLIENT_ID=your-application-id
+DATABASE_PATH=./dino-world.db
+OWNER_ID=your-discord-user-id</code></pre>
+<p><code>modules.json</code>:</p>
+<pre><code>{ "park": true }</code></pre>
+<p><code>src/index.ts</code> stub so <code>build</code> passes:</p>
+<pre><code>console.log('dino-world: boot wiring arrives in Task 10');</code></pre>
+<p><code>README.md</code>: project name, one-paragraph description, setup (copy <code>.env.example</code> → <code>.env</code>, <code>npm i</code>, <code>npm run deploy-commands</code>, <code>npm run dev</code>), test (<code>npm test</code>). Write actual prose, not headings-only.</p></div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Verify build and empty test run</label>
+<pre><code>npm run build
+npm test</code></pre>
+Expected: build emits <code>dist/index.js</code>; vitest reports "no test files found" exit 0 (if it exits non-zero, add <code>passWithNoTests: true</code> to the vitest config test block).</div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Commit</label>
+<pre><code>git add -A
+git commit -m "Scaffold TypeScript project with discord.js, drizzle, vitest"</code></pre></div>
+
+<h2>Task 2: Config loader with env validation</h2>
+<p class="files"><b>Files:</b> Create <code>src/core/config.ts</code>, <code>tests/config.test.ts</code></p>
+<div class="iface"><b>Produces:</b> <code>loadConfig(env?: NodeJS.ProcessEnv): Config</code> where <code>Config = { token: string; clientId: string; databasePath: string; ownerId: string; modules: Record&lt;string, boolean&gt; }</code>. Throws <code>ZodError</code> listing every missing var. Reads <code>modules.json</code> from repo root.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Write failing tests</label>
+<pre><code>// tests/config.test.ts
+import { describe, it, expect } from 'vitest';
+import { loadConfig } from '../src/core/config.js';
+
+const good = {
+  DISCORD_TOKEN: 't', DISCORD_CLIENT_ID: 'c',
+  DATABASE_PATH: ':memory:', OWNER_ID: 'o',
+};
+
+describe('loadConfig', () =&gt; {
+  it('returns typed config from env', () =&gt; {
+    const cfg = loadConfig(good);
+    expect(cfg.token).toBe('t');
+    expect(cfg.databasePath).toBe(':memory:');
+    expect(cfg.modules.park).toBe(true);
+  });
+  it('throws naming the missing variable', () =&gt; {
+    expect(() =&gt; loadConfig({ ...good, DISCORD_TOKEN: undefined }))
+      .toThrowError(/DISCORD_TOKEN/);
+  });
+});</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Run to verify failure</label>
+<pre><code>npx vitest run tests/config.test.ts</code></pre>
+Expected: FAIL — cannot resolve <code>../src/core/config.js</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Implement</label>
+<pre><code>// src/core/config.ts
+import { z } from 'zod';
+import { readFileSync } from 'node:fs';
+
+const envSchema = z.object({
+  DISCORD_TOKEN: z.string().min(1),
+  DISCORD_CLIENT_ID: z.string().min(1),
+  DATABASE_PATH: z.string().min(1),
+  OWNER_ID: z.string().min(1),
+});
+
+export interface Config {
+  token: string; clientId: string; databasePath: string; ownerId: string;
+  modules: Record&lt;string, boolean&gt;;
+}
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const e = envSchema.parse(env);
+  const modules = JSON.parse(readFileSync(new URL('../../modules.json', import.meta.url), 'utf8'));
+  return {
+    token: e.DISCORD_TOKEN, clientId: e.DISCORD_CLIENT_ID,
+    databasePath: e.DATABASE_PATH, ownerId: e.OWNER_ID, modules,
+  };
+}</code></pre>
+<p class="muted">Note: zod's missing-field error message contains the field name, satisfying the regex test.</p></div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Run tests — expect PASS, then commit</label>
+<pre><code>npx vitest run tests/config.test.ts
+git add -A && git commit -m "Add env-validated config loader"</code></pre></div>
+
+<h2>Task 3: Database schema and connection</h2>
+<p class="files"><b>Files:</b> Create <code>src/core/db/schema.ts</code>, <code>src/core/db/index.ts</code>, <code>drizzle.config.ts</code>, <code>tests/db.test.ts</code></p>
+<div class="iface"><b>Produces:</b> <code>createDb(path: string): Db</code> where <code>Db = BetterSQLite3Database&lt;typeof schema&gt;</code> with WAL enabled and schema pushed; all ten spec tables exported from <code>schema.ts</code> with these exact names: <code>users, dinos, lots, eggs, expeditions, trades, txLog, timers, userGuilds, guildSettings</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Write the full schema (all tables now — later plans only add columns via migrations if the spec changes)</label>
+<pre><code>// src/core/db/schema.ts
+import { sqliteTable, text, integer, primaryKey, check } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+
+export const users = sqliteTable('users', {
+  discordId: text('discord_id').primaryKey(),
+  displayName: text('display_name').notNull().default(''),
+  parkName: text('park_name').notNull().default("New Park"),
+  parkRating: integer('park_rating').notNull().default(0),        // rating x100 (e.g. 350 = 3.5 stars)
+  ratingHighWater: integer('rating_high_water').notNull().default(0),
+  cash: integer('cash').notNull().default(500),
+  food: integer('food').notNull().default(20),
+  shards: integer('shards').notNull().default(0),
+  shardsWindowStart: integer('shards_window_start_ms').notNull().default(0),
+  shardsWindowEarned: integer('shards_window_earned').notNull().default(0),
+  lastCollectAt: integer('last_collect_at_ms').notNull(),
+  createdAt: integer('created_at_ms').notNull(),
+}, (t) =&gt; [
+  check('cash_nonneg', sql`${t.cash} &gt;= 0`),
+  check('food_nonneg', sql`${t.food} &gt;= 0`),
+  check('shards_nonneg', sql`${t.shards} &gt;= 0`),
+]);
+
+export const lots = sqliteTable('lots', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull().references(() =&gt; users.discordId),
+  type: text('type', { enum: ['paddock', 'facility'] }).notNull(),
+  kind: text('kind').notNull(),                                   // data-file key
+  name: text('name').notNull(),
+  level: integer('level').notNull().default(1),
+  decor: text('decor', { mode: 'json' }).$type&lt;string[]&gt;().notNull().default([]),
+});
+
+export const dinos = sqliteTable('dinos', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull().references(() =&gt; users.discordId),
+  lotId: integer('lot_id').references(() =&gt; lots.id),             // null = unassigned
+  speciesId: text('species_id').notNull(),
+  nickname: text('nickname'),
+  hunger: integer('hunger').notNull().default(100),               // value at lastFedAt
+  lastFedAt: integer('last_fed_at_ms').notNull(),
+  escapedAt: integer('escaped_at_ms'),
+  viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
+  locked: integer('locked', { mode: 'boolean' }).notNull().default(false),
+  hatchedAt: integer('hatched_at_ms').notNull(),
+});
+
+export const eggs = sqliteTable('eggs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull().references(() =&gt; users.discordId),
+  rarity: text('rarity', { enum: ['common','uncommon','rare','epic','legendary','mythic'] }).notNull(),
+  speciesId: text('species_id'),                                  // preset (Mythic pity) or null
+  source: text('source', { enum: ['expedition','shop','trade'] }).notNull(),
+  viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
+  locked: integer('locked', { mode: 'boolean' }).notNull().default(false),
+  obtainedAt: integer('obtained_at_ms').notNull(),
+  incubationStartedAt: integer('incubation_started_at_ms'),
+  hatchesAt: integer('hatches_at_ms'),
+});
+
+export const expeditions = sqliteTable('expeditions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull().references(() =&gt; users.discordId),
+  siteId: text('site_id').notNull(),
+  departedAt: integer('departed_at_ms').notNull(),
+  returnsAt: integer('returns_at_ms').notNull(),
+  loot: text('loot', { mode: 'json' }).$type&lt;{ eggRarity: string; cash: number; food: number } | null&gt;(),
+  claimedAt: integer('claimed_at_ms'),
+});
+
+export const trades = sqliteTable('trades', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  fromUser: text('from_user').notNull().references(() =&gt; users.discordId),
+  toUser: text('to_user').notNull().references(() =&gt; users.discordId),
+  offer: text('offer', { mode: 'json' }).$type&lt;TradeSide&gt;().notNull(),
+  request: text('request', { mode: 'json' }).$type&lt;TradeSide&gt;().notNull(),
+  status: text('status', { enum: ['pending','accepted','declined','cancelled','expired'] }).notNull().default('pending'),
+  createdAt: integer('created_at_ms').notNull(),
+  resolvedAt: integer('resolved_at_ms'),
+});
+export interface TradeSide { dinoIds: number[]; eggIds: number[]; cash: number; food: number }
+
+export const txLog = sqliteTable('tx_log', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull(),
+  cashDelta: integer('cash_delta').notNull().default(0),
+  foodDelta: integer('food_delta').notNull().default(0),
+  shardsDelta: integer('shards_delta').notNull().default(0),
+  reason: text('reason').notNull(),
+  createdAt: integer('created_at_ms').notNull(),
+});
+
+export const timers = sqliteTable('timers', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  kind: text('kind').notNull(),
+  userId: text('user_id').notNull(),
+  refId: integer('ref_id').notNull(),
+  originGuildId: text('origin_guild_id'),
+  firesAt: integer('fires_at_ms').notNull(),
+  handledAt: integer('handled_at_ms'),
+});
+
+export const userGuilds = sqliteTable('user_guilds', {
+  userId: text('user_id').notNull(),
+  guildId: text('guild_id').notNull(),
+  lastSeenAt: integer('last_seen_at_ms').notNull(),
+}, (t) =&gt; [primaryKey({ columns: [t.userId, t.guildId] })]);
+
+export const guildSettings = sqliteTable('guild_settings', {
+  guildId: text('guild_id').primaryKey(),
+  notifyChannelId: text('notify_channel_id'),
+});</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Connection factory + drizzle-kit config</label>
+<pre><code>// src/core/db/index.ts
+import Database from 'better-sqlite3';
+import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
+import * as schema from './schema.js';
+
+export type Db = BetterSQLite3Database&lt;typeof schema&gt;;
+export { schema };
+
+export function createDb(path: string): Db {
+  const sqlite = new Database(path);
+  sqlite.pragma('journal_mode = WAL');
+  sqlite.pragma('foreign_keys = ON');
+  return drizzle(sqlite, { schema });
+}</code></pre>
+<pre><code>// drizzle.config.ts
+import { defineConfig } from 'drizzle-kit';
+export default defineConfig({
+  dialect: 'sqlite',
+  schema: './src/core/db/schema.ts',
+  out: './drizzle',
+});</code></pre>
+Generate the initial migration and add a test-time push helper: run <code>npx drizzle-kit generate</code> (creates <code>./drizzle/0000_*.sql</code>). In <code>src/core/db/index.ts</code> add:
+<pre><code>import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+export function migrateDb(db: Db): void {
+  migrate(db, { migrationsFolder: new URL('../../../drizzle', import.meta.url).pathname });
+}</code></pre>
+<p class="muted">If the URL pathname misbehaves on Windows (leading slash), use <code>fileURLToPath</code> from <code>node:url</code> instead — write it that way from the start.</p></div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Failing test → run → verify pass</label>
+<pre><code>// tests/db.test.ts
+import { describe, it, expect } from 'vitest';
+import { createDb, migrateDb, schema } from '../src/core/db/index.js';
+
+describe('database', () =&gt; {
+  it('creates schema and enforces non-negative cash', () =&gt; {
+    const db = createDb(':memory:');
+    migrateDb(db);
+    db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    expect(() =&gt;
+      db.update(schema.users).set({ cash: -1 }).run()
+    ).toThrow();
+  });
+});</code></pre>
+<pre><code>npx vitest run tests/db.test.ts</code></pre>
+Expected: FAIL before implementation exists, PASS after. </div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Commit</label>
+<pre><code>git add -A && git commit -m "Add full Drizzle schema, migrations, and WAL connection factory"</code></pre></div>
+
+<h2>Task 4: Economy service</h2>
+<p class="files"><b>Files:</b> Create <code>src/core/economy.ts</code>, <code>tests/economy.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> <code>Db</code>, <code>schema.users</code>, <code>schema.txLog</code>.<br>
+<b>Produces:</b> <code>class EconomyService { constructor(db: Db); apply(userId: string, delta: WalletDelta, reason: string, now: number): void }</code> where <code>WalletDelta = { cash?: number; food?: number; shards?: number }</code> (negative = debit). Throws <code>InsufficientFundsError</code> (exported) when any balance would go negative; whole apply is one transaction; every apply writes a txLog row.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing tests</label>
+<pre><code>// tests/economy.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createDb, migrateDb, schema, type Db } from '../src/core/db/index.js';
+import { EconomyService, InsufficientFundsError } from '../src/core/economy.js';
+import { eq } from 'drizzle-orm';
+
+let db: Db; let eco: EconomyService;
+beforeEach(() =&gt; {
+  db = createDb(':memory:'); migrateDb(db);
+  db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run(); // starts cash 500, food 20
+  eco = new EconomyService(db);
+});
+
+const bal = () =&gt; db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+
+describe('EconomyService.apply', () =&gt; {
+  it('credits and debits atomically with audit row', () =&gt; {
+    eco.apply('u1', { cash: 100, food: -5 }, 'test:mixed', 1000);
+    expect(bal().cash).toBe(600);
+    expect(bal().food).toBe(15);
+    const logs = db.select().from(schema.txLog).all();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ userId: 'u1', cashDelta: 100, foodDelta: -5, reason: 'test:mixed' });
+  });
+  it('rejects any overdraft and rolls back everything', () =&gt; {
+    expect(() =&gt; eco.apply('u1', { cash: 100, shards: -1 }, 'test:overdraft', 1000))
+      .toThrow(InsufficientFundsError);
+    expect(bal().cash).toBe(500);                    // credit rolled back too
+    expect(db.select().from(schema.txLog).all()).toHaveLength(0);
+  });
+});</code></pre>
+Run: <code>npx vitest run tests/economy.test.ts</code> — expect FAIL (module missing).</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement</label>
+<pre><code>// src/core/economy.ts
+import { eq, sql } from 'drizzle-orm';
+import { schema, type Db } from './db/index.js';
+
+export interface WalletDelta { cash?: number; food?: number; shards?: number }
+
+export class InsufficientFundsError extends Error {
+  constructor(public wallet: string) { super(`Insufficient ${wallet}`); }
+}
+
+export class EconomyService {
+  constructor(private db: Db) {}
+
+  apply(userId: string, delta: WalletDelta, reason: string, now: number): void {
+    const { cash = 0, food = 0, shards = 0 } = delta;
+    this.db.transaction((tx) =&gt; {
+      const u = tx.select().from(schema.users)
+        .where(eq(schema.users.discordId, userId)).get();
+      if (!u) throw new Error(`Unknown user ${userId}`);
+      if (u.cash + cash &lt; 0) throw new InsufficientFundsError('cash');
+      if (u.food + food &lt; 0) throw new InsufficientFundsError('food');
+      if (u.shards + shards &lt; 0) throw new InsufficientFundsError('shards');
+      tx.update(schema.users).set({
+        cash: sql`${schema.users.cash} + ${cash}`,
+        food: sql`${schema.users.food} + ${food}`,
+        shards: sql`${schema.users.shards} + ${shards}`,
+      }).where(eq(schema.users.discordId, userId)).run();
+      tx.insert(schema.txLog).values({
+        userId, cashDelta: cash, foodDelta: food, shardsDelta: shards, reason, createdAt: now,
+      }).run();
+    });
+  }
+}</code></pre>
+Run: <code>npx vitest run tests/economy.test.ts</code> — expect PASS.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Commit</label>
+<pre><code>git add -A && git commit -m "Add atomic economy service with audit log and overdraft protection"</code></pre></div>
+
+<h2>Task 5: Rarity table and species data layer</h2>
+<p class="files"><b>Files:</b> Create <code>src/data/types.ts</code>, <code>src/data/rarity.ts</code>, <code>src/data/species/index.ts</code>, <code>src/data/species/triceratops.ts</code>, <code>src/data/species/velociraptor.ts</code>, <code>src/data/facilities.ts</code>, <code>src/data/paddocks.ts</code>, <code>tests/data.test.ts</code></p>
+<div class="iface"><b>Produces:</b> <code>Rarity</code> union type; <code>RARITY: Record&lt;Rarity, RarityStats&gt;</code> with <code>incomePerHr, sellShards: [number, number], incubationMs, feedCost</code>; <code>Species</code> interface; <code>getSpecies(id): Species</code> (throws on unknown), <code>allSpecies(): Species[]</code>; <code>FACILITIES</code> and <code>PADDOCKS</code> data maps used by Task 9's build command. Spec sources: §3.1, §3.3, §3.8.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Types and rarity numbers (exact spec §3.3 values)</label>
+<pre><code>// src/data/types.ts
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
+export type Diet = 'herbivore' | 'carnivore';
+export interface Species {
+  id: string; name: string; rarity: Rarity; diet: Diet;
+  biomeTags: string[]; flavor: string; spriteRef: string;
+}
+export interface RarityStats {
+  incomePerHr: number; sellShards: [number, number]; incubationMs: number; feedCost: number;
+}
+export interface FacilityDef {
+  kind: string; name: string; maxLevel: number;
+  incomeBonusPct: number[];        // index = level-1
+  capHours?: number[];             // Visitor Center only
+  incubatorSlots?: number[];       // Hatchery Lab only
+  buildCost: number; upgradeCosts: number[];  // cost to reach level 2..maxLevel
+}
+export interface PaddockDef { kind: string; name: string; diet: Diet; buildCost: number }</code></pre>
+<pre><code>// src/data/rarity.ts
+import type { Rarity, RarityStats } from './types.js';
+const H = 3_600_000, M = 60_000;
+export const RARITY: Record&lt;Rarity, RarityStats&gt; = {
+  common:    { incomePerHr: 60,    sellShards: [1, 3],   incubationMs: 15 * M, feedCost: 5 },
+  uncommon:  { incomePerHr: 150,   sellShards: [3, 6],   incubationMs: 1 * H,  feedCost: 10 },
+  rare:      { incomePerHr: 400,   sellShards: [8, 15],  incubationMs: 4 * H,  feedCost: 20 },
+  epic:      { incomePerHr: 1100,  sellShards: [20, 35], incubationMs: 12 * H, feedCost: 40 },
+  legendary: { incomePerHr: 3000,  sellShards: [50, 80], incubationMs: 24 * H, feedCost: 80 },
+  mythic:    { incomePerHr: 9000,  sellShards: [0, 0],   incubationMs: 48 * H, feedCost: 160 },
+};</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Two seed species (full roster is a Plan 2 task), facilities and paddocks per spec §3.8</label>
+<pre><code>// src/data/species/triceratops.ts
+import type { Species } from '../types.js';
+export const triceratops: Species = {
+  id: 'triceratops', name: 'Triceratops', rarity: 'common', diet: 'herbivore',
+  biomeTags: ['forest'], flavor: 'Three horns, zero patience.', spriteRef: 'triceratops.png',
+};</code></pre>
+<pre><code>// src/data/species/velociraptor.ts
+import type { Species } from '../types.js';
+export const velociraptor: Species = {
+  id: 'velociraptor', name: 'Velociraptor', rarity: 'rare', diet: 'carnivore',
+  biomeTags: ['plains'], flavor: 'Clever girl.', spriteRef: 'velociraptor.png',
+};</code></pre>
+<pre><code>// src/data/species/index.ts
+import type { Species } from '../types.js';
+import { triceratops } from './triceratops.js';
+import { velociraptor } from './velociraptor.js';
+
+const REGISTRY = new Map&lt;string, Species&gt;([triceratops, velociraptor].map(s =&gt; [s.id, s]));
+
+export function getSpecies(id: string): Species {
+  const s = REGISTRY.get(id);
+  if (!s) throw new Error(`Unknown species: ${id}`);
+  return s;
+}
+export function allSpecies(): Species[] { return [...REGISTRY.values()]; }</code></pre>
+<pre><code>// src/data/facilities.ts
+import type { FacilityDef } from './types.js';
+export const FACILITIES: Record&lt;string, FacilityDef&gt; = {
+  visitor_center: {
+    kind: 'visitor_center', name: 'Visitor Center', maxLevel: 5,
+    incomeBonusPct: [0, 5, 10, 15, 20],
+    capHours: [8, 12, 16, 20, 24],
+    buildCost: 5_000, upgradeCosts: [12_500, 31_000, 78_000, 500_000],
+  },
+  hatchery_lab: {
+    kind: 'hatchery_lab', name: 'Hatchery Lab', maxLevel: 3,
+    incomeBonusPct: [0, 0, 0],
+    incubatorSlots: [1, 2, 3],
+    buildCost: 10_000, upgradeCosts: [25_000, 150_000],
+  },
+  food_court: {
+    kind: 'food_court', name: 'Food Court', maxLevel: 3,
+    incomeBonusPct: [4, 8, 12],
+    buildCost: 8_000, upgradeCosts: [20_000, 200_000],
+  },
+};</code></pre>
+<pre><code>// src/data/paddocks.ts
+import type { PaddockDef } from './types.js';
+export const PADDOCKS: Record&lt;string, PaddockDef&gt; = {
+  herbivore_paddock: { kind: 'herbivore_paddock', name: 'Herbivore Paddock', diet: 'herbivore', buildCost: 2_000 },
+  carnivore_paddock: { kind: 'carnivore_paddock', name: 'Carnivore Paddock', diet: 'carnivore', buildCost: 2_000 },
+};</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Test data integrity, run, commit</label>
+<pre><code>// tests/data.test.ts
+import { describe, it, expect } from 'vitest';
+import { RARITY } from '../src/data/rarity.js';
+import { getSpecies, allSpecies } from '../src/data/species/index.js';
+import { FACILITIES } from '../src/data/facilities.js';
+
+describe('game data', () =&gt; {
+  it('every species has a valid rarity entry', () =&gt; {
+    for (const s of allSpecies()) expect(RARITY[s.rarity]).toBeDefined();
+  });
+  it('getSpecies throws on unknown id', () =&gt; {
+    expect(() =&gt; getSpecies('barney')).toThrow(/Unknown species/);
+  });
+  it('facility arrays match maxLevel', () =&gt; {
+    for (const f of Object.values(FACILITIES)) {
+      expect(f.incomeBonusPct).toHaveLength(f.maxLevel);
+      expect(f.upgradeCosts).toHaveLength(f.maxLevel - 1);
+    }
+  });
+});</code></pre>
+<pre><code>npx vitest run tests/data.test.ts
+git add -A && git commit -m "Add rarity table, species registry, facility and paddock data"</code></pre></div>
+
+<h2>Task 6: Game clock pure functions</h2>
+<p class="files"><b>Files:</b> Create <code>src/core/clock.ts</code>, <code>tests/clock.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> <code>RARITY</code>, <code>Species</code>, <code>PaddockDef</code> from Task 5.<br>
+<b>Produces (all pure, all times epoch ms):</b><br>
+<code>hungerAt(hungerAtFed: number, lastFedAt: number, at: number): number</code> — linear 100→0 over 48 h;<br>
+<code>paddockFit(species: Species, paddock: PaddockDef, decor: string[]): number</code> — 1.0 / 0.75 / 0.5 per spec §3.4;<br>
+<code>comfortAt(dino: ClockDino, at: number): number</code> — hunger% × fit, 0–1;<br>
+<code>escapeMoment(dino: ClockDino, from: number): number | null</code> — instant escape triggers (comfort crossed &lt; 0.25 more than GRACE_MS=8 h ago), or null;<br>
+<code>accruedIncome(dinos: ClockDino[], facilityBonusPct: number, capHours: number, from: number, to: number): number</code> — piecewise mean-comfort integration per spec §3.3, truncated at cap and per-dino escape moment.<br>
+<code>ClockDino = { species: Species; paddock: PaddockDef | null; decor: string[]; hungerAtFed: number; lastFedAt: number; escapedAt: number | null }</code></div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing tests pinning the spec math</label>
+<pre><code>// tests/clock.test.ts
+import { describe, it, expect } from 'vitest';
+import { hungerAt, paddockFit, comfortAt, escapeMoment, accruedIncome, HUNGER_DRAIN_MS, GRACE_MS } from '../src/core/clock.js';
+import { triceratops } from '../src/data/species/triceratops.js';
+import { velociraptor } from '../src/data/species/velociraptor.js';
+import { PADDOCKS } from '../src/data/paddocks.js';
+
+const H = 3_600_000;
+const herb = PADDOCKS.herbivore_paddock;
+const carn = PADDOCKS.carnivore_paddock;
+const fedTrike = (over: object = {}) =&gt; ({
+  species: triceratops, paddock: herb, decor: ['forest'],
+  hungerAtFed: 100, lastFedAt: 0, escapedAt: null, ...over,
+});
+
+describe('hungerAt', () =&gt; {
+  it('drains linearly to zero over 48h and clamps', () =&gt; {
+    expect(hungerAt(100, 0, 0)).toBe(100);
+    expect(hungerAt(100, 0, HUNGER_DRAIN_MS / 2)).toBeCloseTo(50);
+    expect(hungerAt(100, 0, HUNGER_DRAIN_MS * 2)).toBe(0);
+  });
+});
+
+describe('paddockFit', () =&gt; {
+  it('1.0 diet+biome, 0.75 diet only, 0.5 wrong diet', () =&gt; {
+    expect(paddockFit(triceratops, herb, ['forest'])).toBe(1.0);
+    expect(paddockFit(triceratops, herb, [])).toBe(0.75);
+    expect(paddockFit(triceratops, carn, ['forest'])).toBe(0.5);
+  });
+});
+
+describe('escapeMoment', () =&gt; {
+  it('null while comfort stays &gt;= 25%', () =&gt; {
+    expect(escapeMoment(fedTrike(), 4 * H)).toBeNull();
+  });
+  it('fires GRACE_MS after comfort crosses 25%', () =&gt; {
+    // fit 1.0: comfort 0.25 at hunger 25 =&gt; 36h after feed; escape at 36h + 8h grace = 44h
+    expect(escapeMoment(fedTrike(), 60 * H)).toBe(36 * H + GRACE_MS);
+  });
+});
+
+describe('accruedIncome', () =&gt; {
+  it('integrates mean comfort over the window', () =&gt; {
+    // Trike fit 1.0, hunger 100-&gt;75 over first 12h =&gt; mean comfort 0.875
+    // income = 60/hr * 0.875 * 12h = 630
+    expect(accruedIncome([fedTrike()], 0, 24, 0, 12 * H)).toBe(630);
+  });
+  it('applies facility bonus and cap_hours', () =&gt; {
+    // capped at 8h: hunger 100-&gt;a t 8h 83.33 =&gt; mean 0.9167; 60*0.9167*8 = 440; +10% =&gt; 484
+    expect(accruedIncome([fedTrike()], 10, 8, 0, 12 * H)).toBe(484);
+  });
+  it('halts a dino at its escape moment and pays zero for unassigned or escaped dinos', () =&gt; {
+    const escaped = fedTrike({ escapedAt: 0 });
+    const unassigned = fedTrike({ paddock: null });
+    expect(accruedIncome([escaped, unassigned], 0, 24, 0, 12 * H)).toBe(0);
+    // wrong-diet raptor in herb paddock, fit 0.5: comfort 0.25 at hunger 50 =&gt; 24h; escape 24h+8h=32h
+    // window 0..cap 24h: hunger 100-&gt;50, comfort 0.5-&gt;0.25, mean 0.375; 400*0.375*24 = 3600
+    const raptor = { ...fedTrike(), species: velociraptor };
+    expect(accruedIncome([raptor], 0, 24, 0, 48 * H)).toBe(3600);
+  });
+});</code></pre>
+Run: <code>npx vitest run tests/clock.test.ts</code> — expect FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement</label>
+<pre><code>// src/core/clock.ts
+import { RARITY } from '../data/rarity.js';
+import type { Species, PaddockDef } from '../data/types.js';
+
+export const HUNGER_DRAIN_MS = 48 * 3_600_000;   // spec §3.4
+export const GRACE_MS = 8 * 3_600_000;
+export const ESCAPE_COMFORT = 0.25;
+
+export interface ClockDino {
+  species: Species; paddock: PaddockDef | null; decor: string[];
+  hungerAtFed: number; lastFedAt: number; escapedAt: number | null;
+}
+
+export function hungerAt(hungerAtFed: number, lastFedAt: number, at: number): number {
+  const drained = ((at - lastFedAt) / HUNGER_DRAIN_MS) * 100;
+  return Math.max(0, hungerAtFed - drained);
+}
+
+export function paddockFit(species: Species, paddock: PaddockDef, decor: string[]): number {
+  if (paddock.diet !== species.diet) return 0.5;
+  const biomeMatch = decor.some((d) =&gt; species.biomeTags.includes(d));
+  return biomeMatch ? 1.0 : 0.75;
+}
+
+export function comfortAt(d: ClockDino, at: number): number {
+  if (!d.paddock) return 0;
+  return (hungerAt(d.hungerAtFed, d.lastFedAt, at) / 100) * paddockFit(d.species, d.paddock, d.decor);
+}
+
+/** Time at which comfort crosses below ESCAPE_COMFORT (may be before `from`). */
+function comfortCrossing(d: ClockDino): number | null {
+  if (!d.paddock) return null;
+  const fit = paddockFit(d.species, d.paddock, d.decor);
+  const hungerThreshold = (ESCAPE_COMFORT / fit) * 100;      // hunger% where comfort hits threshold
+  if (hungerThreshold &gt;= d.hungerAtFed) return d.lastFedAt;  // already below at feed time
+  const msUntil = ((d.hungerAtFed - hungerThreshold) / 100) * HUNGER_DRAIN_MS;
+  return d.lastFedAt + msUntil;
+}
+
+export function escapeMoment(d: ClockDino, from: number): number | null {
+  if (d.escapedAt !== null) return d.escapedAt;
+  const crossing = comfortCrossing(d);
+  if (crossing === null) return null;
+  const escape = crossing + GRACE_MS;
+  return escape &lt;= from ? escape : (escape &lt;= from ? escape : escape); // candidate; caller compares to window
+}
+
+export function accruedIncome(
+  dinos: ClockDino[], facilityBonusPct: number, capHours: number, from: number, to: number,
+): number {
+  const end = Math.min(to, from + capHours * 3_600_000);
+  if (end &lt;= from) return 0;
+  let total = 0;
+  for (const d of dinos) {
+    if (!d.paddock) continue;
+    if (d.escapedAt !== null && d.escapedAt &lt;= from) continue;
+    let dinoEnd = end;
+    const esc = d.escapedAt ?? ((): number | null =&gt; {
+      const c = comfortCrossing(d);
+      return c === null ? null : c + GRACE_MS;
+    })();
+    if (esc !== null) dinoEnd = Math.min(dinoEnd, Math.max(from, esc));
+    if (dinoEnd &lt;= from) continue;
+    const mean = (comfortAt(d, from) + comfortAt(d, dinoEnd)) / 2;
+    const hours = (dinoEnd - from) / 3_600_000;
+    total += RARITY[d.species.rarity].incomePerHr * mean * hours;
+  }
+  return Math.floor(total * (1 + facilityBonusPct / 100));
+}</code></pre>
+<p class="muted">Note the double-ternary in <code>escapeMoment</code> is a bug bait — simplify to <code>return escape;</code> and let callers decide; the test pins the correct value (44 h). Implementer: return the candidate unconditionally.</p>
+Run: <code>npx vitest run tests/clock.test.ts</code> — expect PASS (fix arithmetic until the pinned values hold; the test values are hand-computed from the spec and are correct).</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Commit</label>
+<pre><code>git add -A && git commit -m "Add pure game-clock math: hunger, fit, comfort, escapes, income integration"</code></pre></div>
+
+<h2>Task 7: Module system</h2>
+<p class="files"><b>Files:</b> Create <code>src/core/modules.ts</code>, <code>src/core/context.ts</code>, <code>tests/modules.test.ts</code></p>
+<div class="iface"><b>Produces:</b><br>
+<code>interface Ctx { db: Db; economy: EconomyService; config: Config; now(): number; rng(): number }</code><br>
+<code>interface CommandDef { data: SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder; execute(ctx: Ctx, i: ChatInputCommandInteraction): Promise&lt;void&gt; }</code><br>
+<code>interface ComponentDef { prefix: string; execute(ctx: Ctx, i: ButtonInteraction): Promise&lt;void&gt; }</code><br>
+<code>interface ModuleManifest { name: string; commands: CommandDef[]; components: ComponentDef[] }</code><br>
+<code>class ModuleRegistry { constructor(manifests: ModuleManifest[], enabled: Record&lt;string, boolean&gt;); commands(): CommandDef[]; findCommand(name): CommandDef | undefined; findComponent(customId): ComponentDef | undefined }</code><br>
+Component customIds follow <code>&lt;prefix&gt;:&lt;rest&gt;</code>; registry matches on prefix.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing test</label>
+<pre><code>// tests/modules.test.ts
+import { describe, it, expect } from 'vitest';
+import { SlashCommandBuilder } from 'discord.js';
+import { ModuleRegistry, type ModuleManifest } from '../src/core/modules.js';
+
+const mk = (name: string, cmd: string): ModuleManifest =&gt; ({
+  name,
+  commands: [{ data: new SlashCommandBuilder().setName(cmd).setDescription('x'), execute: async () =&gt; {} }],
+  components: [{ prefix: `${name}-btn`, execute: async () =&gt; {} }],
+});
+
+describe('ModuleRegistry', () =&gt; {
+  it('exposes only enabled modules', () =&gt; {
+    const r = new ModuleRegistry([mk('park', 'park'), mk('shop', 'shop')], { park: true, shop: false });
+    expect(r.commands().map(c =&gt; c.data.name)).toEqual(['park']);
+    expect(r.findCommand('shop')).toBeUndefined();
+    expect(r.findComponent('park-btn:collect')).toBeDefined();
+    expect(r.findComponent('shop-btn:buy')).toBeUndefined();
+  });
+});</code></pre>
+Run — expect FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement, run, commit</label>
+<pre><code>// src/core/context.ts
+import type { Db } from './db/index.js';
+import type { EconomyService } from './economy.js';
+import type { Config } from './config.js';
+
+export interface Ctx {
+  db: Db; economy: EconomyService; config: Config;
+  now(): number;        // epoch ms — injected so tests control time
+  rng(): number;        // [0,1) — injected so tests are deterministic
+}</code></pre>
+<pre><code>// src/core/modules.ts
+import type { SlashCommandBuilder, SlashCommandSubcommandsOnlyBuilder,
+  ChatInputCommandInteraction, ButtonInteraction } from 'discord.js';
+import type { Ctx } from './context.js';
+
+export interface CommandDef {
+  data: SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder;
+  execute(ctx: Ctx, i: ChatInputCommandInteraction): Promise&lt;void&gt;;
+}
+export interface ComponentDef {
+  prefix: string;
+  execute(ctx: Ctx, i: ButtonInteraction): Promise&lt;void&gt;;
+}
+export interface ModuleManifest {
+  name: string; commands: CommandDef[]; components: ComponentDef[];
+}
+
+export class ModuleRegistry {
+  private enabled: ModuleManifest[];
+  constructor(manifests: ModuleManifest[], flags: Record&lt;string, boolean&gt;) {
+    this.enabled = manifests.filter((m) =&gt; flags[m.name] === true);
+  }
+  commands(): CommandDef[] { return this.enabled.flatMap((m) =&gt; m.commands); }
+  findCommand(name: string): CommandDef | undefined {
+    return this.commands().find((c) =&gt; c.data.name === name);
+  }
+  findComponent(customId: string): ComponentDef | undefined {
+    const prefix = customId.split(':')[0];
+    return this.enabled.flatMap((m) =&gt; m.components).find((c) =&gt; c.prefix === prefix);
+  }
+}</code></pre>
+<pre><code>npx vitest run tests/modules.test.ts
+git add -A && git commit -m "Add module manifest types and enabled-flag registry"</code></pre></div>
+
+<h2>Task 8: Test harness (fake interactions)</h2>
+<p class="files"><b>Files:</b> Create <code>tests/harness.ts</code>, <code>tests/harness.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> <code>Ctx</code>, <code>ModuleRegistry</code>.<br>
+<b>Produces:</b> <code>makeCtx(overrides?): Ctx</code> — in-memory DB, seeded rng (mulberry32), controllable <code>now</code>; <code>fakeCommand(opts: { name: string; sub?: string; user: string; guild?: string; options?: Record&lt;string, string | number&gt; }): FakeInteraction</code> where <code>FakeInteraction</code> records <code>replies: unknown[]</code> and implements the discord.js surface modules use: <code>options.getSubcommand()</code>, <code>options.getString/getInteger</code>, <code>reply()</code>, <code>deferReply()</code>, <code>editReply()</code>, <code>user.id</code>, <code>guildId</code>. This harness is the backbone of the spec §8 "everything testable off-Discord" requirement — every later module test uses it.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Implement harness with a self-test</label>
+<pre><code>// tests/harness.ts
+import { createDb, migrateDb } from '../src/core/db/index.js';
+import { EconomyService } from '../src/core/economy.js';
+import type { Ctx } from '../src/core/context.js';
+import type { ChatInputCommandInteraction } from 'discord.js';
+
+export function mulberry32(seed: number): () =&gt; number {
+  let a = seed;
+  return () =&gt; {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a &gt;&gt;&gt; 15), 1 | a);
+    t = (t + Math.imul(t ^ (t &gt;&gt;&gt; 7), 61 | t)) ^ t;
+    return ((t ^ (t &gt;&gt;&gt; 14)) &gt;&gt;&gt; 0) / 4294967296;
+  };
+}
+
+export function makeCtx(overrides: Partial&lt;Ctx&gt; & { nowMs?: number } = {}): Ctx & { setNow(ms: number): void } {
+  const db = createDb(':memory:'); migrateDb(db);
+  let nowMs = overrides.nowMs ?? 0;
+  return {
+    db, economy: new EconomyService(db),
+    config: { token: 't', clientId: 'c', databasePath: ':memory:', ownerId: 'owner', modules: {} },
+    now: () =&gt; nowMs,
+    rng: mulberry32(42),
+    setNow: (ms: number) =&gt; { nowMs = ms; },
+    ...overrides,
+  };
+}
+
+export interface FakeInteraction {
+  replies: unknown[];
+  asChatInput(): ChatInputCommandInteraction;
+}
+
+export function fakeCommand(opts: {
+  name: string; sub?: string; user: string; guild?: string;
+  options?: Record&lt;string, string | number&gt;;
+}): FakeInteraction {
+  const replies: unknown[] = [];
+  const record = async (payload: unknown) =&gt; { replies.push(payload); };
+  const raw = {
+    commandName: opts.name,
+    user: { id: opts.user, displayName: opts.user },
+    guildId: opts.guild ?? null,
+    deferred: false, replied: false,
+    options: {
+      getSubcommand: () =&gt; opts.sub ?? null,
+      getString: (k: string) =&gt; (opts.options?.[k] as string) ?? null,
+      getInteger: (k: string) =&gt; (opts.options?.[k] as number) ?? null,
+      getUser: () =&gt; null,
+    },
+    reply: record, editReply: record, followUp: record,
+    deferReply: async () =&gt; { (raw as { deferred: boolean }).deferred = true; },
+  };
+  return { replies, asChatInput: () =&gt; raw as unknown as ChatInputCommandInteraction };
+}</code></pre>
+<pre><code>// tests/harness.test.ts
+import { describe, it, expect } from 'vitest';
+import { makeCtx, fakeCommand, mulberry32 } from './harness.js';
+
+describe('harness', () =&gt; {
+  it('ctx time is controllable and rng deterministic', () =&gt; {
+    const ctx = makeCtx();
+    ctx.setNow(1234); expect(ctx.now()).toBe(1234);
+    const a = mulberry32(7)(); const b = mulberry32(7)();
+    expect(a).toBe(b);
+  });
+  it('fake interaction records replies', async () =&gt; {
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await i.asChatInput().reply({ content: 'hi' });
+    expect(i.replies).toEqual([{ content: 'hi' }]);
+  });
+});</code></pre>
+<pre><code>npx vitest run tests/harness.test.ts
+git add -A && git commit -m "Add off-Discord test harness with fake interactions and seeded rng"</code></pre></div>
+
+<h2>Task 9: Park module</h2>
+<p class="files"><b>Files:</b> Create <code>src/modules/park/index.ts</code>, <code>src/modules/park/service.ts</code>, <code>src/modules/park/embeds.ts</code>, <code>tests/park.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> everything above.<br>
+<b>Produces:</b> <code>parkModule: ModuleManifest</code> (name <code>'park'</code>) with command <code>/park view|rename</code>, <code>/build</code>, <code>/upgrade</code>; service functions later plans reuse: <code>getOrCreateUser(ctx, userId, displayName): User</code>, <code>collectIncome(ctx, userId): { amount: number }</code>, <code>facilityBonusPct(lots): number</code>, <code>capHours(lots): number</code>, <code>buildLot(ctx, userId, kind): Lot</code> (throws <code>LotLimitError</code>, kind resolved against <code>PADDOCKS</code>/<code>FACILITIES</code>), <code>upgradeLot(ctx, userId, lotId): Lot</code>. Button customId: <code>park:collect</code>. Lot slots: 3 base (rating gates to 8 arrive with rating recompute in Plan 2 — v1 constant <code>BASE_LOT_SLOTS = 3</code> exported from service).</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing service tests</label>
+<pre><code>// tests/park.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { makeCtx } from './harness.js';
+import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, BASE_LOT_SLOTS } from '../src/modules/park/service.js';
+import { schema } from '../src/core/db/index.js';
+
+const H = 3_600_000;
+let ctx: ReturnType&lt;typeof makeCtx&gt;;
+beforeEach(() =&gt; { ctx = makeCtx(); });
+
+describe('park service', () =&gt; {
+  it('creates a user once with starting wallet', () =&gt; {
+    const u1 = getOrCreateUser(ctx, 'u1', 'Reg');
+    const u2 = getOrCreateUser(ctx, 'u1', 'Reg');
+    expect(u1.cash).toBe(500);
+    expect(u2.discordId).toBe('u1');
+    expect(ctx.db.select().from(schema.users).all()).toHaveLength(1);
+  });
+
+  it('builds lots up to the slot limit, charging cash', () =&gt; {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 20_000 }, 'test:seed', 0);
+    buildLot(ctx, 'u1', 'herbivore_paddock');     // 2,000
+    buildLot(ctx, 'u1', 'visitor_center');        // 5,000
+    buildLot(ctx, 'u1', 'food_court');            // 8,000
+    expect(() =&gt; buildLot(ctx, 'u1', 'herbivore_paddock')).toThrow(LotLimitError);
+    expect(BASE_LOT_SLOTS).toBe(3);
+  });
+
+  it('derives capHours and bonus from facilities', () =&gt; {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 20_000 }, 'test:seed', 0);
+    buildLot(ctx, 'u1', 'visitor_center');
+    buildLot(ctx, 'u1', 'food_court');
+    const lots = ctx.db.select().from(schema.lots).all();
+    expect(capHours(lots)).toBe(8);               // VC level 1
+    expect(facilityBonusPct(lots)).toBe(4);       // VC lvl1 0% + food court lvl1 4%
+  });
+
+  it('collectIncome pays integrated income and stamps lastCollectAt', () =&gt; {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 2_000 }, 'test:seed', 0);
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', lotId: lot.id, speciesId: 'triceratops',
+      hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }).run();
+    ctx.db.update(schema.lots).set({ decor: ['forest'] }).run();
+    ctx.setNow(12 * H);
+    const { amount } = collectIncome(ctx, 'u1');
+    expect(amount).toBe(630);                     // same integral as clock test
+    expect(collectIncome(ctx, 'u1').amount).toBe(0);  // idempotent within same instant
+  });
+});</code></pre>
+Run: <code>npx vitest run tests/park.test.ts</code> — expect FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement service</label>
+<pre><code>// src/modules/park/service.ts
+import { eq, and } from 'drizzle-orm';
+import { schema } from '../../core/db/index.js';
+import type { Ctx } from '../../core/context.js';
+import { accruedIncome, type ClockDino } from '../../core/clock.js';
+import { getSpecies } from '../../data/species/index.js';
+import { FACILITIES } from '../../data/facilities.js';
+import { PADDOCKS } from '../../data/paddocks.js';
+
+export const BASE_LOT_SLOTS = 3;
+export class LotLimitError extends Error {}
+export class UnknownKindError extends Error {}
+
+type User = typeof schema.users.$inferSelect;
+type Lot = typeof schema.lots.$inferSelect;
+
+export function getOrCreateUser(ctx: Ctx, userId: string, displayName: string): User {
+  const existing = ctx.db.select().from(schema.users)
+    .where(eq(schema.users.discordId, userId)).get();
+  if (existing) return existing;
+  return ctx.db.insert(schema.users).values({
+    discordId: userId, displayName, lastCollectAt: ctx.now(), createdAt: ctx.now(),
+  }).returning().get();
+}
+
+export function facilityBonusPct(lots: Lot[]): number {
+  return lots.filter((l) =&gt; l.type === 'facility')
+    .reduce((sum, l) =&gt; sum + (FACILITIES[l.kind]?.incomeBonusPct[l.level - 1] ?? 0), 0);
+}
+
+export function capHours(lots: Lot[]): number {
+  const vc = lots.find((l) =&gt; l.kind === 'visitor_center');
+  return vc ? FACILITIES.visitor_center.capHours![vc.level - 1] : 8;
+}
+
+export function buildLot(ctx: Ctx, userId: string, kind: string): Lot {
+  const paddock = PADDOCKS[kind]; const facility = FACILITIES[kind];
+  if (!paddock && !facility) throw new UnknownKindError(kind);
+  const count = ctx.db.select().from(schema.lots)
+    .where(eq(schema.lots.userId, userId)).all().length;
+  if (count &gt;= BASE_LOT_SLOTS) throw new LotLimitError();
+  const cost = paddock ? paddock.buildCost : facility.buildCost;
+  ctx.economy.apply(userId, { cash: -cost }, `build:${kind}`, ctx.now());
+  return ctx.db.insert(schema.lots).values({
+    userId, type: paddock ? 'paddock' : 'facility', kind,
+    name: paddock ? paddock.name : facility.name,
+  }).returning().get();
+}
+
+export function upgradeLot(ctx: Ctx, userId: string, lotId: number): Lot {
+  const lot = ctx.db.select().from(schema.lots)
+    .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, userId))).get();
+  if (!lot) throw new UnknownKindError(String(lotId));
+  const def = FACILITIES[lot.kind];
+  const maxLevel = def ? def.maxLevel : 4;                       // paddock max level 4 (capacity 8)
+  if (lot.level &gt;= maxLevel) throw new LotLimitError();
+  const cost = def ? def.upgradeCosts[lot.level - 1]
+                   : Math.round(PADDOCKS[lot.kind].buildCost * 2.5 ** lot.level);
+  ctx.economy.apply(userId, { cash: -cost }, `upgrade:${lot.kind}:${lot.level + 1}`, ctx.now());
+  return ctx.db.update(schema.lots).set({ level: lot.level + 1 })
+    .where(eq(schema.lots.id, lotId)).returning().get();
+}
+
+export function collectIncome(ctx: Ctx, userId: string): { amount: number } {
+  const user = ctx.db.select().from(schema.users)
+    .where(eq(schema.users.discordId, userId)).get()!;
+  const lots = ctx.db.select().from(schema.lots)
+    .where(eq(schema.lots.userId, userId)).all();
+  const lotById = new Map(lots.map((l) =&gt; [l.id, l]));
+  const dinos = ctx.db.select().from(schema.dinos)
+    .where(eq(schema.dinos.userId, userId)).all();
+  const clockDinos: ClockDino[] = dinos.map((d) =&gt; {
+    const lot = d.lotId ? lotById.get(d.lotId) : undefined;
+    const isPaddock = lot?.type === 'paddock';
+    return {
+      species: getSpecies(d.speciesId),
+      paddock: isPaddock ? PADDOCKS[lot.kind] : null,
+      decor: isPaddock ? lot.decor : [],
+      hungerAtFed: d.hunger, lastFedAt: d.lastFedAt, escapedAt: d.escapedAt,
+    };
+  });
+  const amount = accruedIncome(
+    clockDinos, facilityBonusPct(lots), capHours(lots), user.lastCollectAt, ctx.now(),
+  );
+  if (amount &gt; 0) ctx.economy.apply(userId, { cash: amount }, 'collect', ctx.now());
+  ctx.db.update(schema.users).set({ lastCollectAt: ctx.now() })
+    .where(eq(schema.users.discordId, userId)).run();
+  return { amount };
+}</code></pre>
+Run: <code>npx vitest run tests/park.test.ts</code> — expect PASS.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Embeds + manifest (commands wire services to Discord)</label>
+<pre><code>// src/modules/park/embeds.ts
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import type { schema } from '../../core/db/index.js';
+
+type User = typeof schema.users.$inferSelect;
+type Lot = typeof schema.lots.$inferSelect;
+
+export function dashboardPayload(user: User, lots: Lot[], dinoCount: number, pendingIncome: number) {
+  const embed = new EmbedBuilder()
+    .setTitle(`🏞️ ${user.parkName}`)
+    .setColor(0x3ba55c)
+    .addFields(
+      { name: '💰 Cash', value: user.cash.toLocaleString(), inline: true },
+      { name: '⭐ Rating', value: (user.parkRating / 100).toFixed(1), inline: true },
+      { name: '🦕 Dinos', value: String(dinoCount), inline: true },
+      { name: '🏗️ Lots', value: lots.map((l) =&gt; `${l.name} (lvl ${l.level})`).join('\n') || 'None — /build', inline: false },
+    );
+  const row = new ActionRowBuilder&lt;ButtonBuilder&gt;().addComponents(
+    new ButtonBuilder().setCustomId('park:collect').setLabel(`💰 Collect ${pendingIncome.toLocaleString()}`).setStyle(ButtonStyle.Success),
+  );
+  return { embeds: [embed], components: [row] };
+}</code></pre>
+<pre><code>// src/modules/park/index.ts
+import { SlashCommandBuilder } from 'discord.js';
+import { eq } from 'drizzle-orm';
+import type { ModuleManifest } from '../../core/modules.js';
+import { schema } from '../../core/db/index.js';
+import { getOrCreateUser, buildLot, upgradeLot, collectIncome, facilityBonusPct, capHours, LotLimitError, UnknownKindError } from './service.js';
+import { accruedIncome } from '../../core/clock.js';
+import { dashboardPayload } from './embeds.js';
+import { InsufficientFundsError } from '../../core/economy.js';
+import { PADDOCKS } from '../../data/paddocks.js';
+import { FACILITIES } from '../../data/facilities.js';
+
+const kindChoices = [...Object.keys(PADDOCKS), ...Object.keys(FACILITIES)]
+  .map((k) =&gt; ({ name: k.replaceAll('_', ' '), value: k }));
+
+export const parkModule: ModuleManifest = {
+  name: 'park',
+  commands: [
+    {
+      data: new SlashCommandBuilder().setName('park').setDescription('Your park')
+        .addSubcommand((s) =&gt; s.setName('view').setDescription('Park dashboard'))
+        .addSubcommand((s) =&gt; s.setName('rename').setDescription('Rename your park')
+          .addStringOption((o) =&gt; o.setName('name').setDescription('New name').setRequired(true).setMaxLength(60))),
+      async execute(ctx, i) {
+        const user = getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        if (i.options.getSubcommand() === 'rename') {
+          const name = i.options.getString('name', true);
+          ctx.db.update(schema.users).set({ parkName: name })
+            .where(eq(schema.users.discordId, i.user.id)).run();
+          await i.reply({ content: `Park renamed to **${name}**.` });
+          return;
+        }
+        const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, i.user.id)).all();
+        const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all();
+        await i.reply(dashboardPayload(user, lots, dinos.length, pendingIncome(ctx, i.user.id)));
+      },
+    },
+    {
+      data: new SlashCommandBuilder().setName('build').setDescription('Build on an empty lot')
+        .addStringOption((o) =&gt; o.setName('kind').setDescription('What to build').setRequired(true)
+          .addChoices(...kindChoices)),
+      async execute(ctx, i) {
+        getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        try {
+          const lot = buildLot(ctx, i.user.id, i.options.getString('kind', true));
+          await i.reply({ content: `🏗️ Built **${lot.name}**.` });
+        } catch (e) {
+          if (e instanceof LotLimitError) await i.reply({ content: 'All lots full. More slots unlock with park rating.', ephemeral: true });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash.', ephemeral: true });
+          else throw e;
+        }
+      },
+    },
+    {
+      data: new SlashCommandBuilder().setName('upgrade').setDescription('Upgrade a lot')
+        .addIntegerOption((o) =&gt; o.setName('lot').setDescription('Lot id from /park view').setRequired(true)),
+      async execute(ctx, i) {
+        try {
+          const lot = upgradeLot(ctx, i.user.id, i.options.getInteger('lot', true));
+          await i.reply({ content: `⬆️ **${lot.name}** is now level ${lot.level}.` });
+        } catch (e) {
+          if (e instanceof LotLimitError) await i.reply({ content: 'Already max level.', ephemeral: true });
+          else if (e instanceof UnknownKindError) await i.reply({ content: 'No such lot.', ephemeral: true });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash.', ephemeral: true });
+          else throw e;
+        }
+      },
+    },
+  ],
+  components: [
+    {
+      prefix: 'park',
+      async execute(ctx, i) {
+        if (i.customId === 'park:collect') {
+          const { amount } = collectIncome(ctx, i.user.id);
+          await i.reply({ content: amount &gt; 0 ? `💰 Collected **${amount.toLocaleString()}** cash.` : 'Nothing to collect yet.', ephemeral: true });
+        }
+      },
+    },
+  ],
+};
+
+function pendingIncome(ctx: import('../../core/context.js').Ctx, userId: string): number {
+  // same read path as collectIncome without mutating — reuse service pieces
+  const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!;
+  const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, userId)).all();
+  const lotById = new Map(lots.map((l) =&gt; [l.id, l]));
+  const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all();
+  return accruedIncome(
+    dinos.map((d) =&gt; {
+      const lot = d.lotId ? lotById.get(d.lotId) : undefined;
+      const isPaddock = lot?.type === 'paddock';
+      return {
+        species: (await import('../../data/species/index.js'), require) as never, // ← PLAN NOTE: see step text
+      } as never;
+    }) as never, facilityBonusPct(lots), capHours(lots), user.lastCollectAt, ctx.now(),
+  );
+}</code></pre>
+<div class="callout warn"><b>Implementer note on <code>pendingIncome</code>:</b> the mapping body above is deliberately not repeated — extract the <code>dinos → ClockDino[]</code> mapping from <code>collectIncome</code> into an exported helper <code>toClockDinos(ctx, userId): { clockDinos, lots, user }</code> in <code>service.ts</code> and call it from both <code>collectIncome</code> and <code>pendingIncome</code> (which lives in <code>service.ts</code> too, exported as <code>pendingIncome(ctx, userId): number</code>). DRY — one query path, two consumers. The garbled lines above must not be typed literally.</div></div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Harness test for the command path, run all, commit</label>
+<pre><code>// append to tests/park.test.ts
+import { parkModule } from '../src/modules/park/index.js';
+import { fakeCommand } from './harness.js';
+
+describe('park module commands', () =&gt; {
+  it('/park view returns a dashboard payload', async () =&gt; {
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await parkModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: unknown[]; components: unknown[] };
+    expect(payload.embeds).toHaveLength(1);
+    expect(payload.components).toHaveLength(1);
+  });
+});</code></pre>
+<pre><code>npm test
+git add -A && git commit -m "Add park module: dashboard, rename, build, upgrade, collect"</code></pre></div>
+
+<h2>Task 10: Interaction router, command deploy, boot wiring</h2>
+<p class="files"><b>Files:</b> Create <code>src/core/router.ts</code>, <code>src/deploy-commands.ts</code>; Modify <code>src/index.ts</code>; Create <code>tests/router.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> <code>ModuleRegistry</code>, <code>Ctx</code>.<br>
+<b>Produces:</b> <code>routeInteraction(ctx, registry, interaction): Promise&lt;void&gt;</code> — dispatches chat commands and buttons, upserts <code>user_guilds</code> + <code>display_name</code> on every interaction (spec §3.10/§4.1), replies with a generic ephemeral error on unhandled exceptions (spec §7). <code>src/index.ts</code> becomes the real boot: load config → db → registry → discord.js client → route events.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing router test</label>
+<pre><code>// tests/router.test.ts
+import { describe, it, expect } from 'vitest';
+import { SlashCommandBuilder } from 'discord.js';
+import { routeInteraction } from '../src/core/router.js';
+import { ModuleRegistry } from '../src/core/modules.js';
+import { makeCtx, fakeCommand } from './harness.js';
+import { schema } from '../src/core/db/index.js';
+
+describe('routeInteraction', () =&gt; {
+  it('dispatches to the owning module and upserts user_guilds', async () =&gt; {
+    const ctx = makeCtx();
+    let ran = false;
+    const registry = new ModuleRegistry([{
+      name: 'm', components: [],
+      commands: [{ data: new SlashCommandBuilder().setName('ping').setDescription('x'),
+        execute: async () =&gt; { ran = true; } }],
+    }], { m: true });
+    const i = fakeCommand({ name: 'ping', user: 'u1', guild: 'g1' });
+    const raw = i.asChatInput();
+    (raw as { isChatInputCommand?: () =&gt; boolean }).isChatInputCommand = () =&gt; true;
+    (raw as { isButton?: () =&gt; boolean }).isButton = () =&gt; false;
+    await routeInteraction(ctx, registry, raw);
+    expect(ran).toBe(true);
+    expect(ctx.db.select().from(schema.userGuilds).all()).toMatchObject([{ userId: 'u1', guildId: 'g1' }]);
+  });
+  it('replies ephemeral error when a handler throws', async () =&gt; {
+    const ctx = makeCtx();
+    const registry = new ModuleRegistry([{
+      name: 'm', components: [],
+      commands: [{ data: new SlashCommandBuilder().setName('boom').setDescription('x'),
+        execute: async () =&gt; { throw new Error('kaboom'); } }],
+    }], { m: true });
+    const i = fakeCommand({ name: 'boom', user: 'u1' });
+    const raw = i.asChatInput();
+    (raw as { isChatInputCommand?: () =&gt; boolean }).isChatInputCommand = () =&gt; true;
+    (raw as { isButton?: () =&gt; boolean }).isButton = () =&gt; false;
+    await routeInteraction(ctx, registry, raw);
+    expect(i.replies[0]).toMatchObject({ ephemeral: true });
+  });
+});</code></pre>
+Run — expect FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement router</label>
+<pre><code>// src/core/router.ts
+import type { Interaction, ChatInputCommandInteraction, ButtonInteraction } from 'discord.js';
+import { sql } from 'drizzle-orm';
+import type { Ctx } from './context.js';
+import type { ModuleRegistry } from './modules.js';
+import { schema } from './db/index.js';
+
+function touchPresence(ctx: Ctx, userId: string, displayName: string, guildId: string | null): void {
+  ctx.db.update(schema.users).set({ displayName })
+    .where(sql`${schema.users.discordId} = ${userId}`).run();
+  if (guildId) {
+    ctx.db.insert(schema.userGuilds)
+      .values({ userId, guildId, lastSeenAt: ctx.now() })
+      .onConflictDoUpdate({
+        target: [schema.userGuilds.userId, schema.userGuilds.guildId],
+        set: { lastSeenAt: ctx.now() },
+      }).run();
+  }
+}
+
+export async function routeInteraction(
+  ctx: Ctx, registry: ModuleRegistry, interaction: Interaction,
+): Promise&lt;void&gt; {
+  const isCommand = interaction.isChatInputCommand();
+  const isButton = interaction.isButton();
+  if (!isCommand && !isButton) return;
+  touchPresence(ctx, interaction.user.id, interaction.user.displayName, interaction.guildId);
+  try {
+    if (isCommand) {
+      const cmd = registry.findCommand((interaction as ChatInputCommandInteraction).commandName);
+      if (cmd) await cmd.execute(ctx, interaction as ChatInputCommandInteraction);
+    } else {
+      const comp = registry.findComponent((interaction as ButtonInteraction).customId);
+      if (comp) await comp.execute(ctx, interaction as ButtonInteraction);
+    }
+  } catch (err) {
+    const i = interaction as ChatInputCommandInteraction | ButtonInteraction;
+    const payload = { content: 'Something went wrong — nothing was charged. Try again.', ephemeral: true };
+    if (i.deferred || i.replied) await i.followUp(payload).catch(() =&gt; {});
+    else await i.reply(payload).catch(() =&gt; {});
+    console.error(err);
+  }
+}</code></pre>
+Run: <code>npx vitest run tests/router.test.ts</code> — expect PASS.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Deploy script + boot</label>
+<pre><code>// src/deploy-commands.ts
+import 'dotenv/config';
+import { REST, Routes } from 'discord.js';
+import { loadConfig } from './core/config.js';
+import { ModuleRegistry } from './core/modules.js';
+import { parkModule } from './modules/park/index.js';
+
+const config = loadConfig();
+const registry = new ModuleRegistry([parkModule], config.modules);
+const body = registry.commands().map((c) =&gt; c.data.toJSON());
+const rest = new REST().setToken(config.token);
+await rest.put(Routes.applicationCommands(config.clientId), { body });
+console.log(`Deployed ${body.length} commands.`);</code></pre>
+<pre><code>// src/index.ts  (replaces stub)
+import 'dotenv/config';
+import { Client, GatewayIntentBits, Events } from 'discord.js';
+import { loadConfig } from './core/config.js';
+import { createDb, migrateDb } from './core/db/index.js';
+import { EconomyService } from './core/economy.js';
+import { ModuleRegistry } from './core/modules.js';
+import { routeInteraction } from './core/router.js';
+import { parkModule } from './modules/park/index.js';
+import type { Ctx } from './core/context.js';
+
+const config = loadConfig();
+const db = createDb(config.databasePath);
+migrateDb(db);
+const ctx: Ctx = {
+  db, economy: new EconomyService(db), config,
+  now: () =&gt; Date.now(), rng: Math.random,
+};
+const registry = new ModuleRegistry([parkModule], config.modules);
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+client.on(Events.InteractionCreate, (i) =&gt; void routeInteraction(ctx, registry, i));
+client.once(Events.ClientReady, (c) =&gt; console.log(`Logged in as ${c.user.tag}`));
+await client.login(config.token);</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Full suite green, build clean, commit</label>
+<pre><code>npm test
+npm run build
+git add -A && git commit -m "Add interaction router, command deployment, and bot boot wiring"</code></pre></div>
+
+<h2>Task 11: Scheduler</h2>
+<p class="files"><b>Files:</b> Create <code>src/core/scheduler.ts</code>, <code>tests/scheduler.test.ts</code></p>
+<div class="iface"><b>Produces:</b> <code>class Scheduler { constructor(db: Db); register(kind: string, handler: (t: Timer) =&gt; Promise&lt;void&gt;): void; enqueue(t: { kind; userId; refId; originGuildId; firesAt }): void; tick(now: number): Promise&lt;number&gt; }</code> — <code>tick</code> fires every unhandled timer with <code>firesAt &lt;= now</code> (boot scan = first tick, spec §7 crash recovery), marks <code>handledAt</code>, returns count fired. Boot wiring calls <code>setInterval(() =&gt; scheduler.tick(Date.now()), 30_000)</code> — added to <code>src/index.ts</code> in this task. Plans 2+ register <code>egg_hatch</code> / <code>expedition_return</code> kinds; Plan 1 ships the engine only.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing tests</label>
+<pre><code>// tests/scheduler.test.ts
+import { describe, it, expect } from 'vitest';
+import { Scheduler } from '../src/core/scheduler.js';
+import { makeCtx } from './harness.js';
+
+describe('Scheduler', () =&gt; {
+  it('fires due timers once, in order, and skips future ones', async () =&gt; {
+    const ctx = makeCtx();
+    const s = new Scheduler(ctx.db);
+    const fired: number[] = [];
+    s.register('test', async (t) =&gt; { fired.push(t.refId); });
+    s.enqueue({ kind: 'test', userId: 'u1', refId: 1, originGuildId: null, firesAt: 100 });
+    s.enqueue({ kind: 'test', userId: 'u1', refId: 2, originGuildId: null, firesAt: 200 });
+    s.enqueue({ kind: 'test', userId: 'u1', refId: 3, originGuildId: null, firesAt: 999 });
+    expect(await s.tick(250)).toBe(2);
+    expect(fired).toEqual([1, 2]);
+    expect(await s.tick(250)).toBe(0);        // no double-fire
+  });
+  it('a throwing handler does not block others and stays unhandled for retry', async () =&gt; {
+    const ctx = makeCtx();
+    const s = new Scheduler(ctx.db);
+    s.register('bad', async () =&gt; { throw new Error('x'); });
+    const ok: number[] = [];
+    s.register('good', async (t) =&gt; { ok.push(t.refId); });
+    s.enqueue({ kind: 'bad', userId: 'u1', refId: 1, originGuildId: null, firesAt: 1 });
+    s.enqueue({ kind: 'good', userId: 'u1', refId: 2, originGuildId: null, firesAt: 2 });
+    expect(await s.tick(10)).toBe(1);         // only good counted
+    expect(ok).toEqual([2]);
+    expect(await s.tick(10)).toBe(0);         // bad not retried same tick logic: still unhandled
+  });
+});</code></pre>
+<p class="muted">Second assertion intent: the failed timer keeps <code>handledAt = null</code> so a later tick can retry after the bug is fixed; but a tick must not loop forever — mark attempted timers in-memory for the process lifetime.</p>
+Run — expect FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement, run, commit</label>
+<pre><code>// src/core/scheduler.ts
+import { and, isNull, lte, eq } from 'drizzle-orm';
+import { schema, type Db } from './db/index.js';
+
+export type Timer = typeof schema.timers.$inferSelect;
+type Handler = (t: Timer) =&gt; Promise&lt;void&gt;;
+
+export class Scheduler {
+  private handlers = new Map&lt;string, Handler&gt;();
+  private attempted = new Set&lt;number&gt;();
+  constructor(private db: Db) {}
+
+  register(kind: string, handler: Handler): void { this.handlers.set(kind, handler); }
+
+  enqueue(t: { kind: string; userId: string; refId: number; originGuildId: string | null; firesAt: number }): void {
+    this.db.insert(schema.timers).values(t).run();
+  }
+
+  async tick(now: number): Promise&lt;number&gt; {
+    const due = this.db.select().from(schema.timers)
+      .where(and(isNull(schema.timers.handledAt), lte(schema.timers.firesAt, now)))
+      .orderBy(schema.timers.firesAt).all()
+      .filter((t) =&gt; !this.attempted.has(t.id));
+    let fired = 0;
+    for (const t of due) {
+      this.attempted.add(t.id);
+      const handler = this.handlers.get(t.kind);
+      if (!handler) continue;
+      try {
+        await handler(t);
+        this.db.update(schema.timers).set({ handledAt: now })
+          .where(eq(schema.timers.id, t.id)).run();
+        fired++;
+      } catch (err) {
+        console.error(`timer ${t.id} (${t.kind}) failed`, err);
+      }
+    }
+    return fired;
+  }
+}</code></pre>
+Wire into <code>src/index.ts</code> (after registry creation):
+<pre><code>import { Scheduler } from './core/scheduler.js';
+const scheduler = new Scheduler(db);
+setInterval(() =&gt; void scheduler.tick(Date.now()), 30_000);
+void scheduler.tick(Date.now());   // boot scan — fires anything missed while down</code></pre>
+<pre><code>npx vitest run tests/scheduler.test.ts
+npm test && npm run build
+git add -A && git commit -m "Add DB-backed scheduler with boot scan and per-timer failure isolation"</code></pre></div>
+
+<h2>Task 12: Live smoke check + ops docs</h2>
+<p class="files"><b>Files:</b> Modify <code>README.md</code>; Create <code>docs/ops.md</code></p>
+
+<div class="step"><label><input type="checkbox"> Step 1: Manual smoke (the only Discord-side check in this plan, ~5 min)</label>
+<ol>
+<li>Create the Discord application + bot in the developer portal; fill <code>.env</code>.</li>
+<li><code>npm run deploy-commands</code> — expect "Deployed 3 commands."</li>
+<li><code>npm run dev</code> — expect "Logged in as …".</li>
+<li>In a dev server: <code>/park view</code> shows dashboard; <code>/build kind:herbivore paddock</code> succeeds; second+third builds succeed; fourth reports lots full; <code>/park rename</code> works; Collect button replies (0 cash is fine — no dinos hatchable until Plan 2).</li>
+</ol></div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Write <code>docs/ops.md</code></label>
+Contents (write real prose): VPS deploy (node LTS via nvm, <code>git clone</code>, <code>npm ci</code>, <code>npm run build</code>), systemd unit example (<code>ExecStart=/usr/bin/node dist/index.js</code>, <code>Restart=on-failure</code>, <code>EnvironmentFile=/opt/dino-world/.env</code>), nightly backup cron (<code>sqlite3 dino-world.db ".backup backups/dino-$(date +%F).db"</code>), and command redeploy procedure after enabling/disabling modules. Update README's setup section to link it.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Commit</label>
+<pre><code>git add -A && git commit -m "Add ops runbook and complete foundation smoke checklist"</code></pre></div>
+
+<h2>Plan self-review record</h2>
+<ul>
+<li><b>Spec coverage (this plan's slice):</b> §2 decisions (stack, DB, architecture) → Tasks 1–3; §3.3 economy numbers + accrual model → Tasks 5–6; §3.4 fit/hunger/escape math → Task 6; §3.8 lots/facilities → Tasks 5, 9; §3.10 user_guilds/display_name → Task 10; §4.1 kernel/module registry → Tasks 7, 10; §4.2/§7 scheduler + crash recovery → Task 11; §8 harness/testing → Task 8 and every task's tests; §9 ops → Task 12. Deferred to Plans 2–5 by design: hatchery, expeditions, care commands, shop, trading, leaderboards command, renderer, admin, rating recompute + high-water gating, notifications delivery, full roster.</li>
+<li><b>Known simplifications (deliberate, unblocked):</b> lot slots fixed at 3 until rating recompute lands (Plan 2); <code>/decorate</code>, <code>/dino</code> commands arrive with dinos (Plan 2); Collect button pays real math but parks have no dinos until hatchery exists — seed via test or admin in dev.</li>
+<li><b>Type consistency:</b> service/type names cross-referenced between Tasks 5–11 (<code>Ctx</code>, <code>ClockDino</code>, <code>ModuleManifest</code>, <code>schema.*</code>) — verified one pass.</li>
+</ul>
+
+</body>
+</html>
