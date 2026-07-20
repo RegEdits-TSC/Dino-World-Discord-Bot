@@ -29,10 +29,7 @@ export function facilityBonusPct(lots: Lot[]): number {
 
 export function capHours(lots: Lot[]): number {
   const vc = lots.find((l) => l.kind === 'visitor_center');
-  // No Visitor Center means cap_hours has nothing to derive from — accrual is
-  // uncapped until a Visitor Center is built (spec §3.3: "derived at read
-  // time from the Visitor Center's level").
-  return vc ? FACILITIES.visitor_center.capHours![vc.level - 1] : Infinity;
+  return vc ? FACILITIES.visitor_center.capHours![vc.level - 1] : 8;
 }
 
 export function buildLot(ctx: Ctx, userId: string, kind: string): Lot {
@@ -91,8 +88,10 @@ export function pendingIncome(ctx: Ctx, userId: string): number {
 
 export function collectIncome(ctx: Ctx, userId: string): { amount: number } {
   const amount = pendingIncome(ctx, userId);
-  if (amount > 0) ctx.economy.apply(userId, { cash: amount }, 'collect', ctx.now());
-  ctx.db.update(schema.users).set({ lastCollectAt: ctx.now() })
-    .where(eq(schema.users.discordId, userId)).run();
+  if (amount > 0) {
+    ctx.economy.apply(userId, { cash: amount }, 'collect', ctx.now());
+    ctx.db.update(schema.users).set({ lastCollectAt: ctx.now() })
+      .where(eq(schema.users.discordId, userId)).run();
+  }
   return { amount };
 }

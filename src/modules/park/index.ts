@@ -11,12 +11,6 @@ import { FACILITIES } from '../../data/facilities.js';
 const kindChoices = [...Object.keys(PADDOCKS), ...Object.keys(FACILITIES)]
   .map((k) => ({ name: k.replaceAll('_', ' '), value: k }));
 
-// discord.js narrows SlashCommandBuilder to SlashCommandOptionsOnlyBuilder once a
-// top-level option is added (it can no longer gain subcommands), but
-// ModuleManifest#CommandDef.data only accepts SlashCommandBuilder |
-// SlashCommandSubcommandsOnlyBuilder. The narrowed type is a structural subset,
-// so the assertion below is safe — it only drops methods we don't call.
-
 export const parkModule: ModuleManifest = {
   name: 'park',
   commands: [
@@ -42,7 +36,7 @@ export const parkModule: ModuleManifest = {
     {
       data: new SlashCommandBuilder().setName('build').setDescription('Build on an empty lot')
         .addStringOption((o) => o.setName('kind').setDescription('What to build').setRequired(true)
-          .addChoices(...kindChoices)) as SlashCommandBuilder,
+          .addChoices(...kindChoices)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         try {
@@ -57,7 +51,7 @@ export const parkModule: ModuleManifest = {
     },
     {
       data: new SlashCommandBuilder().setName('upgrade').setDescription('Upgrade a lot')
-        .addIntegerOption((o) => o.setName('lot').setDescription('Lot id from /park view').setRequired(true)) as SlashCommandBuilder,
+        .addIntegerOption((o) => o.setName('lot').setDescription('Lot id from /park view').setRequired(true)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         try {

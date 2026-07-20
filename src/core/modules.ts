@@ -1,9 +1,9 @@
-import type { SlashCommandBuilder, SlashCommandSubcommandsOnlyBuilder,
+import type { SlashCommandBuilder, SlashCommandSubcommandsOnlyBuilder, SlashCommandOptionsOnlyBuilder,
   ChatInputCommandInteraction, ButtonInteraction } from 'discord.js';
 import type { Ctx } from './context.js';
 
 export interface CommandDef {
-  data: SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder;
+  data: SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder | SlashCommandOptionsOnlyBuilder;
   execute(ctx: Ctx, i: ChatInputCommandInteraction): Promise<void>;
 }
 export interface ComponentDef {

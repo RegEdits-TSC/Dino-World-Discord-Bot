@@ -48,7 +48,10 @@ describe('park service', () => {
     ctx.db.update(schema.lots).set({ decor: ['forest'] }).run();
     ctx.setNow(12 * H);
     const { amount } = collectIncome(ctx, 'u1');
-    expect(amount).toBe(630);                     // same integral as clock test
+    // no Visitor Center => 8h cap; window truncates to 0..8h of the 12h elapsed.
+    // hunger 100->83.33% over 8h of the 48h drain; comfort 1.0->0.8333, mean 0.91667;
+    // 60/hr * 0.91667 * 8h = 440 (same integral as the capped clock test).
+    expect(amount).toBe(440);
     expect(collectIncome(ctx, 'u1').amount).toBe(0);  // idempotent within same instant
   });
 });
