@@ -1,0 +1,48 @@
+# Dino World
+
+Dino World is a dinosaur park tycoon game played entirely inside Discord.
+Players build a park, collect dinosaurs through eggs and expeditions, care
+for them, and climb leaderboards, all through slash commands. Each park is
+owned by a single Discord user and is shared globally across every server
+the bot is in. The bot is built with TypeScript and discord.js, stores its
+data in a local SQLite database via Drizzle ORM, and is organized as a
+modular monolith so gameplay systems can be added or removed independently.
+
+## Setup
+
+Copy the environment template and fill in your own values:
+
+```
+cp .env.example .env
+```
+
+`DISCORD_TOKEN` and `DISCORD_CLIENT_ID` come from your application in the
+Discord Developer Portal, `DATABASE_PATH` is where the SQLite database file
+will be created, and `OWNER_ID` is the Discord user ID that should have
+access to owner-only commands.
+
+Install dependencies:
+
+```
+npm i
+```
+
+Register the bot's slash commands with Discord:
+
+```
+npm run deploy-commands
+```
+
+Start the bot in development mode (restarts on file changes):
+
+```
+npm run dev
+```
+
+## Testing
+
+Run the test suite with:
+
+```
+npm test
+```
