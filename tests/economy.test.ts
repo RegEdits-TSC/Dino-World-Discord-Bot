@@ -27,4 +27,19 @@ describe('EconomyService.apply', () => {
     expect(bal().cash).toBe(500);                    // credit rolled back too
     expect(db.select().from(schema.txLog).all()).toHaveLength(0);
   });
+  it('rolls back the wallet update when the audit insert fails', () => {
+    // raw better-sqlite3 handle; drizzle exposes it as db.$client
+    const raw = db.$client;
+    raw.exec(`CREATE TRIGGER block_fail BEFORE INSERT ON tx_log
+              WHEN NEW.reason = 'FORCE_FAIL'
+              BEGIN SELECT RAISE(ABORT, 'forced'); END;`);
+    expect(() => eco.apply('u1', { cash: 100 }, 'FORCE_FAIL', 1000)).toThrow();
+    expect(bal().cash).toBe(500);                     // update rolled back, not left at 600
+    expect(db.select().from(schema.txLog).all()).toHaveLength(0);
+  });
+  it('throws a plain Error for an unknown user and writes no audit row', () => {
+    expect(() => eco.apply('ghost', { cash: 1 }, 'x', 0)).toThrow(Error);
+    expect(() => eco.apply('ghost', { cash: 1 }, 'x', 0)).not.toThrow(InsufficientFundsError);
+    expect(db.select().from(schema.txLog).all()).toHaveLength(0);
+  });
 });

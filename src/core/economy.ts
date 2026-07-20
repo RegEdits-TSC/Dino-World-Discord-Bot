@@ -4,7 +4,7 @@ import { schema, type Db } from './db/index.js';
 export interface WalletDelta { cash?: number; food?: number; shards?: number }
 
 export class InsufficientFundsError extends Error {
-  constructor(public wallet: string) { super(`Insufficient ${wallet}`); }
+  constructor(public wallet: 'cash' | 'food' | 'shards') { super(`Insufficient ${wallet}`); }
 }
 
 export class EconomyService {
