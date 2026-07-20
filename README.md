@@ -39,6 +39,20 @@ Start the bot in development mode (restarts on file changes):
 npm run dev
 ```
 
+## Building & type checking
+
+Type checking is run as part of the test suite, but you can also check types independently:
+
+```
+npm run typecheck
+```
+
+Build the TypeScript to JavaScript:
+
+```
+npm run build
+```
+
 ## Testing
 
 Run the test suite with:
@@ -46,3 +60,7 @@ Run the test suite with:
 ```
 npm test
 ```
+
+## Deployment & Operations
+
+For deploying to a VPS, running as a system service, managing backups, and the release smoke test checklist, see [Operations Runbook](docs/ops.md).
