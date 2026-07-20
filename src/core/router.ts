@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import type { Ctx } from './context.js';
 import type { ModuleRegistry } from './modules.js';
 import { schema } from './db/index.js';
+import { logger } from './logger.js';
 
 function touchPresence(ctx: Ctx, userId: string, displayName: string, guildId: string | null): void {
   ctx.db.update(schema.users).set({ displayName }).where(eq(schema.users.discordId, userId)).run();
@@ -37,6 +38,6 @@ export async function routeInteraction(
     const payload: InteractionReplyOptions = { content: 'Something went wrong — nothing was charged. Try again.', flags: MessageFlags.Ephemeral };
     if (i.deferred || i.replied) await i.followUp(payload).catch(() => {});
     else await i.reply(payload).catch(() => {});
-    console.error(err);
+    logger.error({ err }, 'interaction handling failed');
   }
 }

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { makeCtx, fakeCommand } from './harness.js';
 import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, BASE_LOT_SLOTS } from '../src/modules/park/service.js';
 import { schema } from '../src/core/db/index.js';
@@ -53,6 +54,31 @@ describe('park service', () => {
     // 60/hr * 0.91667 * 8h = 440 (same integral as the capped clock test).
     expect(amount).toBe(440);
     expect(collectIncome(ctx, 'u1').amount).toBe(0);  // idempotent within same instant
+  });
+
+  it('rolls back the charge when the build insert fails (proves buildLot atomicity)', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 20_000 }, 'test:seed', 0);
+    const before = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+    expect(before.cash).toBe(20_500);                  // 500 starting + 20,000 seed
+
+    // raw better-sqlite3 handle; drizzle exposes it as db.$client (same pattern as
+    // the rollback test in tests/economy.test.ts)
+    const raw = ctx.db.$client;
+    raw.exec(`CREATE TRIGGER block_build BEFORE INSERT ON lots
+              WHEN NEW.kind = 'herbivore_paddock'
+              BEGIN SELECT RAISE(ABORT, 'forced'); END;`);
+
+    // Without the Fix 1 transaction wrapper in buildLot, ctx.economy.apply's -2,000
+    // charge commits on its own (EconomyService.apply opens its own transaction)
+    // before the insert below ever runs — leaving cash at 18,500 despite the throw
+    // and no lot ever being created. With the fix, the charge and the insert share
+    // one outer transaction, so the failed insert rolls the charge back too.
+    expect(() => buildLot(ctx, 'u1', 'herbivore_paddock')).toThrow();
+
+    const after = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+    expect(after.cash).toBe(20_500);                   // unchanged from before the attempt
+    expect(ctx.db.select().from(schema.lots).all()).toHaveLength(0);
   });
 });
 

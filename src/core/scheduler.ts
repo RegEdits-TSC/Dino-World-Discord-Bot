@@ -1,5 +1,6 @@
 import { and, isNull, lte, eq } from 'drizzle-orm';
 import { schema, type Db } from './db/index.js';
+import { logger } from './logger.js';
 
 export type Timer = typeof schema.timers.$inferSelect;
 type Handler = (t: Timer) => Promise<void>;
@@ -34,7 +35,7 @@ export class Scheduler {
         this.attempted.delete(t.id);
         fired++;
       } catch (err) {
-        console.error(`timer ${t.id} (${t.kind}) failed`, err);
+        logger.error({ err, timerId: t.id, kind: t.kind }, 'timer failed');
       }
     }
     return fired;

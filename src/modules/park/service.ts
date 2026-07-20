@@ -39,11 +39,16 @@ export function buildLot(ctx: Ctx, userId: string, kind: string): Lot {
     .where(eq(schema.lots.userId, userId)).all().length;
   if (count >= BASE_LOT_SLOTS) throw new LotLimitError();
   const cost = paddock ? paddock.buildCost : facility!.buildCost;
-  ctx.economy.apply(userId, { cash: -cost }, `build:${kind}`, ctx.now());
-  return ctx.db.insert(schema.lots).values({
-    userId, type: paddock ? 'paddock' : 'facility', kind,
-    name: paddock ? paddock.name : facility!.name,
-  }).returning().get();
+  // Charge + insert must be atomic: EconomyService.apply commits its own transaction,
+  // so without this outer transaction a failed insert after a successful charge would
+  // leave the user debited with no lot to show for it.
+  return ctx.db.transaction(() => {
+    ctx.economy.apply(userId, { cash: -cost }, `build:${kind}`, ctx.now());
+    return ctx.db.insert(schema.lots).values({
+      userId, type: paddock ? 'paddock' : 'facility', kind,
+      name: paddock ? paddock.name : facility!.name,
+    }).returning().get();
+  });
 }
 
 export function upgradeLot(ctx: Ctx, userId: string, lotId: number): Lot {
@@ -55,9 +60,12 @@ export function upgradeLot(ctx: Ctx, userId: string, lotId: number): Lot {
   if (lot.level >= maxLevel) throw new LotLimitError();
   const cost = def ? def.upgradeCosts[lot.level - 1]
                    : Math.round(PADDOCKS[lot.kind].buildCost * 2.5 ** lot.level);
-  ctx.economy.apply(userId, { cash: -cost }, `upgrade:${lot.kind}:${lot.level + 1}`, ctx.now());
-  return ctx.db.update(schema.lots).set({ level: lot.level + 1 })
-    .where(eq(schema.lots.id, lotId)).returning().get();
+  // See buildLot: charge + level bump must be atomic against a failed update.
+  return ctx.db.transaction(() => {
+    ctx.economy.apply(userId, { cash: -cost }, `upgrade:${lot.kind}:${lot.level + 1}`, ctx.now());
+    return ctx.db.update(schema.lots).set({ level: lot.level + 1 })
+      .where(eq(schema.lots.id, lotId)).returning().get();
+  });
 }
 
 export function toClockDinos(ctx: Ctx, userId: string): { clockDinos: ClockDino[]; lots: Lot[]; user: User } {
@@ -89,9 +97,13 @@ export function pendingIncome(ctx: Ctx, userId: string): number {
 export function collectIncome(ctx: Ctx, userId: string): { amount: number } {
   const amount = pendingIncome(ctx, userId);
   if (amount > 0) {
-    ctx.economy.apply(userId, { cash: amount }, 'collect', ctx.now());
-    ctx.db.update(schema.users).set({ lastCollectAt: ctx.now() })
-      .where(eq(schema.users.discordId, userId)).run();
+    // See buildLot: without this, a failed lastCollectAt update after a successful
+    // credit would let the same income window be collected again (money creation).
+    ctx.db.transaction(() => {
+      ctx.economy.apply(userId, { cash: amount }, 'collect', ctx.now());
+      ctx.db.update(schema.users).set({ lastCollectAt: ctx.now() })
+        .where(eq(schema.users.discordId, userId)).run();
+    });
   }
   return { amount };
 }
