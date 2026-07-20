@@ -1,0 +1,55 @@
+import { createDb, migrateDb } from '../src/core/db/index.js';
+import { EconomyService } from '../src/core/economy.js';
+import type { Ctx } from '../src/core/context.js';
+import type { ChatInputCommandInteraction } from 'discord.js';
+
+export function mulberry32(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function makeCtx(overrides: Partial<Ctx> & { nowMs?: number } = {}): Ctx & { setNow(ms: number): void } {
+  const db = createDb(':memory:'); migrateDb(db);
+  let nowMs = overrides.nowMs ?? 0;
+  return {
+    db, economy: new EconomyService(db),
+    config: { token: 't', clientId: 'c', databasePath: ':memory:', ownerId: 'owner', modules: {} },
+    now: () => nowMs,
+    rng: mulberry32(42),
+    setNow: (ms: number) => { nowMs = ms; },
+    ...overrides,
+  };
+}
+
+export interface FakeInteraction {
+  replies: unknown[];
+  asChatInput(): ChatInputCommandInteraction;
+}
+
+export function fakeCommand(opts: {
+  name: string; sub?: string; user: string; guild?: string;
+  options?: Record<string, string | number>;
+}): FakeInteraction {
+  const replies: unknown[] = [];
+  const record = async (payload: unknown) => { replies.push(payload); };
+  const raw = {
+    commandName: opts.name,
+    user: { id: opts.user, displayName: opts.user },
+    guildId: opts.guild ?? null,
+    deferred: false, replied: false,
+    options: {
+      getSubcommand: () => opts.sub ?? null,
+      getString: (k: string) => (opts.options?.[k] as string) ?? null,
+      getInteger: (k: string) => (opts.options?.[k] as number) ?? null,
+      getUser: () => null,
+    },
+    reply: record, editReply: record, followUp: record,
+    deferReply: async () => { (raw as { deferred: boolean }).deferred = true; },
+  };
+  return { replies, asChatInput: () => raw as unknown as ChatInputCommandInteraction };
+}
