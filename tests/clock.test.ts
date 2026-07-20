@@ -58,4 +58,9 @@ describe('accruedIncome', () => {
     const raptor = { ...fedTrike(), species: velociraptor };
     expect(accruedIncome([raptor], 0, 24, 0, 48 * H)).toBe(3600);
   });
+  it('does not over-pay after hunger reaches zero mid-window', () => {
+    // hungerAtFed 10, fit 1.0 => hunger hits 0 at 4.8h; true income 60 * (0.5*0.10*4.8) = 14.4 -> floor 14
+    const starving = fedTrike({ hungerAtFed: 10 });
+    expect(accruedIncome([starving], 0, 24, 0, 8 * H)).toBe(14);
+  });
 });

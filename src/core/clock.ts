@@ -62,6 +62,8 @@ export function accruedIncome(
     let dinoEnd = end;
     const esc = rawEscape(d);
     if (esc !== null) dinoEnd = Math.min(dinoEnd, Math.max(from, esc));
+    const hungerZero = d.lastFedAt + (d.hungerAtFed / 100) * HUNGER_DRAIN_MS;
+    dinoEnd = Math.min(dinoEnd, Math.max(from, hungerZero));
     if (dinoEnd <= from) continue;
     const mean = (comfortAt(d, from) + comfortAt(d, dinoEnd)) / 2;
     const hours = (dinoEnd - from) / 3_600_000;
