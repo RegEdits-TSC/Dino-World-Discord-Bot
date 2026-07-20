@@ -6,6 +6,8 @@ type Handler = (t: Timer) => Promise<void>;
 
 export class Scheduler {
   private handlers = new Map<string, Handler>();
+  // ids of timers attempted this process but NOT completed (failed handler / unregistered kind);
+  // prevents tight in-process retry. Successes are removed since the handledAt query filter already excludes them.
   private attempted = new Set<number>();
   constructor(private db: Db) {}
 
@@ -29,6 +31,7 @@ export class Scheduler {
         await handler(t);
         this.db.update(schema.timers).set({ handledAt: now })
           .where(eq(schema.timers.id, t.id)).run();
+        this.attempted.delete(t.id);
         fired++;
       } catch (err) {
         console.error(`timer ${t.id} (${t.kind}) failed`, err);
