@@ -177,17 +177,19 @@ Example `modules.json`:
   "hatchery": true,
   "expeditions": true,
   "shop": true,
-  "settings": true
+  "settings": true,
+  "care": true
 }
 ```
 
-Five modules ship today:
+Six modules ship today:
 
 - `park` — paddocks, upgrades, park rating, decorations.
 - `hatchery` — eggs, incubation, hatching, Mythic purchases.
 - `expeditions` — dispatching dinos on expeditions for loot.
 - `shop` — daily egg/food/decor rotation and dino sales.
 - `settings` — per-guild configuration (e.g. notification channel).
+- `care` — feeding dinos and rescuing escapees.
 
 Set any flag to `false` to disable that module. The `ModuleRegistry` only wires up commands and components for modules whose flag is `true`, so disabling a module removes its slash commands the next time `npm run deploy-commands` runs.
 
@@ -261,7 +263,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    ```bash
    npm run deploy-commands
    ```
-   Should output: `Deployed 13 commands.` (park, hatchery, expeditions, shop, and settings modules combined).
+   Should output: `Deployed 15 commands.` (park, hatchery, expeditions, shop, settings, and care modules combined).
 
 2. **Start the bot**:
    ```bash
@@ -338,7 +340,18 @@ A ~5-minute manual test to run in a development Discord server after each releas
    **n) `/mythic species:<name>` (requires 4★ high-water park rating and 500 shards) → grants a Mythic egg.**
    - Should deduct the shards and grant a Mythic egg of the requested species.
 
-5. **Verify no errors in logs**:
+5. **Test the care loop** (care module — feeding and rescue):
+
+   **o) Assign a dino to a paddock** (via `/dino assign dino:<id> lot:<paddock id>`, if not already done in step 3j) and let its hunger fall over time.
+   - `/feed one dino:<id>` — should restore the dino's hunger and charge food.
+   - `/feed all` — should feed every hungry dino, hungriest first, and report how many were fed (and how many were skipped for lack of food).
+
+   **p) Trigger and clear an escape**
+   - Leave a dino unfed long enough that its comfort drops below 25% and stays there past the 8-hour grace period.
+   - `/park view` or `/dino list` should now show the dino as escaped, and its paddock's income should halt.
+   - `/rescue dino:<id>` — should pay the recapture fee, clear the escape, and restore the dino's comfort.
+
+6. **Verify no errors in logs**:
    - Check the terminal (or `journalctl`) for any `ERROR` or `WARN` lines. The bot should log at `INFO` level with slash command invocations and results.
    - No `TypeError`, `SyntaxError`, or uncaught exceptions should appear.
 

@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
 import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, LotLimitError, UnknownKindError } from './service.js';
+import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, AssignError } from './dinos.js';
 import { dashboardPayload } from './embeds.js';
 import { InsufficientFundsError } from '../../core/economy.js';
@@ -30,6 +31,7 @@ export const parkModule: ModuleManifest = {
           await i.reply({ content: `Park renamed to **${name}**.` });
           return;
         }
+        settleEscapes(ctx, i.user.id);
         const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, i.user.id)).all();
         const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all();
         await i.reply(dashboardPayload(user, lots, dinos.length, pendingIncome(ctx, i.user.id)));
@@ -77,6 +79,7 @@ export const parkModule: ModuleManifest = {
           .addIntegerOption((o) => o.setName('dino').setDescription('Dino id').setRequired(true))),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        settleEscapes(ctx, i.user.id);
         const sub = i.options.getSubcommand();
         try {
           if (sub === 'list') {
@@ -117,6 +120,7 @@ export const parkModule: ModuleManifest = {
       prefix: 'park',
       async execute(ctx, i) {
         if (i.customId === 'park:collect') {
+          settleEscapes(ctx, i.user.id);
           const { amount } = collectIncome(ctx, i.user.id);
           await i.reply({ content: amount > 0 ? `💰 Collected **${amount.toLocaleString()}** cash.` : 'Nothing to collect yet.', flags: MessageFlags.Ephemeral });
         }
