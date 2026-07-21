@@ -12,16 +12,18 @@ export interface Sender {
 }
 
 export async function deliverNotification(sender: Sender, ctx: Ctx, userId: string, originGuildId: string | null, message: string): Promise<void> {
-  if (originGuildId) {
-    const gs = ctx.db.select().from(schema.guildSettings).where(eq(schema.guildSettings.guildId, originGuildId)).get();
-    if (gs?.notifyChannelId) {
-      try { await sender.channelSend(gs.notifyChannelId, `<@${userId}> ${message}`); return; }
-      catch (e) { logger.warn({ err: e, guild: originGuildId }, 'notify channel send failed'); }
+  try {
+    if (originGuildId) {
+      const gs = ctx.db.select().from(schema.guildSettings).where(eq(schema.guildSettings.guildId, originGuildId)).get();
+      if (gs?.notifyChannelId) {
+        try { await sender.channelSend(gs.notifyChannelId, `<@${userId}> ${message}`); return; }
+        catch (e) { logger.warn({ err: e, guild: originGuildId }, 'notify channel send failed'); }
+      }
     }
-  }
-  try { await sender.dmSend(userId, message); return; }
-  catch (e) { logger.warn({ err: e, userId }, 'notify DM failed'); }
-  // silent
+    try { await sender.dmSend(userId, message); return; }
+    catch (e) { logger.warn({ err: e, userId }, 'notify DM failed'); }
+    // silent
+  } catch (e) { logger.warn({ err: e, userId }, 'notify delivery failed'); }
 }
 
 export function clientSender(client: Client): Sender {
@@ -37,15 +39,19 @@ export function clientSender(client: Client): Sender {
 
 export function eggHatchHandler(sender: Sender, ctx: Ctx) {
   return async (t: { userId: string; refId: number; originGuildId: string | null }) => {
-    const egg = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, t.refId)).get();
-    if (!egg) return;   // already hatched/removed
-    await deliverNotification(sender, ctx, t.userId, t.originGuildId, `🥚 Your ${egg.rarity} egg is ready to hatch! Use /hatch ${egg.id}.`);
+    try {
+      const egg = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, t.refId)).get();
+      if (!egg) return;   // already hatched/removed
+      await deliverNotification(sender, ctx, t.userId, t.originGuildId, `🥚 Your ${egg.rarity} egg is ready to hatch! Use /hatch ${egg.id}.`);
+    } catch (e) { logger.warn({ err: e }, 'notify handler failed'); }
   };
 }
 export function expeditionReturnHandler(sender: Sender, ctx: Ctx) {
   return async (t: { userId: string; refId: number; originGuildId: string | null }) => {
-    const exp = ctx.db.select().from(schema.expeditions).where(eq(schema.expeditions.id, t.refId)).get();
-    if (!exp || exp.claimedAt) return;
-    await deliverNotification(sender, ctx, t.userId, t.originGuildId, `🧭 Your expedition to ${EXPEDITION_SITES[exp.siteId].name} has returned! Use /expedition claim.`);
+    try {
+      const exp = ctx.db.select().from(schema.expeditions).where(eq(schema.expeditions.id, t.refId)).get();
+      if (!exp || exp.claimedAt) return;
+      await deliverNotification(sender, ctx, t.userId, t.originGuildId, `🧭 Your expedition to ${EXPEDITION_SITES[exp.siteId].name} has returned! Use /expedition claim.`);
+    } catch (e) { logger.warn({ err: e }, 'notify handler failed'); }
   };
 }
