@@ -27,4 +27,14 @@ describe('/park view', () => {
     const reply = cmd.replies[0] as { embeds: unknown[] };
     expect(reply.embeds).toHaveLength(1);
   });
+
+  it('viewing another park is read-only — one embed, no Collect button', async () => {
+    getOrCreateUser(ctx, 'u1', 'U1');
+    getOrCreateUser(ctx, 'other', 'Other');
+    const cmd = fakeCommand({ name: 'park', sub: 'view', user: 'u1', options: { user: 'other' } });
+    await parkModule.commands[0].execute(ctx, cmd.asChatInput());
+    const reply = cmd.replies[0] as { embeds: unknown[]; components?: unknown[] };
+    expect(reply.embeds).toHaveLength(1);
+    expect(reply.components).toBeUndefined();   // no Collect button when viewing someone else
+  });
 });
