@@ -7,6 +7,9 @@ owned by a single Discord user and is shared globally across every server
 the bot is in. The bot is built with TypeScript and discord.js, stores its
 data in a local SQLite database via Drizzle ORM, and is organized as a
 modular monolith so gameplay systems can be added or removed independently.
+`/park view` renders a PNG park-map image of your paddocks and facilities
+alongside the dashboard, falling back to the text-only embed if rendering
+is unavailable.
 
 ## Setup
 

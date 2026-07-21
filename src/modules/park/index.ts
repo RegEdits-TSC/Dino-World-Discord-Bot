@@ -5,7 +5,9 @@ import { schema } from '../../core/db/index.js';
 import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, LotLimitError, UnknownKindError } from './service.js';
 import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, AssignError } from './dinos.js';
-import { dashboardPayload } from './embeds.js';
+import { dashboardPayload, withParkImage } from './embeds.js';
+import { buildParkSnapshot } from './snapshot.js';
+import { renderPark } from '../../core/render/client.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { FACILITIES } from '../../data/facilities.js';
@@ -42,14 +44,20 @@ export const parkModule: ModuleManifest = {
           const tdinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, targetUser.id)).all();
           const tescaped = tdinos.filter((d) => d.escapedAt !== null).length;
           const payload = dashboardPayload(fresh, tlots, tdinos.length, 0, tescaped);
-          await i.reply({ embeds: payload.embeds });   // read-only: no Collect button
+          const base = { embeds: payload.embeds };
+          let png: Buffer | undefined;
+          try { png = await renderPark(buildParkSnapshot(ctx, targetUser.id)); } catch { png = undefined; }
+          await i.reply(png ? withParkImage(base, png) : base);   // read-only: no Collect button
           return;
         }
         settleEscapes(ctx, i.user.id);
         const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, i.user.id)).all();
         const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all();
         const escapedCount = dinos.filter((d) => d.escapedAt !== null).length;
-        await i.reply(dashboardPayload(user, lots, dinos.length, pendingIncome(ctx, i.user.id), escapedCount));
+        const base = dashboardPayload(user, lots, dinos.length, pendingIncome(ctx, i.user.id), escapedCount);
+        let png: Buffer | undefined;
+        try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
+        await i.reply(png ? withParkImage(base, png) : base);
       },
     },
     {
