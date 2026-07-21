@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeCtx } from './harness.js';
+import { makeCtx, fakeCommand } from './harness.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { feedDino, feedAll, rescueDino, CareError } from '../src/modules/care/service.js';
+import { careModule } from '../src/modules/care/index.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 
@@ -71,5 +72,16 @@ describe('rescueDino', () => {
   it('refuses to rescue a dino that has not escaped', () => {
     const d = addDino();
     expect(() => rescueDino(ctx, 'u1', d.id)).toThrow(CareError);
+  });
+});
+
+describe('care module', () => {
+  it('/feed all feeds hungry dinos via the command', async () => {
+    const d = addDino({ hunger: 100, lastFedAt: 0 });
+    ctx.setNow(48 * 3_600_000);
+    const i = fakeCommand({ name: 'feed', sub: 'all', user: 'u1' });
+    await careModule.commands[0].execute(ctx, i.asChatInput());
+    expect(i.replies).toHaveLength(1);
+    expect(dinoRow(d.id).hunger).toBe(100);
   });
 });

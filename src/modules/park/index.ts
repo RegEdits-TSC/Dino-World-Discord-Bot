@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
 import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, LotLimitError, UnknownKindError } from './service.js';
+import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, AssignError } from './dinos.js';
 import { dashboardPayload } from './embeds.js';
 import { InsufficientFundsError } from '../../core/economy.js';
@@ -30,6 +31,7 @@ export const parkModule: ModuleManifest = {
           await i.reply({ content: `Park renamed to **${name}**.` });
           return;
         }
+        settleEscapes(ctx, i.user.id);
         const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, i.user.id)).all();
         const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all();
         await i.reply(dashboardPayload(user, lots, dinos.length, pendingIncome(ctx, i.user.id)));
@@ -80,6 +82,7 @@ export const parkModule: ModuleManifest = {
         const sub = i.options.getSubcommand();
         try {
           if (sub === 'list') {
+            settleEscapes(ctx, i.user.id);
             const dinos = listDinos(ctx, i.user.id);
             const lines = dinos.length
               ? dinos.map((d) => `#${d.dino.id} ${d.species.name} — ${Math.round(d.comfort * 100)}% comfort — ${d.dino.lotId ? `lot ${d.dino.lotId}` : 'unassigned'}`).join('\n')
@@ -117,6 +120,7 @@ export const parkModule: ModuleManifest = {
       prefix: 'park',
       async execute(ctx, i) {
         if (i.customId === 'park:collect') {
+          settleEscapes(ctx, i.user.id);
           const { amount } = collectIncome(ctx, i.user.id);
           await i.reply({ content: amount > 0 ? `💰 Collected **${amount.toLocaleString()}** cash.` : 'Nothing to collect yet.', flags: MessageFlags.Ephemeral });
         }
