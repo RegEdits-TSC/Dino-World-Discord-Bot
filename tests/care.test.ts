@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeCtx } from './harness.js';
-import { getOrCreateUser } from '../src/modules/park/service.js';
-import { feedDino, feedAll, CareError } from '../src/modules/care/service.js';
+import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
+import { feedDino, feedAll, rescueDino, CareError } from '../src/modules/care/service.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 
@@ -50,5 +50,26 @@ describe('feedAll', () => {
     expect(fed).toHaveLength(1);
     expect(skipped).toHaveLength(1);
     expect(food()).toBe(2);                              // 7 - 5
+  });
+});
+
+describe('rescueDino', () => {
+  it('rescues an escaped dino: charges the fee, clears escape, restores ~50% comfort', () => {
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', 0);
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    // triceratops in herb paddock, no decor → fit 0.75; escaped
+    const d = ctx.db.insert(schema.dinos).values({ userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 0, lastFedAt: 0, hatchedAt: 0, escapedAt: 40 * 3_600_000 }).returning().get();
+    const cashBefore = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.cash;
+    const res = rescueDino(ctx, 'u1', d.id);
+    expect(res.fee).toBe(4 * 60);                        // 4h * common incomePerHr(60) = 240
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.cash).toBe(cashBefore - 240);
+    const row = dinoRow(d.id);
+    expect(row.escapedAt).toBeNull();
+    // hunger = min(100, round(50/0.75)) = 67 → comfort = 0.67 * 0.75 ≈ 0.5
+    expect(row.hunger).toBe(67);
+  });
+  it('refuses to rescue a dino that has not escaped', () => {
+    const d = addDino();
+    expect(() => rescueDino(ctx, 'u1', d.id)).toThrow(CareError);
   });
 });
