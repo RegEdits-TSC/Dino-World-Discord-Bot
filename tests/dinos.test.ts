@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeCtx } from './harness.js';
+import { makeCtx, fakeCommand } from './harness.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { assignDino, unassignDino, decorateLot, paddockCapacity, listDinos, AssignError } from '../src/modules/park/dinos.js';
+import { parkModule } from '../src/modules/park/index.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 
@@ -49,5 +50,16 @@ describe('dino assignment', () => {
     const assigned = list.find((x) => x.dino.id === d.id)!;
     expect(assigned.species.id).toBe('triceratops');
     expect(assigned.comfort).toBeGreaterThan(0);     // assigned + fed
+  });
+});
+
+describe('park dino commands', () => {
+  it('/dino assign via command puts a dino in a paddock', async () => {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    const d = ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
+    const dinoCmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const i = fakeCommand({ name: 'dino', sub: 'assign', user: 'u1', options: { dino: d.id, lot: lot.id } });
+    await dinoCmd.execute(ctx, i.asChatInput());
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.lotId).toBe(lot.id);
   });
 });
