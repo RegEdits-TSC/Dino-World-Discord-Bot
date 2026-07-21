@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
-import { createTrade, TradeError } from '../src/modules/trading/service.js';
+import { createTrade, acceptTrade, TradeError } from '../src/modules/trading/service.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 
@@ -73,5 +73,40 @@ describe('createTrade', () => {
   it('rejects a mythic EGG in the offer', () => {
     const egg = ctx.db.insert(schema.eggs).values({ userId: 'a', rarity: 'mythic', speciesId: 'indominus', source: 'shop', obtainedAt: 0 }).returning().get();
     expect(() => createTrade(ctx, 'a', 'b', { ...empty, eggIds: [egg.id] }, empty)).toThrow(TradeError);
+  });
+});
+
+describe('acceptTrade', () => {
+  it('swaps items + cash both ways, flags via_trade, unlocks, marks accepted', () => {
+    ctx.db.update(schema.users).set({ cash: 5_000 }).where(eq(schema.users.discordId, 'b')).run();
+    const da = addDino('a');                          // A gives this dino
+    const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [da.id] }, { ...empty, cash: 1_000 });
+    acceptTrade(ctx, 'b', t.id);
+    const moved = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, da.id)).get()!;
+    expect(moved.userId).toBe('b');
+    expect(moved.viaTrade).toBe(true);
+    expect(moved.locked).toBe(false);
+    expect(moved.lotId).toBeNull();
+    const a = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'a')).get()!;
+    expect(a.cash).toBe(500 + 1_000);                 // A received B's 1,000 (A started 500)
+    expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('accepted');
+  });
+  it('fails (and rolls back) if the offerer no longer owns a listed dino at accept', () => {
+    const da = addDino('a');
+    const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [da.id] }, empty);
+    ctx.db.delete(schema.dinos).where(eq(schema.dinos.id, da.id)).run();   // vanished after offer
+    expect(() => acceptTrade(ctx, 'b', t.id)).toThrow(TradeError);
+    expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('pending');
+  });
+  it('only the toUser can accept', () => {
+    const da = addDino('a');
+    const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [da.id] }, empty);
+    expect(() => acceptTrade(ctx, 'a', t.id)).toThrow(TradeError);
+  });
+  it('cannot accept an already-resolved trade twice', () => {
+    const da = addDino('a');
+    const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [da.id] }, empty);
+    acceptTrade(ctx, 'b', t.id);
+    expect(() => acceptTrade(ctx, 'b', t.id)).toThrow(TradeError);   // status no longer pending
   });
 });

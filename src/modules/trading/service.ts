@@ -5,6 +5,7 @@ import type { Ctx } from '../../core/context.js';
 import { getSpecies } from '../../data/species/index.js';
 import { TradeError, sideItemCount } from './validate.js';
 import { TRADE_MIN_RATING, TRADE_DAILY_CAP, TRADE_MAX_ITEMS_PER_SIDE, TRADE_EXPIRY_MS } from '../../data/trade.js';
+import { recomputeRating } from '../park/rating.js';
 
 export { TradeError } from './validate.js';
 export type Trade = typeof schema.trades.$inferSelect;
@@ -15,8 +16,9 @@ export function liveRating(ctx: Ctx, userId: string): number {
   return ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!.parkRating;
 }
 
-// Verify a user owns every dino/egg in a side, none Mythic, none locked, no escaped dino, and has the cash/food.
-export function verifySide(ctx: Ctx, userId: string, side: TradeSide): void {
+// Verify a user owns every dino/egg in a side, none Mythic, none locked (unless skipLockCheck), no escaped dino, and has the cash/food.
+// skipLockCheck: at accept time, the OFFER side's items are locked BY THIS trade — expected, not an exploit.
+export function verifySide(ctx: Ctx, userId: string, side: TradeSide, opts: { skipLockCheck?: boolean } = {}): void {
   if (sideItemCount(side) > TRADE_MAX_ITEMS_PER_SIDE) throw new TradeError(`At most ${TRADE_MAX_ITEMS_PER_SIDE} items per side.`);
   if (side.cash < 0 || side.food < 0) throw new TradeError('Amounts cannot be negative.');
   const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get();
@@ -26,14 +28,14 @@ export function verifySide(ctx: Ctx, userId: string, side: TradeSide): void {
   for (const id of side.dinoIds) {
     const d = ctx.db.select().from(schema.dinos).where(and(eq(schema.dinos.id, id), eq(schema.dinos.userId, userId))).get();
     if (!d) throw new TradeError(`You do not own dino #${id}.`);
-    if (d.locked) throw new TradeError(`Dino #${id} is already in a pending trade.`);
+    if (!opts.skipLockCheck && d.locked) throw new TradeError(`Dino #${id} is already in a pending trade.`);
     if (d.escapedAt !== null) throw new TradeError(`Dino #${id} has escaped — rescue it first.`);
     if (getSpecies(d.speciesId).rarity === 'mythic') throw new TradeError('Mythics cannot be traded.');
   }
   for (const id of side.eggIds) {
     const e = ctx.db.select().from(schema.eggs).where(and(eq(schema.eggs.id, id), eq(schema.eggs.userId, userId))).get();
     if (!e) throw new TradeError(`You do not own egg #${id}.`);
-    if (e.locked) throw new TradeError(`Egg #${id} is already in a pending trade.`);
+    if (!opts.skipLockCheck && e.locked) throw new TradeError(`Egg #${id} is already in a pending trade.`);
     if (e.rarity === 'mythic') throw new TradeError('Mythic eggs cannot be traded.');
   }
 }
@@ -56,4 +58,43 @@ export function createTrade(ctx: Ctx, fromUser: string, toUser: string, offer: T
     if (offer.eggIds.length) ctx.db.update(schema.eggs).set({ locked: true }).where(inArray(schema.eggs.id, offer.eggIds)).run();
     return trade;
   });
+}
+
+// Move one side's dinos/eggs to their new owner: unassigned (no lot), unlocked, and flagged via_trade
+// (via_trade items sell for 0 shards — closes the sell-for-shards alt-funnel through trading).
+function moveItems(ctx: Ctx, side: TradeSide, toUser: string): void {
+  if (side.dinoIds.length) ctx.db.update(schema.dinos)
+    .set({ userId: toUser, lotId: null, viaTrade: true, locked: false })
+    .where(inArray(schema.dinos.id, side.dinoIds)).run();
+  if (side.eggIds.length) ctx.db.update(schema.eggs)
+    .set({ userId: toUser, viaTrade: true, locked: false })
+    .where(inArray(schema.eggs.id, side.eggIds)).run();
+}
+
+export function acceptTrade(ctx: Ctx, userId: string, tradeId: number): Trade {
+  const trade = ctx.db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get();
+  if (!trade) throw new TradeError('No such trade.');
+  if (trade.status !== 'pending') throw new TradeError('That trade is no longer open.');
+  if (trade.toUser !== userId) throw new TradeError('Only the recipient can accept this trade.');
+  if (trade.createdAt + TRADE_EXPIRY_MS <= ctx.now()) throw new TradeError('That trade has expired.');
+  // Re-verify against current state (reads, outside the transaction — a failed verify leaves the trade
+  // pending with the offer's items still locked, so the sender can still /trade cancel).
+  // The offer's items are locked BY THIS trade → skipLockCheck. The request side is verified normally
+  // (its items must not be locked in some other pending trade).
+  verifySide(ctx, trade.fromUser, trade.offer, { skipLockCheck: true });
+  verifySide(ctx, trade.toUser, trade.request);
+  if (liveRating(ctx, trade.fromUser) < TRADE_MIN_RATING || liveRating(ctx, trade.toUser) < TRADE_MIN_RATING)
+    throw new TradeError('Both players must be at 2★ to complete the trade.');
+  const done = ctx.db.transaction(() => {
+    moveItems(ctx, trade.offer, trade.toUser);      // offer → recipient
+    moveItems(ctx, trade.request, trade.fromUser);  // request → sender
+    // cash/food net: sender pays offer.*, receives request.*; recipient the inverse (sums to zero → no money created)
+    ctx.economy.apply(trade.fromUser, { cash: trade.request.cash - trade.offer.cash, food: trade.request.food - trade.offer.food }, `trade:${trade.id}`, ctx.now());
+    ctx.economy.apply(trade.toUser, { cash: trade.offer.cash - trade.request.cash, food: trade.offer.food - trade.request.food }, `trade:${trade.id}`, ctx.now());
+    return ctx.db.update(schema.trades).set({ status: 'accepted', resolvedAt: ctx.now() })
+      .where(eq(schema.trades.id, tradeId)).returning().get();
+  });
+  recomputeRating(ctx, trade.fromUser);
+  recomputeRating(ctx, trade.toUser);
+  return done;
 }
