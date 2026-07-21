@@ -178,11 +178,13 @@ Example `modules.json`:
   "expeditions": true,
   "shop": true,
   "settings": true,
-  "care": true
+  "care": true,
+  "trading": true,
+  "leaderboards": true
 }
 ```
 
-Six modules ship today:
+Eight modules ship today:
 
 - `park` — paddocks, upgrades, park rating, decorations.
 - `hatchery` — eggs, incubation, hatching, Mythic purchases.
@@ -190,6 +192,8 @@ Six modules ship today:
 - `shop` — daily egg/food/decor rotation and dino sales.
 - `settings` — per-guild configuration (e.g. notification channel).
 - `care` — feeding dinos and rescuing escapees.
+- `trading` — player-to-player dino/egg/currency trades with escrow.
+- `leaderboards` — server and global rankings by rating, cash, and collection.
 
 Set any flag to `false` to disable that module. The `ModuleRegistry` only wires up commands and components for modules whose flag is `true`, so disabling a module removes its slash commands the next time `npm run deploy-commands` runs.
 
@@ -208,6 +212,18 @@ Set any flag to `false` to disable that module. The `ModuleRegistry` only wires 
    Commands for disabled modules will be removed from Discord. This is required for the bot to start cleanly on the next restart.
 
 If commands and enabled modules don't match, the bot will log warnings and disabled module commands will appear to users but fail at runtime.
+
+### Post-Deploy Smoke Check
+
+After `npm run deploy-commands`, confirm the new command set is live by exercising one command per module in Discord:
+
+- `/park view` — dashboard renders.
+- `/hatch` (or `/shop`) — economy commands respond.
+- `/feed all` and `/rescue` — care loop works.
+- `/trade offer user:@someone give-cash:10` then the recipient runs `/trade accept id:<n>` — the escrow swap completes; `/trade list`, `/trade decline`, `/trade cancel` respond.
+- `/top metric:rating` and `/top metric:collection scope:global` — leaderboards render.
+
+All commands should reply without an "application did not respond" timeout. If a command is missing, re-run `npm run deploy-commands` (guild deploys are instant; global takes up to ~1h).
 
 ## Updating to a New Version
 
@@ -263,7 +279,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    ```bash
    npm run deploy-commands
    ```
-   Should output: `Deployed 15 commands.` (park, hatchery, expeditions, shop, settings, and care modules combined).
+   Should report `17` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, and leaderboards modules combined).
 
 2. **Start the bot**:
    ```bash

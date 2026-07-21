@@ -86,3 +86,15 @@ describe('park dino commands', () => {
     expect(payload.embeds[0].data.description).toContain('ESCAPED');
   });
 });
+
+describe('park visits', () => {
+  it('/park view user:<other> shows a read-only dashboard with no components', async () => {
+    getOrCreateUser(ctx, 'other', 'Other');
+    const parkCmd = parkModule.commands.find((c) => c.data.name === 'park')!;
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1', options: { user: 'other' } });
+    await parkCmd.execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: unknown[]; components?: unknown[] };
+    expect(payload.embeds).toHaveLength(1);
+    expect(payload.components).toBeUndefined();
+  });
+});

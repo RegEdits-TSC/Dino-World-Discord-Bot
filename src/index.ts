@@ -14,6 +14,8 @@ import { expeditionsModule } from './modules/expeditions/index.js';
 import { shopModule } from './modules/shop/index.js';
 import { settingsModule } from './modules/settings/index.js';
 import { careModule } from './modules/care/index.js';
+import { tradingModule } from './modules/trading/index.js';
+import { leaderboardsModule } from './modules/leaderboards/index.js';
 import type { Ctx } from './core/context.js';
 
 const config = loadConfig();
@@ -24,7 +26,7 @@ const ctx: Ctx = {
   db, economy: new EconomyService(db), config, scheduler,
   now: () => Date.now(), rng: Math.random,
 };
-const registry = new ModuleRegistry([parkModule, hatcheryModule, expeditionsModule, shopModule, settingsModule, careModule], config.modules);
+const registry = new ModuleRegistry([parkModule, hatcheryModule, expeditionsModule, shopModule, settingsModule, careModule, tradingModule, leaderboardsModule], config.modules);
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const sender = clientSender(client);

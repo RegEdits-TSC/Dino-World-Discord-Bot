@@ -19,7 +19,8 @@ export const parkModule: ModuleManifest = {
   commands: [
     {
       data: new SlashCommandBuilder().setName('park').setDescription('Your park')
-        .addSubcommand((s) => s.setName('view').setDescription('Park dashboard'))
+        .addSubcommand((s) => s.setName('view').setDescription('Park dashboard')
+          .addUserOption((o) => o.setName('user').setDescription('View another player\'s park').setRequired(false)))
         .addSubcommand((s) => s.setName('rename').setDescription('Rename your park')
           .addStringOption((o) => o.setName('name').setDescription('New name').setRequired(true).setMaxLength(60))),
       async execute(ctx, i) {
@@ -29,6 +30,19 @@ export const parkModule: ModuleManifest = {
           ctx.db.update(schema.users).set({ parkName: name })
             .where(eq(schema.users.discordId, i.user.id)).run();
           await i.reply({ content: `Park renamed to **${name}**.` });
+          return;
+        }
+        const targetUser = i.options.getUser('user');
+        if (targetUser && targetUser.id !== i.user.id) {
+          const targetRow = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, targetUser.id)).get();
+          if (!targetRow) { await i.reply({ content: 'That player has no park yet.', flags: MessageFlags.Ephemeral }); return; }
+          settleEscapes(ctx, targetUser.id);
+          const fresh = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, targetUser.id)).get()!;
+          const tlots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, targetUser.id)).all();
+          const tdinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, targetUser.id)).all();
+          const tescaped = tdinos.filter((d) => d.escapedAt !== null).length;
+          const payload = dashboardPayload(fresh, tlots, tdinos.length, 0, tescaped);
+          await i.reply({ embeds: payload.embeds });   // read-only: no Collect button
           return;
         }
         settleEscapes(ctx, i.user.id);
