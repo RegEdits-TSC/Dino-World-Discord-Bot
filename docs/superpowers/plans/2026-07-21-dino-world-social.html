@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dino World — Plan 4: Trading &amp; Leaderboards</title>
+<style>
+  :root { --bg:#fff; --fg:#1f2328; --muted:#656d76; --line:#d0d7de; --accent:#1a7f37; --code-bg:#f6f8fa; --warn:#9a6700; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --accent:#3fb950; --code-bg:#161b22; --warn:#d29922; } }
+  body { background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,"Segoe UI",sans-serif; max-width:920px; margin:0 auto; padding:24px 20px 80px; }
+  h1 { font-size:26px; border-bottom:2px solid var(--line); padding-bottom:8px; }
+  h2 { font-size:20px; margin-top:40px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+  h3 { font-size:16px; margin-top:24px; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:12.5px; background:var(--code-bg); padding:1px 5px; border-radius:4px; }
+  pre { background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:12px; overflow-x:auto; }
+  pre code { background:none; padding:0; font-size:12px; line-height:1.5; }
+  .callout { border-left:4px solid var(--accent); background:var(--code-bg); padding:10px 14px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .callout.warn { border-left-color:var(--warn); }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  td, th { border:1px solid var(--line); padding:5px 9px; text-align:left; }
+  th { background:var(--code-bg); }
+  .files { font-size:13.5px; }
+  .iface { font-size:13px; background:var(--code-bg); border:1px dashed var(--line); border-radius:8px; padding:8px 12px; margin:6px 0; }
+  .muted { color:var(--muted); }
+  input[type=checkbox] { transform:scale(1.1); margin-right:7px; }
+  .step label { font-weight:600; }
+</style>
+</head>
+<body>
+
+<h1>🤝 Dino World — Plan 4: Trading &amp; Leaderboards</h1>
+
+<div class="callout">
+<b>For agentic workers:</b> REQUIRED SUB-SKILL: Use <code>superpowers:subagent-driven-development</code> (recommended) or <code>superpowers:executing-plans</code>. Steps use checkboxes.
+</div>
+
+<p><b>Goal:</b> Player-to-player trading with escrow, atomic swaps, and anti-abuse gates; plus global/per-server leaderboards and the ability to view another player's park.</p>
+
+<p><b>Architecture:</b> Same modular monolith (Plans 1-3 merged on <code>main</code>). New <code>trading</code> and <code>leaderboards</code> modules + services; <code>/park view @user</code> added to the park module. <b>No DB migration</b> — the <code>trades</code> table, <code>user_guilds</code>, <code>users.displayName</code>, and <code>dinos/eggs.locked</code> + <code>.viaTrade</code> flags all already exist. The sell path already zeroes shards for <code>via_trade</code> items and blocks <code>locked</code> ones (Plan 2), so trading just needs to SET those flags.</p>
+
+<p><b>Tech Stack:</b> TypeScript strict, discord.js v14, better-sqlite3 + Drizzle, vitest. No new dependencies.</p>
+
+<h2>Global Constraints</h2>
+<ul>
+<li>Commits authored by <b>RegEdits-TSC</b> — no other identity, no <code>Co-Authored-By</code>, no AI/Claude/assistant/"generated with" in any durable artifact.</li>
+<li>TypeScript <code>strict: true</code>, no explicit <code>any</code>. Run <code>npm run typecheck</code> (src+tests) and <code>npm run build</code> — both exit 0.</li>
+<li><b>Atomicity (critical for trading):</b> a trade acceptance — re-verify both inventories, move all items + cash + food both ways, flag <code>via_trade</code>, unlock, set status — MUST run in ONE <code>ctx.db.transaction</code>. Currency only via <code>ctx.economy.apply</code>. If anything fails mid-swap, the whole trade rolls back.</li>
+<li>Time via <code>ctx.now()</code>. Any comfort/collection change calls <code>recomputeRating</code>. Any read of escaped-dependent state (park view of another user, rating leaderboard) calls <code>settleEscapes</code> for that user first (Plan 3 constraint).</li>
+<li>Errors use <code>flags: MessageFlags.Ephemeral</code>, never <code>ephemeral: true</code>. Handlers thin.</li>
+</ul>
+
+<div class="callout"><b>Existing interfaces this plan builds on (exact):</b>
+<pre><code>// schema.trades: { id, fromUser, toUser, offer: TradeSide(json), request: TradeSide(json),
+//                  status: 'pending'|'accepted'|'declined'|'cancelled'|'expired', createdAt, resolvedAt }
+// TradeSide (schema.ts): { dinoIds: number[]; eggIds: number[]; cash: number; food: number }
+// schema.dinos: { id, userId, lotId, speciesId, escapedAt, viaTrade, locked, ... }
+// schema.eggs:  { id, userId, rarity, speciesId, viaTrade, locked, ... }
+// schema.userGuilds: { userId, guildId, lastSeenAt }   (upserted on every interaction by the router)
+// users: { discordId, displayName, parkRating (live, ×100), cash, food, ... }
+// src/modules/park/rating.ts: recomputeRating(ctx, userId)
+// src/modules/park/escapes.ts: settleEscapes(ctx, userId)
+// src/data/progression.ts: RARITY_WEIGHT (common1..mythic32)
+// src/data/species/index.ts: getSpecies(id), allSpecies()
+// src/modules/park/service.ts: getOrCreateUser, toClockDinos
+// src/core/economy.ts: EconomyService.apply, InsufficientFundsError
+</code></pre>
+</div>
+
+<hr>
+
+<h2>Task 1: Trade data + validation helpers</h2>
+<p class="files"><b>Files:</b> Create <code>src/data/trade.ts</code>, <code>src/modules/trading/validate.ts</code>, <code>tests/trade-validate.test.ts</code></p>
+<div class="iface"><b>Produces:</b> constants <code>TRADE_MIN_RATING = 200</code> (2★), <code>TRADE_DAILY_CAP = 3</code>, <code>TRADE_MAX_ITEMS_PER_SIDE = 5</code>, <code>TRADE_EXPIRY_MS = 24h</code>; <code>class TradeError extends Error</code>; pure helpers <code>sideItemCount(side): number</code> (dinoIds+eggIds length), <code>parseIdList(raw: string): number[]</code> (comma/space separated positive ints, dedup).</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Data + failing tests.</label>
+<pre><code>// src/data/trade.ts
+export const TRADE_MIN_RATING = 200;        // 2★ live rating, both sides
+export const TRADE_DAILY_CAP = 3;           // max trades a user may INITIATE per rolling 24h
+export const TRADE_MAX_ITEMS_PER_SIDE = 5;  // dinos + eggs per side
+export const TRADE_EXPIRY_MS = 24 * 3_600_000;</code></pre>
+<pre><code>// src/modules/trading/validate.ts
+import type { TradeSide } from '../../core/db/schema.js';
+export class TradeError extends Error {}
+export function sideItemCount(side: TradeSide): number { return side.dinoIds.length + side.eggIds.length; }
+export function parseIdList(raw: string): number[] {
+  if (!raw.trim()) return [];
+  const ids = raw.split(/[\s,]+/).filter(Boolean).map((s) =&gt; Number(s));
+  if (ids.some((n) =&gt; !Number.isInteger(n) || n &lt;= 0)) throw new TradeError('Ids must be positive integers.');
+  return [...new Set(ids)];
+}</code></pre>
+<pre><code>// tests/trade-validate.test.ts
+import { describe, it, expect } from 'vitest';
+import { parseIdList, sideItemCount, TradeError } from '../src/modules/trading/validate.js';
+
+describe('trade validate helpers', () =&gt; {
+  it('parseIdList splits, dedups, rejects junk', () =&gt; {
+    expect(parseIdList('1, 2  3,3')).toEqual([1, 2, 3]);
+    expect(parseIdList('')).toEqual([]);
+    expect(() =&gt; parseIdList('1,-2')).toThrow(TradeError);
+    expect(() =&gt; parseIdList('a')).toThrow(TradeError);
+  });
+  it('sideItemCount counts dinos + eggs only', () =&gt; {
+    expect(sideItemCount({ dinoIds: [1, 2], eggIds: [3], cash: 500, food: 5 })).toBe(3);
+  });
+});</code></pre>
+Run → FAIL, implement → PASS. Commit: <code>git commit -m "Add trade constants and pure validation helpers"</code></div>
+
+<hr>
+
+<h2>Task 2: Create trade (offer) — validate + escrow-lock</h2>
+<p class="files"><b>Files:</b> Create <code>src/modules/trading/service.ts</code>, <code>tests/trading.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> validate helpers, economy, <code>recomputeRating</code>, <code>getSpecies</code>, schema.<br>
+<b>Produces:</b> <code>createTrade(ctx, fromUser, toUser, offer: TradeSide, request: TradeSide): Trade</code>. Validates, then in ONE transaction creates a pending trade and LOCKS the offerer's given dinos/eggs. <code>Trade = typeof schema.trades.$inferSelect</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing tests (validation + lock).</label>
+<pre><code>// tests/trading.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { makeCtx } from './harness.js';
+import { getOrCreateUser } from '../src/modules/park/service.js';
+import { createTrade, TradeError } from '../src/modules/trading/service.js';
+import { schema } from '../src/core/db/index.js';
+import { eq } from 'drizzle-orm';
+
+let ctx: ReturnType&lt;typeof makeCtx&gt;;
+beforeEach(() =&gt; { ctx = makeCtx();
+  getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+  // both at 2★ so the gate passes
+  ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+});
+const empty = { dinoIds: [], eggIds: [], cash: 0, food: 0 };
+const addDino = (user: string, speciesId = 'triceratops', over = {}) =&gt;
+  ctx.db.insert(schema.dinos).values({ userId: user, speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0, ...over }).returning().get();
+
+describe('createTrade', () =&gt; {
+  it('locks the offered dinos and creates a pending trade', () =&gt; {
+    const d = addDino('a');
+    const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, { ...empty, cash: 1_000 });
+    expect(t.status).toBe('pending');
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.locked).toBe(true);
+  });
+  it('rejects a Mythic in the offer', () =&gt; {
+    const m = addDino('a', 'indominus');
+    expect(() =&gt; createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [m.id] }, empty)).toThrow(TradeError);
+  });
+  it('rejects when the offerer is below 2★', () =&gt; {
+    ctx.db.update(schema.users).set({ parkRating: 150 }).where(eq(schema.users.discordId, 'a')).run();
+    const d = addDino('a');
+    expect(() =&gt; createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty)).toThrow(TradeError);
+  });
+  it('rejects offering a dino you do not own', () =&gt; {
+    const d = addDino('b');   // belongs to b
+    expect(() =&gt; createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty)).toThrow(TradeError);
+  });
+  it('rejects more than 5 items per side', () =&gt; {
+    const ids = [1, 2, 3, 4, 5, 6];
+    expect(() =&gt; createTrade(ctx, 'a', 'b', { ...empty, dinoIds: ids }, empty)).toThrow(TradeError);
+  });
+});</code></pre>
+Run → FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement <code>createTrade</code> (+ shared owner/mythic checks).</label>
+<pre><code>// src/modules/trading/service.ts
+import { and, eq, gt, inArray } from 'drizzle-orm';
+import { schema, type TradeSide } from '../../core/db/index.js';
+import type { Ctx } from '../../core/context.js';
+import { getSpecies } from '../../data/species/index.js';
+import { recomputeRating } from '../park/rating.js';
+import { TradeError, sideItemCount } from './validate.js';
+import { TRADE_MIN_RATING, TRADE_DAILY_CAP, TRADE_MAX_ITEMS_PER_SIDE, TRADE_EXPIRY_MS } from '../../data/trade.js';
+
+export type Trade = typeof schema.trades.$inferSelect;
+
+// The stored parkRating IS the live rating (updated on every recompute-triggering action, unlike
+// ratingHighWater). Read it directly — do NOT recompute here (recompute is authoritative but would
+// re-derive from current dinos/lots, which is unnecessary for gating and surprising as a side effect).
+function liveRating(ctx: Ctx, userId: string): number {
+  return ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!.parkRating;
+}
+
+// Verify a user owns every dino/egg in a side, none Mythic, none locked/escaped, and has the cash/food.
+function verifySide(ctx: Ctx, userId: string, side: TradeSide): void {
+  if (sideItemCount(side) &gt; TRADE_MAX_ITEMS_PER_SIDE) throw new TradeError(`At most ${TRADE_MAX_ITEMS_PER_SIDE} items per side.`);
+  if (side.cash &lt; 0 || side.food &lt; 0) throw new TradeError('Amounts cannot be negative.');
+  const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get();
+  if (!user) throw new TradeError('Unknown user.');
+  if (user.cash &lt; side.cash) throw new TradeError('Not enough cash for the trade.');
+  if (user.food &lt; side.food) throw new TradeError('Not enough food for the trade.');
+  for (const id of side.dinoIds) {
+    const d = ctx.db.select().from(schema.dinos).where(and(eq(schema.dinos.id, id), eq(schema.dinos.userId, userId))).get();
+    if (!d) throw new TradeError(`You do not own dino #${id}.`);
+    if (d.locked) throw new TradeError(`Dino #${id} is already in a pending trade.`);
+    if (d.escapedAt !== null) throw new TradeError(`Dino #${id} has escaped — rescue it first.`);
+    if (getSpecies(d.speciesId).rarity === 'mythic') throw new TradeError('Mythics cannot be traded.');
+  }
+  for (const id of side.eggIds) {
+    const e = ctx.db.select().from(schema.eggs).where(and(eq(schema.eggs.id, id), eq(schema.eggs.userId, userId))).get();
+    if (!e) throw new TradeError(`You do not own egg #${id}.`);
+    if (e.locked) throw new TradeError(`Egg #${id} is already in a pending trade.`);
+    if (e.rarity === 'mythic') throw new TradeError('Mythic eggs cannot be traded.');
+  }
+}
+
+export function createTrade(ctx: Ctx, fromUser: string, toUser: string, offer: TradeSide, request: TradeSide): Trade {
+  if (fromUser === toUser) throw new TradeError('You cannot trade with yourself.');
+  if (liveRating(ctx, fromUser) &lt; TRADE_MIN_RATING) throw new TradeError('You need a 2★ park rating to trade.');
+  if (liveRating(ctx, toUser) &lt; TRADE_MIN_RATING) throw new TradeError('That player needs a 2★ park rating to trade.');
+  // daily cap: trades this user INITIATED in the last 24h
+  const since = ctx.now() - TRADE_EXPIRY_MS;
+  const recent = ctx.db.select().from(schema.trades)
+    .where(and(eq(schema.trades.fromUser, fromUser), gt(schema.trades.createdAt, since))).all().length;
+  if (recent &gt;= TRADE_DAILY_CAP) throw new TradeError(`You can only start ${TRADE_DAILY_CAP} trades per day.`);
+  verifySide(ctx, fromUser, offer);
+  // request items must be things toUser plausibly owns — verify the receiver side too (re-checked at accept)
+  verifySide(ctx, toUser, request);
+  return ctx.db.transaction(() =&gt; {
+    const trade = ctx.db.insert(schema.trades).values({
+      fromUser, toUser, offer, request, status: 'pending', createdAt: ctx.now(),
+    }).returning().get();
+    if (offer.dinoIds.length) ctx.db.update(schema.dinos).set({ locked: true })
+      .where(inArray(schema.dinos.id, offer.dinoIds)).run();
+    if (offer.eggIds.length) ctx.db.update(schema.eggs).set({ locked: true })
+      .where(inArray(schema.eggs.id, offer.eggIds)).run();
+    return trade;
+  });
+}</code></pre>
+<span class="muted">Only the OFFERER's given items are locked at offer time (you cannot lock the receiver's items in a trade they haven't accepted). The receiver's requested items are re-verified at accept.</span>
+Run → PASS. Commit: <code>git commit -m "Add createTrade: gates, ownership/mythic checks, escrow lock"</code></div>
+
+<hr>
+
+<h2>Task 3: Accept trade — atomic re-verify + swap</h2>
+<p class="files"><b>Files:</b> Modify <code>src/modules/trading/service.ts</code> (add <code>acceptTrade</code>); Test append to <code>tests/trading.test.ts</code></p>
+<div class="iface"><b>Produces:</b> <code>acceptTrade(ctx, userId, tradeId): Trade</code> — <code>userId</code> must be the <code>toUser</code>. Atomically re-verifies both sides still valid, swaps all dinos/eggs/cash/food, flags transferred dinos/eggs <code>via_trade=true</code> and unlocks them (and unassigns transferred dinos: <code>lotId=null</code>), sets status <code>accepted</code>, recomputes BOTH ratings.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing test (the swap).</label>
+<pre><code>// append to tests/trading.test.ts
+import { acceptTrade } from '../src/modules/trading/service.js';
+
+describe('acceptTrade', () =&gt; {
+  it('swaps items + cash both ways, flags via_trade, unlocks, marks accepted', () =&gt; {
+    ctx.economy.apply('b', { cash: 5_000 }, 'seed', 0);
+    const da = addDino('a');                       // A gives this dino
+    const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [da.id] }, { ...empty, cash: 1_000 });
+    acceptTrade(ctx, 'b', t.id);
+    const moved = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, da.id)).get()!;
+    expect(moved.userId).toBe('b');                // dino now belongs to B
+    expect(moved.viaTrade).toBe(true);             // flagged → sells for 0 shards
+    expect(moved.locked).toBe(false);              // unlocked
+    expect(moved.lotId).toBeNull();                // unassigned on transfer
+    const a = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'a')).get()!;
+    expect(a.cash).toBe(500 + 1_000);              // A received B's 1,000 cash (started 500)
+    expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('accepted');
+  });
+  it('fails (and rolls back) if the offerer no longer owns a listed dino at accept time', () =&gt; {
+    const da = addDino('a');
+    const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [da.id] }, empty);
+    ctx.db.delete(schema.dinos).where(eq(schema.dinos.id, da.id)).run();   // vanished after offer
+    expect(() =&gt; acceptTrade(ctx, 'b', t.id)).toThrow(TradeError);
+    expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('pending');
+  });
+  it('only the toUser can accept', () =&gt; {
+    const da = addDino('a');
+    const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [da.id] }, empty);
+    expect(() =&gt; acceptTrade(ctx, 'a', t.id)).toThrow(TradeError);
+  });
+});</code></pre>
+Run → FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement <code>acceptTrade</code>.</label>
+<pre><code>// add to src/modules/trading/service.ts
+function moveItems(ctx: Ctx, side: TradeSide, toUser: string): void {
+  if (side.dinoIds.length) ctx.db.update(schema.dinos)
+    .set({ userId: toUser, lotId: null, viaTrade: true, locked: false })
+    .where(inArray(schema.dinos.id, side.dinoIds)).run();
+  if (side.eggIds.length) ctx.db.update(schema.eggs)
+    .set({ userId: toUser, viaTrade: true, locked: false })
+    .where(inArray(schema.eggs.id, side.eggIds)).run();
+}
+
+export function acceptTrade(ctx: Ctx, userId: string, tradeId: number): Trade {
+  const trade = ctx.db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get();
+  if (!trade) throw new TradeError('No such trade.');
+  if (trade.status !== 'pending') throw new TradeError('That trade is no longer open.');
+  if (trade.toUser !== userId) throw new TradeError('Only the recipient can accept this trade.');
+  if (trade.createdAt + TRADE_EXPIRY_MS &lt;= ctx.now()) throw new TradeError('That trade has expired.');
+  // Re-verify BOTH sides against current state (the offerer's items are locked, but re-check anyway;
+  // the receiver's requested items were never locked and may have changed).
+  verifySide(ctx, trade.fromUser, trade.offer);
+  verifySide(ctx, trade.toUser, trade.request);
+  if (liveRating(ctx, trade.fromUser) &lt; TRADE_MIN_RATING || liveRating(ctx, trade.toUser) &lt; TRADE_MIN_RATING)
+    throw new TradeError('Both players must be at 2★ to complete the trade.');
+  const done = ctx.db.transaction(() =&gt; {
+    // items: offer → toUser, request → fromUser
+    moveItems(ctx, trade.offer, trade.toUser);
+    moveItems(ctx, trade.request, trade.fromUser);
+    // cash/food: offerer pays offer.cash/food to receiver; receiver pays request.cash/food to offerer
+    ctx.economy.apply(trade.fromUser, { cash: -trade.offer.cash + trade.request.cash, food: -trade.offer.food + trade.request.food }, `trade:${trade.id}`, ctx.now());
+    ctx.economy.apply(trade.toUser, { cash: -trade.request.cash + trade.offer.cash, food: -trade.request.food + trade.offer.food }, `trade:${trade.id}`, ctx.now());
+    return ctx.db.update(schema.trades).set({ status: 'accepted', resolvedAt: ctx.now() })
+      .where(eq(schema.trades.id, tradeId)).returning().get();
+  });
+  recomputeRating(ctx, trade.fromUser);
+  recomputeRating(ctx, trade.toUser);
+  return done;
+}</code></pre>
+<span class="muted">The re-verify happens BEFORE the transaction (reads); if it throws, the trade stays pending and locks remain — the offerer can still cancel. Inside the transaction, every mutation is one connection, synchronous — no partial swap. <code>via_trade</code> on transferred items closes the shard funnel (sell already gives them 0 shards). Transferred dinos are unassigned so they don't silently occupy the recipient's paddocks.</span>
+Run → PASS. Commit: <code>git commit -m "Add acceptTrade: atomic re-verify and two-way swap with via_trade"</code></div>
+
+<hr>
+
+<h2>Task 4: Decline / cancel / expire + list</h2>
+<p class="files"><b>Files:</b> Modify <code>src/modules/trading/service.ts</code>; Test append to <code>tests/trading.test.ts</code></p>
+<div class="iface"><b>Produces:</b> <code>declineTrade(ctx, userId, tradeId)</code> (toUser declines → unlock offered items, status declined); <code>cancelTrade(ctx, userId, tradeId)</code> (fromUser cancels → unlock, status cancelled); <code>expireStale(ctx, userId)</code> (mark any of the user's pending trades older than 24h expired + unlock — lazy, called at trade command entry); <code>listTrades(ctx, userId): Trade[]</code> (pending trades where the user is from or to).</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing tests + implement.</label>
+<pre><code>// tests (append): decline unlocks + sets status; cancel by non-owner throws;
+// expireStale marks a 25h-old pending trade expired and unlocks its items; listTrades returns pending for the user.
+
+// implementation (add to service.ts):
+function unlockSide(ctx: Ctx, side: TradeSide): void {
+  if (side.dinoIds.length) ctx.db.update(schema.dinos).set({ locked: false }).where(inArray(schema.dinos.id, side.dinoIds)).run();
+  if (side.eggIds.length) ctx.db.update(schema.eggs).set({ locked: false }).where(inArray(schema.eggs.id, side.eggIds)).run();
+}
+function closeTrade(ctx: Ctx, trade: Trade, status: 'declined' | 'cancelled' | 'expired'): void {
+  ctx.db.transaction(() =&gt; {
+    unlockSide(ctx, trade.offer);   // only the offerer's items were ever locked
+    ctx.db.update(schema.trades).set({ status, resolvedAt: ctx.now() }).where(eq(schema.trades.id, trade.id)).run();
+  });
+}
+export function declineTrade(ctx: Ctx, userId: string, tradeId: number): void {
+  const t = ctx.db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get();
+  if (!t || t.status !== 'pending') throw new TradeError('That trade is no longer open.');
+  if (t.toUser !== userId) throw new TradeError('Only the recipient can decline.');
+  closeTrade(ctx, t, 'declined');
+}
+export function cancelTrade(ctx: Ctx, userId: string, tradeId: number): void {
+  const t = ctx.db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get();
+  if (!t || t.status !== 'pending') throw new TradeError('That trade is no longer open.');
+  if (t.fromUser !== userId) throw new TradeError('Only the sender can cancel.');
+  closeTrade(ctx, t, 'cancelled');
+}
+export function expireStale(ctx: Ctx, userId: string): void {
+  const cutoff = ctx.now() - TRADE_EXPIRY_MS;
+  const stale = ctx.db.select().from(schema.trades)
+    .where(and(eq(schema.trades.status, 'pending'))).all()
+    .filter((t) =&gt; (t.fromUser === userId || t.toUser === userId) &amp;&amp; t.createdAt &lt;= cutoff);
+  for (const t of stale) closeTrade(ctx, t, 'expired');
+}
+export function listTrades(ctx: Ctx, userId: string): Trade[] {
+  return ctx.db.select().from(schema.trades).where(eq(schema.trades.status, 'pending')).all()
+    .filter((t) =&gt; t.fromUser === userId || t.toUser === userId);
+}</code></pre>
+<span class="muted"><code>expireStale</code> is called at the top of every trade command (like <code>settleEscapes</code>) so stale locks self-clear. Import <code>and</code>/<code>inArray</code> if not already imported.</span>
+Run → PASS. Commit: <code>git commit -m "Add trade decline, cancel, lazy expiry, and listing"</code></div>
+
+<hr>
+
+<h2>Task 5: Trading module (slash-option form)</h2>
+<p class="files"><b>Files:</b> Create <code>src/modules/trading/index.ts</code>; Test append to <code>tests/trading.test.ts</code></p>
+<div class="iface"><b>Produces:</b> <code>tradingModule: ModuleManifest</code> (name <code>'trading'</code>) — <code>/trade offer|list|accept|decline|cancel</code>. Uses <code>parseIdList</code> for the id-list options; calls <code>expireStale</code> at entry.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Implement the module.</label>
+<code>/trade offer</code> takes options: <code>user</code> (User, required), <code>give-dinos</code> / <code>want-dinos</code> / <code>give-eggs</code> / <code>want-eggs</code> (String, optional — comma id lists via <code>parseIdList</code>), <code>give-cash</code> / <code>want-cash</code> / <code>give-food</code> / <code>want-food</code> (Integer ≥0, optional, default 0). Build <code>offer</code>/<code>request</code> <code>TradeSide</code> objects, call <code>createTrade</code>, reply with the new trade id + a summary and "the other player runs <code>/trade accept id:&lt;n&gt;</code>". <code>/trade list</code> → <code>listTrades</code> formatted (id, from/to, offer↔request summary). <code>/trade accept|decline|cancel</code> take an integer <code>id</code> and call the matching service fn. Call <code>expireStale(ctx, i.user.id)</code> after <code>getOrCreateUser</code> at the top of every subcommand. Catch <code>TradeError</code>/<code>InsufficientFundsError</code> → ephemeral; rethrow others. Follow the exact park/hatchery handler pattern. Component-free module. <b>Write the full manifest code following the established pattern; every service fn and its errors are already defined in Tasks 2-4.</b>
+
+<div class="callout warn">Discord option names must be lowercase and may use hyphens: <code>give-dinos</code>, <code>want-cash</code>, etc. Read them with <code>i.options.getString('give-dinos')</code> / <code>i.options.getInteger('give-cash') ?? 0</code>.</div></div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Harness test + commit.</label>
+Test: seed A with a dino + B at 2★, drive <code>/trade offer</code> then <code>/trade accept</code> through the module handlers, assert the dino moved to B. Then:
+<pre><code>npm run typecheck && npx vitest run
+git add -A && git commit -m "Add trading module commands (slash-option offer form)"</code></pre></div>
+
+<hr>
+
+<h2>Task 6: Leaderboard service</h2>
+<p class="files"><b>Files:</b> Create <code>src/modules/leaderboards/service.ts</code>, <code>tests/leaderboards.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> <code>RARITY_WEIGHT</code>, <code>getSpecies</code>, <code>userGuilds</code>, schema.<br>
+<b>Produces:</b> <code>type Metric = 'rating' | 'cash' | 'collection'</code>; <code>type Scope = 'server' | 'global'</code>; <code>collectionScore(ctx, userId): number</code> (rarity-weighted distinct species owned); <code>topPlayers(ctx, metric: Metric, scope: Scope, guildId: string | null, limit = 10): Array&lt;{ userId; displayName; value: number }&gt;</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing tests + implement.</label>
+<code>topPlayers</code>: pick the candidate user set — <b>global</b> = all <code>users</code>; <b>server</b> = users whose <code>discordId</code> appears in <code>userGuilds</code> for <code>guildId</code> (join). For <code>rating</code>/<code>cash</code>, sort by the stored column desc. For <code>collection</code>, compute <code>collectionScore</code> per candidate (rarity-weighted distinct species from that user's <code>dinos</code>), sort desc. Take <code>limit</code>. Return <code>{ userId, displayName, value }</code>.
+<pre><code>// collectionScore
+export function collectionScore(ctx: Ctx, userId: string): number {
+  const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all();
+  const owned = new Set(dinos.map((d) =&gt; d.speciesId));
+  return [...owned].reduce((s, id) =&gt; s + RARITY_WEIGHT[getSpecies(id).rarity], 0);
+}</code></pre>
+Tests: seed 3 users with different cash/ratings/collections; assert <code>topPlayers('cash','global',null)</code> orders correctly; assert <code>server</code> scope only includes users in that guild's <code>userGuilds</code>. Run → PASS.
+<div class="callout warn"><b>Scalability note (document, do not over-engineer):</b> <code>collection</code> global scope computes a score per user in JS — fine for v1's scale. If the bot grows to thousands of users, denormalize a <code>collectionScore</code> column updated in <code>recomputeRating</code>. Log/comment this; do NOT add the column now (YAGNI, and it's a migration). Also: the <code>rating</code> board reads the stored <code>parkRating</code> without per-user <code>settleEscapes</code> (settling every ranked user is expensive) — a player's board rating can lag an unsettled escape until they next interact. Acceptable for a leaderboard; note it in a comment.</div>
+Commit: <code>git commit -m "Add leaderboard service: rating/cash/collection, server/global scope"</code></div>
+
+<hr>
+
+<h2>Task 7: Leaderboard module + park visits</h2>
+<p class="files"><b>Files:</b> Create <code>src/modules/leaderboards/index.ts</code>; Modify <code>src/modules/park/index.ts</code> (add optional <code>user</code> to <code>/park view</code>)</p>
+<div class="iface"><b>Produces:</b> <code>leaderboardsModule: ModuleManifest</code> (name <code>'leaderboards'</code>) — <code>/top metric:&lt;rating|cash|collection&gt; [scope:&lt;server|global&gt;]</code>. Park module's <code>/park view</code> gains an optional <code>user</code> option: when set, show THAT user's dashboard read-only (settle their escapes first, no Collect button).</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Leaderboard command.</label>
+<code>/top</code>: <code>metric</code> (String choice rating/cash/collection, required), <code>scope</code> (String choice server/global, optional — default <code>server</code> when <code>i.guildId</code> is set, else <code>global</code>). Call <code>topPlayers(ctx, metric, scope, i.guildId)</code>, format a numbered embed (rank, displayName, value — divide rating by 100 for ★). Empty → "No players yet." Follow the module pattern; no components.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: <code>/park view @user</code>.</label>
+In <code>src/modules/park/index.ts</code>, add <code>.addUserOption((o) =&gt; o.setName('user').setDescription('View another park').setRequired(false))</code> to the <code>view</code> subcommand. In the view handler: <code>const target = i.options.getUser('user')?.id ?? i.user.id;</code>. If <code>target !== i.user.id</code>: <code>getOrCreateUser(ctx, target, i.options.getUser('user')!.displayName)</code>? — instead, only view an EXISTING user; if the target has no park row, reply "That player has no park yet." (ephemeral). Otherwise <code>settleEscapes(ctx, target)</code>, read the target's user/lots/dinos, and reply with a read-only dashboard: reuse <code>dashboardPayload</code> but DROP the Collect button when viewing someone else (build the embed without the action row, or pass a flag). Simplest: when <code>target !== i.user.id</code>, send <code>{ embeds: [dashboardPayload(...).embeds[0]] }</code> (no components). Keep your own <code>/park view</code> (no user) exactly as-is (with Collect).</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Tests + commit.</label>
+Test <code>/top cash</code> global returns ordered rows; test <code>/park view user:@other</code> returns an embed with no Collect component and does not throw for an existing other user. Then:
+<pre><code>npm run typecheck && npx vitest run
+git add -A && git commit -m "Add leaderboards module and park visits (/top, /park view @user)"</code></pre></div>
+
+<hr>
+
+<h2>Task 8: Register modules, deploy, docs</h2>
+<p class="files"><b>Files:</b> Modify <code>modules.json</code>, <code>src/deploy-commands.ts</code>, <code>src/index.ts</code>, <code>tests/registry-load.test.ts</code>, <code>docs/ops.md</code></p>
+<div class="step"><label><input type="checkbox"> Step 1: Enable + register.</label>
+<code>modules.json</code> → add <code>"trading": true, "leaderboards": true</code> (8 modules). In BOTH <code>deploy-commands.ts</code> and <code>index.ts</code>, import <code>tradingModule</code> + <code>leaderboardsModule</code> and add them to the <code>ModuleRegistry</code> list (identical in both). New command names: <code>trade</code>, <code>top</code> — unique. No new component prefixes.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Registry test + verify + commit.</label>
+Update <code>tests/registry-load.test.ts</code>: add both modules, change the count from 15 to <b>17</b> (added <code>trade</code>, <code>top</code>). Then:
+<pre><code>npm run typecheck && npm run build && npx vitest run
+git add -A && git commit -m "Register trading and leaderboards modules"</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Ops smoke checklist + commit.</label>
+Extend <code>docs/ops.md</code> (maintainer-run; no attribution): deploy count → 17; a trade round-trip (`/trade offer user:@x give-dinos:1 want-cash:1000` → other runs `/trade accept id:<n>` → dino moves, cash moves, sells for 0 shards); `/trade cancel`/`decline` unlock; `/top rating` / `/top cash scope:global`; `/park view user:@x`. Update the modules.json example to 8 modules.
+<pre><code>git add -A && git commit -m "Extend ops smoke checklist for trading and leaderboards"</code></pre></div>
+
+<hr>
+
+<h2>Plan self-review</h2>
+<ul>
+<li><b>Spec §3.9 coverage:</b> escrowed offers (dinos/eggs/cash/food, max 5/side) → T1/T2; pending trades lock items → T2 (offerer's side); accept re-verifies both inventories in one transaction, atomic swap → T3; anti-abuse: 2★ live both sides (T2/T3), max 3/day (T2), Mythics untradeable (T2/T3 verifySide), traded-in items flagged via_trade → sell for 0 shards (T3, sell already honors it) → all covered; decline/cancel/expire → T4; commands → T5.</li>
+<li><b>Spec §3.10 coverage:</b> /top rating|cash|collection global + per-server (user_guilds) → T6/T7; /park view @user (read-only, settles their escapes) → T7; display_name snapshot already maintained by the router.</li>
+<li><b>Plan 3 constraints honored:</b> escaped dinos can't be traded (verifySide blocks) or must be rescued first; /park view @user and any escaped-state read call settleEscapes; transferred dinos are unassigned + recompute both users' ratings.</li>
+<li><b>Atomicity:</b> the swap (T3) is one transaction; offer-lock (T2) and close/unlock (T4) each one transaction. Re-verification happens before the transaction (reads); a failed verify leaves the trade pending with locks intact (cancelable).</li>
+<li><b>Cross-task types:</b> <code>TradeError</code>, <code>TradeSide</code>, <code>createTrade/acceptTrade/declineTrade/cancelTrade/expireStale/listTrades</code>, <code>topPlayers/collectionScore/Metric/Scope</code> consistent across tasks. Command count 15→17.</li>
+<li><b>Known limitations (documented):</b> collection-global computed in JS (denormalize later if needed); rating leaderboard reads stored parkRating without per-user settle. Both noted in code comments, not over-engineered.</li>
+</ul>
+
+</body>
+</html>
