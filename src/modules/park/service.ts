@@ -5,6 +5,7 @@ import { accruedIncome, type ClockDino } from '../../core/clock.js';
 import { getSpecies } from '../../data/species/index.js';
 import { FACILITIES } from '../../data/facilities.js';
 import { PADDOCKS } from '../../data/paddocks.js';
+import { lotSlots } from '../../data/progression.js';
 
 export const BASE_LOT_SLOTS = 3;
 export class LotLimitError extends Error {}
@@ -37,7 +38,8 @@ export function buildLot(ctx: Ctx, userId: string, kind: string): Lot {
   if (!paddock && !facility) throw new UnknownKindError(kind);
   const count = ctx.db.select().from(schema.lots)
     .where(eq(schema.lots.userId, userId)).all().length;
-  if (count >= BASE_LOT_SLOTS) throw new LotLimitError();
+  const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!;
+  if (count >= lotSlots(user.ratingHighWater)) throw new LotLimitError();
   const cost = paddock ? paddock.buildCost : facility!.buildCost;
   // Charge + insert must be atomic: EconomyService.apply commits its own transaction,
   // so without this outer transaction a failed insert after a successful charge would
