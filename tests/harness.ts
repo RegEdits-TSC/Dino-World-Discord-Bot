@@ -43,7 +43,10 @@ export function fakeCommand(opts: {
       getSubcommand: () => opts.sub ?? null,
       getString: (k: string) => (opts.options?.[k] as string) ?? null,
       getInteger: (k: string) => (opts.options?.[k] as number) ?? null,
-      getUser: () => null,
+      getUser: (k: string) => {
+        const id = opts.options?.[k];
+        return id != null ? { id: String(id), displayName: String(id), bot: false } : null;
+      },
     },
     reply: record, editReply: record, followUp: record,
     deferReply: async () => { (raw as { deferred: boolean }).deferred = true; },

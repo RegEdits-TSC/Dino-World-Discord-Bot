@@ -5,6 +5,8 @@ import { createTrade, acceptTrade, TradeError } from '../src/modules/trading/ser
 import { declineTrade, cancelTrade, expireStale, listTrades } from '../src/modules/trading/service.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
+import { tradingModule } from '../src/modules/trading/index.js';
+import { fakeCommand } from './harness.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx();
@@ -142,5 +144,18 @@ describe('trade lifecycle', () => {
     expect(listTrades(ctx, 'a')).toHaveLength(1);
     expect(listTrades(ctx, 'b')).toHaveLength(1);
     expect(listTrades(ctx, 'c')).toHaveLength(0);
+  });
+});
+
+describe('trading module', () => {
+  it('/trade offer then /trade accept moves the dino', async () => {
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both 2★ (beforeEach may already do this)
+    const d = addDino('a');
+    const offerCmd = fakeCommand({ name: 'trade', sub: 'offer', user: 'a', options: { user: 'b', 'give-dinos': String(d.id) } });
+    await tradingModule.commands[0].execute(ctx, offerCmd.asChatInput());
+    const t = ctx.db.select().from(schema.trades).where(eq(schema.trades.fromUser, 'a')).get()!;
+    const acceptCmd = fakeCommand({ name: 'trade', sub: 'accept', user: 'b', options: { id: t.id } });
+    await tradingModule.commands[0].execute(ctx, acceptCmd.asChatInput());
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.userId).toBe('b');
   });
 });
