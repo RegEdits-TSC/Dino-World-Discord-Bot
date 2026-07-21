@@ -77,6 +77,10 @@ describe('createTrade', () => {
     const egg = ctx.db.insert(schema.eggs).values({ userId: 'a', rarity: 'mythic', speciesId: 'indominus', source: 'shop', obtainedAt: 0 }).returning().get();
     expect(() => createTrade(ctx, 'a', 'b', { ...empty, eggIds: [egg.id] }, empty)).toThrow(TradeError);
   });
+  it('rejects an incubating egg in the offer (no hatch-timer/slot-cap bypass via trade)', () => {
+    const egg = ctx.db.insert(schema.eggs).values({ userId: 'a', rarity: 'common', speciesId: 'triceratops', source: 'shop', obtainedAt: 0, incubationStartedAt: 1, hatchesAt: 999_999 }).returning().get();
+    expect(() => createTrade(ctx, 'a', 'b', { ...empty, eggIds: [egg.id] }, empty)).toThrow(TradeError);
+  });
 });
 
 describe('acceptTrade', () => {

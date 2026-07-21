@@ -37,6 +37,7 @@ export function verifySide(ctx: Ctx, userId: string, side: TradeSide, opts: { sk
     if (!e) throw new TradeError(`You do not own egg #${id}.`);
     if (!opts.skipLockCheck && e.locked) throw new TradeError(`Egg #${id} is already in a pending trade.`);
     if (e.rarity === 'mythic') throw new TradeError('Mythic eggs cannot be traded.');
+    if (e.incubationStartedAt !== null) throw new TradeError(`Egg #${id} is incubating — it cannot be traded.`);
   }
 }
 
