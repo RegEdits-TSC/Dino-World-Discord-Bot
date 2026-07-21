@@ -38,6 +38,7 @@ export const parkModule: ModuleManifest = {
         if (targetUser && targetUser.id !== i.user.id) {
           const targetRow = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, targetUser.id)).get();
           if (!targetRow) { await i.reply({ content: 'That player has no park yet.', flags: MessageFlags.Ephemeral }); return; }
+          await i.deferReply();
           settleEscapes(ctx, targetUser.id);
           const fresh = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, targetUser.id)).get()!;
           const tlots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, targetUser.id)).all();
@@ -47,9 +48,10 @@ export const parkModule: ModuleManifest = {
           const base = { embeds: payload.embeds };
           let png: Buffer | undefined;
           try { png = await renderPark(buildParkSnapshot(ctx, targetUser.id)); } catch { png = undefined; }
-          await i.reply(png ? withParkImage(base, png) : base);   // read-only: no Collect button
+          await i.editReply(png ? withParkImage(base, png) : base);   // read-only: no Collect button
           return;
         }
+        await i.deferReply();
         settleEscapes(ctx, i.user.id);
         const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, i.user.id)).all();
         const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all();
@@ -57,7 +59,7 @@ export const parkModule: ModuleManifest = {
         const base = dashboardPayload(user, lots, dinos.length, pendingIncome(ctx, i.user.id), escapedCount);
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
-        await i.reply(png ? withParkImage(base, png) : base);
+        await i.editReply(png ? withParkImage(base, png) : base);
       },
     },
     {

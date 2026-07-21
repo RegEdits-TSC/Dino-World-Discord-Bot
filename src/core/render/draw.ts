@@ -21,8 +21,9 @@ export function gridDims(cellCount: number): GridDims {
 let fontsReady = false;
 function ensureFonts(): void {
   if (fontsReady) return;
-  GlobalFonts.registerFromPath(resolve(process.cwd(), 'assets/fonts/NotoSans-Regular.ttf'), SANS);
-  GlobalFonts.registerFromPath(resolve(process.cwd(), 'assets/fonts/NotoColorEmoji.ttf'), EMOJI);
+  const okSans = GlobalFonts.registerFromPath(resolve(process.cwd(), 'assets/fonts/NotoSans-Regular.ttf'), SANS);
+  const okEmoji = GlobalFonts.registerFromPath(resolve(process.cwd(), 'assets/fonts/NotoColorEmoji.ttf'), EMOJI);
+  if (!okSans || !okEmoji) throw new Error('park renderer: font registration failed');
   fontsReady = true;
 }
 
