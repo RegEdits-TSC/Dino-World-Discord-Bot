@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dino World — Plan 2: Acquisition &amp; Collection Loop</title>
+<style>
+  :root { --bg:#fff; --fg:#1f2328; --muted:#656d76; --line:#d0d7de; --accent:#1a7f37; --code-bg:#f6f8fa; --warn:#9a6700; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --accent:#3fb950; --code-bg:#161b22; --warn:#d29922; } }
+  body { background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,"Segoe UI",sans-serif; max-width:920px; margin:0 auto; padding:24px 20px 80px; }
+  h1 { font-size:26px; border-bottom:2px solid var(--line); padding-bottom:8px; }
+  h2 { font-size:20px; margin-top:40px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+  h3 { font-size:16px; margin-top:24px; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:12.5px; background:var(--code-bg); padding:1px 5px; border-radius:4px; }
+  pre { background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:12px; overflow-x:auto; }
+  pre code { background:none; padding:0; font-size:12px; line-height:1.5; }
+  .callout { border-left:4px solid var(--accent); background:var(--code-bg); padding:10px 14px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .callout.warn { border-left-color:var(--warn); }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  td, th { border:1px solid var(--line); padding:5px 9px; text-align:left; }
+  th { background:var(--code-bg); }
+  .files { font-size:13.5px; }
+  .iface { font-size:13px; background:var(--code-bg); border:1px dashed var(--line); border-radius:8px; padding:8px 12px; margin:6px 0; }
+  .muted { color:var(--muted); }
+  input[type=checkbox] { transform:scale(1.1); margin-right:7px; }
+  .step label { font-weight:600; }
+</style>
+</head>
+<body>
+
+<h1>🦖 Dino World — Plan 2: Acquisition &amp; Collection Loop</h1>
+
+<div class="callout">
+<b>For agentic workers:</b> REQUIRED SUB-SKILL: Use <code>superpowers:subagent-driven-development</code> (recommended) or <code>superpowers:executing-plans</code>. Steps use checkboxes for tracking.
+</div>
+
+<p><b>Goal:</b> Make the full game loop live — earn cash, run expeditions and buy from a shop to get eggs, incubate and hatch them into dinos, assign dinos to paddocks so they earn income, sell dupes for shards, and buy Mythics with shards — with park rating recompute gating content and scheduler pings when timers finish.</p>
+
+<p><b>Architecture:</b> Same modular monolith as Plan 1 (merged on <code>main</code>). New gameplay lives in new modules (<code>hatchery</code>, <code>expeditions</code>, <code>shop</code>) plus extensions to the existing <code>park</code> module; new static content in <code>src/data/</code>; new services follow the Plan 1 pattern (thin handlers → service functions → pure logic, everything testable through the harness). <b>No database migration is needed</b> — every table and column this plan uses already exists from Plan 1 (verified: <code>eggs</code>, <code>expeditions</code>, <code>dinos.lotId</code>, <code>users.shards/shardsWindowStart/shardsWindowEarned/parkRating/ratingHighWater</code>, <code>timers.originGuildId</code>, <code>guildSettings.notifyChannelId</code>).</p>
+
+<p><b>Tech Stack:</b> TypeScript strict, discord.js v14, better-sqlite3 + Drizzle, vitest, pino. Node current LTS.</p>
+
+<h2>Global Constraints</h2>
+<ul>
+<li>All commits authored by <b>RegEdits-TSC</b> — never any other identity, never any <code>Co-Authored-By</code> or AI/Claude/assistant/"generated with" mention in code, docs, or commit messages.</li>
+<li>Dependencies stay at latest stable; this plan adds no new dependencies.</li>
+<li>TypeScript <code>strict: true</code>, no explicit <code>any</code>. Run <code>npm run typecheck</code> (checks <b>src and tests</b>) and <code>npm run build</code> — both must exit 0. Plain <code>tsc</code> does not check tests.</li>
+<li><b>Atomicity (hard rule from the Plan 1 final review):</b> every operation that moves currency AND mutates game items/rows must run inside ONE <code>ctx.db.transaction(() =&gt; { ... })</code>. <code>EconomyService.apply</code> opens its own transaction which nests as a SAVEPOINT, so an outer throw rolls back the charge too. Never charge in one statement and apply the effect in another.</li>
+<li>Currency only moves through <code>ctx.economy.apply(userId, {cash?,food?,shards?}, reason, now)</code> — never write <code>cash/food/shards</code> columns directly.</li>
+<li>All randomness uses the injected <code>ctx.rng()</code> (or a seeded generator derived from a passed value) — never <code>Math.random()</code> in logic. All time comes from <code>ctx.now()</code> — never <code>Date.now()</code> in logic. This keeps everything deterministically testable (spec §8).</li>
+<li>All tunable numbers (odds, prices, durations, thresholds) live in <code>src/data/</code> files, never inline in module code.</li>
+<li>Slow Discord handlers (any that could exceed ~2s, or that fan out to multiple sends) must <code>deferReply()</code> first; the router already supports <code>followUp</code> on a deferred interaction. Plan 2 handlers are DB-only and fast, but the hatch reveal uses edits — see Task 9.</li>
+<li>Use <code>flags: MessageFlags.Ephemeral</code>, never the deprecated <code>ephemeral: true</code>.</li>
+</ul>
+
+<div class="callout"><b>Plan 1 interfaces you build on (exact):</b>
+<pre><code>// src/core/context.ts
+interface Ctx { db: Db; economy: EconomyService; config: Config; now(): number; rng(): number }
+// src/core/economy.ts
+class EconomyService { apply(userId, delta: {cash?;food?;shards?}, reason: string, now: number): void }  // throws InsufficientFundsError
+// src/core/modules.ts
+interface ModuleManifest { name: string; commands: CommandDef[]; components: ComponentDef[] }
+interface CommandDef { data: SlashCommandBuilder|SlashCommandSubcommandsOnlyBuilder|SlashCommandOptionsOnlyBuilder; execute(ctx, i): Promise<void> }
+interface ComponentDef { prefix: string; execute(ctx, i): Promise<void> }  // customId "&lt;prefix&gt;:&lt;rest&gt;"
+// src/core/scheduler.ts
+class Scheduler { register(kind, handler: (t: Timer)=>Promise<void>): void; enqueue({kind,userId,refId,originGuildId,firesAt}): void; tick(now): Promise<number> }
+type Timer = { id; kind; userId; refId; originGuildId: string|null; firesAt; handledAt }
+// src/core/clock.ts
+comfortAt(d: ClockDino, at: number): number   // 0..1
+// src/data/rarity.ts  RARITY[rarity] = { incomePerHr, sellShards:[min,max], incubationMs, feedCost }
+// src/data/species/index.ts  getSpecies(id): Species (throws); allSpecies(): Species[]
+// src/data/facilities.ts FACILITIES; src/data/paddocks.ts PADDOCKS
+// src/modules/park/service.ts  getOrCreateUser, toClockDinos, pendingIncome, collectIncome, buildLot, upgradeLot, BASE_LOT_SLOTS, LotLimitError, UnknownKindError, type User, type Lot
+// tests/harness.ts  makeCtx() → Ctx & { setNow(ms) }; fakeCommand({name,sub,user,guild,options}); fakeButton({customId,user,guild})
+</code></pre>
+Species type: <code>{ id, name, rarity, diet:'herbivore'|'carnivore', biomeTags:string[], flavor, spriteRef }</code>. Rarity: <code>'common'|'uncommon'|'rare'|'epic'|'legendary'|'mythic'</code>.
+</div>
+
+<hr>
+
+<h2>Task 1: Full 30-species roster</h2>
+<p class="files"><b>Files:</b> Create 28 new <code>src/data/species/*.ts</code> (Triceratops + Velociraptor already exist); Modify <code>src/data/species/index.ts</code>; Test <code>tests/roster.test.ts</code></p>
+<div class="iface"><b>Produces:</b> exactly 30 species registered. New helper <code>speciesByRarity(rarity: Rarity): Species[]</code> (non-empty for every rarity). Distribution: Common 8, Uncommon 7, Rare 6, Epic 4, Legendary 3, Mythic 2 (Triceratops=common and Velociraptor=rare count toward these).</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Author the 28 new species files.</label>
+Each file exports a <code>Species</code> const (pattern identical to the existing <code>triceratops.ts</code>). Use these exact ids/rarities/diets/biomes (biomeTags must be drawn from the decor biome vocabulary in Task 8: <code>forest, plains, coast, tundra, volcanic, swamp</code>). Flavor text is one short sentence, no AI/tool mention.
+
+<table>
+<tr><th>Rarity</th><th>id / Name / diet / biomeTags</th></tr>
+<tr><td>Common (8)</td><td><code>triceratops</code>*(exists), <code>gallimimus</code> Gallimimus herbivore [plains], <code>dryosaurus</code> Dryosaurus herbivore [forest], <code>compsognathus</code> Compsognathus carnivore [forest], <code>struthiomimus</code> Struthiomimus herbivore [plains], <code>othnielia</code> Othnielia herbivore [forest], <code>microceratus</code> Microceratus herbivore [plains], <code>nasutoceratops</code> Nasutoceratops herbivore [plains]</td></tr>
+<tr><td>Uncommon (7)</td><td><code>stegosaurus</code> Stegosaurus herbivore [forest], <code>parasaurolophus</code> Parasaurolophus herbivore [swamp], <code>gallodactylus</code> — use <code>dilophosaurus</code> Dilophosaurus carnivore [forest], <code>iguanodon</code> Iguanodon herbivore [plains], <code>maiasaura</code> Maiasaura herbivore [plains], <code>pachycephalosaurus</code> Pachycephalosaurus herbivore [forest], <code>ouranosaurus</code> Ouranosaurus herbivore [swamp]</td></tr>
+<tr><td>Rare (6)</td><td><code>velociraptor</code>*(exists), <code>carnotaurus</code> Carnotaurus carnivore [plains], <code>baryonyx</code> Baryonyx carnivore [swamp], <code>allosaurus</code> Allosaurus carnivore [forest], <code>ankylosaurus</code> Ankylosaurus herbivore [forest], <code>ceratosaurus</code> Ceratosaurus carnivore [volcanic]</td></tr>
+<tr><td>Epic (4)</td><td><code>brachiosaurus</code> Brachiosaurus herbivore [plains], <code>spinosaurus</code> Spinosaurus carnivore [swamp], <code>therizinosaurus</code> Therizinosaurus herbivore [forest], <code>giganotosaurus</code> Giganotosaurus carnivore [plains]</td></tr>
+<tr><td>Legendary (3)</td><td><code>tyrannosaurus</code> Tyrannosaurus carnivore [plains], <code>mosasaurus</code> Mosasaurus carnivore [coast], <code>quetzalcoatlus</code> Quetzalcoatlus carnivore [coast]</td></tr>
+<tr><td>Mythic (2)</td><td><code>indominus</code> Indominus rex carnivore [volcanic], <code>indoraptor</code> Indoraptor carnivore [volcanic]</td></tr>
+</table>
+<span class="muted">(The "gallodactylus" cell is a typo guard — use <code>dilophosaurus</code> as written.) <code>spriteRef</code> = <code>&lt;id&gt;.png</code> for each.</span>
+</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Rewrite <code>src/data/species/index.ts</code> to register all 30 and add <code>speciesByRarity</code>.</label>
+<pre><code>import type { Species, Rarity } from '../types.js';
+import { triceratops } from './triceratops.js';
+import { velociraptor } from './velociraptor.js';
+// ... import the other 28 ...
+
+const ALL: Species[] = [
+  triceratops, gallimimus, dryosaurus, compsognathus, struthiomimus, othnielia, microceratus, nasutoceratops,
+  stegosaurus, parasaurolophus, dilophosaurus, iguanodon, maiasaura, pachycephalosaurus, ouranosaurus,
+  velociraptor, carnotaurus, baryonyx, allosaurus, ankylosaurus, ceratosaurus,
+  brachiosaurus, spinosaurus, therizinosaurus, giganotosaurus,
+  tyrannosaurus, mosasaurus, quetzalcoatlus,
+  indominus, indoraptor,
+];
+const REGISTRY = new Map&lt;string, Species&gt;(ALL.map((s) =&gt; [s.id, s]));
+
+export function getSpecies(id: string): Species {
+  const s = REGISTRY.get(id);
+  if (!s) throw new Error(`Unknown species: ${id}`);
+  return s;
+}
+export function allSpecies(): Species[] { return [...REGISTRY.values()]; }
+export function speciesByRarity(rarity: Rarity): Species[] {
+  return ALL.filter((s) =&gt; s.rarity === rarity);
+}</code></pre>
+Import <code>Rarity</code> in <code>types.ts</code> is already exported. If <code>Rarity</code> isn't re-exported from where you import, import it from <code>'../types.js'</code>.
+</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Test roster integrity (write alongside).</label>
+<pre><code>// tests/roster.test.ts
+import { describe, it, expect } from 'vitest';
+import { allSpecies, speciesByRarity, getSpecies } from '../src/data/species/index.js';
+
+const EXPECTED = { common: 8, uncommon: 7, rare: 6, epic: 4, legendary: 3, mythic: 2 } as const;
+
+describe('roster', () =&gt; {
+  it('has exactly 30 species with unique ids', () =&gt; {
+    const all = allSpecies();
+    expect(all).toHaveLength(30);
+    expect(new Set(all.map((s) =&gt; s.id)).size).toBe(30);
+  });
+  it('matches the per-tier distribution', () =&gt; {
+    for (const [rarity, n] of Object.entries(EXPECTED))
+      expect(speciesByRarity(rarity as keyof typeof EXPECTED)).toHaveLength(n);
+  });
+  it('every species has non-empty biomeTags and a known diet', () =&gt; {
+    for (const s of allSpecies()) {
+      expect(s.biomeTags.length).toBeGreaterThan(0);
+      expect(['herbivore', 'carnivore']).toContain(s.diet);
+    }
+  });
+  it('getSpecies round-trips the seed species', () =&gt; {
+    expect(getSpecies('tyrannosaurus').rarity).toBe('legendary');
+    expect(getSpecies('indominus').rarity).toBe('mythic');
+  });
+});</code></pre>
+Run <code>npx vitest run tests/roster.test.ts</code> → PASS. Then <code>npm run typecheck</code>.
+</div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Commit.</label>
+<pre><code>git add -A && git commit -m "Add full 30-species roster with per-rarity lookup"</code></pre></div>
+
+<hr>
+
+<h2>Task 2: Gacha &amp; sell roll helpers (pure, seeded)</h2>
+<p class="files"><b>Files:</b> Create <code>src/core/rolls.ts</code>, <code>tests/rolls.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> <code>RARITY</code>, <code>speciesByRarity</code>.<br>
+<b>Produces (all pure — take an <code>rng: () =&gt; number</code>):</b><br>
+<code>rollWeighted&lt;T&gt;(entries: Array&lt;{ value: T; weight: number }&gt;, rng): T</code><br>
+<code>rollRarityFromOdds(odds: Array&lt;{ rarity: Rarity; weight: number }&gt;, rng): Rarity</code><br>
+<code>rollSpeciesInRarity(rarity: Rarity, rng): Species</code> (uniform among <code>speciesByRarity</code>)<br>
+<code>rollSellShards(rarity: Rarity, rng): number</code> (uniform int in <code>RARITY[rarity].sellShards</code> inclusive)<br>
+<code>rollIntInclusive(min, max, rng): number</code></div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing tests.</label>
+<pre><code>// tests/rolls.test.ts
+import { describe, it, expect } from 'vitest';
+import { rollWeighted, rollRarityFromOdds, rollSpeciesInRarity, rollSellShards, rollIntInclusive } from '../src/core/rolls.js';
+import { mulberry32 } from './harness.js';
+
+describe('rolls', () =&gt; {
+  it('rollWeighted respects cumulative weights at boundaries', () =&gt; {
+    const e = [{ value: 'a', weight: 70 }, { value: 'b', weight: 30 }];
+    // rng just above 0 → 'a'; rng near 1 → 'b'
+    expect(rollWeighted(e, () =&gt; 0)).toBe('a');
+    expect(rollWeighted(e, () =&gt; 0.699)).toBe('a');
+    expect(rollWeighted(e, () =&gt; 0.701)).toBe('b');
+    expect(rollWeighted(e, () =&gt; 0.999)).toBe('b');
+  });
+  it('rollIntInclusive covers both ends', () =&gt; {
+    expect(rollIntInclusive(1, 3, () =&gt; 0)).toBe(1);
+    expect(rollIntInclusive(1, 3, () =&gt; 0.999)).toBe(3);
+  });
+  it('rollSellShards stays within the rarity band', () =&gt; {
+    const rng = mulberry32(1);
+    for (let i = 0; i &lt; 50; i++) {
+      const n = rollSellShards('rare', rng);   // band [8,15]
+      expect(n).toBeGreaterThanOrEqual(8);
+      expect(n).toBeLessThanOrEqual(15);
+    }
+  });
+  it('rollRarityFromOdds only returns listed rarities; rollSpeciesInRarity stays in-tier', () =&gt; {
+    const odds = [{ rarity: 'rare' as const, weight: 40 }, { rarity: 'epic' as const, weight: 60 }];
+    expect(['rare', 'epic']).toContain(rollRarityFromOdds(odds, () =&gt; 0.5));
+    expect(rollSpeciesInRarity('mythic', () =&gt; 0).rarity).toBe('mythic');
+  });
+});</code></pre>
+Run → FAIL (module missing).</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement.</label>
+<pre><code>// src/core/rolls.ts
+import type { Rarity, Species } from '../data/types.js';
+import { RARITY } from '../data/rarity.js';
+import { speciesByRarity } from '../data/species/index.js';
+
+export function rollWeighted&lt;T&gt;(entries: Array&lt;{ value: T; weight: number }&gt;, rng: () =&gt; number): T {
+  const total = entries.reduce((s, e) =&gt; s + e.weight, 0);
+  let r = rng() * total;
+  for (const e of entries) { if (r &lt; e.weight) return e.value; r -= e.weight; }
+  return entries[entries.length - 1].value;   // float-safe fallback
+}
+
+export function rollRarityFromOdds(odds: Array&lt;{ rarity: Rarity; weight: number }&gt;, rng: () =&gt; number): Rarity {
+  return rollWeighted(odds.map((o) =&gt; ({ value: o.rarity, weight: o.weight })), rng);
+}
+
+export function rollIntInclusive(min: number, max: number, rng: () =&gt; number): number {
+  return min + Math.floor(rng() * (max - min + 1));
+}
+
+export function rollSellShards(rarity: Rarity, rng: () =&gt; number): number {
+  const [lo, hi] = RARITY[rarity].sellShards;
+  return rollIntInclusive(lo, hi, rng);
+}
+
+export function rollSpeciesInRarity(rarity: Rarity, rng: () =&gt; number): Species {
+  const pool = speciesByRarity(rarity);
+  return pool[Math.floor(rng() * pool.length)];
+}</code></pre>
+Run → PASS. Typecheck.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Commit.</label>
+<pre><code>git add -A && git commit -m "Add pure seeded roll helpers for gacha and sales"</code></pre></div>
+
+<hr>
+
+<h2>Task 3: Park rating recompute + high-water gating</h2>
+<p class="files"><b>Files:</b> Create <code>src/data/progression.ts</code>, <code>src/modules/park/rating.ts</code>, <code>tests/rating.test.ts</code>; Modify <code>src/modules/park/service.ts</code> (slot limit)</p>
+<div class="iface"><b>Consumes:</b> <code>toClockDinos</code>, <code>comfortAt</code>, <code>allSpecies</code>, <code>RARITY</code>, park <code>User/Lot</code>.<br>
+<b>Produces:</b> in <code>rating.ts</code> — <code>recomputeRating(ctx, userId): { rating: number; highWater: number }</code> (writes <code>parkRating</code> and monotonic <code>ratingHighWater</code>, returns them; rating is 0–500 = stars×100); <code>siteUnlocked(unlockRating, highWater): boolean</code>; <code>lotSlots(highWater): number</code> (3–8); <code>shopCeiling(highWater): Rarity</code>; <code>mythicUnlocked(highWater): boolean</code>. In <code>progression.ts</code> — the constants below. Park <code>buildLot</code> now uses <code>lotSlots(user.ratingHighWater)</code> instead of the fixed <code>BASE_LOT_SLOTS</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Progression constants (data file).</label>
+<pre><code>// src/data/progression.ts
+import type { Rarity } from './types.js';
+
+export const RARITY_WEIGHT: Record&lt;Rarity, number&gt; = {
+  common: 1, uncommon: 2, rare: 4, epic: 8, legendary: 16, mythic: 32,
+};
+// rating (0..500 = stars*100) weighting per spec §3.7
+export const RATING_WEIGHTS = { collection: 0.40, park: 0.35, comfort: 0.25 };
+export const PARK_TARGET = 40;          // Σ lot levels + Σ decor count that maps park-score to 1.0
+// lot slots: base 3, +1 at each high-water threshold (stars*100)
+export const LOT_SLOT_THRESHOLDS = [50, 100, 200, 300, 400];  // slots 4,5,6,7,8
+// shop rarity ceiling by high-water (spec §3.9)
+export const SHOP_CEILING: Array&lt;{ atLeast: number; ceiling: Rarity }&gt; = [
+  { atLeast: 350, ceiling: 'legendary' },
+  { atLeast: 200, ceiling: 'epic' },
+  { atLeast: 100, ceiling: 'rare' },
+  { atLeast: 0, ceiling: 'uncommon' },
+];
+export const MYTHIC_UNLOCK_RATING = 400;   // 4★ high-water for /mythic</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Failing tests.</label>
+<pre><code>// tests/rating.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { makeCtx } from './harness.js';
+import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
+import { recomputeRating, lotSlots, siteUnlocked, shopCeiling, mythicUnlocked } from '../src/modules/park/rating.js';
+import { schema } from '../src/core/db/index.js';
+
+let ctx: ReturnType&lt;typeof makeCtx&gt;;
+beforeEach(() =&gt; { ctx = makeCtx(); });
+
+describe('gating helpers', () =&gt; {
+  it('lotSlots grows 3→8 across thresholds', () =&gt; {
+    expect(lotSlots(0)).toBe(3);
+    expect(lotSlots(50)).toBe(4);
+    expect(lotSlots(400)).toBe(8);
+    expect(lotSlots(999)).toBe(8);
+  });
+  it('siteUnlocked / shopCeiling / mythicUnlocked read high-water', () =&gt; {
+    expect(siteUnlocked(150, 149)).toBe(false);
+    expect(siteUnlocked(150, 150)).toBe(true);
+    expect(shopCeiling(0)).toBe('uncommon');
+    expect(shopCeiling(250)).toBe('epic');
+    expect(shopCeiling(400)).toBe('legendary');
+    expect(mythicUnlocked(399)).toBe(false);
+    expect(mythicUnlocked(400)).toBe(true);
+  });
+});
+
+describe('recomputeRating', () =&gt; {
+  it('empty park rates 0; owning species and building lots raises rating and high-water', () =&gt; {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    expect(recomputeRating(ctx, 'u1').rating).toBe(0);
+    // give the user a legendary dino (collection weight) — insert directly
+    ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'tyrannosaurus', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    const after = recomputeRating(ctx, 'u1');
+    expect(after.rating).toBeGreaterThan(0);
+    expect(after.highWater).toBe(after.rating);
+  });
+  it('high-water never decreases when rating drops', () =&gt; {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'tyrannosaurus', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    const high = recomputeRating(ctx, 'u1').highWater;
+    ctx.db.delete(schema.dinos).run();                 // lose the collection
+    const dropped = recomputeRating(ctx, 'u1');
+    expect(dropped.rating).toBe(0);
+    expect(dropped.highWater).toBe(high);              // monotonic
+  });
+});</code></pre>
+Run → FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Implement <code>rating.ts</code>.</label>
+<pre><code>// src/modules/park/rating.ts
+import { eq } from 'drizzle-orm';
+import { schema } from '../../core/db/index.js';
+import type { Ctx } from '../../core/context.js';
+import type { Rarity } from '../../data/types.js';
+import { allSpecies, getSpecies } from '../../data/species/index.js';
+import { comfortAt } from '../../core/clock.js';
+import { toClockDinos } from './service.js';
+import { RARITY_WEIGHT, RATING_WEIGHTS, PARK_TARGET, LOT_SLOT_THRESHOLDS, SHOP_CEILING, MYTHIC_UNLOCK_RATING, BASE_LOT_SLOTS_FALLBACK } from '../../data/progression.js';
+
+const TOTAL_SPECIES_WEIGHT = allSpecies().reduce((s, sp) =&gt; s + RARITY_WEIGHT[sp.rarity], 0);
+
+export function recomputeRating(ctx: Ctx, userId: string): { rating: number; highWater: number } {
+  const { clockDinos, lots, user } = toClockDinos(ctx, userId);
+  // collection: distinct species owned, rarity-weighted
+  const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all();
+  const owned = new Set(dinos.map((d) =&gt; d.speciesId));
+  const ownedWeight = [...owned].reduce((s, id) =&gt; s + RARITY_WEIGHT[getSpecies(id).rarity], 0);
+  const collection = TOTAL_SPECIES_WEIGHT === 0 ? 0 : ownedWeight / TOTAL_SPECIES_WEIGHT;
+  // park: Σ lot levels + Σ decor counts, normalized
+  const parkRaw = lots.reduce((s, l) =&gt; s + l.level + l.decor.length, 0);
+  const park = Math.min(1, parkRaw / PARK_TARGET);
+  // comfort: average over assigned dinos (paddock != null), else 0
+  const assigned = clockDinos.filter((d) =&gt; d.paddock !== null);
+  const comfort = assigned.length === 0 ? 0
+    : assigned.reduce((s, d) =&gt; s + comfortAt(d, ctx.now()), 0) / assigned.length;
+  const rating = Math.round(500 * (
+    RATING_WEIGHTS.collection * collection + RATING_WEIGHTS.park * park + RATING_WEIGHTS.comfort * comfort));
+  const highWater = Math.max(user.ratingHighWater, rating);
+  ctx.db.update(schema.users).set({ parkRating: rating, ratingHighWater: highWater })
+    .where(eq(schema.users.discordId, userId)).run();
+  return { rating, highWater };
+}
+
+export function siteUnlocked(unlockRating: number, highWater: number): boolean { return highWater &gt;= unlockRating; }
+export function lotSlots(highWater: number): number {
+  return BASE_LOT_SLOTS_FALLBACK + LOT_SLOT_THRESHOLDS.filter((t) =&gt; highWater &gt;= t).length;
+}
+export function shopCeiling(highWater: number): Rarity {
+  return (SHOP_CEILING.find((s) =&gt; highWater &gt;= s.atLeast) ?? SHOP_CEILING[SHOP_CEILING.length - 1]).ceiling;
+}
+export function mythicUnlocked(highWater: number): boolean { return highWater &gt;= MYTHIC_UNLOCK_RATING; }</code></pre>
+Add <code>export const BASE_LOT_SLOTS_FALLBACK = 3;</code> to <code>progression.ts</code> (so <code>lotSlots</code> and the park module share the same base; do NOT import from <code>park/service.ts</code> to avoid a cycle).</div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Rewire park <code>buildLot</code> to gate on high-water slots.</label>
+In <code>src/modules/park/service.ts</code>, replace the fixed slot check. Fetch the user, use <code>lotSlots</code>:
+<pre><code>// add import at top of service.ts:
+import { lotSlots } from './rating.js';
+// inside buildLot, replace:
+//   if (count &gt;= BASE_LOT_SLOTS) throw new LotLimitError();
+// with:
+const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!;
+if (count &gt;= lotSlots(user.ratingHighWater)) throw new LotLimitError();</code></pre>
+Keep <code>BASE_LOT_SLOTS</code> exported (other code/tests reference it) but it is now just the floor. The Plan 1 park test "builds lots up to the slot limit" still passes: a new user has high-water 0 → <code>lotSlots(0) === 3</code>. <b>Verify that existing test still passes.</b>
+<div class="callout warn"><b>Import-cycle note:</b> <code>rating.ts</code> imports <code>toClockDinos</code> from <code>service.ts</code>, and <code>service.ts</code> now imports <code>lotSlots</code> from <code>rating.ts</code>. This cycle is fine for functions (resolved at call time, not module-eval time) as long as neither is called during module top-level evaluation — and neither is. If <code>tsc</code> or the runtime complains, break it by moving <code>lotSlots</code>/gating pure helpers into <code>progression.ts</code> (they only need constants). Prefer that split if any cycle error appears.</div></div>
+
+<div class="step"><label><input type="checkbox"> Step 5: Run all, commit.</label>
+<pre><code>npm run typecheck && npx vitest run
+git add -A && git commit -m "Add park-rating recompute and high-water gating; gate lot slots by rating"</code></pre></div>
+
+<hr>
+
+<h2>Task 4: Expeditions service + site data</h2>
+<p class="files"><b>Files:</b> Create <code>src/data/sites.ts</code>, <code>src/modules/expeditions/service.ts</code>, <code>tests/expeditions.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> rolls, <code>siteUnlocked</code>, economy, scheduler (passed in), schema.<br>
+<b>Produces:</b> <code>EXPEDITION_SITES: Record&lt;string, SiteDef&gt;</code>; service functions taking <code>(ctx, ...)</code> plus a <code>Scheduler</code> for enqueue:<br>
+<code>class ExpeditionError extends Error</code> (message is user-safe);<br>
+<code>listSites(highWater): SiteDef[]</code> (unlocked only);<br>
+<code>startExpedition(ctx, scheduler, userId, siteId, guildId): Expedition</code>;<br>
+<code>activeExpedition(ctx, userId): Expedition | undefined</code> (unclaimed);<br>
+<code>claimExpedition(ctx, userId): { loot: Loot; site: SiteDef }</code>.<br>
+<code>Loot = { eggRarity: Rarity; cash: number; food: number }</code>; <code>Expedition = typeof schema.expeditions.$inferSelect</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Site data (spec §3.5 — durations, odds; costs are new data-file tuning).</label>
+<pre><code>// src/data/sites.ts
+import type { Rarity } from './types.js';
+const M = 60_000, H = 3_600_000;
+export interface SiteDef {
+  id: string; name: string; unlockRating: number; durationMs: number; cost: number;
+  eggOdds: Array&lt;{ rarity: Rarity; weight: number }&gt;;
+  bonusCash: [number, number]; bonusFood: [number, number];
+}
+export const EXPEDITION_SITES: Record&lt;string, SiteDef&gt; = {
+  coastal_dig:  { id: 'coastal_dig', name: 'Coastal Dig', unlockRating: 0, durationMs: 15 * M, cost: 200,
+    eggOdds: [{ rarity: 'common', weight: 70 }, { rarity: 'uncommon', weight: 30 }], bonusCash: [50, 200], bonusFood: [2, 6] },
+  amber_ridge:  { id: 'amber_ridge', name: 'Amber Ridge', unlockRating: 150, durationMs: 1 * H, cost: 1_000,
+    eggOdds: [{ rarity: 'common', weight: 45 }, { rarity: 'uncommon', weight: 40 }, { rarity: 'rare', weight: 15 }], bonusCash: [200, 800], bonusFood: [4, 10] },
+  frozen_cliffs:{ id: 'frozen_cliffs', name: 'Frozen Cliffs', unlockRating: 250, durationMs: 4 * H, cost: 4_000,
+    eggOdds: [{ rarity: 'uncommon', weight: 40 }, { rarity: 'rare', weight: 40 }, { rarity: 'epic', weight: 20 }], bonusCash: [800, 2_500], bonusFood: [8, 20] },
+  volcano_core: { id: 'volcano_core', name: 'Volcano Core', unlockRating: 400, durationMs: 8 * H, cost: 15_000,
+    eggOdds: [{ rarity: 'rare', weight: 40 }, { rarity: 'epic', weight: 40 }, { rarity: 'legendary', weight: 19.8 }, { rarity: 'mythic', weight: 0.2 }], bonusCash: [3_000, 9_000], bonusFood: [20, 50] },
+};</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Failing tests.</label>
+<pre><code>// tests/expeditions.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { makeCtx } from './harness.js';
+import { Scheduler } from '../src/core/scheduler.js';
+import { getOrCreateUser } from '../src/modules/park/service.js';
+import { startExpedition, activeExpedition, claimExpedition, listSites, ExpeditionError } from '../src/modules/expeditions/service.js';
+import { schema } from '../src/core/db/index.js';
+import { eq } from 'drizzle-orm';
+
+const H = 3_600_000;
+let ctx: ReturnType&lt;typeof makeCtx&gt;; let sched: Scheduler;
+beforeEach(() =&gt; { ctx = makeCtx(); sched = new Scheduler(ctx.db);
+  getOrCreateUser(ctx, 'u1', 'Reg'); ctx.economy.apply('u1', { cash: 50_000 }, 'seed', 0); });
+
+describe('expeditions', () =&gt; {
+  it('lists only unlocked sites by high-water', () =&gt; {
+    expect(listSites(0).map((s) =&gt; s.id)).toEqual(['coastal_dig']);
+    expect(listSites(400).length).toBe(4);
+  });
+  it('starts an expedition, charges cost, enqueues a return timer, and blocks a second start', () =&gt; {
+    const exp = startExpedition(ctx, sched, 'u1', 'coastal_dig', 'g1');
+    expect(exp.returnsAt).toBe(ctx.now() + 15 * 60_000);
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.cash).toBe(50_000 - 200);
+    expect(ctx.db.select().from(schema.timers).all()).toHaveLength(1);
+    expect(() =&gt; startExpedition(ctx, sched, 'u1', 'coastal_dig', 'g1')).toThrow(ExpeditionError); // one at a time
+  });
+  it('rejects a locked site', () =&gt; {
+    expect(() =&gt; startExpedition(ctx, sched, 'u1', 'volcano_core', 'g1')).toThrow(ExpeditionError);
+  });
+  it('claim before return fails; claim after return yields an egg + bonuses and unblocks the next start', () =&gt; {
+    startExpedition(ctx, sched, 'u1', 'coastal_dig', 'g1');
+    expect(() =&gt; claimExpedition(ctx, 'u1')).toThrow(ExpeditionError);      // not back yet
+    ctx.setNow(ctx.now() + 15 * 60_000);
+    const { loot } = claimExpedition(ctx, 'u1');
+    expect(['common', 'uncommon']).toContain(loot.eggRarity);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'u1')).all()).toHaveLength(1);
+    expect(activeExpedition(ctx, 'u1')).toBeUndefined();
+    startExpedition(ctx, sched, 'u1', 'coastal_dig', 'g1');                 // allowed again
+  });
+});</code></pre>
+Run → FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Implement service (all mutations atomic).</label>
+<pre><code>// src/modules/expeditions/service.ts
+import { and, eq, isNull } from 'drizzle-orm';
+import { schema } from '../../core/db/index.js';
+import type { Ctx } from '../../core/context.js';
+import type { Scheduler } from '../../core/scheduler.js';
+import type { Rarity } from '../../data/types.js';
+import { EXPEDITION_SITES, type SiteDef } from '../../data/sites.js';
+import { siteUnlocked } from '../park/rating.js';
+import { rollRarityFromOdds, rollIntInclusive } from '../../core/rolls.js';
+
+export class ExpeditionError extends Error {}
+export type Expedition = typeof schema.expeditions.$inferSelect;
+export interface Loot { eggRarity: Rarity; cash: number; food: number }
+
+function highWater(ctx: Ctx, userId: string): number {
+  return ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!.ratingHighWater;
+}
+
+export function listSites(hw: number): SiteDef[] {
+  return Object.values(EXPEDITION_SITES).filter((s) =&gt; siteUnlocked(s.unlockRating, hw));
+}
+
+export function activeExpedition(ctx: Ctx, userId: string): Expedition | undefined {
+  return ctx.db.select().from(schema.expeditions)
+    .where(and(eq(schema.expeditions.userId, userId), isNull(schema.expeditions.claimedAt))).get();
+}
+
+export function startExpedition(ctx: Ctx, scheduler: Scheduler, userId: string, siteId: string, guildId: string | null): Expedition {
+  const site = EXPEDITION_SITES[siteId];
+  if (!site) throw new ExpeditionError('Unknown site.');
+  if (!siteUnlocked(site.unlockRating, highWater(ctx, userId))) throw new ExpeditionError('That site is not unlocked yet.');
+  if (activeExpedition(ctx, userId)) throw new ExpeditionError('You already have an expedition out — claim it first.');
+  const now = ctx.now();
+  const returnsAt = now + site.durationMs;
+  return ctx.db.transaction(() =&gt; {
+    ctx.economy.apply(userId, { cash: -site.cost }, `expedition:${siteId}`, now);
+    const exp = ctx.db.insert(schema.expeditions).values({
+      userId, siteId, departedAt: now, returnsAt, loot: null, claimedAt: null,
+    }).returning().get();
+    scheduler.enqueue({ kind: 'expedition_return', userId, refId: exp.id, originGuildId: guildId, firesAt: returnsAt });
+    return exp;
+  });
+}
+
+export function claimExpedition(ctx: Ctx, userId: string): { loot: Loot; site: SiteDef } {
+  const exp = activeExpedition(ctx, userId);
+  if (!exp) throw new ExpeditionError('You have no expedition to claim.');
+  if (exp.returnsAt &gt; ctx.now()) throw new ExpeditionError('Your expedition has not returned yet.');
+  const site = EXPEDITION_SITES[exp.siteId];
+  const eggRarity = rollRarityFromOdds(site.eggOdds, ctx.rng);
+  const loot: Loot = {
+    eggRarity,
+    cash: rollIntInclusive(site.bonusCash[0], site.bonusCash[1], ctx.rng),
+    food: rollIntInclusive(site.bonusFood[0], site.bonusFood[1], ctx.rng),
+  };
+  return ctx.db.transaction(() =&gt; {
+    ctx.economy.apply(userId, { cash: loot.cash, food: loot.food }, `expedition-loot:${exp.siteId}`, ctx.now());
+    ctx.db.insert(schema.eggs).values({
+      userId, rarity: eggRarity, speciesId: null, source: 'expedition', obtainedAt: ctx.now(),
+    }).run();
+    ctx.db.update(schema.expeditions).set({ claimedAt: ctx.now(), loot })
+      .where(eq(schema.expeditions.id, exp.id)).run();
+    return { loot, site };
+  });
+}</code></pre>
+<span class="muted">A Mythic egg from Volcano Core has <code>speciesId: null</code> → its species is rolled among the 2 Mythic species at hatch time (Task 5). That is intended (the lottery path).</span>
+Run → PASS. Typecheck.</div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Commit.</label>
+<pre><code>git add -A && git commit -m "Add expeditions service: site gating, timed runs, loot on claim"</code></pre></div>
+
+<hr>
+
+<h2>Task 5: Hatchery service</h2>
+<p class="files"><b>Files:</b> Create <code>src/modules/hatchery/service.ts</code>, <code>tests/hatchery.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> rolls, <code>RARITY</code>, <code>FACILITIES</code>, scheduler, <code>recomputeRating</code>, schema.<br>
+<b>Produces:</b> <code>class HatcheryError extends Error</code>; <code>incubatorSlots(lots): number</code> (Hatchery Lab level → 1/2/3, else 1); <code>incubatingCount(ctx, userId): number</code>; <code>incubateEgg(ctx, scheduler, userId, eggId, guildId): Egg</code>; <code>hatchEgg(ctx, userId, eggId): { species: Species; dinoId: number }</code>. <code>Egg = typeof schema.eggs.$inferSelect</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing tests.</label>
+<pre><code>// tests/hatchery.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { makeCtx } from './harness.js';
+import { Scheduler } from '../src/core/scheduler.js';
+import { getOrCreateUser } from '../src/modules/park/service.js';
+import { incubateEgg, hatchEgg, incubatorSlots, HatcheryError } from '../src/modules/hatchery/service.js';
+import { schema } from '../src/core/db/index.js';
+import { eq } from 'drizzle-orm';
+
+const M = 60_000;
+let ctx: ReturnType&lt;typeof makeCtx&gt;; let sched: Scheduler;
+beforeEach(() =&gt; { ctx = makeCtx(); sched = new Scheduler(ctx.db); getOrCreateUser(ctx, 'u1', 'Reg'); });
+const addEgg = (rarity: string, speciesId: string | null = null) =&gt;
+  ctx.db.insert(schema.eggs).values({ userId: 'u1', rarity: rarity as never, speciesId, source: 'expedition', obtainedAt: 0 }).returning().get();
+
+describe('hatchery', () =&gt; {
+  it('incubates an egg, sets hatchesAt by rarity, enqueues a hatch timer', () =&gt; {
+    const egg = addEgg('common');
+    const inc = incubateEgg(ctx, sched, 'u1', egg.id, 'g1');
+    expect(inc.hatchesAt).toBe(ctx.now() + 15 * M);          // common = 15m
+    expect(ctx.db.select().from(schema.timers).all()).toHaveLength(1);
+  });
+  it('blocks incubating beyond the slot limit (1 without a Hatchery Lab)', () =&gt; {
+    const a = addEgg('common'); const b = addEgg('common');
+    incubateEgg(ctx, sched, 'u1', a.id, 'g1');
+    expect(() =&gt; incubateEgg(ctx, sched, 'u1', b.id, 'g1')).toThrow(HatcheryError);
+    expect(incubatorSlots([])).toBe(1);
+  });
+  it('hatch before ready fails; hatch after ready creates a dino of the egg rarity and removes the egg', () =&gt; {
+    const egg = addEgg('rare');
+    incubateEgg(ctx, sched, 'u1', egg.id, 'g1');
+    expect(() =&gt; hatchEgg(ctx, 'u1', egg.id)).toThrow(HatcheryError);
+    ctx.setNow(ctx.now() + 4 * 3_600_000);                   // rare = 4h
+    const { species, dinoId } = hatchEgg(ctx, 'u1', egg.id);
+    expect(species.rarity).toBe('rare');
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()).toBeUndefined();
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dinoId)).get()!.speciesId).toBe(species.id);
+  });
+  it('a preset-species egg hatches exactly that species', () =&gt; {
+    const egg = addEgg('mythic', 'indominus');
+    incubateEgg(ctx, sched, 'u1', egg.id, 'g1');
+    ctx.setNow(ctx.now() + 48 * 3_600_000);
+    expect(hatchEgg(ctx, 'u1', egg.id).species.id).toBe('indominus');
+  });
+});</code></pre>
+Run → FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement.</label>
+<pre><code>// src/modules/hatchery/service.ts
+import { and, eq, isNotNull } from 'drizzle-orm';
+import { schema } from '../../core/db/index.js';
+import type { Ctx } from '../../core/context.js';
+import type { Scheduler } from '../../core/scheduler.js';
+import type { Species } from '../../data/types.js';
+import { RARITY } from '../../data/rarity.js';
+import { FACILITIES } from '../../data/facilities.js';
+import { getSpecies } from '../../data/species/index.js';
+import { rollSpeciesInRarity } from '../../core/rolls.js';
+import { recomputeRating } from '../park/rating.js';
+import type { Lot } from '../park/service.js';
+
+export class HatcheryError extends Error {}
+export type Egg = typeof schema.eggs.$inferSelect;
+
+export function incubatorSlots(lots: Lot[]): number {
+  const lab = lots.find((l) =&gt; l.kind === 'hatchery_lab');
+  return lab ? FACILITIES.hatchery_lab.incubatorSlots![lab.level - 1] : 1;
+}
+
+export function incubatingCount(ctx: Ctx, userId: string): number {
+  return ctx.db.select().from(schema.eggs)
+    .where(and(eq(schema.eggs.userId, userId), isNotNull(schema.eggs.incubationStartedAt))).all().length;
+}
+
+export function incubateEgg(ctx: Ctx, scheduler: Scheduler, userId: string, eggId: number, guildId: string | null): Egg {
+  const egg = ctx.db.select().from(schema.eggs)
+    .where(and(eq(schema.eggs.id, eggId), eq(schema.eggs.userId, userId))).get();
+  if (!egg) throw new HatcheryError('You do not own that egg.');
+  if (egg.incubationStartedAt !== null) throw new HatcheryError('That egg is already incubating.');
+  const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, userId)).all();
+  if (incubatingCount(ctx, userId) &gt;= incubatorSlots(lots))
+    throw new HatcheryError('All incubator slots are full. Upgrade the Hatchery Lab for more.');
+  const now = ctx.now();
+  const hatchesAt = now + RARITY[egg.rarity].incubationMs;
+  ctx.db.update(schema.eggs).set({ incubationStartedAt: now, hatchesAt })
+    .where(eq(schema.eggs.id, eggId)).run();
+  scheduler.enqueue({ kind: 'egg_hatch', userId, refId: eggId, originGuildId: guildId, firesAt: hatchesAt });
+  return { ...egg, incubationStartedAt: now, hatchesAt };
+}
+
+export function hatchEgg(ctx: Ctx, userId: string, eggId: number): { species: Species; dinoId: number } {
+  const egg = ctx.db.select().from(schema.eggs)
+    .where(and(eq(schema.eggs.id, eggId), eq(schema.eggs.userId, userId))).get();
+  if (!egg) throw new HatcheryError('You do not own that egg.');
+  if (egg.incubationStartedAt === null || egg.hatchesAt === null) throw new HatcheryError('That egg is not incubating.');
+  if (egg.hatchesAt &gt; ctx.now()) throw new HatcheryError('That egg is not ready to hatch yet.');
+  const species = egg.speciesId ? getSpecies(egg.speciesId) : rollSpeciesInRarity(egg.rarity, ctx.rng);
+  const dinoId = ctx.db.transaction(() =&gt; {
+    const dino = ctx.db.insert(schema.dinos).values({
+      userId, lotId: null, speciesId: species.id, hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),
+    }).returning().get();
+    ctx.db.delete(schema.eggs).where(eq(schema.eggs.id, eggId)).run();
+    return dino.id;
+  });
+  recomputeRating(ctx, userId);   // collection changed
+  return { species, dinoId };
+}</code></pre>
+Run → PASS. Typecheck. <span class="muted">No cash moves in hatch, but the insert+delete are wrapped so a half-hatch is impossible; rating recompute runs after the transaction (a read+write of its own, non-critical if it were to fail — but it won't).</span></div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Commit.</label>
+<pre><code>git add -A && git commit -m "Add hatchery service: incubation slots, timed hatch, species roll"</code></pre></div>
+
+<hr>
+
+<h2>Task 6: Shards — sell dinos &amp; buy Mythics</h2>
+<p class="files"><b>Files:</b> Create <code>src/data/sell.ts</code>, <code>src/modules/shop/shards.ts</code>, <code>tests/shards.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> rolls, <code>RARITY</code>, <code>mythicUnlocked</code>, <code>speciesByRarity</code>, <code>recomputeRating</code>, economy, schema.<br>
+<b>Produces:</b> constants <code>SHARD_DAILY_CAP = 40</code>, <code>SHARD_WINDOW_MS = 24h</code>, <code>MYTHIC_SHARD_COST = 500</code>, <code>SELL_CASH: Record&lt;Rarity, number&gt;</code>; <code>class ShardError extends Error</code>; <code>sellDino(ctx, userId, dinoId): { cash: number; shards: number; capped: boolean }</code>; <code>previewSell(ctx, userId, dinoId): { minShards; maxShards; cashValue; sellable: boolean; capReached: boolean }</code>; <code>buyMythicEgg(ctx, userId, speciesId): Egg</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Sell data + failing tests.</label>
+<pre><code>// src/data/sell.ts
+import type { Rarity } from './types.js';
+export const SHARD_DAILY_CAP = 40;
+export const SHARD_WINDOW_MS = 24 * 3_600_000;
+export const MYTHIC_SHARD_COST = 500;
+export const SELL_CASH: Record&lt;Rarity, number&gt; = {
+  common: 50, uncommon: 150, rare: 500, epic: 1_500, legendary: 5_000, mythic: 0,
+};</code></pre>
+<pre><code>// tests/shards.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { makeCtx } from './harness.js';
+import { getOrCreateUser } from '../src/modules/park/service.js';
+import { sellDino, buyMythicEgg, ShardError, SHARD_DAILY_CAP } from '../src/modules/shop/shards.js';
+import { schema } from '../src/core/db/index.js';
+import { eq } from 'drizzle-orm';
+
+let ctx: ReturnType&lt;typeof makeCtx&gt;;
+beforeEach(() =&gt; { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); });
+const addDino = (speciesId: string, over: Record&lt;string, unknown&gt; = {}) =&gt;
+  ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0, ...over }).returning().get();
+const bal = () =&gt; ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+
+describe('sellDino', () =&gt; {
+  it('pays cash + shards, deletes the dino, and never exceeds the 40/day shard cap', () =&gt; {
+    // sell many rares (band 8-15 shards) — total shards must cap at 40/day
+    let totalShards = 0;
+    for (let i = 0; i &lt; 10; i++) { const d = addDino('velociraptor'); totalShards += sellDino(ctx, 'u1', d.id).shards; }
+    expect(totalShards).toBe(SHARD_DAILY_CAP);          // capped
+    expect(bal().shards).toBe(SHARD_DAILY_CAP);
+    expect(ctx.db.select().from(schema.dinos).all()).toHaveLength(0);
+  });
+  it('a Mythic dino cannot be sold', () =&gt; {
+    const d = addDino('indominus');
+    expect(() =&gt; sellDino(ctx, 'u1', d.id)).toThrow(ShardError);
+  });
+  it('a via_trade dino sells for cash but 0 shards', () =&gt; {
+    const d = addDino('velociraptor', { viaTrade: true });
+    const res = sellDino(ctx, 'u1', d.id);
+    expect(res.shards).toBe(0);
+    expect(res.cash).toBeGreaterThan(0);
+  });
+  it('the shard window resets after 24h', () =&gt; {
+    for (let i = 0; i &lt; 6; i++) sellDino(ctx, 'u1', addDino('velociraptor').id);   // hits 40 cap
+    ctx.setNow(ctx.now() + 24 * 3_600_000 + 1);
+    const res = sellDino(ctx, 'u1', addDino('velociraptor').id);
+    expect(res.shards).toBeGreaterThan(0);              // new window
+  });
+});
+
+describe('buyMythicEgg', () =&gt; {
+  it('requires 4★ high-water and 500 shards, then grants a preset Mythic egg', () =&gt; {
+    ctx.db.update(schema.users).set({ ratingHighWater: 400, shards: 500 }).where(eq(schema.users.discordId, 'u1')).run();
+    const egg = buyMythicEgg(ctx, 'u1', 'indoraptor');
+    expect(egg.rarity).toBe('mythic');
+    expect(egg.speciesId).toBe('indoraptor');
+    expect(bal().shards).toBe(0);
+  });
+  it('rejects when high-water &lt; 4★', () =&gt; {
+    ctx.db.update(schema.users).set({ ratingHighWater: 399, shards: 500 }).where(eq(schema.users.discordId, 'u1')).run();
+    expect(() =&gt; buyMythicEgg(ctx, 'u1', 'indoraptor')).toThrow(ShardError);
+  });
+});</code></pre>
+Run → FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement (window logic + atomic sells).</label>
+<pre><code>// src/modules/shop/shards.ts
+import { and, eq } from 'drizzle-orm';
+import { schema } from '../../core/db/index.js';
+import type { Ctx } from '../../core/context.js';
+import { RARITY } from '../../data/rarity.js';
+import { getSpecies, speciesByRarity } from '../../data/species/index.js';
+import { rollSellShards } from '../../core/rolls.js';
+import { mythicUnlocked } from '../park/rating.js';
+import { recomputeRating } from '../park/rating.js';
+import { SHARD_DAILY_CAP, SHARD_WINDOW_MS, MYTHIC_SHARD_COST, SELL_CASH } from '../../data/sell.js';
+export { SHARD_DAILY_CAP } from '../../data/sell.js';
+
+export class ShardError extends Error {}
+type Egg = typeof schema.eggs.$inferSelect;
+
+export function sellDino(ctx: Ctx, userId: string, dinoId: number): { cash: number; shards: number; capped: boolean } {
+  const dino = ctx.db.select().from(schema.dinos)
+    .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
+  if (!dino) throw new ShardError('You do not own that dino.');
+  if (dino.locked) throw new ShardError('That dino is locked (in a pending trade).');
+  const species = getSpecies(dino.speciesId);
+  if (species.rarity === 'mythic') throw new ShardError('Mythics cannot be sold.');
+  const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!;
+  const now = ctx.now();
+  // rolling 24h shard window
+  let windowStart = user.shardsWindowStart; let windowEarned = user.shardsWindowEarned;
+  if (now - windowStart &gt;= SHARD_WINDOW_MS) { windowStart = now; windowEarned = 0; }
+  const rolled = dino.viaTrade ? 0 : rollSellShards(species.rarity, ctx.rng);
+  const allowed = Math.max(0, SHARD_DAILY_CAP - windowEarned);
+  const shards = Math.min(rolled, allowed);
+  const cash = SELL_CASH[species.rarity];
+  ctx.db.transaction(() =&gt; {
+    ctx.economy.apply(userId, { cash, shards }, `sell:${species.id}`, now);
+    ctx.db.update(schema.users)
+      .set({ shardsWindowStart: windowStart, shardsWindowEarned: windowEarned + shards })
+      .where(eq(schema.users.discordId, userId)).run();
+    ctx.db.delete(schema.dinos).where(eq(schema.dinos.id, dinoId)).run();
+  });
+  recomputeRating(ctx, userId);
+  return { cash, shards, capped: shards &lt; rolled };
+}
+
+export function previewSell(ctx: Ctx, userId: string, dinoId: number) {
+  const dino = ctx.db.select().from(schema.dinos)
+    .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
+  if (!dino) throw new ShardError('You do not own that dino.');
+  const species = getSpecies(dino.speciesId);
+  const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!;
+  const inWindow = ctx.now() - user.shardsWindowStart &lt; SHARD_WINDOW_MS;
+  const earned = inWindow ? user.shardsWindowEarned : 0;
+  const [lo, hi] = RARITY[species.rarity].sellShards;
+  return {
+    minShards: dino.viaTrade ? 0 : lo, maxShards: dino.viaTrade ? 0 : hi,
+    cashValue: SELL_CASH[species.rarity],
+    sellable: species.rarity !== 'mythic' && !dino.locked,
+    capReached: earned &gt;= SHARD_DAILY_CAP,
+  };
+}
+
+export function buyMythicEgg(ctx: Ctx, userId: string, speciesId: string): Egg {
+  const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!;
+  if (!mythicUnlocked(user.ratingHighWater)) throw new ShardError('Reach 4★ park rating to unlock Mythic purchases.');
+  const species = getSpecies(speciesId);
+  if (species.rarity !== 'mythic') throw new ShardError('That is not a Mythic species.');
+  return ctx.db.transaction(() =&gt; {
+    ctx.economy.apply(userId, { shards: -MYTHIC_SHARD_COST }, `mythic:${speciesId}`, ctx.now());
+    return ctx.db.insert(schema.eggs).values({
+      userId, rarity: 'mythic', speciesId, source: 'shop', obtainedAt: ctx.now(),
+    }).returning().get();
+  });
+}
+
+export function mythicSpeciesChoices() { return speciesByRarity('mythic'); }</code></pre>
+Run → PASS. Typecheck.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Commit.</label>
+<pre><code>git add -A && git commit -m "Add shard economy: capped dino sales and Mythic shard purchases"</code></pre></div>
+
+<hr>
+
+<h2>Task 7: Shop service + daily rotation</h2>
+<p class="files"><b>Files:</b> Create <code>src/data/shop.ts</code>, <code>src/modules/shop/service.ts</code>, <code>tests/shop.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> <code>shopCeiling</code>, <code>mulberry32</code> (move to a shared util — see note), economy, schema, <code>SHOP_EGG_PRICES</code>.<br>
+<b>Produces:</b> <code>SHOP_EGG_PRICES: Record&lt;Rarity, number&gt;</code>, <code>FOOD_BUNDLES</code>, <code>FOOD_UNIT_COST</code>; <code>dailyEggOffers(highWater, now): Rarity[]</code> (deterministic per UTC day, ≤ ceiling, Legendary only ~10% of days); <code>buyEgg(ctx, userId, rarity): Egg</code>; <code>buyFood(ctx, userId, units): void</code>.</div>
+
+<div class="callout warn"><b>Shared PRNG:</b> <code>mulberry32</code> currently lives in <code>tests/harness.ts</code>. Move it to <code>src/core/rolls.ts</code> (export it there), update <code>tests/harness.ts</code> to re-export/import it from there, and use it in the shop rotation. Keeping determinism-critical PRNG in <code>src/</code> (not tests) is correct. Verify the harness test and all prior tests still pass after the move.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Shop data + failing tests.</label>
+<pre><code>// src/data/shop.ts
+import type { Rarity } from './types.js';
+export const SHOP_EGG_PRICES: Record&lt;Rarity, number&gt; = {
+  common: 500, uncommon: 2_000, rare: 8_000, epic: 30_000, legendary: 120_000, mythic: 0,
+};
+export const FOOD_UNIT_COST = 10;
+export const FOOD_BUNDLES = [10, 50, 100];
+export const LEGENDARY_DAY_CHANCE = 0.10;</code></pre>
+<pre><code>// tests/shop.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { makeCtx } from './harness.js';
+import { getOrCreateUser } from '../src/modules/park/service.js';
+import { dailyEggOffers, buyEgg, buyFood } from '../src/modules/shop/service.js';
+import { schema } from '../src/core/db/index.js';
+import { eq } from 'drizzle-orm';
+
+const DAY = 86_400_000;
+let ctx: ReturnType&lt;typeof makeCtx&gt;;
+beforeEach(() =&gt; { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); ctx.economy.apply('u1', { cash: 200_000 }, 'seed', 0); });
+const bal = () =&gt; ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+
+describe('shop', () =&gt; {
+  it('offers are deterministic per day and never exceed the ceiling', () =&gt; {
+    const a = dailyEggOffers(0, 3 * DAY);           // ceiling uncommon
+    const b = dailyEggOffers(0, 3 * DAY);
+    expect(a).toEqual(b);                            // same day, same offers
+    for (const r of a) expect(['common', 'uncommon']).toContain(r);
+    const c = dailyEggOffers(0, 4 * DAY);
+    expect(c).not.toBeUndefined();                  // different day computes fine
+  });
+  it('buyEgg charges the price and adds a shop egg; buyFood credits food', () =&gt; {
+    buyEgg(ctx, 'u1', 'common');                    // 500
+    expect(bal().cash).toBe(200_500 - 500 + 0);     // started 500 + 200000 seed = 200500
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'u1')).all()).toHaveLength(1);
+    const before = bal().food;
+    buyFood(ctx, 'u1', 50);                          // 50 * 10 = 500 cash
+    expect(bal().food).toBe(before + 50);
+  });
+});</code></pre>
+Run → FAIL. <span class="muted">(Starting cash 500 + 200,000 seed = 200,500; after a 500 egg = 200,000.)</span></div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement.</label>
+<pre><code>// src/modules/shop/service.ts
+import { eq } from 'drizzle-orm';
+import { schema } from '../../core/db/index.js';
+import type { Ctx } from '../../core/context.js';
+import type { Rarity } from '../../data/types.js';
+import { mulberry32 } from '../../core/rolls.js';
+import { shopCeiling } from '../park/rating.js';
+import { SHOP_EGG_PRICES, FOOD_UNIT_COST, LEGENDARY_DAY_CHANCE } from '../../data/shop.js';
+
+export class ShopError extends Error {}
+type Egg = typeof schema.eggs.$inferSelect;
+const LADDER: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+
+export function dailyEggOffers(highWater: number, now: number): Rarity[] {
+  const ceiling = shopCeiling(highWater);
+  const ceilIdx = LADDER.indexOf(ceiling);
+  const pool = LADDER.slice(0, ceilIdx + 1);
+  const day = Math.floor(now / 86_400_000);
+  const rng = mulberry32(day);
+  // Legendary is special: only ~10% of days, and only if the ceiling reaches it.
+  const canLegendary = ceiling === 'legendary';
+  const base = pool.filter((r) =&gt; r !== 'legendary');
+  // shuffle base deterministically, take up to 3
+  const shuffled = [...base].sort(() =&gt; rng() - 0.5).slice(0, 3);
+  const offers = shuffled;
+  if (canLegendary && rng() &lt; LEGENDARY_DAY_CHANCE) offers.push('legendary');
+  return offers;
+}
+
+export function buyEgg(ctx: Ctx, userId: string, rarity: Rarity): Egg {
+  if (rarity === 'mythic') throw new ShopError('Mythic eggs are not sold in the shop.');
+  const price = SHOP_EGG_PRICES[rarity];
+  return ctx.db.transaction(() =&gt; {
+    ctx.economy.apply(userId, { cash: -price }, `shop-egg:${rarity}`, ctx.now());
+    return ctx.db.insert(schema.eggs).values({
+      userId, rarity, speciesId: null, source: 'shop', obtainedAt: ctx.now(),
+    }).returning().get();
+  });
+}
+
+export function buyFood(ctx: Ctx, userId: string, units: number): void {
+  if (units &lt;= 0) throw new ShopError('Amount must be positive.');
+  ctx.economy.apply(userId, { cash: -(units * FOOD_UNIT_COST), food: units }, `shop-food:${units}`, ctx.now());
+  // single apply → already atomic (one wallet op, no separate item row)
+}</code></pre>
+<span class="muted">The <code>rng()-0.5</code> shuffle is deterministic given the day seed — good enough for daily variety; it isn't a uniform shuffle but the test only checks determinism + ceiling, not distribution.</span>
+Run → PASS. Typecheck.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Commit.</label>
+<pre><code>git add -A && git commit -m "Add shop service with deterministic daily egg rotation and food bundles"</code></pre></div>
+
+<hr>
+
+<h2>Task 8: Dino assignment, decor, and decor data</h2>
+<p class="files"><b>Files:</b> Create <code>src/data/decor.ts</code>, <code>src/modules/park/dinos.ts</code>; Modify <code>src/modules/park/service.ts</code> (nothing — new file imports it); Test <code>tests/dinos.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> <code>PADDOCKS</code>, economy, <code>recomputeRating</code>, schema.<br>
+<b>Produces:</b> <code>DECOR: Record&lt;string, { kind; name; biomeTags: string[]; cost }&gt;</code>; <code>class AssignError extends Error</code>; <code>paddockCapacity(level): number</code> (2×level); <code>assignDino(ctx, userId, dinoId, lotId): void</code>; <code>unassignDino(ctx, userId, dinoId): void</code>; <code>decorateLot(ctx, userId, lotId, decorKind): void</code>; <code>listDinos(ctx, userId): Array&lt;{ dino; species; comfort }&gt;</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Decor data + failing tests.</label>
+<pre><code>// src/data/decor.ts
+export interface DecorDef { kind: string; name: string; biomeTags: string[]; cost: number }
+export const DECOR: Record&lt;string, DecorDef&gt; = {
+  palm_tree:  { kind: 'palm_tree', name: 'Palm Tree', biomeTags: ['forest'], cost: 500 },
+  fern:       { kind: 'fern', name: 'Fern Cluster', biomeTags: ['forest', 'swamp'], cost: 500 },
+  boulder:    { kind: 'boulder', name: 'Boulder', biomeTags: ['plains'], cost: 500 },
+  grass_tuft: { kind: 'grass_tuft', name: 'Grass Tuft', biomeTags: ['plains'], cost: 400 },
+  tide_pool:  { kind: 'tide_pool', name: 'Tide Pool', biomeTags: ['coast'], cost: 700 },
+  ice_block:  { kind: 'ice_block', name: 'Ice Block', biomeTags: ['tundra'], cost: 700 },
+  lava_rock:  { kind: 'lava_rock', name: 'Lava Rock', biomeTags: ['volcanic'], cost: 800 },
+  reed_bed:   { kind: 'reed_bed', name: 'Reed Bed', biomeTags: ['swamp'], cost: 600 },
+};</code></pre>
+<pre><code>// tests/dinos.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { makeCtx } from './harness.js';
+import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
+import { assignDino, unassignDino, decorateLot, paddockCapacity, AssignError } from '../src/modules/park/dinos.js';
+import { schema } from '../src/core/db/index.js';
+import { eq } from 'drizzle-orm';
+
+let ctx: ReturnType&lt;typeof makeCtx&gt;;
+beforeEach(() =&gt; { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); ctx.economy.apply('u1', { cash: 50_000 }, 'seed', 0); });
+const addDino = () =&gt; ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
+
+describe('dino assignment', () =&gt; {
+  it('assigns a dino to a paddock and blocks past capacity (2×level)', () =&gt; {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');   // level 1 → capacity 2
+    expect(paddockCapacity(1)).toBe(2);
+    assignDino(ctx, 'u1', addDino().id, lot.id);
+    assignDino(ctx, 'u1', addDino().id, lot.id);
+    expect(() =&gt; assignDino(ctx, 'u1', addDino().id, lot.id)).toThrow(AssignError);   // full
+  });
+  it('rejects assigning to a facility lot', () =&gt; {
+    const vc = buildLot(ctx, 'u1', 'visitor_center');
+    expect(() =&gt; assignDino(ctx, 'u1', addDino().id, vc.id)).toThrow(AssignError);
+  });
+  it('unassign clears the lot', () =&gt; {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    const d = addDino(); assignDino(ctx, 'u1', d.id, lot.id);
+    unassignDino(ctx, 'u1', d.id);
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.lotId).toBeNull();
+  });
+  it('decorateLot charges cost and appends decor', () =&gt; {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    decorateLot(ctx, 'u1', lot.id, 'palm_tree');
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.id, lot.id)).get()!.decor).toEqual(['palm_tree']);
+  });
+});</code></pre>
+Run → FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement.</label>
+<pre><code>// src/modules/park/dinos.ts
+import { and, eq } from 'drizzle-orm';
+import { schema } from '../../core/db/index.js';
+import type { Ctx } from '../../core/context.js';
+import { getSpecies } from '../../data/species/index.js';
+import { DECOR } from '../../data/decor.js';
+import { comfortAt } from '../../core/clock.js';
+import { toClockDinos, type Lot } from './service.js';
+import { recomputeRating } from './rating.js';
+
+export class AssignError extends Error {}
+export function paddockCapacity(level: number): number { return 2 * level; }
+
+function ownedPaddock(ctx: Ctx, userId: string, lotId: number): Lot {
+  const lot = ctx.db.select().from(schema.lots)
+    .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, userId))).get();
+  if (!lot) throw new AssignError('You do not own that lot.');
+  if (lot.type !== 'paddock') throw new AssignError('Dinos can only go in paddocks.');
+  return lot;
+}
+
+export function assignDino(ctx: Ctx, userId: string, dinoId: number, lotId: number): void {
+  const dino = ctx.db.select().from(schema.dinos)
+    .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
+  if (!dino) throw new AssignError('You do not own that dino.');
+  if (dino.escapedAt !== null) throw new AssignError('That dino has escaped — rescue it first.');
+  const lot = ownedPaddock(ctx, userId, lotId);
+  const occupants = ctx.db.select().from(schema.dinos)
+    .where(and(eq(schema.dinos.userId, userId), eq(schema.dinos.lotId, lotId))).all().length;
+  if (occupants &gt;= paddockCapacity(lot.level)) throw new AssignError('That paddock is full.');
+  ctx.db.update(schema.dinos).set({ lotId }).where(eq(schema.dinos.id, dinoId)).run();
+  recomputeRating(ctx, userId);
+}
+
+export function unassignDino(ctx: Ctx, userId: string, dinoId: number): void {
+  const dino = ctx.db.select().from(schema.dinos)
+    .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
+  if (!dino) throw new AssignError('You do not own that dino.');
+  ctx.db.update(schema.dinos).set({ lotId: null }).where(eq(schema.dinos.id, dinoId)).run();
+  recomputeRating(ctx, userId);
+}
+
+export function decorateLot(ctx: Ctx, userId: string, lotId: number, decorKind: string): void {
+  const lot = ownedPaddock(ctx, userId, lotId);
+  const def = DECOR[decorKind];
+  if (!def) throw new AssignError('Unknown decoration.');
+  ctx.db.transaction(() =&gt; {
+    ctx.economy.apply(userId, { cash: -def.cost }, `decorate:${decorKind}`, ctx.now());
+    ctx.db.update(schema.lots).set({ decor: [...lot.decor, decorKind] })
+      .where(eq(schema.lots.id, lotId)).run();
+  });
+  recomputeRating(ctx, userId);
+}
+
+export function listDinos(ctx: Ctx, userId: string) {
+  const { clockDinos } = toClockDinos(ctx, userId);
+  const rows = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all();
+  return rows.map((d, i) =&gt; ({ dino: d, species: getSpecies(d.speciesId), comfort: comfortAt(clockDinos[i], ctx.now()) }));
+}</code></pre>
+<span class="muted">Note: <code>toClockDinos</code> returns clockDinos in the same order as the <code>dinos</code> query (both order by insertion/id); if you need strict pairing, key by id instead of index — safer: build a map. Prefer a map to avoid an ordering assumption.</span>
+Run → PASS. Typecheck. Fix the pairing with a map if the test is flaky.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Commit.</label>
+<pre><code>git add -A && git commit -m "Add dino assignment, unassignment, and paddock decoration"</code></pre></div>
+
+<hr>
+
+<h2>Task 9: Hatchery module (commands + reveal flow)</h2>
+<p class="files"><b>Files:</b> Create <code>src/modules/hatchery/index.ts</code>, <code>src/modules/hatchery/embeds.ts</code>; Test append to <code>tests/hatchery.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> hatchery service, shards service (<code>buyMythicEgg</code>, <code>mythicSpeciesChoices</code>), scheduler (see wiring note).<br>
+<b>Produces:</b> <code>hatcheryModule: ModuleManifest</code> (name <code>'hatchery'</code>) — commands <code>/eggs</code>, <code>/incubate egg:&lt;id&gt;</code>, <code>/hatch egg:&lt;id&gt;</code>, <code>/mythic species:&lt;choice&gt;</code>; component prefix <code>hatch</code> for the reveal button.</div>
+
+<div class="callout warn"><b>Scheduler access in a command handler:</b> <code>incubateEgg</code> needs the <code>Scheduler</code>, but <code>CommandDef.execute(ctx, i)</code> only gets <code>ctx</code>. Rather than widen the kernel, attach the scheduler to <code>ctx</code>: in Task 12 you add <code>scheduler</code> to the <code>Ctx</code> interface and boot. Do that FIRST if executing strictly in order — OR (cleaner) do this task's incubate handler by reading <code>ctx.scheduler</code> and add the <code>Ctx.scheduler</code> field as part of THIS task (a one-line interface change + harness update), so the module compiles now. Add to <code>src/core/context.ts</code>: <code>scheduler: Scheduler;</code> (import type). Update <code>tests/harness.ts</code> <code>makeCtx</code> to construct <code>new Scheduler(db)</code> and include it. Update <code>src/index.ts</code> to put the already-created <code>scheduler</code> into <code>ctx</code>. This makes <code>ctx.scheduler</code> available to every module. Prefer this — it removes the awkward per-call scheduler passing in Tasks 4/5 too (you may refactor their service signatures to read <code>ctx.scheduler</code> instead of a parameter; if you do, update their tests to not pass <code>sched</code>). Keep the change consistent.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Add <code>scheduler</code> to <code>Ctx</code> (interface + harness + boot).</label>
+<pre><code>// src/core/context.ts — add field
+import type { Scheduler } from './scheduler.js';
+export interface Ctx { db: Db; economy: EconomyService; config: Config; scheduler: Scheduler; now(): number; rng(): number; }</code></pre>
+Update <code>tests/harness.ts</code> <code>makeCtx</code>: <code>import { Scheduler } from '../src/core/scheduler.js'</code>, and in the returned object add <code>scheduler: new Scheduler(db)</code> (before the <code>...overrides</code> spread). Update <code>src/index.ts</code>: build <code>scheduler</code> before <code>ctx</code> and include <code>scheduler</code> in the <code>ctx</code> literal (remove the later standalone <code>const scheduler</code>). Refactor <code>startExpedition</code> and <code>incubateEgg</code> to take <code>ctx</code> only and use <code>ctx.scheduler.enqueue(...)</code> (drop the <code>scheduler</code> parameter); update Tasks 4/5 tests to call them without <code>sched</code> (construct via <code>makeCtx</code> which now carries one). <b>Run the full suite after this refactor — expeditions/hatchery tests must still pass.</b></div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Embeds — egg list + hatch reveal card.</label>
+<pre><code>// src/modules/hatchery/embeds.ts
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import type { Species } from '../../data/types.js';
+import { RARITY } from '../../data/rarity.js';
+
+const RARITY_COLOR: Record&lt;string, number&gt; = {
+  common: 0x95a5a6, uncommon: 0x2ecc71, rare: 0x3498db, epic: 0x9b59b6, legendary: 0xf1c40f, mythic: 0xe74c3c,
+};
+
+export function crackButton(eggId: number, rarity: string) {
+  return new ActionRowBuilder&lt;ButtonBuilder&gt;().addComponents(
+    new ButtonBuilder().setCustomId(`hatch:crack:${eggId}`).setLabel('🔨 Crack it open!').setStyle(ButtonStyle.Success),
+  );
+}
+export function preHatchEmbed(rarity: string) {
+  return new EmbedBuilder().setColor(RARITY_COLOR[rarity])
+    .setTitle(`🥚 A ${rarity} egg trembles…`).setDescription('Something stirs inside. Crack it open!');
+}
+export function revealPayload(species: Species) {
+  const stats = RARITY[species.rarity];
+  const embed = new EmbedBuilder().setColor(RARITY_COLOR[species.rarity])
+    .setTitle(`✨ ${species.rarity.toUpperCase()} — ${species.name}!`)
+    .setDescription(species.flavor)
+    .addFields(
+      { name: 'Diet', value: species.diet, inline: true },
+      { name: 'Biome', value: species.biomeTags.join(', '), inline: true },
+      { name: 'Income/hr', value: String(stats.incomePerHr), inline: true },
+    );
+  return { embeds: [embed], components: [] };
+}</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Module manifest.</label>
+<pre><code>// src/modules/hatchery/index.ts
+import { SlashCommandBuilder, MessageFlags, EmbedBuilder } from 'discord.js';
+import { eq, and } from 'drizzle-orm';
+import type { ModuleManifest } from '../../core/modules.js';
+import { schema } from '../../core/db/index.js';
+import { getOrCreateUser } from '../park/service.js';
+import { incubateEgg, hatchEgg, HatcheryError } from './service.js';
+import { buyMythicEgg, mythicSpeciesChoices, ShardError } from '../shop/shards.js';
+import { getSpecies } from '../../data/species/index.js';
+import { preHatchEmbed, crackButton, revealPayload } from './embeds.js';
+import { InsufficientFundsError } from '../../core/economy.js';
+
+const mythicChoices = mythicSpeciesChoices().map((s) =&gt; ({ name: s.name, value: s.id }));
+
+export const hatcheryModule: ModuleManifest = {
+  name: 'hatchery',
+  commands: [
+    { data: new SlashCommandBuilder().setName('eggs').setDescription('Your eggs and incubator'),
+      async execute(ctx, i) {
+        getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, i.user.id)).all();
+        const lines = eggs.length ? eggs.map((e) =&gt; {
+          const status = e.hatchesAt === null ? 'in inventory'
+            : e.hatchesAt &lt;= ctx.now() ? 'READY — /hatch' : `hatching (ready &lt;t:${Math.floor(e.hatchesAt / 1000)}:R&gt;)`;
+          return `#${e.id} — ${e.rarity} egg — ${status}`;
+        }).join('\n') : 'No eggs. Run /expedition or /shop.';
+        await i.reply({ embeds: [new EmbedBuilder().setTitle('🥚 Eggs').setDescription(lines).setColor(0x3ba55c)] });
+      } },
+    { data: new SlashCommandBuilder().setName('incubate').setDescription('Start incubating an egg')
+        .addIntegerOption((o) =&gt; o.setName('egg').setDescription('Egg id from /eggs').setRequired(true)),
+      async execute(ctx, i) {
+        getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        try {
+          const egg = incubateEgg(ctx, i.user.id, i.options.getInteger('egg', true), i.guildId);
+          await i.reply({ content: `🥚 Incubating your ${egg.rarity} egg — ready &lt;t:${Math.floor(egg.hatchesAt! / 1000)}:R&gt;.` });
+        } catch (e) { if (e instanceof HatcheryError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
+      } },
+    { data: new SlashCommandBuilder().setName('hatch').setDescription('Hatch a ready egg')
+        .addIntegerOption((o) =&gt; o.setName('egg').setDescription('Egg id from /eggs').setRequired(true)),
+      async execute(ctx, i) {
+        getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        const eggId = i.options.getInteger('egg', true);
+        const egg = ctx.db.select().from(schema.eggs).where(and(eq(schema.eggs.id, eggId), eq(schema.eggs.userId, i.user.id))).get();
+        if (!egg) { await i.reply({ content: 'You do not own that egg.', flags: MessageFlags.Ephemeral }); return; }
+        if (egg.hatchesAt === null || egg.hatchesAt &gt; ctx.now()) { await i.reply({ content: 'That egg is not ready to hatch.', flags: MessageFlags.Ephemeral }); return; }
+        await i.reply({ embeds: [preHatchEmbed(egg.rarity)], components: [crackButton(eggId, egg.rarity)] });
+      } },
+    { data: new SlashCommandBuilder().setName('mythic').setDescription('Spend 500 shards on a Mythic egg (needs 4★)')
+        .addStringOption((o) =&gt; o.setName('species').setDescription('Which Mythic').setRequired(true).addChoices(...mythicChoices)),
+      async execute(ctx, i) {
+        getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        try {
+          const egg = buyMythicEgg(ctx, i.user.id, i.options.getString('species', true));
+          await i.reply({ content: `🌟 A Mythic **${getSpecies(egg.speciesId!).name}** egg is yours! Incubate it with /incubate ${egg.id}.` });
+        } catch (e) {
+          if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough shards (need 500).', flags: MessageFlags.Ephemeral });
+          else throw e;
+        }
+      } },
+  ],
+  components: [
+    { prefix: 'hatch', async execute(ctx, i) {
+        const [, action, idStr] = i.customId.split(':');
+        if (action !== 'crack') return;
+        try {
+          const { species } = hatchEgg(ctx, i.user.id, Number(idStr));
+          await i.update(revealPayload(species));   // edit the message in place → reveal
+        } catch (e) {
+          if (e instanceof HatcheryError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e;
+        }
+      } },
+  ],
+};</code></pre>
+<span class="muted">The reveal uses <code>i.update(...)</code> to edit the "trembling egg" message into the reveal card — the single-edit version of the spec's suspense beat (a multi-frame animation can come later; the plan keeps it to one edit to respect the 3s window without deferring).</span></div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Harness command test + run + commit.</label>
+<pre><code>// append to tests/hatchery.test.ts
+import { hatcheryModule } from '../src/modules/hatchery/index.js';
+import { fakeButton } from './harness.js';
+
+it('/eggs command replies with an embed', async () =&gt; {
+  getOrCreateUser(ctx, 'u1', 'Reg');
+  const i = { user: { id: 'u1', displayName: 'Reg' }, guildId: 'g1',
+    options: { getInteger: () =&gt; null, getString: () =&gt; null }, reply: async (p: unknown) =&gt; { (i as any).last = p; } } as any;
+  await hatcheryModule.commands[0].execute(ctx, i);
+  expect((i as any).last.embeds).toHaveLength(1);
+});</code></pre>
+<span class="muted">(Or use <code>fakeCommand({ name: 'eggs', user: 'u1' })</code> and <code>.asChatInput()</code> — preferred; the inline fake above is only if you need custom option stubs. Use <code>fakeCommand</code>.)</span>
+<pre><code>npm run typecheck && npx vitest run
+git add -A && git commit -m "Add hatchery module: eggs, incubate, hatch reveal, mythic purchase"</code></pre></div>
+
+<hr>
+
+<h2>Task 10: Expeditions module (commands)</h2>
+<p class="files"><b>Files:</b> Create <code>src/modules/expeditions/index.ts</code>; Test append to <code>tests/expeditions.test.ts</code></p>
+<div class="iface"><b>Produces:</b> <code>expeditionsModule: ModuleManifest</code> (name <code>'expeditions'</code>) — <code>/expedition start site:&lt;choice&gt;</code>, <code>/expedition status</code>, <code>/expedition claim</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Module manifest (uses <code>ctx.scheduler</code> from Task 9's refactor).</label>
+<pre><code>// src/modules/expeditions/index.ts
+import { SlashCommandBuilder, MessageFlags, EmbedBuilder } from 'discord.js';
+import type { ModuleManifest } from '../../core/modules.js';
+import { getOrCreateUser } from '../park/service.js';
+import { startExpedition, claimExpedition, activeExpedition, ExpeditionError } from './service.js';
+import { EXPEDITION_SITES } from '../../data/sites.js';
+import { InsufficientFundsError } from '../../core/economy.js';
+
+const siteChoices = Object.values(EXPEDITION_SITES).map((s) =&gt; ({ name: s.name, value: s.id }));
+
+export const expeditionsModule: ModuleManifest = {
+  name: 'expeditions',
+  commands: [
+    { data: new SlashCommandBuilder().setName('expedition').setDescription('Send a dig crew out')
+        .addSubcommand((s) =&gt; s.setName('start').setDescription('Start an expedition')
+          .addStringOption((o) =&gt; o.setName('site').setDescription('Dig site').setRequired(true).addChoices(...siteChoices)))
+        .addSubcommand((s) =&gt; s.setName('status').setDescription('Check your active expedition'))
+        .addSubcommand((s) =&gt; s.setName('claim').setDescription('Claim a returned expedition')),
+      async execute(ctx, i) {
+        getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        const sub = i.options.getSubcommand();
+        try {
+          if (sub === 'start') {
+            const exp = startExpedition(ctx, i.user.id, i.options.getString('site', true), i.guildId);
+            await i.reply({ content: `🧭 Crew dispatched to **${EXPEDITION_SITES[exp.siteId].name}** — back &lt;t:${Math.floor(exp.returnsAt / 1000)}:R&gt;.` });
+          } else if (sub === 'status') {
+            const exp = activeExpedition(ctx, i.user.id);
+            await i.reply(exp
+              ? { content: exp.returnsAt &lt;= ctx.now() ? '✅ Back! Use /expedition claim.' : `⏳ At **${EXPEDITION_SITES[exp.siteId].name}**, back &lt;t:${Math.floor(exp.returnsAt / 1000)}:R&gt;.` }
+              : { content: 'No active expedition. Start one with /expedition start.', flags: MessageFlags.Ephemeral });
+          } else {
+            const { loot, site } = claimExpedition(ctx, i.user.id);
+            await i.reply({ embeds: [new EmbedBuilder().setColor(0xe8590c).setTitle(`🧭 ${site.name} — returned!`)
+              .setDescription(`Found a **${loot.eggRarity}** egg!`)
+              .addFields({ name: '💰 Cash', value: `+${loot.cash}`, inline: true }, { name: '🍖 Food', value: `+${loot.food}`, inline: true })] });
+          }
+        } catch (e) {
+          if (e instanceof ExpeditionError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash for that expedition.', flags: MessageFlags.Ephemeral });
+          else throw e;
+        }
+      } },
+  ],
+  components: [],
+};</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Harness test + run + commit.</label>
+Add a <code>fakeCommand({ name: 'expedition', sub: 'start', user: 'u1', guild: 'g1', options: { site: 'coastal_dig' } })</code> test asserting a reply is produced and a timer row exists. Then:
+<pre><code>npm run typecheck && npx vitest run
+git add -A && git commit -m "Add expeditions module commands"</code></pre></div>
+
+<hr>
+
+<h2>Task 11: Shop &amp; dino command surfaces</h2>
+<p class="files"><b>Files:</b> Create <code>src/modules/shop/index.ts</code>; Modify <code>src/modules/park/index.ts</code> (add <code>/dino</code> + <code>/decorate</code>); Test append to <code>tests/shop.test.ts</code>, <code>tests/dinos.test.ts</code></p>
+<div class="iface"><b>Produces:</b> <code>shopModule: ModuleManifest</code> (name <code>'shop'</code>) — <code>/shop</code> (shows daily eggs + food + decor with buy buttons or a <code>buy</code> subcommand), <code>/sell dino:&lt;id&gt;</code> (confirm-modal or direct with a preview). Park module gains <code>/dino list|assign|unassign</code> and <code>/decorate lot:&lt;id&gt; item:&lt;choice&gt;</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Shop module.</label>
+Implement <code>/shop</code> as: reply with an embed listing today's <code>dailyEggOffers(user.ratingHighWater, ctx.now())</code> with prices (from <code>SHOP_EGG_PRICES</code>), the three food bundles, and available decor (from <code>DECOR</code>), plus a <code>buy</code> subcommand: <code>/shop buy kind:&lt;egg-rarity|food-N|decor-kind&gt;</code> — OR simpler and fully typed: three subcommands <code>/shop view</code>, <code>/shop egg rarity:&lt;choice&gt;</code>, <code>/shop food units:&lt;int&gt;</code>. Use the three-subcommand form (cleaner than free-text). <code>egg</code> calls <code>buyEgg</code> (reject if the chosen rarity isn't in today's offers OR above ceiling — check membership in <code>dailyEggOffers</code>), <code>food</code> calls <code>buyFood</code>. Catch <code>ShopError</code>/<code>InsufficientFundsError</code> → ephemeral. Also add <code>/sell dino:&lt;id&gt;</code>: call <code>previewSell</code>, then a confirm button <code>sell:confirm:&lt;dinoId&gt;</code>; on confirm call <code>sellDino</code> and report cash+shards (note if capped). Follow the exact error-handling + <code>MessageFlags.Ephemeral</code> pattern from the park module. Component prefix <code>sell</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Park module <code>/dino</code> + <code>/decorate</code>.</label>
+Add two commands to <code>parkModule.commands</code>:
+<ul>
+<li><code>/dino</code> with subcommands: <code>list</code> (calls <code>listDinos</code>, shows id/species/comfort/assigned-lot), <code>assign dino:&lt;id&gt; lot:&lt;id&gt;</code> (calls <code>assignDino</code>), <code>unassign dino:&lt;id&gt;</code> (calls <code>unassignDino</code>). Autocomplete is optional; integer options are fine.</li>
+<li><code>/decorate lot:&lt;id&gt; item:&lt;choice&gt;</code> — choices from <code>Object.values(DECOR).map(d =&gt; ({ name: d.name, value: d.kind }))</code>; calls <code>decorateLot</code>.</li>
+</ul>
+Catch <code>AssignError</code>/<code>InsufficientFundsError</code> → ephemeral. These live in the park module because they are park management (keeps modules cohesive).</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Tests + run + commit.</label>
+Add harness tests: <code>/shop egg rarity:common</code> creates an egg + charges; <code>/sell</code> confirm button path sells a dino. Reuse the service-level tests already written (Tasks 6-8) for logic; these command tests just prove the wiring. Then:
+<pre><code>npm run typecheck && npx vitest run
+git add -A && git commit -m "Add shop and dino/decorate command surfaces"</code></pre></div>
+
+<hr>
+
+<h2>Task 12: Scheduler notifications + settings + boot</h2>
+<p class="files"><b>Files:</b> Create <code>src/core/notify.ts</code>, <code>src/modules/settings/index.ts</code>; Modify <code>src/index.ts</code> (register handlers, relocate boot scan); Test <code>tests/notify.test.ts</code></p>
+<div class="iface"><b>Produces:</b> <code>deliverNotification(client, ctx, userId, originGuildId, message): Promise&lt;void&gt;</code> (never throws — channel → DM → silent, per spec §4.2); handler factories <code>eggHatchHandler(client, ctx)</code> and <code>expeditionReturnHandler(client, ctx)</code> returning <code>(t: Timer) =&gt; Promise&lt;void&gt;</code>; <code>settingsModule: ModuleManifest</code> with <code>/settings channel channel:&lt;#chan&gt;</code> (requires Manage Guild).</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Notification delivery (testable without a real client).</label>
+<pre><code>// src/core/notify.ts
+import { eq } from 'drizzle-orm';
+import type { Client } from 'discord.js';
+import { schema } from './db/index.js';
+import type { Ctx } from './context.js';
+import { logger } from './logger.js';
+
+// Minimal shape we need from discord.js — lets tests pass a fake.
+export interface Sender {
+  channelSend(channelId: string, content: string): Promise&lt;void&gt;;
+  dmSend(userId: string, content: string): Promise&lt;void&gt;;
+}
+
+export async function deliverNotification(sender: Sender, ctx: Ctx, userId: string, originGuildId: string | null, message: string): Promise&lt;void&gt; {
+  // 1. configured guild channel (mention the user)
+  if (originGuildId) {
+    const gs = ctx.db.select().from(schema.guildSettings).where(eq(schema.guildSettings.guildId, originGuildId)).get();
+    if (gs?.notifyChannelId) {
+      try { await sender.channelSend(gs.notifyChannelId, `&lt;@${userId}&gt; ${message}`); return; }
+      catch (e) { logger.warn({ err: e, guild: originGuildId }, 'notify channel send failed'); }
+    }
+  }
+  // 2. DM
+  try { await sender.dmSend(userId, message); return; }
+  catch (e) { logger.warn({ err: e, userId }, 'notify DM failed'); }
+  // 3. silent — nothing more to do
+}
+
+// Adapter over the real client (used in index.ts, not in tests).
+export function clientSender(client: Client): Sender {
+  return {
+    async channelSend(channelId, content) {
+      const ch = await client.channels.fetch(channelId);
+      if (ch && ch.isTextBased() && 'send' in ch) await (ch as { send(c: string): Promise&lt;unknown&gt; }).send(content);
+      else throw new Error('channel not sendable');
+    },
+    async dmSend(userId, content) { const u = await client.users.fetch(userId); await u.send(content); },
+  };
+}</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Failing notify test (fake sender records calls; prove the fallback chain).</label>
+<pre><code>// tests/notify.test.ts
+import { describe, it, expect } from 'vitest';
+import { makeCtx } from './harness.js';
+import { deliverNotification, type Sender } from '../src/core/notify.js';
+import { schema } from '../src/core/db/index.js';
+
+const mkSender = (opts: { channelFails?: boolean; dmFails?: boolean } = {}): Sender & { calls: string[] } =&gt; {
+  const calls: string[] = [];
+  return { calls,
+    async channelSend(c) { calls.push(`channel:${c}`); if (opts.channelFails) throw new Error('x'); },
+    async dmSend(u) { calls.push(`dm:${u}`); if (opts.dmFails) throw new Error('x'); } };
+};
+
+describe('deliverNotification', () =&gt; {
+  it('uses the configured guild channel when set', async () =&gt; {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.guildSettings).values({ guildId: 'g1', notifyChannelId: 'c1' }).run();
+    const s = mkSender();
+    await deliverNotification(s, ctx, 'u1', 'g1', 'hi');
+    expect(s.calls).toEqual(['channel:c1']);
+  });
+  it('falls back to DM when no channel configured', async () =&gt; {
+    const ctx = makeCtx(); const s = mkSender();
+    await deliverNotification(s, ctx, 'u1', 'g1', 'hi');
+    expect(s.calls).toEqual(['dm:u1']);
+  });
+  it('falls back to DM when the channel send throws, then silent when DM throws', async () =&gt; {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.guildSettings).values({ guildId: 'g1', notifyChannelId: 'c1' }).run();
+    const s = mkSender({ channelFails: true, dmFails: true });
+    await deliverNotification(s, ctx, 'u1', 'g1', 'hi');   // must NOT throw
+    expect(s.calls).toEqual(['channel:c1', 'dm:u1']);
+  });
+});</code></pre>
+Run → FAIL, then implement (Step 1) → PASS.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Handler factories + settings module.</label>
+<pre><code>// add to src/core/notify.ts
+import { EXPEDITION_SITES } from '../data/sites.js';
+export function eggHatchHandler(sender: Sender, ctx: Ctx) {
+  return async (t: { userId: string; refId: number; originGuildId: string | null }) =&gt; {
+    const egg = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, t.refId)).get();
+    if (!egg) return;   // hatched/removed already — nothing to ping
+    await deliverNotification(sender, ctx, t.userId, t.originGuildId, `🥚 Your ${egg.rarity} egg is ready to hatch! Use /hatch ${egg.id}.`);
+  };
+}
+export function expeditionReturnHandler(sender: Sender, ctx: Ctx) {
+  return async (t: { userId: string; refId: number; originGuildId: string | null }) =&gt; {
+    const exp = ctx.db.select().from(schema.expeditions).where(eq(schema.expeditions.id, t.refId)).get();
+    if (!exp || exp.claimedAt) return;
+    await deliverNotification(sender, ctx, t.userId, t.originGuildId, `🧭 Your expedition to ${EXPEDITION_SITES[exp.siteId].name} has returned! Use /expedition claim.`);
+  };
+}</code></pre>
+<pre><code>// src/modules/settings/index.ts
+import { SlashCommandBuilder, PermissionFlagsBits, MessageFlags, ChannelType } from 'discord.js';
+import { eq } from 'drizzle-orm';
+import type { ModuleManifest } from '../../core/modules.js';
+import { schema } from '../../core/db/index.js';
+
+export const settingsModule: ModuleManifest = {
+  name: 'settings',
+  commands: [
+    { data: new SlashCommandBuilder().setName('settings').setDescription('Server settings')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+        .addSubcommand((s) =&gt; s.setName('channel').setDescription('Set the hatch/expedition notification channel')
+          .addChannelOption((o) =&gt; o.setName('channel').setDescription('Text channel').addChannelTypes(ChannelType.GuildText).setRequired(true))),
+      async execute(ctx, i) {
+        if (!i.guildId) { await i.reply({ content: 'Use this in a server.', flags: MessageFlags.Ephemeral }); return; }
+        const channelId = i.options.getChannel('channel', true).id;
+        ctx.db.insert(schema.guildSettings).values({ guildId: i.guildId, notifyChannelId: channelId })
+          .onConflictDoUpdate({ target: schema.guildSettings.guildId, set: { notifyChannelId: channelId } }).run();
+        await i.reply({ content: `🔔 Notifications will post in &lt;#${channelId}&gt;.`, flags: MessageFlags.Ephemeral });
+      } },
+  ],
+  components: [],
+};</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Wire handlers + relocate boot scan in <code>src/index.ts</code>.</label>
+After the client + ctx exist, register handlers and move the boot scan into <code>ClientReady</code> so overdue pings actually deliver:
+<pre><code>import { clientSender, eggHatchHandler, expeditionReturnHandler } from './core/notify.js';
+// ... after ctx (which now holds scheduler) and client:
+const sender = clientSender(client);
+ctx.scheduler.register('egg_hatch', eggHatchHandler(sender, ctx));
+ctx.scheduler.register('expedition_return', expeditionReturnHandler(sender, ctx));
+setInterval(() =&gt; { ctx.scheduler.tick(Date.now()).catch((e) =&gt; logger.error({ err: e }, 'scheduler tick failed')); }, 30_000);
+client.once(Events.ClientReady, (c) =&gt; {
+  logger.info(`Logged in as ${c.user.tag}`);
+  ctx.scheduler.tick(Date.now()).catch((e) =&gt; logger.error({ err: e }, 'scheduler boot scan failed'));  // deliver overdue pings now the client is ready
+});</code></pre>
+Remove the old top-level boot-scan tick line. <span class="muted">Handlers swallow send failures (via <code>deliverNotification</code>) and return normally, so a failed ping still marks the timer handled — no infinite retry.</span></div>
+
+<div class="step"><label><input type="checkbox"> Step 5: Run + commit.</label>
+<pre><code>npm run typecheck && npm run build && npx vitest run
+git add -A && git commit -m "Add timer notifications with channel/DM fallback and /settings channel"</code></pre></div>
+
+<hr>
+
+<h2>Task 13: Register modules, deploy, docs</h2>
+<p class="files"><b>Files:</b> Modify <code>modules.json</code>, <code>src/deploy-commands.ts</code>, <code>src/index.ts</code> (registry list), <code>docs/ops.md</code></p>
+<div class="step"><label><input type="checkbox"> Step 1: Enable + register the new modules.</label>
+<code>modules.json</code> → <code>{ "park": true, "hatchery": true, "expeditions": true, "shop": true, "settings": true }</code>.<br>
+In <b>both</b> <code>src/deploy-commands.ts</code> and <code>src/index.ts</code>, import the new modules and pass the full list to <code>new ModuleRegistry([parkModule, hatcheryModule, expeditionsModule, shopModule, settingsModule], config.modules)</code>. The registry's collision guard (Plan 1 Task 10) will throw at construction if any two enabled modules share a command name or component prefix — so <b>verify command names are unique</b> across modules: park(<code>park,build,upgrade,dino,decorate</code>), hatchery(<code>eggs,incubate,hatch,mythic</code>), expeditions(<code>expedition</code>), shop(<code>shop,sell</code>), settings(<code>settings</code>); component prefixes: park, hatch, sell. All unique. ✓</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Typecheck, build, full suite, commit.</label>
+<pre><code>npm run typecheck && npm run build && npx vitest run
+git add -A && git commit -m "Register hatchery, expeditions, shop, and settings modules"</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Update <code>docs/ops.md</code> smoke checklist + commit.</label>
+Extend the release smoke checklist with the new loop (maintainer runs it; no attribution anywhere):
+<ol>
+<li><code>npm run deploy-commands</code> → now prints the new command count (park/build/upgrade/dino/decorate/eggs/incubate/hatch/mythic/expedition/shop/sell/settings = 13).</li>
+<li><code>/expedition start site:Coastal Dig</code> → dispatched; after ~15m (or use the seed script to fast-forward in dev) <code>/expedition status</code> → back; <code>/expedition claim</code> → egg + bonuses.</li>
+<li><code>/eggs</code> → shows the egg; <code>/incubate egg:&lt;id&gt;</code> → incubating; when ready <code>/hatch egg:&lt;id&gt;</code> → "Crack it open!" → reveal card.</li>
+<li><code>/dino assign dino:&lt;id&gt; lot:&lt;paddock id&gt;</code> → assigned; <code>/park view</code> Collect now accrues income over time.</li>
+<li><code>/shop egg rarity:common</code> → buys an egg; <code>/sell dino:&lt;id&gt;</code> → confirm → cash + shards (watch the 40/day cap).</li>
+<li><code>/settings channel channel:#some-channel</code> (as a Manage-Guild user) → hatch/expedition pings post there.</li>
+</ol>
+<pre><code>git add -A && git commit -m "Extend ops smoke checklist for the acquisition loop"</code></pre></div>
+
+<hr>
+
+<h2>Plan self-review</h2>
+<ul>
+<li><b>Spec coverage:</b> §3.1 roster → T1; §3.2 eggs/gacha/shards/Mythic-both-paths → T2 (rolls), T4 (expedition eggs incl. Volcano Mythic), T5 (hatch species roll + preset), T6 (shards + /mythic pity); §3.3 incubation/sell/sink numbers → data files in T5/T6/T7; §3.5 expeditions → T4/T10; §3.6 hatchery/incubator slots/reveal → T5/T9; §3.7 rating recompute + high-water gating → T3; §3.8 lot-slot gating, decor → T3/T8; §3.9 shop rotation/ceiling/sell-cash/via_trade-0-shards → T6/T7/T11; §4.2 notification routing → T12; §6 commands (/eggs,/incubate,/hatch,/mythic,/expedition,/shop,/sell,/dino,/decorate,/settings) → T9-T12; §8 all logic seeded+time-injected and harness-tested → every task.</li>
+<li><b>Deferred to later plans (correctly out of scope):</b> care/feed/rescue + escape persistence (Plan 3); trading + leaderboards (Plan 4); renderer + admin (Plan 5). Escape math already exists (Plan 1) and <code>accruedIncome</code> tolerates unstamped escapes, so income is correct now; Plan 3 adds the escape-stamping scheduler.</li>
+<li><b>Atomicity:</b> every currency+item flow (build/upgrade/collect already; expedition start/claim, mythic buy, sell, shop egg, decorate) wraps charge+effect in one <code>ctx.db.transaction</code>. Single-<code>apply</code> ops (buyFood) need no wrapper.</li>
+<li><b>Cross-task types:</b> <code>ctx.scheduler</code> added in T9 and used by T4/T5/T10 — the T9 refactor step updates their signatures and tests; ensure the full suite is green after T9. <code>Rarity</code>, <code>Species</code>, service error classes, and <code>recomputeRating</code> names are consistent across tasks.</li>
+<li><b>Known follow-ups for Plan 3+:</b> the hatch "suspense" is a single edit (multi-frame later); shop rotation shuffle is deterministic but not uniform; escape stamping still pending.</li>
+</ul>
+
+</body>
+</html>
