@@ -8,9 +8,11 @@ import { expeditionsModule } from './modules/expeditions/index.js';
 import { shopModule } from './modules/shop/index.js';
 import { settingsModule } from './modules/settings/index.js';
 import { careModule } from './modules/care/index.js';
+import { tradingModule } from './modules/trading/index.js';
+import { leaderboardsModule } from './modules/leaderboards/index.js';
 
 const config = loadConfig();
-const registry = new ModuleRegistry([parkModule, hatcheryModule, expeditionsModule, shopModule, settingsModule, careModule], config.modules);
+const registry = new ModuleRegistry([parkModule, hatcheryModule, expeditionsModule, shopModule, settingsModule, careModule, tradingModule, leaderboardsModule], config.modules);
 const body = registry.commands().map((c) => c.data.toJSON());
 const rest = new REST().setToken(config.token);
 
