@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dino World — Plan 3: Dino Care</title>
+<style>
+  :root { --bg:#fff; --fg:#1f2328; --muted:#656d76; --line:#d0d7de; --accent:#1a7f37; --code-bg:#f6f8fa; --warn:#9a6700; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --accent:#3fb950; --code-bg:#161b22; --warn:#d29922; } }
+  body { background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,"Segoe UI",sans-serif; max-width:920px; margin:0 auto; padding:24px 20px 80px; }
+  h1 { font-size:26px; border-bottom:2px solid var(--line); padding-bottom:8px; }
+  h2 { font-size:20px; margin-top:40px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:12.5px; background:var(--code-bg); padding:1px 5px; border-radius:4px; }
+  pre { background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:12px; overflow-x:auto; }
+  pre code { background:none; padding:0; font-size:12px; line-height:1.5; }
+  .callout { border-left:4px solid var(--accent); background:var(--code-bg); padding:10px 14px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .callout.warn { border-left-color:var(--warn); }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  td, th { border:1px solid var(--line); padding:5px 9px; text-align:left; }
+  th { background:var(--code-bg); }
+  .files { font-size:13.5px; }
+  .iface { font-size:13px; background:var(--code-bg); border:1px dashed var(--line); border-radius:8px; padding:8px 12px; margin:6px 0; }
+  .muted { color:var(--muted); }
+  input[type=checkbox] { transform:scale(1.1); margin-right:7px; }
+  .step label { font-weight:600; }
+</style>
+</head>
+<body>
+
+<h1>🍖 Dino World — Plan 3: Dino Care</h1>
+
+<div class="callout">
+<b>For agentic workers:</b> REQUIRED SUB-SKILL: Use <code>superpowers:subagent-driven-development</code> (recommended) or <code>superpowers:executing-plans</code>. Steps use checkboxes.
+</div>
+
+<p><b>Goal:</b> Give dinos hunger-driven upkeep: feed them (<code>/feed</code>), let neglect escalate to escape (income halts), and recover with <code>/rescue</code> — plus a rating fix so escaped dinos stop propping up your comfort score while still counting as owned.</p>
+
+<p><b>Architecture:</b> Same modular monolith (Plans 1-2 merged on <code>main</code>). New <code>care</code> module + service; a <code>settleEscapes</code> helper in the park module (it uses <code>toClockDinos</code> + <code>clock.escapeMoment</code>, so it lives with park to avoid a service-layer import cycle) called at interaction entry; a one-line fix to <code>recomputeRating</code>. <b>No DB migration</b> — <code>dinos.hunger</code>, <code>dinos.lastFedAt</code>, <code>dinos.escapedAt</code> already exist; the game-clock (<code>hungerAt</code>/<code>comfortAt</code>/<code>escapeMoment</code>) and per-rarity <code>feedCost</code>/<code>incomePerHr</code> already exist.</p>
+
+<p><b>Tech Stack:</b> TypeScript strict, discord.js v14, better-sqlite3 + Drizzle, vitest. No new dependencies.</p>
+
+<h2>Global Constraints</h2>
+<ul>
+<li>Commits authored by <b>RegEdits-TSC</b> — no other identity, no <code>Co-Authored-By</code>, no AI/Claude/assistant/"generated with" in any durable artifact.</li>
+<li>TypeScript <code>strict: true</code>, no explicit <code>any</code>. Run <code>npm run typecheck</code> (src+tests) and <code>npm run build</code> — both exit 0.</li>
+<li><b>Atomicity:</b> every currency+item flow in ONE <code>ctx.db.transaction</code> (<code>EconomyService.apply</code> nests as a savepoint). Feed = food out + hunger reset (one tx). Rescue = cash out + dino update (one tx). <code>/feed all</code> feeds each dino in its own transaction (spec §3.4: "each dino is an atomic action").</li>
+<li>Currency only via <code>ctx.economy.apply</code>. Time via <code>ctx.now()</code>. No <code>Math.random()</code>/<code>Date.now()</code> in logic.</li>
+<li><b>recomputeRating after any comfort change</b> — feed and rescue change hunger→comfort, so both call <code>recomputeRating</code> (this is the exact staleness class the Plan 2 final review flagged for build/upgrade).</li>
+<li>Errors use <code>flags: MessageFlags.Ephemeral</code>, never <code>ephemeral: true</code>. Handlers thin.</li>
+</ul>
+
+<div class="callout"><b>Existing interfaces this plan builds on (exact):</b>
+<pre><code>// src/data/rarity.ts  RARITY[rarity] = { incomePerHr, sellShards:[min,max], incubationMs, feedCost }
+// src/core/clock.ts
+hungerAt(hungerAtFed: number, lastFedAt: number, at: number): number         // 100→0 over 48h, clamped
+paddockFit(species: Species, paddock: PaddockDef, decor: string[]): number   // 1.0 / 0.75 / 0.5
+comfortAt(d: ClockDino, at: number): number                                   // 0..1
+escapeMoment(d: ClockDino, from: number): number | null                       // escape instant if escaped-as-of `from`, else null
+type ClockDino = { species; paddock: PaddockDef|null; decor: string[]; hungerAtFed; lastFedAt; escapedAt: number|null }
+// src/modules/park/service.ts
+toClockDinos(ctx, userId): { clockDinos: ClockDino[]; lots: Lot[]; user: User; dinos: Array<DinoRow> }  // clockDinos[i] pairs dinos[i]
+// src/modules/park/rating.ts  recomputeRating(ctx, userId): { rating; highWater }
+// src/data/species/index.ts getSpecies(id); src/data/paddocks.ts PADDOCKS
+// schema.dinos: { id, userId, lotId, speciesId, hunger, lastFedAt, escapedAt, viaTrade, locked, hatchedAt }
+</code></pre>
+Note: <code>dinos.hunger</code> stores the hunger value AT <code>lastFedAt</code>; current hunger = <code>hungerAt(hunger, lastFedAt, now)</code>. Feeding sets <code>hunger=100, lastFedAt=now</code>.
+</div>
+
+<hr>
+
+<h2>Task 1: Care data + feed service</h2>
+<p class="files"><b>Files:</b> Create <code>src/data/care.ts</code>, <code>src/modules/care/service.ts</code>, <code>tests/care.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> <code>RARITY</code>, <code>getSpecies</code>, <code>hungerAt</code>, <code>toClockDinos</code>, <code>recomputeRating</code>, economy, schema.<br>
+<b>Produces:</b> <code>RECAPTURE_FEE_HOURS = 4</code> (in care.ts); <code>class CareError extends Error</code>; <code>feedDino(ctx, userId, dinoId): { species: Species; cost: number }</code>; <code>feedAll(ctx, userId): { fed: number[]; skipped: number[] }</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Care data.</label>
+<pre><code>// src/data/care.ts
+export const RECAPTURE_FEE_HOURS = 4;   // recapture fee = this * RARITY[rarity].incomePerHr (cash), spec §3.3</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Failing tests.</label>
+<pre><code>// tests/care.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { makeCtx } from './harness.js';
+import { getOrCreateUser } from '../src/modules/park/service.js';
+import { feedDino, feedAll, CareError } from '../src/modules/care/service.js';
+import { schema } from '../src/core/db/index.js';
+import { eq } from 'drizzle-orm';
+
+const H = 3_600_000;
+let ctx: ReturnType&lt;typeof makeCtx&gt;;
+beforeEach(() =&gt; { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); ctx.economy.apply('u1', { food: 1_000 }, 'seed', 0); });
+const addDino = (over: Record&lt;string, unknown&gt; = {}) =&gt;
+  ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0, ...over }).returning().get();
+const food = () =&gt; ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.food;
+const dinoRow = (id: number) =&gt; ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, id)).get()!;
+
+describe('feedDino', () =&gt; {
+  it('refills hunger to 100, charges feed cost, stamps lastFedAt', () =&gt; {
+    const d = addDino({ hunger: 100, lastFedAt: 0 });
+    ctx.setNow(24 * H);                                  // 24h later, current hunger ~50
+    const before = food();
+    const res = feedDino(ctx, 'u1', d.id);               // triceratops = common, feedCost 5
+    expect(res.cost).toBe(5);
+    expect(food()).toBe(before - 5);
+    const row = dinoRow(d.id);
+    expect(row.hunger).toBe(100);
+    expect(row.lastFedAt).toBe(24 * H);
+  });
+  it('refuses to feed an escaped dino', () =&gt; {
+    const d = addDino({ escapedAt: 1 });
+    expect(() =&gt; feedDino(ctx, 'u1', d.id)).toThrow(CareError);
+  });
+});
+
+describe('feedAll', () =&gt; {
+  it('feeds hungriest-first and skips escaped dinos', () =&gt; {
+    const hungry = addDino({ hunger: 100, lastFedAt: 0 });   // will be ~0 hunger at 48h
+    const escaped = addDino({ hunger: 100, lastFedAt: 0, escapedAt: 1 });
+    ctx.setNow(48 * H);
+    const { fed, skipped } = feedAll(ctx, 'u1');
+    expect(fed).toContain(hungry.id);
+    expect(fed).not.toContain(escaped.id);
+    expect(dinoRow(hungry.id).hunger).toBe(100);
+  });
+  it('feeds as many as affordable, reports the rest skipped', () =&gt; {
+    // only 7 food; each common feed costs 5 → can feed 1, skip 1
+    ctx.db.update(schema.users).set({ food: 7 }).where(eq(schema.users.discordId, 'u1')).run();
+    const a = addDino({ hunger: 100, lastFedAt: 0 });
+    const b = addDino({ hunger: 100, lastFedAt: 0 });
+    ctx.setNow(48 * H);
+    const { fed, skipped } = feedAll(ctx, 'u1');
+    expect(fed).toHaveLength(1);
+    expect(skipped).toHaveLength(1);
+    expect(food()).toBe(2);                              // 7 - 5
+  });
+});</code></pre>
+Run → FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Implement.</label>
+<pre><code>// src/modules/care/service.ts
+import { and, eq } from 'drizzle-orm';
+import { schema } from '../../core/db/index.js';
+import type { Ctx } from '../../core/context.js';
+import type { Species } from '../../data/types.js';
+import { RARITY } from '../../data/rarity.js';
+import { getSpecies } from '../../data/species/index.js';
+import { hungerAt } from '../../core/clock.js';
+import { toClockDinos } from '../park/service.js';
+import { recomputeRating } from '../park/rating.js';
+
+export class CareError extends Error {}
+
+export function feedDino(ctx: Ctx, userId: string, dinoId: number): { species: Species; cost: number } {
+  const dino = ctx.db.select().from(schema.dinos)
+    .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
+  if (!dino) throw new CareError('You do not own that dino.');
+  if (dino.escapedAt !== null) throw new CareError('That dino has escaped — rescue it first.');
+  const species = getSpecies(dino.speciesId);
+  const cost = RARITY[species.rarity].feedCost;
+  ctx.db.transaction(() =&gt; {
+    ctx.economy.apply(userId, { food: -cost }, `feed:${species.id}`, ctx.now());
+    ctx.db.update(schema.dinos).set({ hunger: 100, lastFedAt: ctx.now() })
+      .where(eq(schema.dinos.id, dinoId)).run();
+  });
+  recomputeRating(ctx, userId);
+  return { species, cost };
+}
+
+export function feedAll(ctx: Ctx, userId: string): { fed: number[]; skipped: number[] } {
+  const { clockDinos, dinos } = toClockDinos(ctx, userId);
+  const candidates = dinos
+    .map((d, i) =&gt; ({ id: d.id, species: clockDinos[i].species, hunger: hungerAt(d.hunger, d.lastFedAt, ctx.now()), escaped: d.escapedAt !== null }))
+    .filter((c) =&gt; !c.escaped && c.hunger &lt; 100)
+    .sort((a, b) =&gt; a.hunger - b.hunger);                // hungriest first
+  const fed: number[] = []; const skipped: number[] = [];
+  for (const c of candidates) {
+    const cost = RARITY[c.species.rarity].feedCost;
+    const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!;
+    if (user.food &lt; cost) { skipped.push(c.id); continue; }
+    ctx.db.transaction(() =&gt; {
+      ctx.economy.apply(userId, { food: -cost }, `feed:${c.species.id}`, ctx.now());
+      ctx.db.update(schema.dinos).set({ hunger: 100, lastFedAt: ctx.now() })
+        .where(eq(schema.dinos.id, c.id)).run();
+    });
+    fed.push(c.id);
+  }
+  if (fed.length) recomputeRating(ctx, userId);
+  return { fed, skipped };
+}</code></pre>
+Run → PASS. <span class="muted">Each dino's feed is its own transaction, so a mid-batch food shortfall leaves earlier feeds committed and later ones skipped — matching the spec's "atomic per dino / partial batch". Escaped dinos are excluded (rescue first).</span></div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Commit.</label>
+<pre><code>npm run typecheck && npx vitest run
+git add -A && git commit -m "Add care service: feed one dino and feed-all with partial batching"</code></pre></div>
+
+<hr>
+
+<h2>Task 2: Escape settlement + rating comfort fix</h2>
+<p class="files"><b>Files:</b> Create <code>src/modules/park/escapes.ts</code>, <code>tests/escapes.test.ts</code>; Modify <code>src/modules/park/rating.ts</code> (comfort excludes escaped)</p>
+<div class="iface"><b>Consumes:</b> <code>toClockDinos</code>, <code>escapeMoment</code>, schema.<br>
+<b>Produces:</b> <code>settleEscapes(ctx, userId): number[]</code> — stamps <code>dinos.escapedAt</code> for every owned dino whose computed escape moment has passed and isn't already stamped; returns the newly-stamped dino ids. <code>recomputeRating</code> comfort average now excludes escaped dinos (still counts them in collection).</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing tests.</label>
+<pre><code>// tests/escapes.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { makeCtx } from './harness.js';
+import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
+import { settleEscapes } from '../src/modules/park/escapes.js';
+import { recomputeRating } from '../src/modules/park/rating.js';
+import { assignDino } from '../src/modules/park/dinos.js';
+import { schema } from '../src/core/db/index.js';
+import { eq } from 'drizzle-orm';
+
+const H = 3_600_000;
+let ctx: ReturnType&lt;typeof makeCtx&gt;;
+beforeEach(() =&gt; { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); ctx.economy.apply('u1', { cash: 50_000 }, 'seed', 0); });
+const dinoRow = (id: number) =&gt; ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, id)).get()!;
+
+describe('settleEscapes', () =&gt; {
+  it('stamps escapedAt once a dino has been below comfort past the grace period', () =&gt; {
+    // triceratops in a herbivore paddock, NO matching decor → fit 0.75.
+    // comfort hits 0.25 at hunger 33.3 → 66.7% of 48h ≈ 32h; escape 32h + 8h grace = 40h.
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    const d = ctx.db.insert(schema.dinos).values({ userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
+    ctx.setNow(20 * H);
+    expect(settleEscapes(ctx, 'u1')).toEqual([]);        // not yet
+    expect(dinoRow(d.id).escapedAt).toBeNull();
+    ctx.setNow(60 * H);
+    expect(settleEscapes(ctx, 'u1')).toEqual([d.id]);    // escaped
+    expect(dinoRow(d.id).escapedAt).not.toBeNull();
+    expect(settleEscapes(ctx, 'u1')).toEqual([]);        // idempotent — already stamped
+  });
+  it('never escapes an unassigned dino (comfort is 0 but there is no paddock to leave)', () =&gt; {
+    const d = ctx.db.insert(schema.dinos).values({ userId: 'u1', lotId: null, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
+    ctx.setNow(200 * H);
+    expect(settleEscapes(ctx, 'u1')).toEqual([]);
+    expect(dinoRow(d.id).escapedAt).toBeNull();
+  });
+});
+
+describe('recomputeRating with escapes', () =&gt; {
+  it('an escaped dino stays in collection but drops out of the comfort average', () =&gt; {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    const d = ctx.db.insert(schema.dinos).values({ userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
+    ctx.setNow(0);
+    const happy = recomputeRating(ctx, 'u1').rating;       // fed + assigned → comfort contributes
+    ctx.db.update(schema.dinos).set({ escapedAt: 1 }).where(eq(schema.dinos.id, d.id)).run();
+    const escaped = recomputeRating(ctx, 'u1').rating;
+    expect(escaped).toBeLessThan(happy);                   // comfort term dropped
+    expect(escaped).toBeGreaterThan(0);                    // collection (species owned) still counts
+  });
+});</code></pre>
+Run → FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement <code>settleEscapes</code>.</label>
+<pre><code>// src/modules/park/escapes.ts
+import { eq } from 'drizzle-orm';
+import { schema } from '../../core/db/index.js';
+import type { Ctx } from '../../core/context.js';
+import { escapeMoment } from '../../core/clock.js';
+import { toClockDinos } from './service.js';
+
+export function settleEscapes(ctx: Ctx, userId: string): number[] {
+  const { clockDinos, dinos } = toClockDinos(ctx, userId);
+  const stamped: number[] = [];
+  for (let i = 0; i &lt; dinos.length; i++) {
+    if (dinos[i].escapedAt !== null) continue;
+    const esc = escapeMoment(clockDinos[i], ctx.now());
+    if (esc !== null) {
+      ctx.db.update(schema.dinos).set({ escapedAt: esc })
+        .where(eq(schema.dinos.id, dinos[i].id)).run();
+      stamped.push(dinos[i].id);
+    }
+  }
+  return stamped;
+}</code></pre>
+<span class="muted">No currency moves → no transaction wrapper needed; each stamp is an independent idempotent write. <code>escapeMoment</code> returns null for unassigned dinos (no paddock → no comfort crossing), so they never escape.</span></div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Fix the comfort average in <code>recomputeRating</code>.</label>
+In <code>src/modules/park/rating.ts</code>, the comfort component currently filters only on paddock:
+<pre><code>const assigned = clockDinos.filter((d) =&gt; d.paddock !== null);</code></pre>
+Change it to also exclude escaped dinos:
+<pre><code>const assigned = clockDinos.filter((d) =&gt; d.paddock !== null && d.escapedAt === null);</code></pre>
+Leave the collection term untouched (it counts every owned species, escaped or not). Run → PASS.</div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Commit.</label>
+<pre><code>npm run typecheck && npx vitest run
+git add -A && git commit -m "Add lazy escape settlement; exclude escaped dinos from the comfort rating"</code></pre></div>
+
+<hr>
+
+<h2>Task 3: Rescue service</h2>
+<p class="files"><b>Files:</b> Modify <code>src/modules/care/service.ts</code> (add <code>rescueDino</code>); Test append to <code>tests/care.test.ts</code></p>
+<div class="iface"><b>Consumes:</b> <code>RARITY</code>, <code>getSpecies</code>, <code>paddockFit</code>, <code>PADDOCKS</code>, <code>RECAPTURE_FEE_HOURS</code>, <code>recomputeRating</code>, economy, schema.<br>
+<b>Produces:</b> <code>rescueDino(ctx, userId, dinoId): { fee: number; species: Species }</code> — validates the dino is escaped, charges the recapture fee (cash), sets hunger so comfort re-evaluates to ~50%, clears <code>escapedAt</code>, recomputes rating (all in one transaction for the currency+state change).</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Failing test.</label>
+<pre><code>// append to tests/care.test.ts
+import { rescueDino } from '../src/modules/care/service.js';
+import { buildLot } from '../src/modules/park/service.js';
+
+describe('rescueDino', () =&gt; {
+  it('rescues an escaped dino: charges the fee, clears escape, restores ~50% comfort', () =&gt; {
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', 0);
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    // triceratops in herb paddock, no decor → fit 0.75; escaped
+    const d = ctx.db.insert(schema.dinos).values({ userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 0, lastFedAt: 0, hatchedAt: 0, escapedAt: 40 * 3_600_000 }).returning().get();
+    const cashBefore = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.cash;
+    const res = rescueDino(ctx, 'u1', d.id);
+    expect(res.fee).toBe(4 * 60);                        // 4h * common incomePerHr(60) = 240
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.cash).toBe(cashBefore - 240);
+    const row = dinoRow(d.id);
+    expect(row.escapedAt).toBeNull();
+    // hunger set to min(100, round(50/0.75)) = 67 → comfort = 0.67 * 0.75 ≈ 0.5
+    expect(row.hunger).toBe(67);
+  });
+  it('refuses to rescue a dino that has not escaped', () =&gt; {
+    const d = addDino();
+    expect(() =&gt; rescueDino(ctx, 'u1', d.id)).toThrow(CareError);
+  });
+});</code></pre>
+Run → FAIL.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Implement (add to <code>care/service.ts</code>).</label>
+<pre><code>// add these imports to care/service.ts:
+import { paddockFit } from '../../core/clock.js';
+import { PADDOCKS } from '../../data/paddocks.js';
+import { RECAPTURE_FEE_HOURS } from '../../data/care.js';
+
+export function rescueDino(ctx: Ctx, userId: string, dinoId: number): { fee: number; species: Species } {
+  const dino = ctx.db.select().from(schema.dinos)
+    .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
+  if (!dino) throw new CareError('You do not own that dino.');
+  if (dino.escapedAt === null) throw new CareError('That dino has not escaped.');
+  const species = getSpecies(dino.speciesId);
+  const lot = dino.lotId != null
+    ? ctx.db.select().from(schema.lots).where(eq(schema.lots.id, dino.lotId)).get() : undefined;
+  const fit = lot && lot.type === 'paddock' ? paddockFit(species, PADDOCKS[lot.kind], lot.decor) : 0.5;
+  const fee = RECAPTURE_FEE_HOURS * RARITY[species.rarity].incomePerHr;
+  const newHunger = Math.min(100, Math.round(50 / fit));   // comfort re-evaluates to ~0.5
+  ctx.db.transaction(() =&gt; {
+    ctx.economy.apply(userId, { cash: -fee }, `rescue:${species.id}`, ctx.now());
+    ctx.db.update(schema.dinos).set({ hunger: newHunger, lastFedAt: ctx.now(), escapedAt: null })
+      .where(eq(schema.dinos.id, dinoId)).run();
+  });
+  recomputeRating(ctx, userId);
+  return { fee, species };
+}</code></pre>
+Run → PASS.</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Commit.</label>
+<pre><code>npm run typecheck && npx vitest run
+git add -A && git commit -m "Add rescue service: recapture fee, restore comfort, clear escape"</code></pre></div>
+
+<hr>
+
+<h2>Task 4: Care module + wire settlement into read paths</h2>
+<p class="files"><b>Files:</b> Create <code>src/modules/care/index.ts</code>; Modify <code>src/modules/park/index.ts</code> (call <code>settleEscapes</code> in the <code>/park view</code>, <code>/dino list</code>, and <code>park:collect</code> handlers so escape state is current before reading/collecting); Test append to <code>tests/care.test.ts</code></p>
+<div class="iface"><b>Produces:</b> <code>careModule: ModuleManifest</code> (name <code>'care'</code>) — <code>/feed dino:&lt;id&gt;</code> or <code>/feed all</code>, and <code>/rescue dino:&lt;id&gt;</code>. Command names <code>feed</code>, <code>rescue</code> (both unique). No components.</div>
+
+<div class="callout"><b>Feed command shape:</b> use a subcommand form so "one" vs "all" is typed: <code>/feed one dino:&lt;id&gt;</code> and <code>/feed all</code>. (Discord has no "int-or-literal" option; subcommands are the clean way.)</div>
+
+<div class="step"><label><input type="checkbox"> Step 1: Care module.</label>
+<pre><code>// src/modules/care/index.ts
+import { SlashCommandBuilder, MessageFlags } from 'discord.js';
+import type { ModuleManifest } from '../../core/modules.js';
+import { getOrCreateUser } from '../park/service.js';
+import { settleEscapes } from '../park/escapes.js';
+import { feedDino, feedAll, rescueDino, CareError } from './service.js';
+import { InsufficientFundsError } from '../../core/economy.js';
+
+export const careModule: ModuleManifest = {
+  name: 'care',
+  commands: [
+    { data: new SlashCommandBuilder().setName('feed').setDescription('Feed your dinos')
+        .addSubcommand((s) =&gt; s.setName('one').setDescription('Feed a single dino')
+          .addIntegerOption((o) =&gt; o.setName('dino').setDescription('Dino id from /dino list').setRequired(true)))
+        .addSubcommand((s) =&gt; s.setName('all').setDescription('Feed every hungry dino, hungriest first')),
+      async execute(ctx, i) {
+        getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        settleEscapes(ctx, i.user.id);
+        try {
+          if (i.options.getSubcommand() === 'all') {
+            const { fed, skipped } = feedAll(ctx, i.user.id);
+            const msg = fed.length ? `🍖 Fed ${fed.length} dino(s).` : '🍖 Nothing needed feeding.';
+            await i.reply({ content: skipped.length ? `${msg} Skipped ${skipped.length} (not enough food).` : msg });
+          } else {
+            const { species, cost } = feedDino(ctx, i.user.id, i.options.getInteger('dino', true));
+            await i.reply({ content: `🍖 Fed your ${species.name} (−${cost} food).` });
+          }
+        } catch (e) {
+          if (e instanceof CareError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough food — buy some with /shop food.', flags: MessageFlags.Ephemeral });
+          else throw e;
+        }
+      } },
+    { data: new SlashCommandBuilder().setName('rescue').setDescription('Recapture an escaped dino')
+        .addIntegerOption((o) =&gt; o.setName('dino').setDescription('Dino id').setRequired(true)),
+      async execute(ctx, i) {
+        getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        settleEscapes(ctx, i.user.id);
+        try {
+          const { species, fee } = rescueDino(ctx, i.user.id, i.options.getInteger('dino', true));
+          await i.reply({ content: `🪝 Recaptured your ${species.name} for ${fee.toLocaleString()} cash.` });
+        } catch (e) {
+          if (e instanceof CareError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash for the recapture fee.', flags: MessageFlags.Ephemeral });
+          else throw e;
+        }
+      } },
+  ],
+  components: [],
+};</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Call <code>settleEscapes</code> in the park read/collect handlers.</label>
+In <code>src/modules/park/index.ts</code>, add <code>import { settleEscapes } from './escapes.js';</code> and call <code>settleEscapes(ctx, i.user.id);</code> right after <code>getOrCreateUser(...)</code> in THREE handlers: the <code>/park view</code> subcommand path, the <code>/dino list</code> subcommand path, and the <code>park:collect</code> component handler. This makes escaped status/comfort current before the dashboard renders, the dino list shows it, and collect halts escaped income (income is already halted by the clock math; the settle keeps the stored flag + rating consistent). Do NOT settle inside services (keeps the park service free of an escapes import cycle) — settle at the command boundary only.
+<div class="callout warn">Do not add <code>settleEscapes</code> to <code>buildLot</code>/<code>collectIncome</code>/<code>recomputeRating</code> themselves — only the command/component handlers. <code>escapes.ts</code> imports <code>toClockDinos</code> from <code>service.ts</code>; if a service function imported <code>escapes.ts</code> you'd create a service-layer cycle. The handler layer already imports both freely.</div></div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Harness test for the feed command + settle wiring.</label>
+<pre><code>// append to tests/care.test.ts
+import { careModule } from '../src/modules/care/index.js';
+import { fakeCommand } from './harness.js';
+
+describe('care module', () =&gt; {
+  it('/feed all feeds hungry dinos via the command', async () =&gt; {
+    const d = addDino({ hunger: 100, lastFedAt: 0 });
+    ctx.setNow(48 * 3_600_000);
+    const i = fakeCommand({ name: 'feed', sub: 'all', user: 'u1' });
+    await careModule.commands[0].execute(ctx, i.asChatInput());
+    expect(i.replies).toHaveLength(1);
+    expect(dinoRow(d.id).hunger).toBe(100);
+  });
+});</code></pre>
+Run → PASS.</div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Commit.</label>
+<pre><code>npm run typecheck && npx vitest run
+git add -A && git commit -m "Add care module (/feed, /rescue); settle escapes at read/collect entry"</code></pre></div>
+
+<hr>
+
+<h2>Task 5: Register care module, deploy, docs</h2>
+<p class="files"><b>Files:</b> Modify <code>modules.json</code>, <code>src/deploy-commands.ts</code>, <code>src/index.ts</code>, <code>tests/registry-load.test.ts</code>, <code>docs/ops.md</code></p>
+
+<div class="step"><label><input type="checkbox"> Step 1: Enable + register.</label>
+<code>modules.json</code> → add <code>"care": true</code> (now 6 modules).<br>
+In BOTH <code>src/deploy-commands.ts</code> and <code>src/index.ts</code>: <code>import { careModule } from './modules/care/index.js';</code> and add it to the registry list: <code>new ModuleRegistry([parkModule, hatcheryModule, expeditionsModule, shopModule, settingsModule, careModule], config.modules)</code>.</div>
+
+<div class="step"><label><input type="checkbox"> Step 2: Update the registry-load test count.</label>
+In <code>tests/registry-load.test.ts</code>: import <code>careModule</code>, add it to the registry array, and change the count assertion from <code>13</code> to <code>15</code> (added <code>feed</code>, <code>rescue</code>). Confirm the collision guard still passes (feed/rescue are unique command names; care has no component prefix).</div>
+
+<div class="step"><label><input type="checkbox"> Step 3: Verify + commit.</label>
+<pre><code>npm run typecheck && npm run build && npx vitest run
+git add -A && git commit -m "Register care module"</code></pre></div>
+
+<div class="step"><label><input type="checkbox"> Step 4: Ops smoke checklist + commit.</label>
+Extend the <code>docs/ops.md</code> release smoke checklist (maintainer-run; no AI/attribution) with:
+<ul>
+<li><code>npm run deploy-commands</code> now deploys 15 commands.</li>
+<li>Assign a dino to a paddock, wait so its hunger drops, then <code>/feed one dino:&lt;id&gt;</code> (or <code>/feed all</code>) → hunger restored, food charged.</li>
+<li>Leave a dino unfed long enough (comfort &lt; 25% past the 8 h grace) → <code>/park view</code> or <code>/dino list</code> shows it escaped and its lot income halts; <code>/rescue dino:&lt;id&gt;</code> → pays the recapture fee, clears the escape.</li>
+</ul>
+<pre><code>git add -A && git commit -m "Extend ops smoke checklist for dino care"</code></pre></div>
+
+<hr>
+
+<h2>Plan self-review</h2>
+<ul>
+<li><b>Spec §3.4 coverage:</b> hunger drain (already in clock) — used by feed/settle; feed semantics (refill 100, feed_cost[rarity], /feed all hungriest-first, atomic per dino, partial batch) → Task 1; comfort derived (already) — unchanged; paddock fit (already) — used by rescue; escape (comfort &lt;25% &gt;8h grace → escapedAt, lot income halts) → Task 2 (settle) + clock (income halt already handled); rescue (recapture fee ≈4h base income, hunger→~50% comfort, clear escape) → Task 3; commands /feed, /rescue → Task 4; escaped-dino rating treatment → Task 2 fix.</li>
+<li><b>Decisions applied:</b> lazy settlement (no timer/ping), escaped dinos in-collection-out-of-comfort.</li>
+<li><b>Atomicity:</b> feed (food+hunger), rescue (cash+state) each one transaction; /feed all is per-dino transactions (spec-mandated). settleEscapes moves no currency (plain idempotent updates).</li>
+<li><b>Cross-task types:</b> <code>CareError</code>, <code>feedDino</code>/<code>feedAll</code>/<code>rescueDino</code>, <code>settleEscapes</code>, <code>RECAPTURE_FEE_HOURS</code> consistent across tasks; <code>recomputeRating</code> comfort filter reused. Command count 13→15 updated in the registry test.</li>
+<li><b>Plan 4 note:</b> escape has no ping in Plan 3 (lazy). If a "your dino escaped" notification is wanted later, add an <code>escape</code> scheduler kind armed on feed — the settlement logic already computes the exact moment.</li>
+</ul>
+
+</body>
+</html>
