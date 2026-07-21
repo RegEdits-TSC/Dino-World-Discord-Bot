@@ -34,7 +34,8 @@ export const parkModule: ModuleManifest = {
         settleEscapes(ctx, i.user.id);
         const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, i.user.id)).all();
         const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all();
-        await i.reply(dashboardPayload(user, lots, dinos.length, pendingIncome(ctx, i.user.id)));
+        const escapedCount = dinos.filter((d) => d.escapedAt !== null).length;
+        await i.reply(dashboardPayload(user, lots, dinos.length, pendingIncome(ctx, i.user.id), escapedCount));
       },
     },
     {
@@ -85,7 +86,11 @@ export const parkModule: ModuleManifest = {
           if (sub === 'list') {
             const dinos = listDinos(ctx, i.user.id);
             const lines = dinos.length
-              ? dinos.map((d) => `#${d.dino.id} ${d.species.name} — ${Math.round(d.comfort * 100)}% comfort — ${d.dino.lotId ? `lot ${d.dino.lotId}` : 'unassigned'}`).join('\n')
+              ? dinos.map((d) => {
+                  const status = d.dino.escapedAt !== null ? '🚨 ESCAPED — /rescue' : `${Math.round(d.comfort * 100)}% comfort`;
+                  const loc = d.dino.lotId ? `lot ${d.dino.lotId}` : 'unassigned';
+                  return `#${d.dino.id} ${d.species.name} — ${status} — ${loc}`;
+                }).join('\n')
               : 'No dinos yet. Hatch one!';
             await i.reply({ embeds: [new EmbedBuilder().setTitle('🦕 Your dinos').setDescription(lines).setColor(0x3ba55c)] });
           } else if (sub === 'assign') {
