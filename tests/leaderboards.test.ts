@@ -36,6 +36,9 @@ describe('topPlayers', () => {
     const top = topPlayers(ctx, 'cash', 'server', 'g1');
     expect(top.map((r) => r.userId)).toEqual(['c', 'a']);        // b excluded (not in g1)
   });
+  it('server scope with no guild returns empty (not a global ranking)', () => {
+    expect(topPlayers(ctx, 'cash', 'server', null)).toEqual([]);
+  });
   it('ranks by collection desc', () => {
     addDino('a', 'tyrannosaurus');  // 16
     addDino('b', 'triceratops');    // 1

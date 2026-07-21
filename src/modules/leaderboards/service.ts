@@ -18,12 +18,15 @@ export function topPlayers(
 ): Array<{ userId: string; displayName: string; value: number }> {
   // Candidate set: server scope = users seen in this guild (via user_guilds); global = all users.
   let users: Array<typeof schema.users.$inferSelect>;
-  if (scope === 'server' && guildId) {
-    const memberIds = ctx.db.select().from(schema.userGuilds)
-      .where(eq(schema.userGuilds.guildId, guildId)).all().map((g) => g.userId);
-    users = memberIds.length
-      ? ctx.db.select().from(schema.users).where(inArray(schema.users.discordId, memberIds)).all()
-      : [];
+  if (scope === 'server') {
+    if (!guildId) { users = []; }
+    else {
+      const memberIds = ctx.db.select().from(schema.userGuilds)
+        .where(eq(schema.userGuilds.guildId, guildId)).all().map((g) => g.userId);
+      users = memberIds.length
+        ? ctx.db.select().from(schema.users).where(inArray(schema.users.discordId, memberIds)).all()
+        : [];
+    }
   } else {
     users = ctx.db.select().from(schema.users).all();
   }
@@ -43,5 +46,5 @@ export function topPlayers(
     value: metric === 'cash' ? u.cash : metric === 'rating' ? u.parkRating : collectionScore(ctx, u.discordId),
   }));
   scored.sort((a, b) => b.value - a.value);
-  return scored.slice(0, limit);
+  return scored.slice(0, Math.max(0, limit));
 }
