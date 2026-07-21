@@ -9,6 +9,10 @@ import { clientSender, eggHatchHandler, expeditionReturnHandler } from './core/n
 import { routeInteraction } from './core/router.js';
 import { Scheduler } from './core/scheduler.js';
 import { parkModule } from './modules/park/index.js';
+import { hatcheryModule } from './modules/hatchery/index.js';
+import { expeditionsModule } from './modules/expeditions/index.js';
+import { shopModule } from './modules/shop/index.js';
+import { settingsModule } from './modules/settings/index.js';
 import type { Ctx } from './core/context.js';
 
 const config = loadConfig();
@@ -19,7 +23,7 @@ const ctx: Ctx = {
   db, economy: new EconomyService(db), config, scheduler,
   now: () => Date.now(), rng: Math.random,
 };
-const registry = new ModuleRegistry([parkModule], config.modules);
+const registry = new ModuleRegistry([parkModule, hatcheryModule, expeditionsModule, shopModule, settingsModule], config.modules);
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const sender = clientSender(client);
