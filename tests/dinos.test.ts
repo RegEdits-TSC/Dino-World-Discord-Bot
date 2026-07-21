@@ -75,4 +75,14 @@ describe('park dino commands', () => {
     expect(reply.flags).toBeDefined();                      // ephemeral error, not a plain "Assigned."
     expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.escapedAt).not.toBeNull();
   });
+
+  it('/dino list marks escaped dinos as ESCAPED', async () => {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    ctx.db.insert(schema.dinos).values({ userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0, escapedAt: 40 * 3_600_000 }).run();
+    const dinoCmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const i = fakeCommand({ name: 'dino', sub: 'list', user: 'u1' });
+    await dinoCmd.execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: Array<{ data: { description?: string } }> };
+    expect(payload.embeds[0].data.description).toContain('ESCAPED');
+  });
 });
