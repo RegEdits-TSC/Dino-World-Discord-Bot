@@ -62,4 +62,17 @@ describe('park dino commands', () => {
     await dinoCmd.execute(ctx, i.asChatInput());
     expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.lotId).toBe(lot.id);
   });
+
+  it('/dino assign settles escapes first, so a logically-escaped dino is rejected', async () => {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');   // no decor → fit 0.75
+    const d = ctx.db.insert(schema.dinos).values({ userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
+    ctx.setNow(60 * 3_600_000);                             // past escape (40h) — but escapedAt still null
+    const dinoCmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const i = fakeCommand({ name: 'dino', sub: 'assign', user: 'u1', options: { dino: d.id, lot: lot.id } });
+    await dinoCmd.execute(ctx, i.asChatInput());
+    // settle ran first → dino stamped escaped → assignDino throws AssignError → ephemeral reply, no silent success
+    const reply = i.replies[0] as { flags?: unknown };
+    expect(reply.flags).toBeDefined();                      // ephemeral error, not a plain "Assigned."
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.escapedAt).not.toBeNull();
+  });
 });

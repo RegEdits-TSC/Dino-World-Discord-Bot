@@ -79,10 +79,10 @@ export const parkModule: ModuleManifest = {
           .addIntegerOption((o) => o.setName('dino').setDescription('Dino id').setRequired(true))),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        settleEscapes(ctx, i.user.id);
         const sub = i.options.getSubcommand();
         try {
           if (sub === 'list') {
-            settleEscapes(ctx, i.user.id);
             const dinos = listDinos(ctx, i.user.id);
             const lines = dinos.length
               ? dinos.map((d) => `#${d.dino.id} ${d.species.name} — ${Math.round(d.comfort * 100)}% comfort — ${d.dino.lotId ? `lot ${d.dino.lotId}` : 'unassigned'}`).join('\n')
