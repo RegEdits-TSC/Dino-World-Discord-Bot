@@ -53,6 +53,9 @@ describe('/top command', () => {
     const i = fakeCommand({ name: 'top', user: 'a', options: { metric: 'cash', scope: 'global' } });
     await leaderboardsModule.commands[0].execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: Array<{ data: { description?: string } }> };
-    expect(payload.embeds[0].data.description).toContain('B');   // b has the most cash → ranked first
+    const desc = payload.embeds[0].data.description!;
+    expect(desc).toMatch(/^\*\*1\.\*\* B/);                      // b has the most cash → ranked first
+    expect(desc.indexOf('B')).toBeLessThan(desc.indexOf('C'));   // b before c
+    expect(desc.indexOf('C')).toBeLessThan(desc.indexOf('A'));   // c before a
   });
 });
