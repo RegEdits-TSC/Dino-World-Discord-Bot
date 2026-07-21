@@ -56,6 +56,18 @@ describe('park service', () => {
     expect(collectIncome(ctx, 'u1').amount).toBe(0);  // idempotent within same instant
   });
 
+  it('recomputes park rating after building a lot', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 20_000 }, 'test:seed', 0);
+    const before = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+    expect(before.parkRating).toBe(0);
+    buildLot(ctx, 'u1', 'herbivore_paddock');
+    const after = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+    // one level-1 lot => park term (1+0)/40; rating round(500 * 0.35 * 0.025) = 4.
+    expect(after.parkRating).toBeGreaterThan(0);
+    expect(after.ratingHighWater).toBeGreaterThan(0);
+  });
+
   it('rolls back the charge when the build insert fails (proves buildLot atomicity)', () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
     ctx.economy.apply('u1', { cash: 20_000 }, 'test:seed', 0);

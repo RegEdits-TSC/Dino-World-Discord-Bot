@@ -1,17 +1,11 @@
 import { createDb, migrateDb } from '../src/core/db/index.js';
 import { EconomyService } from '../src/core/economy.js';
+import { Scheduler } from '../src/core/scheduler.js';
+import { mulberry32 } from '../src/core/rolls.js';
 import type { Ctx } from '../src/core/context.js';
 import type { ChatInputCommandInteraction, Interaction } from 'discord.js';
 
-export function mulberry32(seed: number): () => number {
-  let a = seed;
-  return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+export { mulberry32 } from '../src/core/rolls.js';
 
 export function makeCtx(overrides: Partial<Ctx> & { nowMs?: number } = {}): Ctx & { setNow(ms: number): void } {
   const db = createDb(':memory:'); migrateDb(db);
@@ -19,6 +13,7 @@ export function makeCtx(overrides: Partial<Ctx> & { nowMs?: number } = {}): Ctx 
   return {
     db, economy: new EconomyService(db),
     config: { token: 't', clientId: 'c', databasePath: ':memory:', ownerId: 'owner', modules: {} },
+    scheduler: new Scheduler(db),
     now: () => nowMs,
     rng: mulberry32(42),
     setNow: (ms: number) => { nowMs = ms; },
@@ -69,7 +64,7 @@ export function fakeButton(opts: { customId: string; user: string; guild?: strin
     guildId: opts.guild ?? null,
     deferred: false, replied: false,
     isChatInputCommand: () => false, isButton: () => true,
-    reply: record, editReply: record, followUp: record,
+    reply: record, editReply: record, followUp: record, update: record,
     deferReply: async () => { (raw as { deferred: boolean }).deferred = true; },
   };
   return {

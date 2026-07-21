@@ -171,11 +171,23 @@ Example `modules.json`:
 
 ```json
 {
-  "park": true
+  "park": true,
+  "hatchery": true,
+  "expeditions": true,
+  "shop": true,
+  "settings": true
 }
 ```
 
-The `park` module is currently the only module. Set it to `false` to disable it.
+Five modules ship today:
+
+- `park` — paddocks, upgrades, park rating, decorations.
+- `hatchery` — eggs, incubation, hatching, Mythic purchases.
+- `expeditions` — dispatching dinos on expeditions for loot.
+- `shop` — daily egg/food/decor rotation and dino sales.
+- `settings` — per-guild configuration (e.g. notification channel).
+
+Set any flag to `false` to disable that module. The `ModuleRegistry` only wires up commands and components for modules whose flag is `true`, so disabling a module removes its slash commands the next time `npm run deploy-commands` runs.
 
 ### After Changing modules.json
 
@@ -247,7 +259,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    ```bash
    npm run deploy-commands
    ```
-   Should output: `Deployed 3 commands.` (for the park module).
+   Should output: `Deployed 13 commands.` (park, hatchery, expeditions, shop, and settings modules combined).
 
 2. **Start the bot**:
    ```bash
@@ -285,11 +297,46 @@ A ~5-minute manual test to run in a development Discord server after each releas
    - Tests the upgrade validation system.
 
    **e) Click the Collect button** (from `/park view`):
-   - Should reply with a message like `Collected 0 cash.` (0 is expected; dino income requires the hatchery module in a future release).
+   - Should reply with a message like `Collected 0 cash.` on a fresh park with no assigned dinos, or a positive amount once a dino has been assigned to a paddock (see step 3j below).
    - Tests the interaction handler and income calculation path.
-   - Income logic is covered by automated tests; manual Collect is only to verify the interaction path works.
 
-4. **Verify no errors in logs**:
+4. **Test the acquisition loop** (hatchery, expeditions, shop, and settings modules):
+
+   **f) `/expedition start site:Coastal Dig`**
+   - Should respond that a dino has been dispatched to the site.
+   - Wait for the expedition's travel time to elapse, then run `/expedition claim`.
+   - Should award an egg plus bonus cash/food, and a hatch/expedition ping should post to the configured notification channel (or DM if none is set — see step 4g).
+
+   **g) `/eggs`**
+   - Should list the egg claimed in the previous step.
+
+   **h) `/incubate egg:<id>`**
+   - Should mark the egg as incubating and report the time until it's ready.
+
+   **i) `/hatch egg:<id>`** (once incubation completes)
+   - Should show a "Crack it open!" button.
+   - Clicking it should reveal a species-reveal card for the newly hatched dino.
+
+   **j) `/dino assign dino:<id> lot:<paddock id>`**
+   - Should confirm the dino was assigned to the paddock.
+   - Wait a few minutes, then run `/park view` and click **Collect** — income should now accrue above 0.
+
+   **k) `/shop view`**
+   - Should show today's egg, food, and decor rotation.
+   - `/shop egg rarity:common` — should buy a common egg and deduct cash.
+   - `/sell dino:<id>` — should show a confirm button; confirming should pay out cash and shards (watch the 40-shard/day cap; sales past the cap still pay cash but no more shards for the day).
+
+   **l) `/decorate lot:<id> item:Palm Tree`**
+   - Should add the decoration to the paddock and raise its comfort/rating.
+
+   **m) `/settings channel channel:#some-channel`** (run as a user with Manage Guild permission)
+   - Should confirm the notification channel was set.
+   - Future hatch/expedition pings should post to that channel instead of falling back to DM.
+
+   **n) `/mythic species:<name>` (requires 4★ high-water park rating and 500 shards) → grants a Mythic egg.**
+   - Should deduct the shards and grant a Mythic egg of the requested species.
+
+5. **Verify no errors in logs**:
    - Check the terminal (or `journalctl`) for any `ERROR` or `WARN` lines. The bot should log at `INFO` level with slash command invocations and results.
    - No `TypeError`, `SyntaxError`, or uncaught exceptions should appear.
 
@@ -302,5 +349,6 @@ If any step fails, check the bot's logs for the error and debug before merging /
 
 ### Known Limitations
 
-- **Dino collection income**: The `/park view` Collect button will always yield 0 cash on this release. This is expected — dino hatching and collection income are part of a future module (Plan 2). For now, the income path is tested via automated unit tests in `src/tests/`.
+- **Dino collection income**: The `/park view` Collect button yields 0 cash until a dino has been hatched (or won from an expedition) and assigned to a paddock via `/dino assign`. This is expected on a brand-new park. Income logic is covered by automated unit tests in `tests/`.
+- **Shard cap**: `/sell` stops awarding shards once the 40-shard daily cap is hit; cash payout continues regardless. This is expected, not a bug.
 - **Slash command registration**: If commands don't appear in your Discord server, ensure the bot has the `applications.commands` scope and `chat_input` permission in your OAuth application settings.
