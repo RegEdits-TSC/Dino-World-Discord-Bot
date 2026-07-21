@@ -5,6 +5,7 @@ import { createDb, migrateDb } from './core/db/index.js';
 import { EconomyService } from './core/economy.js';
 import { logger } from './core/logger.js';
 import { ModuleRegistry } from './core/modules.js';
+import { clientSender, eggHatchHandler, expeditionReturnHandler } from './core/notify.js';
 import { routeInteraction } from './core/router.js';
 import { Scheduler } from './core/scheduler.js';
 import { parkModule } from './modules/park/index.js';
@@ -21,12 +22,18 @@ const ctx: Ctx = {
 const registry = new ModuleRegistry([parkModule], config.modules);
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
+const sender = clientSender(client);
+scheduler.register('egg_hatch', eggHatchHandler(sender, ctx));
+scheduler.register('expedition_return', expeditionReturnHandler(sender, ctx));
+
 setInterval(() => { scheduler.tick(Date.now()).catch((e) => logger.error({ err: e }, 'scheduler tick failed')); }, 30_000);
-scheduler.tick(Date.now()).catch((e) => logger.error({ err: e }, 'scheduler boot scan failed'));  // fire anything missed while down
 
 client.on(Events.InteractionCreate, (i) => {
   routeInteraction(ctx, registry, i).catch((e) => logger.error({ err: e }, 'route failed'));
 });
 client.on('error', (e) => logger.error({ err: e }, 'discord client error'));
-client.once(Events.ClientReady, (c) => logger.info(`Logged in as ${c.user.tag}`));
+client.once(Events.ClientReady, (c) => {
+  logger.info(`Logged in as ${c.user.tag}`);
+  scheduler.tick(Date.now()).catch((e) => logger.error({ err: e }, 'scheduler boot scan failed'));
+});
 await client.login(config.token);
