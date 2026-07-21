@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeCtx } from './harness.js';
+import type { ButtonInteraction } from 'discord.js';
+import { makeCtx, fakeCommand, fakeButton } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { incubateEgg, hatchEgg, incubatorSlots, HatcheryError } from '../src/modules/hatchery/service.js';
+import { hatcheryModule } from '../src/modules/hatchery/index.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 
@@ -39,5 +41,27 @@ describe('hatchery', () => {
     incubateEgg(ctx, 'u1', egg.id, 'g1');
     ctx.setNow(ctx.now() + 48 * 3_600_000);
     expect(hatchEgg(ctx, 'u1', egg.id).species.id).toBe('indominus');
+  });
+});
+
+describe('hatchery module', () => {
+  it('/eggs replies with an embed', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const i = fakeCommand({ name: 'eggs', user: 'u1' });
+    await hatcheryModule.commands[0].execute(ctx, i.asChatInput());
+    expect((i.replies[0] as { embeds: unknown[] }).embeds).toHaveLength(1);
+  });
+  it('the crack button hatches and reveals the species', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const egg = addEgg('common');
+    incubateEgg(ctx, 'u1', egg.id, 'g1');
+    ctx.setNow(ctx.now() + 15 * 60_000);
+    const b = fakeButton({ customId: `hatch:crack:${egg.id}`, user: 'u1', guild: 'g1' });
+    // harness has no asButton(); asInteraction() carries the same raw object (customId/update/user resolve)
+    await hatcheryModule.components[0].execute(ctx, b.asInteraction() as ButtonInteraction);
+    // reveal payload recorded via update()
+    const payload = b.replies[0] as { embeds: unknown[] };
+    expect(payload.embeds).toHaveLength(1);
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, 'u1')).all()).toHaveLength(1);
   });
 });

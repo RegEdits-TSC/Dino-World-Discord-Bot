@@ -64,7 +64,7 @@ export function fakeButton(opts: { customId: string; user: string; guild?: strin
     guildId: opts.guild ?? null,
     deferred: false, replied: false,
     isChatInputCommand: () => false, isButton: () => true,
-    reply: record, editReply: record, followUp: record,
+    reply: record, editReply: record, followUp: record, update: record,
     deferReply: async () => { (raw as { deferred: boolean }).deferred = true; },
   };
   return {
