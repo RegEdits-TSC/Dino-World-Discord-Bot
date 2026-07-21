@@ -18,7 +18,7 @@ export function recomputeRating(ctx: Ctx, userId: string): { rating: number; hig
   const collection = TOTAL_SPECIES_WEIGHT === 0 ? 0 : ownedWeight / TOTAL_SPECIES_WEIGHT;
   const parkRaw = lots.reduce((s, l) => s + l.level + l.decor.length, 0);
   const park = Math.min(1, parkRaw / PARK_TARGET);
-  const assigned = clockDinos.filter((d) => d.paddock !== null);
+  const assigned = clockDinos.filter((d) => d.paddock !== null && d.escapedAt === null);
   const comfort = assigned.length === 0 ? 0
     : assigned.reduce((s, d) => s + comfortAt(d, ctx.now()), 0) / assigned.length;
   const rating = Math.round(500 * (
