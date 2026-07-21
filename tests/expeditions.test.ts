@@ -34,3 +34,20 @@ describe('expeditions', () => {
     startExpedition(ctx, 'u1', 'coastal_dig', 'g1');
   });
 });
+
+import { expeditionsModule } from '../src/modules/expeditions/index.js';
+import { fakeCommand } from './harness.js';
+
+describe('expeditions module', () => {
+  it('/expedition start dispatches and enqueues a return timer', async () => {
+    const i = fakeCommand({ name: 'expedition', sub: 'start', user: 'u1', guild: 'g1', options: { site: 'coastal_dig' } });
+    await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
+    expect(i.replies).toHaveLength(1);
+    expect(ctx.db.select().from(schema.timers).all()).toHaveLength(1);
+  });
+  it('/expedition claim on nothing gives an ephemeral error', async () => {
+    const i = fakeCommand({ name: 'expedition', sub: 'claim', user: 'u1', guild: 'g1' });
+    await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
+    expect((i.replies[0] as { flags?: unknown }).flags).toBeDefined();   // ephemeral
+  });
+});
