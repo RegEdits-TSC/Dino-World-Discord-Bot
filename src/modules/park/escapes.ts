@@ -11,6 +11,8 @@ export function settleEscapes(ctx: Ctx, userId: string): number[] {
     if (dinos[i].escapedAt !== null) continue;
     const esc = escapeMoment(clockDinos[i], ctx.now());
     if (esc !== null) {
+      // Stamp the actual escape instant, NOT ctx.now(): accruedIncome trusts a set escapedAt
+      // directly, so stamping a later settlement time would let income accrue past the real escape.
       ctx.db.update(schema.dinos).set({ escapedAt: esc })
         .where(eq(schema.dinos.id, dinos[i].id)).run();
       stamped.push(dinos[i].id);
