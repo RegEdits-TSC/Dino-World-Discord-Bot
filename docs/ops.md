@@ -333,7 +333,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    - Should confirm the notification channel was set.
    - Future hatch/expedition pings should post to that channel instead of falling back to DM.
 
-   **n) `/mythic species:<name>`** (requires a 4-star+ dino of that species and 500 shards)
+   **n) `/mythic species:<name>` (requires 4★ high-water park rating and 500 shards) → grants a Mythic egg.**
    - Should deduct the shards and grant a Mythic egg of the requested species.
 
 5. **Verify no errors in logs**:

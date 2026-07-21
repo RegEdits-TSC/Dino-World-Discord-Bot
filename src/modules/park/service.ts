@@ -6,6 +6,7 @@ import { getSpecies } from '../../data/species/index.js';
 import { FACILITIES } from '../../data/facilities.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { lotSlots } from '../../data/progression.js';
+import { recomputeRating } from './rating.js';
 
 export const BASE_LOT_SLOTS = 3;
 export class LotLimitError extends Error {}
@@ -44,13 +45,17 @@ export function buildLot(ctx: Ctx, userId: string, kind: string): Lot {
   // Charge + insert must be atomic: EconomyService.apply commits its own transaction,
   // so without this outer transaction a failed insert after a successful charge would
   // leave the user debited with no lot to show for it.
-  return ctx.db.transaction(() => {
+  const lot = ctx.db.transaction(() => {
     ctx.economy.apply(userId, { cash: -cost }, `build:${kind}`, ctx.now());
     return ctx.db.insert(schema.lots).values({
       userId, type: paddock ? 'paddock' : 'facility', kind,
       name: paddock ? paddock.name : facility!.name,
     }).returning().get();
   });
+  // Lots are 35% of park rating (see rating.ts); recompute so the dashboard and
+  // ratingHighWater (which gates lot slots / sites / shop / mythic) stay current.
+  recomputeRating(ctx, userId);
+  return lot;
 }
 
 export function upgradeLot(ctx: Ctx, userId: string, lotId: number): Lot {
@@ -63,11 +68,14 @@ export function upgradeLot(ctx: Ctx, userId: string, lotId: number): Lot {
   const cost = def ? def.upgradeCosts[lot.level - 1]
                    : Math.round(PADDOCKS[lot.kind].buildCost * 2.5 ** lot.level);
   // See buildLot: charge + level bump must be atomic against a failed update.
-  return ctx.db.transaction(() => {
+  const updated = ctx.db.transaction(() => {
     ctx.economy.apply(userId, { cash: -cost }, `upgrade:${lot.kind}:${lot.level + 1}`, ctx.now());
     return ctx.db.update(schema.lots).set({ level: lot.level + 1 })
       .where(eq(schema.lots.id, lotId)).returning().get();
   });
+  // See buildLot: lot level is part of park rating, so recompute after mutating it.
+  recomputeRating(ctx, userId);
+  return updated;
 }
 
 export function toClockDinos(ctx: Ctx, userId: string): { clockDinos: ClockDino[]; lots: Lot[]; user: User; dinos: Array<typeof schema.dinos.$inferSelect> } {
