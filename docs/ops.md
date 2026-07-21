@@ -279,7 +279,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    ```bash
    npm run deploy-commands
    ```
-   Should output: `Deployed 15 commands.` (park, hatchery, expeditions, shop, settings, and care modules combined).
+   Should report `17` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, and leaderboards modules combined).
 
 2. **Start the bot**:
    ```bash
