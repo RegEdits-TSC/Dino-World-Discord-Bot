@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
 import { topPlayers, type Metric, type Scope } from './service.js';
