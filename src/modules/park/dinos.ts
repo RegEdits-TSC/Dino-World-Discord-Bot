@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { getSpecies } from '../../data/species/index.js';
@@ -25,7 +25,7 @@ export function assignDino(ctx: Ctx, userId: string, dinoId: number, lotId: numb
   if (dino.escapedAt !== null) throw new AssignError('That dino has escaped — rescue it first.');
   const lot = ownedPaddock(ctx, userId, lotId);
   const occupants = ctx.db.select().from(schema.dinos)
-    .where(and(eq(schema.dinos.userId, userId), eq(schema.dinos.lotId, lotId))).all().length;
+    .where(and(eq(schema.dinos.userId, userId), eq(schema.dinos.lotId, lotId), ne(schema.dinos.id, dinoId))).all().length;
   if (occupants >= paddockCapacity(lot.level)) throw new AssignError('That paddock is full.');
   ctx.db.update(schema.dinos).set({ lotId }).where(eq(schema.dinos.id, dinoId)).run();
   recomputeRating(ctx, userId);

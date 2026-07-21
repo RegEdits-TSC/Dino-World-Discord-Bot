@@ -17,6 +17,14 @@ describe('dino assignment', () => {
     assignDino(ctx, 'u1', addDino().id, lot.id);
     expect(() => assignDino(ctx, 'u1', addDino().id, lot.id)).toThrow(AssignError);
   });
+  it('re-assigning a dino to the full lot it already occupies is a no-op, not a "full" error', () => {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');   // capacity 2
+    const a = addDino(); const b = addDino();
+    assignDino(ctx, 'u1', a.id, lot.id);
+    assignDino(ctx, 'u1', b.id, lot.id);                    // lot now full (2/2)
+    expect(() => assignDino(ctx, 'u1', a.id, lot.id)).not.toThrow();   // a is already there
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, a.id)).get()!.lotId).toBe(lot.id);
+  });
   it('rejects assigning to a facility lot', () => {
     const vc = buildLot(ctx, 'u1', 'visitor_center');
     expect(() => assignDino(ctx, 'u1', addDino().id, vc.id)).toThrow(AssignError);
