@@ -4,7 +4,7 @@ import type { ParkSnapshot } from '../../modules/park/snapshot.js';
 export const RENDER_TIMEOUT_MS = 3000;
 
 type Runner = (snapshot: ParkSnapshot) => Promise<Buffer>;
-interface WorkerReply { ok: boolean; png?: Buffer; error?: string }
+interface WorkerReply { id: number; ok: boolean; png?: Buffer; error?: string }
 
 // Reject if `p` doesn't settle within `ms`.
 export function raceTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -15,6 +15,7 @@ export function raceTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 let worker: Worker | null = null;
+let seq = 0;
 
 // dist: ./worker.js beside this file. dev (tsx): ./worker.ts (may fail to load → graceful fallback).
 function workerUrl(): URL {
@@ -34,11 +35,16 @@ function getWorker(): Worker {
 const runOnWorker: Runner = (snapshot) => new Promise<Buffer>((res, rej) => {
   let w: Worker;
   try { w = getWorker(); } catch (e) { rej(e instanceof Error ? e : new Error(String(e))); return; }
-  const onMsg = (m: WorkerReply) => { cleanup(); m.ok && m.png ? res(Buffer.from(m.png)) : rej(new Error(m.error ?? 'render failed')); };
+  const id = ++seq;
+  const onMsg = (m: WorkerReply) => {
+    if (m.id !== id) return;   // reply for an older, abandoned request — ignore
+    cleanup();
+    m.ok && m.png ? res(Buffer.from(m.png)) : rej(new Error(m.error ?? 'render failed'));
+  };
   const onErr = (e: unknown) => { cleanup(); rej(e instanceof Error ? e : new Error(String(e))); };
   function cleanup() { w.off('message', onMsg); w.off('error', onErr); }
   w.on('message', onMsg); w.on('error', onErr);
-  w.postMessage(snapshot);
+  w.postMessage({ id, snapshot });
 });
 
 // Serialize renders through the single worker; each guarded by a timeout.
