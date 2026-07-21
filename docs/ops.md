@@ -46,6 +46,8 @@ This guide covers deploying Dino World to production, running it as a system ser
    ```
    This registers all enabled module commands with Discord. Do this once on first deploy and again whenever the enabled module set changes (see **Enabling / disabling modules** below).
 
+   **Dev vs production scope:** if `DEV_GUILD_ID` is set in `.env`, `deploy-commands` registers to that guild only — this propagates **instantly**, which is ideal for testing. Leave `DEV_GUILD_ID` unset in production to register commands **globally** (available in every server the bot joins; global registration can take up to ~1 hour to appear). Do not have both a global set and a guild set with the same command names, or that guild will show each command twice.
+
 6. **Start the bot**:
    - **Direct**: `node dist/index.js`
    - **With systemd** (recommended): See the section below.
