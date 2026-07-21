@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
-import { allSpecies, getSpecies } from '../../data/species/index.js';
+import { allSpecies } from '../../data/species/index.js';
 import { comfortAt } from '../../core/clock.js';
 import { toClockDinos } from './service.js';
 import { RARITY_WEIGHT, RATING_WEIGHTS, PARK_TARGET } from '../../data/progression.js';
@@ -13,9 +13,8 @@ const TOTAL_SPECIES_WEIGHT = allSpecies().reduce((s, sp) => s + RARITY_WEIGHT[sp
 
 export function recomputeRating(ctx: Ctx, userId: string): { rating: number; highWater: number } {
   const { clockDinos, lots, user } = toClockDinos(ctx, userId);
-  const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all();
-  const owned = new Set(dinos.map((d) => d.speciesId));
-  const ownedWeight = [...owned].reduce((s, id) => s + RARITY_WEIGHT[getSpecies(id).rarity], 0);
+  const owned = new Map(clockDinos.map((d) => [d.species.id, d.species.rarity]));
+  const ownedWeight = [...owned.values()].reduce((s, rarity) => s + RARITY_WEIGHT[rarity], 0);
   const collection = TOTAL_SPECIES_WEIGHT === 0 ? 0 : ownedWeight / TOTAL_SPECIES_WEIGHT;
   const parkRaw = lots.reduce((s, l) => s + l.level + l.decor.length, 0);
   const park = Math.min(1, parkRaw / PARK_TARGET);
