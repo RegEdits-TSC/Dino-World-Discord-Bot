@@ -70,7 +70,7 @@ export function upgradeLot(ctx: Ctx, userId: string, lotId: number): Lot {
   });
 }
 
-export function toClockDinos(ctx: Ctx, userId: string): { clockDinos: ClockDino[]; lots: Lot[]; user: User } {
+export function toClockDinos(ctx: Ctx, userId: string): { clockDinos: ClockDino[]; lots: Lot[]; user: User; dinos: Array<typeof schema.dinos.$inferSelect> } {
   const user = ctx.db.select().from(schema.users)
     .where(eq(schema.users.discordId, userId)).get()!;
   const lots = ctx.db.select().from(schema.lots)
@@ -88,7 +88,7 @@ export function toClockDinos(ctx: Ctx, userId: string): { clockDinos: ClockDino[
       hungerAtFed: d.hunger, lastFedAt: d.lastFedAt, escapedAt: d.escapedAt,
     };
   });
-  return { clockDinos, lots, user };
+  return { clockDinos, lots, user, dinos };
 }
 
 export function pendingIncome(ctx: Ctx, userId: string): number {
