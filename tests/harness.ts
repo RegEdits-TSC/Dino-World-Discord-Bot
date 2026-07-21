@@ -1,5 +1,6 @@
 import { createDb, migrateDb } from '../src/core/db/index.js';
 import { EconomyService } from '../src/core/economy.js';
+import { Scheduler } from '../src/core/scheduler.js';
 import type { Ctx } from '../src/core/context.js';
 import type { ChatInputCommandInteraction, Interaction } from 'discord.js';
 
@@ -19,6 +20,7 @@ export function makeCtx(overrides: Partial<Ctx> & { nowMs?: number } = {}): Ctx 
   return {
     db, economy: new EconomyService(db),
     config: { token: 't', clientId: 'c', databasePath: ':memory:', ownerId: 'owner', modules: {} },
+    scheduler: new Scheduler(db),
     now: () => nowMs,
     rng: mulberry32(42),
     setNow: (ms: number) => { nowMs = ms; },

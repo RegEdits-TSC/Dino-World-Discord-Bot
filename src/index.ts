@@ -13,14 +13,14 @@ import type { Ctx } from './core/context.js';
 const config = loadConfig();
 const db = createDb(config.databasePath);
 migrateDb(db);
+const scheduler = new Scheduler(db);
 const ctx: Ctx = {
-  db, economy: new EconomyService(db), config,
+  db, economy: new EconomyService(db), config, scheduler,
   now: () => Date.now(), rng: Math.random,
 };
 const registry = new ModuleRegistry([parkModule], config.modules);
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-const scheduler = new Scheduler(db);
 setInterval(() => { scheduler.tick(Date.now()).catch((e) => logger.error({ err: e }, 'scheduler tick failed')); }, 30_000);
 scheduler.tick(Date.now()).catch((e) => logger.error({ err: e }, 'scheduler boot scan failed'));  // fire anything missed while down
 
