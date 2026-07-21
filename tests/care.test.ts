@@ -1,0 +1,54 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { makeCtx } from './harness.js';
+import { getOrCreateUser } from '../src/modules/park/service.js';
+import { feedDino, feedAll, CareError } from '../src/modules/care/service.js';
+import { schema } from '../src/core/db/index.js';
+import { eq } from 'drizzle-orm';
+
+const H = 3_600_000;
+let ctx: ReturnType<typeof makeCtx>;
+beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); ctx.economy.apply('u1', { food: 1_000 }, 'seed', 0); });
+const addDino = (over: Record<string, unknown> = {}) =>
+  ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0, ...over }).returning().get();
+const food = () => ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.food;
+const dinoRow = (id: number) => ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, id)).get()!;
+
+describe('feedDino', () => {
+  it('refills hunger to 100, charges feed cost, stamps lastFedAt', () => {
+    const d = addDino({ hunger: 100, lastFedAt: 0 });
+    ctx.setNow(24 * H);
+    const before = food();
+    const res = feedDino(ctx, 'u1', d.id);               // triceratops = common, feedCost 5
+    expect(res.cost).toBe(5);
+    expect(food()).toBe(before - 5);
+    const row = dinoRow(d.id);
+    expect(row.hunger).toBe(100);
+    expect(row.lastFedAt).toBe(24 * H);
+  });
+  it('refuses to feed an escaped dino', () => {
+    const d = addDino({ escapedAt: 1 });
+    expect(() => feedDino(ctx, 'u1', d.id)).toThrow(CareError);
+  });
+});
+
+describe('feedAll', () => {
+  it('feeds hungriest-first and skips escaped dinos', () => {
+    const hungry = addDino({ hunger: 100, lastFedAt: 0 });
+    const escaped = addDino({ hunger: 100, lastFedAt: 0, escapedAt: 1 });
+    ctx.setNow(48 * H);
+    const { fed } = feedAll(ctx, 'u1');
+    expect(fed).toContain(hungry.id);
+    expect(fed).not.toContain(escaped.id);
+    expect(dinoRow(hungry.id).hunger).toBe(100);
+  });
+  it('feeds as many as affordable, reports the rest skipped', () => {
+    ctx.db.update(schema.users).set({ food: 7 }).where(eq(schema.users.discordId, 'u1')).run();
+    const a = addDino({ hunger: 100, lastFedAt: 0 });
+    const b = addDino({ hunger: 100, lastFedAt: 0 });
+    ctx.setNow(48 * H);
+    const { fed, skipped } = feedAll(ctx, 'u1');
+    expect(fed).toHaveLength(1);
+    expect(skipped).toHaveLength(1);
+    expect(food()).toBe(2);                              // 7 - 5
+  });
+});
