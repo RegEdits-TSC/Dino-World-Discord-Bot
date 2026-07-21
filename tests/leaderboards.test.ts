@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeCtx } from './harness.js';
+import { makeCtx, fakeCommand } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { topPlayers, collectionScore } from '../src/modules/leaderboards/service.js';
+import { leaderboardsModule } from '../src/modules/leaderboards/index.js';
 import { schema } from '../src/core/db/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
@@ -44,5 +45,14 @@ describe('topPlayers', () => {
     addDino('b', 'triceratops');    // 1
     const top = topPlayers(ctx, 'collection', 'global', null);
     expect(top[0].userId).toBe('a');
+  });
+});
+
+describe('/top command', () => {
+  it('/top cash returns an embed ranking', async () => {
+    const i = fakeCommand({ name: 'top', user: 'a', options: { metric: 'cash', scope: 'global' } });
+    await leaderboardsModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: Array<{ data: { description?: string } }> };
+    expect(payload.embeds[0].data.description).toContain('B');   // b has the most cash → ranked first
   });
 });
