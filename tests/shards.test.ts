@@ -35,6 +35,21 @@ describe('sellDino', () => {
     const res = sellDino(ctx, 'u1', addDino('velociraptor').id);
     expect(res.shards).toBeGreaterThan(0);
   });
+  it('a locked dino (pending trade) cannot be sold', () => {
+    const d = addDino('velociraptor', { locked: true });
+    expect(() => sellDino(ctx, 'u1', d.id)).toThrow(ShardError);
+    expect(ctx.db.select().from(schema.dinos).all()).toHaveLength(1);  // not deleted
+  });
+  it('reports capped=true only when the shard grant was clamped by the cap', () => {
+    // fill the window to 40 first
+    for (let i = 0; i < 6; i++) sellDino(ctx, 'u1', addDino('velociraptor').id);
+    const clamped = sellDino(ctx, 'u1', addDino('velociraptor').id);
+    expect(clamped.shards).toBe(0);
+    expect(clamped.capped).toBe(true);          // rolled > 0 but granted 0
+    // a via_trade sale is 0 shards but NOT "capped" (rolled was 0, not clamped)
+    const vt = sellDino(ctx, 'u1', addDino('velociraptor', { viaTrade: true }).id);
+    expect(vt.capped).toBe(false);
+  });
 });
 
 describe('buyMythicEgg', () => {
