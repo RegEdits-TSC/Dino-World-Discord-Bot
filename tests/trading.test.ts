@@ -44,4 +44,34 @@ describe('createTrade', () => {
     const ids = [1, 2, 3, 4, 5, 6];
     expect(() => createTrade(ctx, 'a', 'b', { ...empty, dinoIds: ids }, empty)).toThrow(TradeError);
   });
+  it('rejects a 4th trade in 24h but allows the first 3 (daily cap)', () => {
+    const mk = () => createTrade(ctx, 'a', 'b', { ...empty, cash: 1 }, empty);  // cheap valid offers; a has 500 cash
+    mk(); mk(); mk();                                   // 3 allowed
+    expect(() => mk()).toThrow(TradeError);             // 4th blocked
+  });
+  it('rejects self-trade', () => {
+    const d = addDino('a');
+    expect(() => createTrade(ctx, 'a', 'a', { ...empty, dinoIds: [d.id] }, empty)).toThrow(TradeError);
+  });
+  it('rejects offering a dino already locked in another pending trade', () => {
+    const d = addDino('a');
+    createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty);      // locks d
+    expect(() => createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty)).toThrow(TradeError);
+  });
+  it('rejects offering more cash than you have', () => {
+    // a has 500 by default
+    expect(() => createTrade(ctx, 'a', 'b', { ...empty, cash: 10_000 }, empty)).toThrow(TradeError);
+  });
+  it('rejects negative amounts', () => {
+    expect(() => createTrade(ctx, 'a', 'b', { ...empty, cash: -5 }, empty)).toThrow(TradeError);
+  });
+  it('rejects when the RECEIVER cannot afford the requested cash', () => {
+    const d = addDino('a');
+    // b has 500 by default; requesting 10,000 from b must fail at offer time (receiver-side verify)
+    expect(() => createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, { ...empty, cash: 10_000 })).toThrow(TradeError);
+  });
+  it('rejects a mythic EGG in the offer', () => {
+    const egg = ctx.db.insert(schema.eggs).values({ userId: 'a', rarity: 'mythic', speciesId: 'indominus', source: 'shop', obtainedAt: 0 }).returning().get();
+    expect(() => createTrade(ctx, 'a', 'b', { ...empty, eggIds: [egg.id] }, empty)).toThrow(TradeError);
+  });
 });
