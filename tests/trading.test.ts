@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { createTrade, acceptTrade, TradeError } from '../src/modules/trading/service.js';
+import { declineTrade, cancelTrade, expireStale, listTrades } from '../src/modules/trading/service.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 
@@ -108,5 +109,38 @@ describe('acceptTrade', () => {
     const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [da.id] }, empty);
     acceptTrade(ctx, 'b', t.id);
     expect(() => acceptTrade(ctx, 'b', t.id)).toThrow(TradeError);   // status no longer pending
+  });
+});
+
+describe('trade lifecycle', () => {
+  it('decline unlocks the offered items and marks declined', () => {
+    const d = addDino('a');
+    const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty);
+    declineTrade(ctx, 'b', t.id);
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.locked).toBe(false);
+    expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('declined');
+  });
+  it('only the sender can cancel, only the recipient can decline', () => {
+    const d = addDino('a');
+    const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty);
+    expect(() => cancelTrade(ctx, 'b', t.id)).toThrow(TradeError);   // b is recipient, not sender
+    expect(() => declineTrade(ctx, 'a', t.id)).toThrow(TradeError);  // a is sender, not recipient
+    cancelTrade(ctx, 'a', t.id);                                     // sender cancels — ok
+    expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('cancelled');
+  });
+  it('expireStale marks an overdue pending trade expired and unlocks', () => {
+    const d = addDino('a');
+    const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty);
+    ctx.setNow(ctx.now() + 25 * 3_600_000);                          // 25h later
+    expireStale(ctx, 'a');
+    expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('expired');
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.locked).toBe(false);
+  });
+  it('listTrades returns the user\'s pending trades', () => {
+    const d = addDino('a');
+    createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty);
+    expect(listTrades(ctx, 'a')).toHaveLength(1);
+    expect(listTrades(ctx, 'b')).toHaveLength(1);
+    expect(listTrades(ctx, 'c')).toHaveLength(0);
   });
 });

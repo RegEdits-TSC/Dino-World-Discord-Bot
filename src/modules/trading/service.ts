@@ -98,3 +98,41 @@ export function acceptTrade(ctx: Ctx, userId: string, tradeId: number): Trade {
   recomputeRating(ctx, trade.toUser);
   return done;
 }
+
+function unlockSide(ctx: Ctx, side: TradeSide): void {
+  if (side.dinoIds.length) ctx.db.update(schema.dinos).set({ locked: false }).where(inArray(schema.dinos.id, side.dinoIds)).run();
+  if (side.eggIds.length) ctx.db.update(schema.eggs).set({ locked: false }).where(inArray(schema.eggs.id, side.eggIds)).run();
+}
+
+function closeTrade(ctx: Ctx, trade: Trade, status: 'declined' | 'cancelled' | 'expired'): void {
+  ctx.db.transaction(() => {
+    unlockSide(ctx, trade.offer);   // only the offerer's items were ever locked
+    ctx.db.update(schema.trades).set({ status, resolvedAt: ctx.now() }).where(eq(schema.trades.id, trade.id)).run();
+  });
+}
+
+export function declineTrade(ctx: Ctx, userId: string, tradeId: number): void {
+  const t = ctx.db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get();
+  if (!t || t.status !== 'pending') throw new TradeError('That trade is no longer open.');
+  if (t.toUser !== userId) throw new TradeError('Only the recipient can decline.');
+  closeTrade(ctx, t, 'declined');
+}
+
+export function cancelTrade(ctx: Ctx, userId: string, tradeId: number): void {
+  const t = ctx.db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get();
+  if (!t || t.status !== 'pending') throw new TradeError('That trade is no longer open.');
+  if (t.fromUser !== userId) throw new TradeError('Only the sender can cancel.');
+  closeTrade(ctx, t, 'cancelled');
+}
+
+export function expireStale(ctx: Ctx, userId: string): void {
+  const cutoff = ctx.now() - TRADE_EXPIRY_MS;
+  const stale = ctx.db.select().from(schema.trades).where(eq(schema.trades.status, 'pending')).all()
+    .filter((t) => (t.fromUser === userId || t.toUser === userId) && t.createdAt <= cutoff);
+  for (const t of stale) closeTrade(ctx, t, 'expired');
+}
+
+export function listTrades(ctx: Ctx, userId: string): Trade[] {
+  return ctx.db.select().from(schema.trades).where(eq(schema.trades.status, 'pending')).all()
+    .filter((t) => t.fromUser === userId || t.toUser === userId);
+}
