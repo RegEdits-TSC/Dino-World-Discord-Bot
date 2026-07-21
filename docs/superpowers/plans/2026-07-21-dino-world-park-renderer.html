@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dino World — Plan 5: Park-Map Renderer</title>
+<style>
+  :root { --bg:#fff; --fg:#1f2328; --muted:#656d76; --line:#d0d7de; --accent:#1a7f37; --code-bg:#f6f8fa; --warn:#9a6700; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --accent:#3fb950; --code-bg:#161b22; --warn:#d29922; } }
+  body { background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,"Segoe UI",sans-serif; max-width:920px; margin:0 auto; padding:24px 20px 80px; }
+  h1 { font-size:26px; border-bottom:2px solid var(--line); padding-bottom:8px; }
+  h2 { font-size:20px; margin-top:40px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+  h3 { font-size:16px; margin-top:24px; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:12.5px; background:var(--code-bg); padding:1px 5px; border-radius:4px; }
+  pre { background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:12px; overflow-x:auto; }
+  pre code { background:none; padding:0; font-size:12px; line-height:1.5; }
+  .callout { border-left:4px solid var(--accent); background:var(--code-bg); padding:10px 14px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .callout.warn { border-left-color:var(--warn); }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  td, th { border:1px solid var(--line); padding:5px 9px; text-align:left; }
+  th { background:var(--code-bg); }
+  .files { font-size:13.5px; }
+  .iface { font-size:13px; background:var(--code-bg); border:1px dashed var(--line); border-radius:8px; padding:8px 12px; margin:6px 0; }
+  .muted { color:var(--muted); }
+  input[type=checkbox] { transform:scale(1.1); margin-right:7px; }
+  .step label { font-weight:600; }
+</style>
+</head>
+<body>
+
+<h1>🗺️ Dino World — Plan 5: Park-Map Renderer</h1>
+
+<div class="callout">
+<b>For agentic workers:</b> REQUIRED SUB-SKILL: Use <code>superpowers:subagent-driven-development</code> (recommended) or <code>superpowers:executing-plans</code>. Steps use checkboxes.
+</div>
+
+<p><b>Goal:</b> Attach a rendered Zoo-Grid PNG "park map" to <code>/park view</code> (self and <code>user:@other</code>), degrading to today's text embed if rendering fails.</p>
+
+<p><b>Architecture:</b> The main thread builds a plain, serializable <code>ParkSnapshot</code> (read-only; <code>settleEscapes</code> first) and hands it to a reused worker thread that draws the map with <code>@napi-rs/canvas</code> (Skia) and returns a PNG <code>Buffer</code>. A per-render timeout (~3s) or any worker error makes the caller fall back to the existing embed. The PNG is set as the embed image, so the cash/rating numbers and the Collect button stay. <b>No DB migration.</b></p>
+
+<p><b>Tech Stack:</b> TypeScript strict, discord.js v14, better-sqlite3 + Drizzle, vitest, <b>@napi-rs/canvas 1.0.2</b> (new — native, prebuilt, no system libs), Noto Sans + Noto Color Emoji (bundled).</p>
+
+<h2>Global Constraints</h2>
+<ul>
+<li>Commits authored by <b>RegEdits-TSC</b> — no other identity, no <code>Co-Authored-By</code>, no AI/Claude/assistant/"generated with" in any durable artifact.</li>
+<li>TypeScript <code>strict: true</code>, no explicit <code>any</code>. Run <code>npm run typecheck</code> (src+tests) and <code>npm run build</code> — both exit 0. Full <code>npx vitest run</code> green.</li>
+<li><b>Thread safety (critical):</b> the render worker <b>never</b> receives or touches the DB handle. Only a plain <code>ParkSnapshot</code> (no Drizzle rows, Dates, or functions) crosses the thread boundary.</li>
+<li><b>Never break <code>/park view</code>:</b> a render timeout or worker error must be caught and degrade to the text-only embed.</li>
+<li>Any read of escaped-dependent state calls <code>settleEscapes</code> for that user first (Plan 3). <code>buildParkSnapshot</code> does this.</li>
+<li>Errors use <code>flags: MessageFlags.Ephemeral</code>, never <code>ephemeral: true</code>. Handlers thin.</li>
+<li>Dependencies pinned to latest stable (verified 2026-07-21): <code>@napi-rs/canvas@1.0.2</code>.</li>
+</ul>
+
+<div class="callout"><b>Existing interfaces this plan builds on (exact):</b>
+<pre><code>// src/modules/park/service.ts
+export type User = typeof schema.users.$inferSelect;   // { discordId, displayName, parkName, cash, food, parkRating(×100), ratingHighWater, ... }
+export type Lot  = typeof schema.lots.$inferSelect;    // { id, userId, type:'paddock'|'facility', kind, name, level, decor: string[] }
+getOrCreateUser(ctx, userId, displayName): User
+pendingIncome(ctx, userId): number
+// src/modules/park/escapes.ts
+settleEscapes(ctx, userId): number[]                   // lazy; stamps dinos.escapedAt; idempotent
+// src/modules/park/embeds.ts
+dashboardPayload(user: User, lots: Lot[], dinoCount: number, pending: number, escapedCount = 0)
+//   => { embeds: [EmbedBuilder], components: [ActionRowBuilder] }   (Collect button)
+// src/data/progression.ts
+lotSlots(ratingHighWater: number): number              // the user's current lot cap (3..8)
+// src/data/species/index.ts
+getSpecies(id: string): { id, name, rarity: Rarity, diet, ... }
+// src/data/types.ts
+type Rarity = 'common'|'uncommon'|'rare'|'epic'|'legendary'|'mythic'
+// schema.dinos: { id, userId, lotId, speciesId, escapedAt, ... }   lotId null = unassigned
+// Lot kinds in use: carnivore_paddock, herbivore_paddock (paddocks); food_court, hatchery_lab, visitor_center (facilities)
+// tests/harness.ts: makeCtx() (has setNow), fakeCommand({ name, sub, user, options }) -> { replies[], asChatInput() }</code></pre>
+</div>
+
+<div class="callout warn"><b>Already staged in the working tree (from the design-phase validation spike — do not re-source):</b>
+<ul>
+<li><code>@napi-rs/canvas@1.0.2</code> is already in <code>package.json</code> (and <code>package-lock.json</code>). A render spike confirmed Skia renders CBDT color emoji in this environment.</li>
+<li><code>assets/fonts/NotoSans-Regular.ttf</code> (621 KB) and <code>assets/fonts/NotoColorEmoji.ttf</code> (10.6 MB) are present (SIL OFL). Task 1 commits them.</li>
+</ul>
+</div>
+
+<hr>
+
+<!-- ===================== TASK 1 ===================== -->
+<h2>Task 1: Setup + render icon/color data</h2>
+<p class="files"><b>Files:</b> Commit <code>package.json</code>, <code>package-lock.json</code>, <code>assets/fonts/*.ttf</code> (already in the tree). Create <code>src/data/render-icons.ts</code>. Test <code>tests/render-icons.test.ts</code>.</p>
+<div class="iface"><b>Produces:</b> <code>tilePalette(type)</code>, <code>lotIcon(type, kind)</code>, <code>dinoGlyph(rarity)</code>, <code>RARITY_COLOR: Record&lt;Rarity, string&gt;</code>, <code>interface TilePalette { fill; border; text }</code>.</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 1: Create <code>src/data/render-icons.ts</code></label></p>
+<pre><code>import type { Rarity } from './types.js';
+
+export interface TilePalette { fill: string; border: string; text: string }
+
+export const PADDOCK_PALETTE: TilePalette = { fill: '#c8b273', border: '#e8d9a0', text: '#3a2f16' };
+export const FACILITY_PALETTE: TilePalette = { fill: '#7fa8c9', border: '#a9cbe6', text: '#12303f' };
+
+export function tilePalette(type: 'paddock' | 'facility'): TilePalette {
+  return type === 'facility' ? FACILITY_PALETTE : PADDOCK_PALETTE;
+}
+
+const LOT_ICON: Record&lt;string, string&gt; = {
+  carnivore_paddock: '🦖',
+  herbivore_paddock: '🦕',
+  food_court: '🍔',
+  hatchery_lab: '🥚',
+  visitor_center: '🏛️',
+};
+
+// Known kinds get a specific icon; anything else falls back by lot type.
+export function lotIcon(type: 'paddock' | 'facility', kind: string): string {
+  return LOT_ICON[kind] ?? (type === 'facility' ? '🏢' : '🌿');
+}
+
+export const RARITY_COLOR: Record&lt;Rarity, string&gt; = {
+  common: '#9aa0a6', uncommon: '#57b85a', rare: '#4a90d9',
+  epic: '#9b59d0', legendary: '#e0982a', mythic: '#d14ad9',
+};
+
+// A bit of visual variety: apex rarities get the T-Rex glyph.
+export function dinoGlyph(rarity: Rarity): string {
+  return rarity === 'legendary' || rarity === 'mythic' ? '🦖' : '🦕';
+}</code></pre>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 2: Create <code>tests/render-icons.test.ts</code></label></p>
+<pre><code>import { describe, it, expect } from 'vitest';
+import { lotIcon, tilePalette, dinoGlyph, RARITY_COLOR } from '../src/data/render-icons.js';
+
+describe('render-icons', () =&gt; {
+  it('maps known lot kinds and falls back by type', () =&gt; {
+    expect(lotIcon('facility', 'hatchery_lab')).toBe('🥚');
+    expect(lotIcon('paddock', 'carnivore_paddock')).toBe('🦖');
+    expect(lotIcon('facility', 'unknown_kind')).toBe('🏢');   // fallback
+    expect(lotIcon('paddock', 'unknown_kind')).toBe('🌿');    // fallback
+  });
+  it('has a distinct palette per lot type', () =&gt; {
+    expect(tilePalette('paddock')).not.toEqual(tilePalette('facility'));
+  });
+  it('has a color for every rarity', () =&gt; {
+    for (const r of ['common','uncommon','rare','epic','legendary','mythic'] as const)
+      expect(RARITY_COLOR[r]).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+  it('uses the apex glyph for legendary/mythic', () =&gt; {
+    expect(dinoGlyph('mythic')).toBe('🦖');
+    expect(dinoGlyph('common')).toBe('🦕');
+  });
+});</code></pre>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 3: Run &amp; commit</label></p>
+<pre><code>npm run typecheck &amp;&amp; npx vitest run tests/render-icons.test.ts
+git add package.json package-lock.json assets/fonts src/data/render-icons.ts tests/render-icons.test.ts
+git commit -m "Add @napi-rs/canvas + bundled fonts and park render icon/color maps"</code></pre>
+<p class="muted">Expected: tests pass. The commit includes the 10.6 MB emoji font — that is intentional (bundled, no runtime download).</p>
+</div>
+
+<hr>
+
+<!-- ===================== TASK 2 ===================== -->
+<h2>Task 2: ParkSnapshot + buildParkSnapshot</h2>
+<p class="files"><b>Files:</b> Create <code>src/modules/park/snapshot.ts</code>. Test <code>tests/park-snapshot.test.ts</code>.</p>
+<div class="iface"><b>Consumes:</b> <code>settleEscapes</code>, <code>getSpecies</code>, <code>lotSlots</code>, <code>schema</code>, <code>Rarity</code>.<br>
+<b>Produces:</b> <code>ParkSnapshot</code>, <code>SnapshotLot</code>, <code>SnapshotDino</code>, <code>buildParkSnapshot(ctx, userId): ParkSnapshot</code>.</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 1: Write the failing test <code>tests/park-snapshot.test.ts</code></label></p>
+<pre><code>import { describe, it, expect, beforeEach } from 'vitest';
+import { makeCtx } from './harness.js';
+import { getOrCreateUser } from '../src/modules/park/service.js';
+import { buildParkSnapshot } from '../src/modules/park/snapshot.js';
+import { schema } from '../src/core/db/index.js';
+
+let ctx: ReturnType&lt;typeof makeCtx&gt;;
+beforeEach(() =&gt; { ctx = makeCtx(); getOrCreateUser(ctx, 'a', 'A'); });
+
+const addLot = (kind: string, type: 'paddock' | 'facility', over: Record&lt;string, unknown&gt; = {}) =&gt;
+  ctx.db.insert(schema.lots).values({ userId: 'a', type, kind, name: kind, ...over }).returning().get();
+const addDino = (over: Record&lt;string, unknown&gt;) =&gt;
+  ctx.db.insert(schema.dinos).values({ userId: 'a', speciesId: 'tyrannosaurus', lastFedAt: 0, hatchedAt: 0, ...over }).returning().get();
+
+describe('buildParkSnapshot', () =&gt; {
+  it('groups dinos under their lot and reports counts + cap', () =&gt; {
+    const pen = addLot('carnivore_paddock', 'paddock', { level: 3, decor: ['statue', 'tree'] });
+    addDino({ lotId: pen.id });
+    addDino({ lotId: pen.id, escapedAt: 5 });   // escaped
+    addDino({});                                 // unassigned
+    const snap = buildParkSnapshot(ctx, 'a');
+    expect(snap.parkName).toBe('New Park');
+    expect(snap.dinoCount).toBe(3);
+    expect(snap.escapedCount).toBe(1);
+    expect(snap.lotCap).toBeGreaterThanOrEqual(3);   // lotSlots(highWater) — base 3
+    const lot = snap.lots.find((l) =&gt; l.id === pen.id)!;
+    expect(lot.decorCount).toBe(2);
+    expect(lot.dinos).toHaveLength(2);
+    expect(lot.dinos.some((d) =&gt; d.escaped)).toBe(true);
+    expect(lot.dinos[0].rarity).toBe('legendary');   // tyrannosaurus
+  });
+  it('settles escapes before snapshotting (a starved dino is stamped escaped)', () =&gt; {
+    const pen = addLot('carnivore_paddock', 'paddock');
+    addDino({ lotId: pen.id, hunger: 0, lastFedAt: 0 });
+    ctx.setNow(60 * 24 * 3_600_000);   // 60 days later: comfort 0, well past the 8h grace
+    const snap = buildParkSnapshot(ctx, 'a');
+    expect(snap.escapedCount).toBe(1);
+    expect(snap.lots[0].dinos[0].escaped).toBe(true);
+  });
+  it('produces a plain, JSON-serializable object', () =&gt; {
+    addLot('hatchery_lab', 'facility');
+    const snap = buildParkSnapshot(ctx, 'a');
+    expect(() =&gt; structuredClone(snap)).not.toThrow();
+    expect(JSON.parse(JSON.stringify(snap)).lots[0].kind).toBe('hatchery_lab');
+  });
+});</code></pre>
+<p class="muted">Run <code>npx vitest run tests/park-snapshot.test.ts</code> → FAIL (module not found).</p>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 2: Implement <code>src/modules/park/snapshot.ts</code></label></p>
+<pre><code>import { eq } from 'drizzle-orm';
+import { schema } from '../../core/db/index.js';
+import type { Ctx } from '../../core/context.js';
+import type { Rarity } from '../../data/types.js';
+import { getSpecies } from '../../data/species/index.js';
+import { lotSlots } from '../../data/progression.js';
+import { settleEscapes } from './escapes.js';
+
+export interface SnapshotDino { speciesId: string; rarity: Rarity; escaped: boolean }
+export interface SnapshotLot {
+  id: number; type: 'paddock' | 'facility'; kind: string; name: string;
+  level: number; decorCount: number; dinos: SnapshotDino[];
+}
+export interface ParkSnapshot {
+  parkName: string; cash: number; parkRating: number;
+  dinoCount: number; escapedCount: number; lotCap: number;
+  lots: SnapshotLot[];
+}
+
+// Read-only park state for the renderer. Settles escapes first (Plan 3 rule),
+// then returns a plain object safe to postMessage across the worker boundary.
+export function buildParkSnapshot(ctx: Ctx, userId: string): ParkSnapshot {
+  settleEscapes(ctx, userId);
+  const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get();
+  if (!user) throw new Error(`No park for user ${userId}`);
+  const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, userId)).all();
+  const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all();
+
+  const byLot = new Map&lt;number, SnapshotDino[]&gt;();   // key: lotId (0 = unassigned)
+  let escapedCount = 0;
+  for (const d of dinos) {
+    const escaped = d.escapedAt !== null;
+    if (escaped) escapedCount++;
+    const sd: SnapshotDino = { speciesId: d.speciesId, rarity: getSpecies(d.speciesId).rarity, escaped };
+    const key = d.lotId ?? 0;
+    let arr = byLot.get(key);
+    if (!arr) { arr = []; byLot.set(key, arr); }
+    arr.push(sd);
+  }
+
+  return {
+    parkName: user.parkName, cash: user.cash, parkRating: user.parkRating,
+    dinoCount: dinos.length, escapedCount, lotCap: lotSlots(user.ratingHighWater),
+    lots: lots.map((l) =&gt; ({
+      id: l.id, type: l.type, kind: l.kind, name: l.name, level: l.level,
+      decorCount: l.decor.length, dinos: byLot.get(l.id) ?? [],
+    })),
+  };
+}</code></pre>
+<p class="muted">Run the test → PASS. Then commit: <code>git add -A &amp;&amp; git commit -m "Add buildParkSnapshot: read-only serializable park state for rendering"</code></p>
+</div>
+
+<hr>
+
+<!-- ===================== TASK 3 ===================== -->
+<h2>Task 3: renderParkPng (pure draw) + grid geometry</h2>
+<p class="files"><b>Files:</b> Create <code>src/core/render/draw.ts</code>. Test <code>tests/render-draw.test.ts</code>.</p>
+<div class="iface"><b>Consumes:</b> <code>@napi-rs/canvas</code>, <code>ParkSnapshot</code>/<code>SnapshotLot</code>, render-icons.<br>
+<b>Produces:</b> <code>gridDims(cellCount): GridDims</code>, <code>renderParkPng(snap): Buffer</code>.</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 1: Write the failing test <code>tests/render-draw.test.ts</code></label></p>
+<pre><code>import { describe, it, expect } from 'vitest';
+import { gridDims, renderParkPng } from '../src/core/render/draw.js';
+import type { ParkSnapshot } from '../src/modules/park/snapshot.js';
+
+describe('gridDims', () =&gt; {
+  it('rows scale with cell count at 3 columns; width is constant', () =&gt; {
+    expect(gridDims(0).rows).toBe(1);
+    expect(gridDims(3).rows).toBe(1);
+    expect(gridDims(4).rows).toBe(2);
+    expect(gridDims(9).rows).toBe(3);
+    expect(gridDims(3).width).toBe(gridDims(9).width);
+  });
+});
+
+const sample: ParkSnapshot = {
+  parkName: 'Jurassic Cove', cash: 12400, parkRating: 420, dinoCount: 3, escapedCount: 1, lotCap: 5,
+  lots: [
+    { id: 1, type: 'paddock', kind: 'carnivore_paddock', name: 'T-Rex Pen', level: 3, decorCount: 2,
+      dinos: [
+        { speciesId: 'tyrannosaurus', rarity: 'legendary', escaped: false },
+        { speciesId: 'tyrannosaurus', rarity: 'legendary', escaped: true },
+      ] },
+    { id: 2, type: 'facility', kind: 'hatchery_lab', name: 'Hatchery Lab With A Very Long Name', level: 2, decorCount: 0, dinos: [] },
+  ],
+};
+
+describe('renderParkPng', () =&gt; {
+  it('returns a non-empty PNG buffer (magic bytes)', () =&gt; {
+    const png = renderParkPng(sample);
+    expect(png.length).toBeGreaterThan(1000);
+    expect([...png.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+  });
+  it('renders an empty park without throwing', () =&gt; {
+    const png = renderParkPng({ ...sample, lots: [], dinoCount: 0, escapedCount: 0 });
+    expect(png.length).toBeGreaterThan(100);
+  });
+});</code></pre>
+<p class="muted">Run → FAIL.</p>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 2: Implement <code>src/core/render/draw.ts</code></label></p>
+<pre><code>import { createCanvas, GlobalFonts, type SKRSContext2D } from '@napi-rs/canvas';
+import { resolve } from 'node:path';
+import type { ParkSnapshot, SnapshotLot } from '../../modules/park/snapshot.js';
+import { lotIcon, tilePalette, dinoGlyph, RARITY_COLOR } from '../../data/render-icons.js';
+
+const COLS = 3;
+const TILE_W = 270, TILE_H = 150, GAP = 16, PAD = 20, HEADER_H = 64;
+const SANS = 'Noto Sans', EMOJI = 'Noto Color Emoji';
+
+export interface GridDims { cols: number; rows: number; width: number; height: number }
+
+// Pure geometry: how big the canvas is for N cells (lots + optional build slot) at 3 columns.
+export function gridDims(cellCount: number): GridDims {
+  const cells = Math.max(cellCount, 1);
+  const rows = Math.ceil(cells / COLS);
+  const width = PAD * 2 + COLS * TILE_W + (COLS - 1) * GAP;
+  const height = HEADER_H + PAD * 2 + rows * TILE_H + (rows - 1) * GAP;
+  return { cols: COLS, rows, width, height };
+}
+
+let fontsReady = false;
+function ensureFonts(): void {
+  if (fontsReady) return;
+  GlobalFonts.registerFromPath(resolve(process.cwd(), 'assets/fonts/NotoSans-Regular.ttf'), SANS);
+  GlobalFonts.registerFromPath(resolve(process.cwd(), 'assets/fonts/NotoColorEmoji.ttf'), EMOJI);
+  fontsReady = true;
+}
+
+function rrect(c: SKRSContext2D, x: number, y: number, w: number, h: number, r: number): void {
+  c.beginPath(); c.roundRect(x, y, w, h, r);
+}
+
+// Truncate a string with an ellipsis to fit maxW under the CURRENT font.
+function trunc(c: SKRSContext2D, s: string, maxW: number): string {
+  if (c.measureText(s).width &lt;= maxW) return s;
+  let out = s;
+  while (out.length &gt; 1 &amp;&amp; c.measureText(out + '…').width &gt; maxW) out = out.slice(0, -1);
+  return out + '…';
+}
+
+// Draw an emoji (emoji font) then a value (sans) on one baseline; return the x after the value.
+function iconValue(c: SKRSContext2D, x: number, y: number, emoji: string, value: string, size: number): number {
+  c.font = `${size}px "${EMOJI}"`; c.fillText(emoji, x, y);
+  const ew = c.measureText(emoji).width;
+  c.font = `${size}px "${SANS}"`; c.fillText(value, x + ew + 6, y);
+  return x + ew + 6 + c.measureText(value).width;
+}
+
+function drawTile(c: SKRSContext2D, lot: SnapshotLot, x: number, y: number): void {
+  const pal = tilePalette(lot.type);
+  rrect(c, x, y, TILE_W, TILE_H, 12); c.fillStyle = pal.fill; c.fill();
+  c.lineWidth = 3; c.strokeStyle = pal.border; rrect(c, x, y, TILE_W, TILE_H, 12); c.stroke();
+
+  c.font = `30px "${EMOJI}"`; c.fillText(lotIcon(lot.type, lot.kind), x + 14, y + 42);
+  c.fillStyle = pal.text;
+  c.font = `18px "${SANS}"`; c.fillText(trunc(c, lot.name, TILE_W - 72), x + 54, y + 34);
+  c.font = `13px "${SANS}"`; c.fillText(`Lv ${lot.level}`, x + 54, y + 54);
+
+  let dx = x + 16; const dy = y + 100;
+  for (const d of lot.dinos.slice(0, 6)) {
+    c.font = `28px "${EMOJI}"`; c.fillText(dinoGlyph(d.rarity), dx, dy);
+    c.fillStyle = RARITY_COLOR[d.rarity];
+    c.beginPath(); c.arc(dx + 14, dy + 10, 4, 0, Math.PI * 2); c.fill();
+    dx += 34;
+  }
+  if (lot.dinos.length &gt; 6) {
+    c.font = `14px "${SANS}"`; c.fillStyle = pal.text; c.fillText(`+${lot.dinos.length - 6}`, dx, dy);
+  }
+  if (lot.dinos.some((d) =&gt; d.escaped)) {
+    c.font = `20px "${EMOJI}"`; c.fillText('🚨', x + TILE_W - 34, y + 34);
+  }
+  for (let k = 0; k &lt; Math.min(lot.decorCount, 5); k++) {
+    c.fillStyle = '#2f6b2a'; c.beginPath(); c.arc(x + 18 + k * 12, y + TILE_H - 14, 4, 0, Math.PI * 2); c.fill();
+  }
+}
+
+function drawBuildSlot(c: SKRSContext2D, x: number, y: number): void {
+  c.setLineDash([8, 6]); c.lineWidth = 2; c.strokeStyle = '#9fb8a0';
+  rrect(c, x, y, TILE_W, TILE_H, 12); c.stroke(); c.setLineDash([]);
+  c.font = `16px "${SANS}"`; c.fillStyle = '#d6ead6'; c.textAlign = 'center';
+  c.fillText('+  /build', x + TILE_W / 2, y + TILE_H / 2 + 5); c.textAlign = 'left';
+}
+
+export function renderParkPng(snap: ParkSnapshot): Buffer {
+  ensureFonts();
+  const hasBuild = snap.lots.length &lt; snap.lotCap;
+  const cellCount = snap.lots.length + (hasBuild ? 1 : 0);
+  const dims = gridDims(cellCount);
+  const canvas = createCanvas(dims.width, dims.height);
+  const c = canvas.getContext('2d');
+
+  c.fillStyle = '#356b2c'; c.fillRect(0, 0, dims.width, dims.height);          // grass
+  c.fillStyle = '#234a1e'; c.fillRect(0, 0, dims.width, HEADER_H);             // header bar
+
+  c.fillStyle = '#ffffff';
+  c.font = `24px "${SANS}"`; c.fillText(trunc(c, snap.parkName, dims.width * 0.42), PAD, 40);
+  let sx = dims.width * 0.46;
+  sx = iconValue(c, sx, 40, '⭐', (snap.parkRating / 100).toFixed(1), 22) + 18;
+  sx = iconValue(c, sx, 40, '💰', snap.cash.toLocaleString(), 22) + 18;
+  const dinoText = snap.escapedCount &gt; 0 ? `${snap.dinoCount} (${snap.escapedCount}🚨)` : String(snap.dinoCount);
+  iconValue(c, sx, 40, '🦕', dinoText, 22);
+
+  for (let idx = 0; idx &lt; snap.lots.length; idx++) {
+    const col = idx % COLS, row = Math.floor(idx / COLS);
+    drawTile(c, snap.lots[idx], PAD + col * (TILE_W + GAP), HEADER_H + PAD + row * (TILE_H + GAP));
+  }
+  if (hasBuild) {
+    const idx = snap.lots.length, col = idx % COLS, row = Math.floor(idx / COLS);
+    drawBuildSlot(c, PAD + col * (TILE_W + GAP), HEADER_H + PAD + row * (TILE_H + GAP));
+  }
+  return canvas.toBuffer('image/png');
+}</code></pre>
+<p class="muted">Run → PASS. If the <code>SKRSContext2D</code> type import ever fails to resolve, type the context params as <code>ReturnType&lt;ReturnType&lt;typeof createCanvas&gt;['getContext']&gt;</code> instead — do not use <code>any</code>. Commit: <code>git add -A &amp;&amp; git commit -m "Add pure park PNG renderer (Zoo Grid) and grid geometry"</code></p>
+</div>
+
+<hr>
+
+<!-- ===================== TASK 4 ===================== -->
+<h2>Task 4: Render worker + client (timeout &amp; fallback)</h2>
+<p class="files"><b>Files:</b> Create <code>src/core/render/worker.ts</code>, <code>src/core/render/client.ts</code>. Test <code>tests/render-client.test.ts</code>.</p>
+<div class="iface"><b>Consumes:</b> <code>renderParkPng</code> (Task 3), <code>ParkSnapshot</code>.<br>
+<b>Produces:</b> <code>raceTimeout&lt;T&gt;(p, ms): Promise&lt;T&gt;</code>, <code>RENDER_TIMEOUT_MS</code>, <code>renderPark(snapshot, run?, timeoutMs?): Promise&lt;Buffer&gt;</code>.</div>
+
+<div class="callout warn"><b>Testability seam:</b> spawning a real Worker inside vitest is flaky (the worker file is <code>.ts</code> under the test runner). So <code>renderPark</code> takes an <b>injectable</b> <code>run</code> function (default = the real worker runner). Tests inject a fake <code>run</code> to exercise resolve / reject / timeout deterministically. The real worker↔client round-trip is validated by a build-mode smoke step below, not by a unit test.</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 1: Write the failing test <code>tests/render-client.test.ts</code></label></p>
+<pre><code>import { describe, it, expect } from 'vitest';
+import { raceTimeout, renderPark } from '../src/core/render/client.js';
+import type { ParkSnapshot } from '../src/modules/park/snapshot.js';
+
+const snap = {} as unknown as ParkSnapshot;   // renderPark passes it straight to `run`
+
+describe('raceTimeout', () =&gt; {
+  it('resolves when the promise beats the timeout', async () =&gt; {
+    await expect(raceTimeout(Promise.resolve(42), 1000)).resolves.toBe(42);
+  });
+  it('rejects when the timeout wins', async () =&gt; {
+    await expect(raceTimeout(new Promise&lt;number&gt;(() =&gt; {}), 10)).rejects.toThrow(/timeout/);
+  });
+});
+
+describe('renderPark (injected runner)', () =&gt; {
+  const buf = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  it('returns the runner buffer', async () =&gt; {
+    await expect(renderPark(snap, async () =&gt; buf, 1000)).resolves.toBe(buf);
+  });
+  it('rejects when the runner errors (caller will fall back to text)', async () =&gt; {
+    await expect(renderPark(snap, async () =&gt; { throw new Error('boom'); }, 1000)).rejects.toThrow('boom');
+  });
+  it('rejects when the runner exceeds the timeout', async () =&gt; {
+    await expect(renderPark(snap, () =&gt; new Promise&lt;Buffer&gt;(() =&gt; {}), 10)).rejects.toThrow(/timeout/);
+  });
+});</code></pre>
+<p class="muted">Run → FAIL.</p>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 2: Implement <code>src/core/render/worker.ts</code></label></p>
+<pre><code>import { parentPort } from 'node:worker_threads';
+import { renderParkPng } from './draw.js';
+import type { ParkSnapshot } from '../../modules/park/snapshot.js';
+
+// One message in, one message out. The buffer is structured-cloned back (no transfer,
+// to avoid detaching a pooled Buffer's backing store).
+parentPort?.on('message', (snapshot: ParkSnapshot) =&gt; {
+  try {
+    const png = renderParkPng(snapshot);
+    parentPort!.postMessage({ ok: true, png });
+  } catch (e) {
+    parentPort!.postMessage({ ok: false, error: String(e) });
+  }
+});</code></pre>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 3: Implement <code>src/core/render/client.ts</code></label></p>
+<pre><code>import { Worker } from 'node:worker_threads';
+import type { ParkSnapshot } from '../../modules/park/snapshot.js';
+
+export const RENDER_TIMEOUT_MS = 3000;
+
+type Runner = (snapshot: ParkSnapshot) =&gt; Promise&lt;Buffer&gt;;
+interface WorkerReply { ok: boolean; png?: Buffer; error?: string }
+
+// Reject if `p` doesn't settle within `ms`.
+export function raceTimeout&lt;T&gt;(p: Promise&lt;T&gt;, ms: number): Promise&lt;T&gt; {
+  return new Promise&lt;T&gt;((res, rej) =&gt; {
+    const t = setTimeout(() =&gt; rej(new Error('render timeout')), ms);
+    p.then((v) =&gt; { clearTimeout(t); res(v); }, (e) =&gt; { clearTimeout(t); rej(e); });
+  });
+}
+
+let worker: Worker | null = null;
+
+// dist: ./worker.js beside this file. dev (tsx): ./worker.ts (may fail to load → graceful fallback).
+function workerUrl(): URL {
+  return new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url);
+}
+
+function getWorker(): Worker {
+  if (!worker) {
+    const w = new Worker(workerUrl());
+    w.on('error', () =&gt; { w.terminate(); if (worker === w) worker = null; });
+    w.on('exit', () =&gt; { if (worker === w) worker = null; });
+    worker = w;
+  }
+  return worker;
+}
+
+const runOnWorker: Runner = (snapshot) =&gt; new Promise&lt;Buffer&gt;((res, rej) =&gt; {
+  let w: Worker;
+  try { w = getWorker(); } catch (e) { rej(e instanceof Error ? e : new Error(String(e))); return; }
+  const onMsg = (m: WorkerReply) =&gt; { cleanup(); m.ok &amp;&amp; m.png ? res(Buffer.from(m.png)) : rej(new Error(m.error ?? 'render failed')); };
+  const onErr = (e: unknown) =&gt; { cleanup(); rej(e instanceof Error ? e : new Error(String(e))); };
+  function cleanup() { w.off('message', onMsg); w.off('error', onErr); }
+  w.on('message', onMsg); w.on('error', onErr);
+  w.postMessage(snapshot);
+});
+
+// Serialize renders through the single worker; each guarded by a timeout.
+// `run` is injectable for testing; production uses the real worker runner.
+let chain: Promise&lt;unknown&gt; = Promise.resolve();
+export function renderPark(snapshot: ParkSnapshot, run: Runner = runOnWorker, timeoutMs = RENDER_TIMEOUT_MS): Promise&lt;Buffer&gt; {
+  const result = chain.then(() =&gt; raceTimeout(run(snapshot), timeoutMs));
+  chain = result.catch(() =&gt; undefined);   // keep the queue alive after a failure
+  return result;
+}</code></pre>
+<p class="muted">Run <code>npx vitest run tests/render-client.test.ts</code> → PASS.</p>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 4: Build-mode smoke — validate the REAL worker↔client round-trip</label></p>
+<p>Create <code>scripts/render-smoke.mjs</code>:</p>
+<pre><code>import { renderPark } from '../dist/core/render/client.js';
+
+const snap = {
+  parkName: 'Smoke Park', cash: 9999, parkRating: 350, dinoCount: 2, escapedCount: 0, lotCap: 5,
+  lots: [{ id: 1, type: 'paddock', kind: 'herbivore_paddock', name: 'Vale', level: 2, decorCount: 1,
+    dinos: [{ speciesId: 'triceratops', rarity: 'common', escaped: false }] }],
+};
+const png = await renderPark(snap);
+console.log('PNG bytes:', png.length, 'magic:', [...png.subarray(0, 4)].map((b) =&gt; b.toString(16)).join(' '));
+process.exit(png.length &gt; 1000 ? 0 : 1);</code></pre>
+<pre><code>npm run build
+node scripts/render-smoke.mjs</code></pre>
+<p class="muted">Expected: <code>PNG bytes: &lt;n&gt; magic: 89 50 4e 47</code> with n &gt; 1000, exit 0. This runs the compiled <code>dist</code> worker (the real thread + Skia), closing the coverage gap the unit tests leave. If it exits non-zero, the worker path is broken — fix before committing.</p>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 5: Commit</label></p>
+<pre><code>npm run typecheck &amp;&amp; npx vitest run
+git add -A
+git commit -m "Add render worker and client wrapper with timeout and graceful fallback"</code></pre>
+</div>
+
+<hr>
+
+<!-- ===================== TASK 5 ===================== -->
+<h2>Task 5: Attach the PNG to /park view + docs</h2>
+<p class="files"><b>Files:</b> Modify <code>src/modules/park/embeds.ts</code> (add <code>withParkImage</code>), <code>src/modules/park/index.ts</code> (both view paths), <code>README.md</code>, <code>docs/ops.md</code>. Test <code>tests/park-view-image.test.ts</code>.</p>
+<div class="iface"><b>Consumes:</b> <code>buildParkSnapshot</code> (T2), <code>renderPark</code> (T4), <code>dashboardPayload</code>, <code>AttachmentBuilder</code>.<br>
+<b>Produces:</b> <code>withParkImage(payload, png): payload &amp; { files }</code>; <code>/park view</code> now attaches a map image with text fallback.</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 1: Write the failing test <code>tests/park-view-image.test.ts</code></label></p>
+<pre><code>import { describe, it, expect, beforeEach } from 'vitest';
+import { makeCtx } from './harness.js';
+import { fakeCommand } from './harness.js';
+import { getOrCreateUser } from '../src/modules/park/service.js';
+import { dashboardPayload, withParkImage } from '../src/modules/park/embeds.js';
+import { parkModule } from '../src/modules/park/index.js';
+
+let ctx: ReturnType&lt;typeof makeCtx&gt;;
+beforeEach(() =&gt; { ctx = makeCtx(); });
+
+describe('withParkImage', () =&gt; {
+  it('attaches park.png and points the embed image at it', () =&gt; {
+    const u = getOrCreateUser(ctx, 'a', 'A');
+    const base = dashboardPayload(u, [], 0, 0, 0);
+    const out = withParkImage(base, Buffer.from([1, 2, 3]));
+    expect(out.files).toHaveLength(1);
+    expect(out.embeds[0].data.image?.url).toBe('attachment://park.png');
+    expect(out.components).toBe(base.components);   // Collect button preserved
+  });
+});
+
+describe('/park view', () =&gt; {
+  it('always replies with exactly one embed (image or graceful text fallback)', async () =&gt; {
+    getOrCreateUser(ctx, 'u1', 'U1');
+    const cmd = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await parkModule.commands[0].execute(ctx, cmd.asChatInput());
+    const reply = cmd.replies[0] as { embeds: unknown[] };
+    expect(reply.embeds).toHaveLength(1);
+  });
+});</code></pre>
+<p class="muted">Run → FAIL (<code>withParkImage</code> not exported).</p>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 2: Add <code>withParkImage</code> to <code>src/modules/park/embeds.ts</code></label></p>
+<p>Add <code>AttachmentBuilder</code> to the discord.js import at the top, and append this export:</p>
+<pre><code>import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } from 'discord.js';
+// ... existing dashboardPayload unchanged ...
+
+// Set a rendered PNG as the embed's image and attach it. Mutates the (freshly built)
+// embed in place and preserves components (e.g. the Collect button).
+export function withParkImage&lt;T extends { embeds: EmbedBuilder[] }&gt;(payload: T, png: Buffer): T &amp; { files: AttachmentBuilder[] } {
+  payload.embeds[0].setImage('attachment://park.png');
+  return { ...payload, files: [new AttachmentBuilder(png, { name: 'park.png' })] };
+}</code></pre>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 3: Wire both view paths in <code>src/modules/park/index.ts</code></label></p>
+<p>Extend the EXISTING <code>./embeds.js</code> import to add <code>withParkImage</code> (the file already imports <code>dashboardPayload</code> — do not add a second import line), and add the two new imports:</p>
+<pre><code>// change the existing line   import { dashboardPayload } from './embeds.js';
+// to:
+import { dashboardPayload, withParkImage } from './embeds.js';
+// and add:
+import { buildParkSnapshot } from './snapshot.js';
+import { renderPark } from '../../core/render/client.js';</code></pre>
+<p>Replace the <b>other-player</b> branch's reply (currently <code>await i.reply({ embeds: payload.embeds });</code>) with:</p>
+<pre><code>          const base = { embeds: payload.embeds };
+          let png: Buffer | undefined;
+          try { png = await renderPark(buildParkSnapshot(ctx, targetUser.id)); } catch { png = undefined; }
+          await i.reply(png ? withParkImage(base, png) : base);   // read-only: no Collect button
+          return;</code></pre>
+<p>Replace the <b>self</b> view path's final reply (currently the single <code>await i.reply(dashboardPayload(...));</code> line at the end of the view handler) with:</p>
+<pre><code>        const base = dashboardPayload(user, lots, dinos.length, pendingIncome(ctx, i.user.id), escapedCount);
+        let png: Buffer | undefined;
+        try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
+        await i.reply(png ? withParkImage(base, png) : base);</code></pre>
+<p class="muted">The existing <code>settleEscapes(ctx, i.user.id)</code> + <code>lots</code>/<code>dinos</code>/<code>escapedCount</code> lines in the self path stay as-is above this reply. <code>buildParkSnapshot</code> re-settles (idempotent, cheap) and reads its own copy for the worker — deliberate, keeps the snapshot self-contained. Do not remove the existing embed queries.</p>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 4: Run tests</label></p>
+<pre><code>npm run typecheck &amp;&amp; npx vitest run</code></pre>
+<p class="muted">All green. Under vitest the worker cannot load the <code>.ts</code> file, so <code>renderPark</code> rejects fast and the handler takes the text-fallback branch — the "/park view replies with one embed" test passes deterministically. The image branch is covered by the <code>withParkImage</code> unit test and the Task 4 build-mode smoke.</p>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 5: Update docs</label></p>
+<p><b>README.md</b> — in the features/description area, note that <code>/park view</code> now renders a park-map image.</p>
+<p><b>docs/ops.md</b> — add a short subsection (near the deployment/dependencies area):</p>
+<pre><code>### Park rendering
+
+`/park view` renders a PNG park map in a worker thread using `@napi-rs/canvas`
+(native, prebuilt binaries — no system libraries to install). Fonts are bundled
+at `assets/fonts/` (Noto Sans + Noto Color Emoji) and must ship with the deploy;
+they are read relative to the process working directory, so run the bot from the
+repo root (the systemd unit already sets `WorkingDirectory`). If rendering fails
+or exceeds ~3s, `/park view` automatically falls back to the text-only embed —
+the command never fails because of the renderer.</code></pre>
+<p>And add one line to the Post-Deploy Smoke Check list: <code>- `/park view` — a park-map image appears above the dashboard.</code></p>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 6: Commit</label></p>
+<pre><code>npm run typecheck &amp;&amp; npx vitest run &amp;&amp; npm run build
+git add -A
+git commit -m "Render a park-map image on /park view with text fallback; document rendering"</code></pre>
+</div>
+
+<hr>
+
+<h2>Definition of Done</h2>
+<ul>
+<li><code>/park view</code> (self and <code>user:@other</code>) attaches a Zoo-Grid PNG built in a worker from a read-only snapshot; on timeout/error it silently degrades to the current text embed.</li>
+<li>The Collect button and cash/rating numbers remain on the self view.</li>
+<li>The worker never touches the DB; only a plain <code>ParkSnapshot</code> crosses the thread boundary.</li>
+<li>Full <code>npx vitest run</code> green; <code>npm run typecheck</code> and <code>npm run build</code> exit 0; the build-mode render smoke prints a valid PNG.</li>
+<li>Authorship RegEdits-TSC throughout; docs updated.</li>
+</ul>
+
+<h2>Out of scope (later plans)</h2>
+<p class="muted">Isometric/3D map, animation, decoration artwork (dots only), image caching, per-guild themes, admin tooling (Plan 6).</p>
+
+</body>
+</html>
