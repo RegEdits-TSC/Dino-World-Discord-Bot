@@ -54,6 +54,16 @@ This guide covers deploying Dino World to production, running it as a system ser
 
 The bot will log "Logged in as ..." when connected. It stores all state in the SQLite database at `DATABASE_PATH`.
 
+### Park rendering
+
+`/park view` renders a PNG park map in a worker thread using `@napi-rs/canvas`
+(native, prebuilt binaries — no system libraries to install). Fonts are bundled
+at `assets/fonts/` (Noto Sans + Noto Color Emoji) and must ship with the deploy;
+they are read relative to the process working directory, so run the bot from the
+repo root (the systemd unit already sets `WorkingDirectory`). If rendering fails
+or exceeds ~3s, `/park view` automatically falls back to the text-only embed —
+the command never fails because of the renderer.
+
 ## Running as a Service
 
 ### Using systemd (Linux)
@@ -218,6 +228,7 @@ If commands and enabled modules don't match, the bot will log warnings and disab
 After `npm run deploy-commands`, confirm the new command set is live by exercising one command per module in Discord:
 
 - `/park view` — dashboard renders.
+- `/park view` — a park-map image appears above the dashboard.
 - `/hatch` (or `/shop`) — economy commands respond.
 - `/feed all` and `/rescue` — care loop works.
 - `/trade offer user:@someone give-cash:10` then the recipient runs `/trade accept id:<n>` — the escrow swap completes; `/trade list`, `/trade decline`, `/trade cancel` respond.
