@@ -4,7 +4,7 @@ import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
 import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, LotLimitError, UnknownKindError } from './service.js';
 import { settleEscapes } from './escapes.js';
-import { assignDino, unassignDino, decorateLot, listDinos, AssignError } from './dinos.js';
+import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError } from './dinos.js';
 import { dashboardPayload, withParkImage } from './embeds.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
@@ -12,6 +12,8 @@ import { InsufficientFundsError } from '../../core/economy.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { FACILITIES } from '../../data/facilities.js';
 import { DECOR } from '../../data/decor.js';
+import { getSpecies } from '../../data/species/index.js';
+import { matches, respondRanked, emptyRow, dinoLabel } from '../../core/autocomplete.js';
 
 const kindChoices = [...Object.keys(PADDOCKS), ...Object.keys(FACILITIES)]
   .map((k) => ({ name: k.replaceAll('_', ' '), value: k }));
@@ -80,7 +82,7 @@ export const parkModule: ModuleManifest = {
     },
     {
       data: new SlashCommandBuilder().setName('upgrade').setDescription('Upgrade a lot')
-        .addIntegerOption((o) => o.setName('lot').setDescription('Lot id from /park view').setRequired(true)),
+        .addIntegerOption((o) => o.setName('lot').setDescription('Lot — type to search').setRequired(true).setAutocomplete(true)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         try {
@@ -93,15 +95,27 @@ export const parkModule: ModuleManifest = {
           else throw e;
         }
       },
+      async autocomplete(ctx, i) {
+        const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, i.user.id)).all();
+        if (!lots.length) { await respondRanked(i, [emptyRow('No lots — /build one first', 0)]); return; }
+        const q = String(i.options.getFocused());
+        await respondRanked(i, lots
+          .filter((l) => matches(q, l.id, l.name))
+          .map((l) => {
+            const maxLevel = FACILITIES[l.kind]?.maxLevel ?? 4;
+            const valid = l.level < maxLevel;
+            return { value: l.id, valid, label: `🏗️ #${l.id} ${l.name} (lvl ${l.level})${valid ? '' : ' — MAX LEVEL'}` };
+          }));
+      },
     },
     {
       data: new SlashCommandBuilder().setName('dino').setDescription('Manage your dinos')
         .addSubcommand((s) => s.setName('list').setDescription('List your dinos'))
         .addSubcommand((s) => s.setName('assign').setDescription('Assign a dino to a paddock')
-          .addIntegerOption((o) => o.setName('dino').setDescription('Dino id').setRequired(true))
-          .addIntegerOption((o) => o.setName('lot').setDescription('Paddock lot id').setRequired(true)))
+          .addIntegerOption((o) => o.setName('dino').setDescription('Dino — type to search').setRequired(true).setAutocomplete(true))
+          .addIntegerOption((o) => o.setName('lot').setDescription('Paddock — type to search').setRequired(true).setAutocomplete(true)))
         .addSubcommand((s) => s.setName('unassign').setDescription('Remove a dino from its paddock')
-          .addIntegerOption((o) => o.setName('dino').setDescription('Dino id').setRequired(true))),
+          .addIntegerOption((o) => o.setName('dino').setDescription('Dino — type to search').setRequired(true).setAutocomplete(true))),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         settleEscapes(ctx, i.user.id);
@@ -126,10 +140,41 @@ export const parkModule: ModuleManifest = {
           }
         } catch (e) { if (e instanceof AssignError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
       },
+      async autocomplete(ctx, i) {
+        const focused = i.options.getFocused(true);
+        const q = String(focused.value);
+        const now = ctx.now();
+        if (focused.name === 'dino') {
+          const sub = i.options.getSubcommand();
+          const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all();
+          if (!dinos.length) { await respondRanked(i, [emptyRow('No dinos — hatch an egg first', 0)]); return; }
+          await respondRanked(i, dinos
+            .map((d) => ({ d, species: getSpecies(d.speciesId) }))
+            .filter(({ d, species }) => matches(q, d.id, species.name, species.rarity))
+            .map(({ d, species }) => ({
+              value: d.id, label: dinoLabel(d, species, now),
+              valid: sub === 'unassign' ? d.lotId !== null : d.escapedAt === null,
+            })));
+          return;
+        }
+        // focused.name === 'lot' (assign target) — paddocks only, FULL tagged
+        const paddocks = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, i.user.id)).all()
+          .filter((l) => l.type === 'paddock');
+        if (!paddocks.length) { await respondRanked(i, [emptyRow('No paddocks — /build one first', 0)]); return; }
+        const occupants = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all();
+        await respondRanked(i, paddocks
+          .filter((l) => matches(q, l.id, l.name))
+          .map((l) => {
+            const occ = occupants.filter((d) => d.lotId === l.id).length;
+            const cap = paddockCapacity(l.level);
+            const valid = occ < cap;
+            return { value: l.id, valid, label: `🏗️ #${l.id} ${l.name} (lvl ${l.level}, ${occ}/${cap})${valid ? '' : ' — FULL'}` };
+          }));
+      },
     },
     {
       data: new SlashCommandBuilder().setName('decorate').setDescription('Add decor to a paddock')
-        .addIntegerOption((o) => o.setName('lot').setDescription('Paddock lot id').setRequired(true))
+        .addIntegerOption((o) => o.setName('lot').setDescription('Paddock — type to search').setRequired(true).setAutocomplete(true))
         .addStringOption((o) => o.setName('item').setDescription('Decoration').setRequired(true).addChoices(...Object.values(DECOR).map((d) => ({ name: d.name, value: d.kind })))),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
@@ -141,6 +186,15 @@ export const parkModule: ModuleManifest = {
           else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash.', flags: MessageFlags.Ephemeral });
           else throw e;
         }
+      },
+      async autocomplete(ctx, i) {
+        const paddocks = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, i.user.id)).all()
+          .filter((l) => l.type === 'paddock');
+        if (!paddocks.length) { await respondRanked(i, [emptyRow('No paddocks — /build one first', 0)]); return; }
+        const q = String(i.options.getFocused());
+        await respondRanked(i, paddocks
+          .filter((l) => matches(q, l.id, l.name))
+          .map((l) => ({ value: l.id, valid: true, label: `🏗️ #${l.id} ${l.name} (lvl ${l.level})` })));
       },
     },
   ],
