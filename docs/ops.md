@@ -190,11 +190,12 @@ Example `modules.json`:
   "settings": true,
   "care": true,
   "trading": true,
-  "leaderboards": true
+  "leaderboards": true,
+  "admin": true
 }
 ```
 
-Eight modules ship today:
+Nine modules ship today:
 
 - `park` — paddocks, upgrades, park rating, decorations.
 - `hatchery` — eggs, incubation, hatching, Mythic purchases.
@@ -204,6 +205,9 @@ Eight modules ship today:
 - `care` — feeding dinos and rescuing escapees.
 - `trading` — player-to-player dino/egg/currency trades with escrow.
 - `leaderboards` — server and global rankings by rating, cash, and collection.
+- `admin` — owner-only tools: grant resources, inspect/reset a player, fast-forward a player's clock (QA).
+
+Admin commands are gated to the OWNER_ID user and hidden from non-admins in the Discord UI. Set OWNER_ID in .env.
 
 Set any flag to `false` to disable that module. The `ModuleRegistry` only wires up commands and components for modules whose flag is `true`, so disabling a module removes its slash commands the next time `npm run deploy-commands` runs.
 
@@ -233,6 +237,7 @@ After `npm run deploy-commands`, confirm the new command set is live by exercisi
 - `/feed all` and `/rescue` — care loop works.
 - `/trade offer user:@someone give-cash:10` then the recipient runs `/trade accept id:<n>` — the escrow swap completes; `/trade list`, `/trade decline`, `/trade cancel` respond.
 - `/top metric:rating` and `/top metric:collection scope:global` — leaderboards render.
+- `/admin inspect user:@you` — returns your raw state (owner only).
 
 All commands should reply without an "application did not respond" timeout. If a command is missing, re-run `npm run deploy-commands` (guild deploys are instant; global takes up to ~1h).
 

@@ -8,11 +8,12 @@ import { settingsModule } from '../src/modules/settings/index.js';
 import { careModule } from '../src/modules/care/index.js';
 import { tradingModule } from '../src/modules/trading/index.js';
 import { leaderboardsModule } from '../src/modules/leaderboards/index.js';
+import { adminModule } from '../src/modules/admin/index.js';
 
 describe('full module registry', () => {
   it('loads all modules without a name/prefix collision', () => {
-    const flags = { park: true, hatchery: true, expeditions: true, shop: true, settings: true, care: true, trading: true, leaderboards: true };
-    const r = new ModuleRegistry([parkModule, hatcheryModule, expeditionsModule, shopModule, settingsModule, careModule, tradingModule, leaderboardsModule], flags);
-    expect(r.commands().length).toBe(17);
+    const flags = { park: true, hatchery: true, expeditions: true, shop: true, settings: true, care: true, trading: true, leaderboards: true, admin: true };
+    const r = new ModuleRegistry([parkModule, hatcheryModule, expeditionsModule, shopModule, settingsModule, careModule, tradingModule, leaderboardsModule, adminModule], flags);
+    expect(r.commands().length).toBe(18);
   });
 });
