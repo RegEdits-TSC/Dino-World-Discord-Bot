@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dino World — Plan 6: Admin Tools</title>
+<style>
+  :root { --bg:#fff; --fg:#1f2328; --muted:#656d76; --line:#d0d7de; --accent:#1a7f37; --code-bg:#f6f8fa; --warn:#9a6700; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --accent:#3fb950; --code-bg:#161b22; --warn:#d29922; } }
+  body { background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,"Segoe UI",sans-serif; max-width:920px; margin:0 auto; padding:24px 20px 80px; }
+  h1 { font-size:26px; border-bottom:2px solid var(--line); padding-bottom:8px; }
+  h2 { font-size:20px; margin-top:40px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+  h3 { font-size:16px; margin-top:24px; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:12.5px; background:var(--code-bg); padding:1px 5px; border-radius:4px; }
+  pre { background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:12px; overflow-x:auto; }
+  pre code { background:none; padding:0; font-size:12px; line-height:1.5; }
+  .callout { border-left:4px solid var(--accent); background:var(--code-bg); padding:10px 14px; border-radius:0 8px 8px 0; margin:16px 0; }
+  .callout.warn { border-left-color:var(--warn); }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  td, th { border:1px solid var(--line); padding:5px 9px; text-align:left; }
+  th { background:var(--code-bg); }
+  .files { font-size:13.5px; }
+  .iface { font-size:13px; background:var(--code-bg); border:1px dashed var(--line); border-radius:8px; padding:8px 12px; margin:6px 0; }
+  .muted { color:var(--muted); }
+  input[type=checkbox] { transform:scale(1.1); margin-right:7px; }
+  .step label { font-weight:600; }
+</style>
+</head>
+<body>
+
+<h1>🔧 Dino World — Plan 6: Admin Tools</h1>
+
+<div class="callout">
+<b>For agentic workers:</b> REQUIRED SUB-SKILL: Use <code>superpowers:subagent-driven-development</code> (recommended) or <code>superpowers:executing-plans</code>. Steps use checkboxes.
+</div>
+
+<p><b>Goal:</b> Owner-gated admin/QA tooling — grant resources, inspect a player, reset a player to fresh, and fast-forward a player's clock — as one new <code>admin</code> module.</p>
+
+<p><b>Architecture:</b> A 9th module exposing one <code>/admin</code> command with four subcommands (give, inspect, reset, fast-forward), each gated to the bot owner (<code>ctx.config.ownerId</code>). Mutations reuse the existing rules: currency via <code>ctx.economy.apply</code>, one <code>ctx.db.transaction</code> per multi-row change, <code>recomputeRating</code>/<code>settleEscapes</code> where state changes. <b>No SQL migration.</b></p>
+
+<p><b>Tech Stack:</b> TypeScript strict, discord.js v14, better-sqlite3 + Drizzle, vitest. No new dependencies.</p>
+
+<h2>Global Constraints</h2>
+<ul>
+<li>Commits authored by <b>RegEdits-TSC</b> — no other identity, no <code>Co-Authored-By</code>, no AI/Claude/assistant/"generated with" in any durable artifact.</li>
+<li>TypeScript <code>strict: true</code>, no explicit <code>any</code>. <code>npm run typecheck</code> and <code>npm run build</code> exit 0; full <code>npx vitest run</code> green.</li>
+<li><b>Owner gate:</b> every subcommand calls <code>requireOwner</code> first; a non-owner gets an ephemeral reject and NO mutation.</li>
+<li><b>Atomicity:</b> currency only via <code>ctx.economy.apply</code>; each multi-row admin mutation is ONE <code>ctx.db.transaction</code>. Any collection/comfort change calls <code>recomputeRating</code>. Reads of escaped-dependent state call <code>settleEscapes(target)</code> first.</li>
+<li>Errors use <code>flags: MessageFlags.Ephemeral</code>, never <code>ephemeral: true</code>. Time via <code>ctx.now()</code>. Handlers thin.</li>
+</ul>
+
+<div class="callout"><b>Existing interfaces this plan builds on (exact):</b>
+<pre><code>// ctx.config.ownerId : string   (from OWNER_ID env; harness makeCtx defaults it to 'owner')
+// ctx.economy.apply(userId, delta: { cash?: number; food?: number; shards?: number }, reason, now)
+// src/modules/park/service.ts : getOrCreateUser(ctx, id, displayName): User ; pendingIncome(ctx, id): number
+// src/modules/park/rating.ts  : recomputeRating(ctx, id): { rating; highWater }
+// src/modules/park/escapes.ts : settleEscapes(ctx, id): number[]   (returns newly-stamped dino ids)
+// src/data/species/index.ts   : getSpecies(id): Species            (THROWS 'Unknown species: id' on miss)
+// src/data/types.ts           : type Rarity = 'common'|'uncommon'|'rare'|'epic'|'legendary'|'mythic'
+// schema.users  : { discordId, displayName, parkName, parkRating, ratingHighWater, cash, food, shards,
+//                   shardsWindowStart, shardsWindowEarned, lastCollectAt, createdAt }
+// schema.eggs   : { id, userId, rarity, speciesId(nullable), source, obtainedAt, incubationStartedAt, hatchesAt, ... }
+// schema.dinos  : { id, userId, lotId, speciesId, hunger, lastFedAt, escapedAt, hatchedAt, ... }
+// schema.expeditions : { id, userId, siteId, departedAt, returnsAt, claimedAt, ... }
+// schema.timers : { id, kind, userId, refId, firesAt, handledAt }
+// schema.trades : { id, fromUser, toUser, ..., status, createdAt, resolvedAt }
+// schema.lots   : { id, userId, type, kind, name, level, decor }
+// harness: makeCtx() (config.ownerId='owner', has setNow), fakeCommand({ name, sub, user, options }) -> { replies[], asChatInput() }
+//   fakeCommand options: getUser(name)->{id,displayName,bot:false} | null ; getString/getInteger(name) from options ; getSubcommand()</code></pre>
+</div>
+
+<hr>
+
+<!-- ===================== TASK 1 ===================== -->
+<h2>Task 1: Owner guard + <code>eggs.source</code> widening + <code>adminGive</code></h2>
+<p class="files"><b>Files:</b> Modify <code>src/core/db/schema.ts</code>. Create <code>src/modules/admin/guard.ts</code>, <code>src/modules/admin/service.ts</code>, <code>tests/admin.test.ts</code>.</p>
+<div class="iface"><b>Produces:</b> <code>requireOwner(ctx, i): Promise&lt;boolean&gt;</code>; <code>class AdminError</code>; <code>interface GiveArgs</code>; <code>adminGive(ctx, targetId, displayName, args): void</code>.</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 1: Widen the egg source enum (TS-only — no migration)</label></p>
+<p>In <code>src/core/db/schema.ts</code>, the <code>eggs.source</code> column: add <code>'admin'</code>. (This column is plain <code>TEXT</code> with no <code>CHECK</code> constraint, so this is a compile-time-only change.)</p>
+<pre><code>// before:  source: text('source', { enum: ['expedition', 'shop', 'trade'] }).notNull(),
+// after:
+  source: text('source', { enum: ['expedition', 'shop', 'trade', 'admin'] }).notNull(),</code></pre>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 2: Create <code>src/modules/admin/guard.ts</code></label></p>
+<pre><code>import { MessageFlags } from 'discord.js';
+import type { ChatInputCommandInteraction } from 'discord.js';
+import type { Ctx } from '../../core/context.js';
+
+// Owner-only gate. Replies ephemeral and returns false for non-owners; true for the owner.
+export async function requireOwner(ctx: Ctx, i: ChatInputCommandInteraction): Promise&lt;boolean&gt; {
+  if (i.user.id === ctx.config.ownerId) return true;
+  await i.reply({ content: '⛔ Owner only.', flags: MessageFlags.Ephemeral });
+  return false;
+}</code></pre>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 3: Create <code>src/modules/admin/service.ts</code> with <code>adminGive</code></label></p>
+<pre><code>import { eq } from 'drizzle-orm';
+import { schema } from '../../core/db/index.js';
+import type { Ctx } from '../../core/context.js';
+import type { Rarity } from '../../data/types.js';
+import { getSpecies } from '../../data/species/index.js';
+import { getOrCreateUser } from '../park/service.js';
+import { recomputeRating } from '../park/rating.js';
+
+export class AdminError extends Error {}
+
+export interface GiveArgs {
+  cash?: number; food?: number; shards?: number; eggRarity?: Rarity; dinoSpecies?: string;
+}
+
+// Grant resources to a player. Atomic; currency via economy.apply; rating recomputed after.
+export function adminGive(ctx: Ctx, targetId: string, displayName: string, args: GiveArgs): void {
+  const { cash = 0, food = 0, shards = 0, eggRarity, dinoSpecies } = args;
+  if (!cash &amp;&amp; !food &amp;&amp; !shards &amp;&amp; !eggRarity &amp;&amp; !dinoSpecies) throw new AdminError('Nothing to give.');
+  if (dinoSpecies) {
+    try { getSpecies(dinoSpecies); } catch { throw new AdminError(`Unknown species: ${dinoSpecies}`); }
+  }
+  getOrCreateUser(ctx, targetId, displayName);
+  ctx.db.transaction(() =&gt; {
+    if (cash || food || shards) ctx.economy.apply(targetId, { cash, food, shards }, 'admin:give', ctx.now());
+    if (eggRarity) ctx.db.insert(schema.eggs).values({
+      userId: targetId, rarity: eggRarity, speciesId: null, source: 'admin', obtainedAt: ctx.now(),
+    }).run();
+    if (dinoSpecies) ctx.db.insert(schema.dinos).values({
+      userId: targetId, lotId: null, speciesId: dinoSpecies, hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),
+    }).run();
+  });
+  recomputeRating(ctx, targetId);
+}</code></pre>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 4: Create <code>tests/admin.test.ts</code> (guard + give)</label></p>
+<pre><code>import { describe, it, expect, beforeEach } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { makeCtx, fakeCommand } from './harness.js';
+import { schema } from '../src/core/db/index.js';
+import { getOrCreateUser } from '../src/modules/park/service.js';
+import { requireOwner } from '../src/modules/admin/guard.js';
+import { adminGive, AdminError } from '../src/modules/admin/service.js';
+
+let ctx: ReturnType&lt;typeof makeCtx&gt;;
+beforeEach(() =&gt; { ctx = makeCtx(); });   // config.ownerId === 'owner'
+
+describe('requireOwner', () =&gt; {
+  it('lets the owner through with no reply', async () =&gt; {
+    const cmd = fakeCommand({ name: 'admin', sub: 'give', user: 'owner' });
+    expect(await requireOwner(ctx, cmd.asChatInput())).toBe(true);
+    expect(cmd.replies).toHaveLength(0);
+  });
+  it('rejects a non-owner ephemerally', async () =&gt; {
+    const cmd = fakeCommand({ name: 'admin', sub: 'give', user: 'mallory' });
+    expect(await requireOwner(ctx, cmd.asChatInput())).toBe(false);
+    expect((cmd.replies[0] as { content: string }).content).toContain('Owner only');
+  });
+});
+
+describe('adminGive', () =&gt; {
+  it('grants cash + a dino atomically and recomputes rating', () =&gt; {
+    getOrCreateUser(ctx, 'p', 'P');   // starts with 500 cash
+    adminGive(ctx, 'p', 'P', { cash: 1000, dinoSpecies: 'triceratops' });
+    const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'p')).get()!;
+    expect(u.cash).toBe(1500);
+    const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, 'p')).all();
+    expect(dinos).toHaveLength(1);
+    expect(dinos[0].speciesId).toBe('triceratops');
+    expect(u.parkRating).toBeGreaterThan(0);   // recomputed with the new dino
+  });
+  it('grants an egg with the admin source and null species', () =&gt; {
+    adminGive(ctx, 'p', 'P', { eggRarity: 'legendary' });   // getOrCreateUser seeds p
+    const egg = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'p')).get()!;
+    expect(egg.rarity).toBe('legendary');
+    expect(egg.source).toBe('admin');
+    expect(egg.speciesId).toBeNull();
+  });
+  it('rejects an empty give and an unknown species', () =&gt; {
+    expect(() =&gt; adminGive(ctx, 'p', 'P', {})).toThrow(AdminError);
+    expect(() =&gt; adminGive(ctx, 'p', 'P', { dinoSpecies: 'godzilla' })).toThrow(AdminError);
+  });
+});</code></pre>
+<p class="muted">Run <code>npx vitest run tests/admin.test.ts</code> → PASS after Steps 1-3. Then the full suite once.</p>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 5: Commit</label></p>
+<pre><code>npm run typecheck &amp;&amp; npx vitest run
+git add -A &amp;&amp; git commit -m "Add admin owner guard and give service; widen egg source enum"</code></pre>
+</div>
+
+<hr>
+
+<!-- ===================== TASK 2 ===================== -->
+<h2>Task 2: <code>adminReset</code></h2>
+<p class="files"><b>Files:</b> Modify <code>src/modules/admin/service.ts</code>. Append to <code>tests/admin.test.ts</code>.</p>
+<div class="iface"><b>Consumes:</b> <code>schema</code>, <code>eq</code>, <code>Ctx</code>.<br><b>Produces:</b> <code>adminReset(ctx, targetId): void</code>.</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 1: Failing test (append to <code>tests/admin.test.ts</code>)</label></p>
+<pre><code>import { adminReset } from '../src/modules/admin/service.js';
+
+describe('adminReset', () =&gt; {
+  it('wipes a player’s stuff and restores new-player defaults', () =&gt; {
+    getOrCreateUser(ctx, 'p', 'P');
+    adminGive(ctx, 'p', 'P', { cash: 9000, shards: 50, dinoSpecies: 'triceratops', eggRarity: 'rare' });
+    ctx.db.insert(schema.lots).values({ userId: 'p', type: 'paddock', kind: 'carnivore_paddock', name: 'Pen' }).run();
+    adminReset(ctx, 'p');
+    const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'p')).get()!;
+    expect(u.cash).toBe(500);
+    expect(u.food).toBe(20);
+    expect(u.shards).toBe(0);
+    expect(u.parkRating).toBe(0);
+    expect(u.ratingHighWater).toBe(0);
+    expect(u.parkName).toBe('New Park');
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, 'p')).all()).toHaveLength(0);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'p')).all()).toHaveLength(0);
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'p')).all()).toHaveLength(0);
+    // the user row itself is kept (displayName preserved)
+    expect(u.displayName).toBe('P');
+  });
+});</code></pre>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 2: Implement (append to <code>src/modules/admin/service.ts</code>)</label></p>
+<p>Add <code>or</code> to the drizzle import (<code>import { eq, or } from 'drizzle-orm';</code>), then:</p>
+<pre><code>// Reset a player to a fresh start: delete their content, restore new-player defaults. One transaction.
+export function adminReset(ctx: Ctx, targetId: string): void {
+  ctx.db.transaction(() =&gt; {
+    ctx.db.delete(schema.dinos).where(eq(schema.dinos.userId, targetId)).run();
+    ctx.db.delete(schema.eggs).where(eq(schema.eggs.userId, targetId)).run();
+    ctx.db.delete(schema.lots).where(eq(schema.lots.userId, targetId)).run();
+    ctx.db.delete(schema.expeditions).where(eq(schema.expeditions.userId, targetId)).run();
+    ctx.db.delete(schema.timers).where(eq(schema.timers.userId, targetId)).run();
+    ctx.db.delete(schema.trades)
+      .where(or(eq(schema.trades.fromUser, targetId), eq(schema.trades.toUser, targetId))).run();
+    ctx.db.update(schema.users).set({
+      cash: 500, food: 20, shards: 0, parkRating: 0, ratingHighWater: 0, parkName: 'New Park',
+      shardsWindowStart: 0, shardsWindowEarned: 0, lastCollectAt: ctx.now(),
+    }).where(eq(schema.users.discordId, targetId)).run();
+  });
+}</code></pre>
+<p class="muted">Run → PASS. Delete children before the user update; the kept <code>users</code> row has no remaining referencing rows. Commit: <code>git add -A &amp;&amp; git commit -m "Add adminReset: wipe a player and restore new-player defaults"</code></p>
+</div>
+
+<hr>
+
+<!-- ===================== TASK 3 ===================== -->
+<h2>Task 3: <code>adminFastForward</code></h2>
+<p class="files"><b>Files:</b> Modify <code>src/modules/admin/service.ts</code>. Append to <code>tests/admin.test.ts</code>.</p>
+<div class="iface"><b>Consumes:</b> <code>schema</code>, <code>eq</code>, <code>and</code>, <code>isNull</code>, <code>isNotNull</code>, <code>sql</code>, <code>settleEscapes</code>.<br><b>Produces:</b> <code>adminFastForward(ctx, targetId, hours): number</code> (returns count of newly-escaped dinos).</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 1: Failing test (append to <code>tests/admin.test.ts</code>)</label></p>
+<pre><code>import { adminFastForward } from '../src/modules/admin/service.js';
+import { pendingIncome } from '../src/modules/park/service.js';
+
+describe('adminFastForward', () =&gt; {
+  it('advances income and starves an assigned dino into escaping', () =&gt; {
+    getOrCreateUser(ctx, 'p', 'P');   // lastCollectAt = now = 0
+    const lot = ctx.db.insert(schema.lots).values({ userId: 'p', type: 'paddock', kind: 'carnivore_paddock', name: 'Pen' }).returning().get();
+    ctx.db.insert(schema.dinos).values({ userId: 'p', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    const escaped = adminFastForward(ctx, 'p', 720);   // 30 days back
+    expect(escaped).toBe(1);                            // starved past the escape threshold
+    expect(pendingIncome(ctx, 'p')).toBeGreaterThan(0); // income accrued over the elapsed time
+    const d = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, 'p')).get()!;
+    expect(d.escapedAt).not.toBeNull();
+  });
+  it('rejects hours outside 1..720', () =&gt; {
+    expect(() =&gt; adminFastForward(ctx, 'p', 0)).toThrow(AdminError);
+    expect(() =&gt; adminFastForward(ctx, 'p', 721)).toThrow(AdminError);
+  });
+});</code></pre>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 2: Implement (append to <code>src/modules/admin/service.ts</code>)</label></p>
+<p>Extend the drizzle import to <code>import { eq, or, and, isNull, isNotNull, sql } from 'drizzle-orm';</code> and add the <code>settleEscapes</code> import (<code>import { settleEscapes } from '../park/escapes.js';</code>), then:</p>
+<pre><code>const HOUR_MS = 3_600_000;
+
+// Advance a player's clock by shifting their time-bearing columns backward, so the lazy
+// income/hunger/escape/incubation/expedition math sees `hours` of elapsed time. Returns the
+// number of dinos that escaped as a result.
+export function adminFastForward(ctx: Ctx, targetId: string, hours: number): number {
+  if (hours &lt; 1 || hours &gt; 720) throw new AdminError('hours must be between 1 and 720.');
+  const shift = hours * HOUR_MS;
+  ctx.db.transaction(() =&gt; {
+    ctx.db.update(schema.users).set({
+      lastCollectAt: sql`${schema.users.lastCollectAt} - ${shift}`,
+      shardsWindowStart: sql`${schema.users.shardsWindowStart} - ${shift}`,
+    }).where(eq(schema.users.discordId, targetId)).run();
+    ctx.db.update(schema.dinos).set({ lastFedAt: sql`${schema.dinos.lastFedAt} - ${shift}` })
+      .where(eq(schema.dinos.userId, targetId)).run();
+    ctx.db.update(schema.eggs).set({
+      incubationStartedAt: sql`${schema.eggs.incubationStartedAt} - ${shift}`,
+      hatchesAt: sql`${schema.eggs.hatchesAt} - ${shift}`,
+    }).where(and(eq(schema.eggs.userId, targetId), isNotNull(schema.eggs.incubationStartedAt))).run();
+    ctx.db.update(schema.expeditions).set({
+      departedAt: sql`${schema.expeditions.departedAt} - ${shift}`,
+      returnsAt: sql`${schema.expeditions.returnsAt} - ${shift}`,
+    }).where(eq(schema.expeditions.userId, targetId)).run();
+    ctx.db.update(schema.timers).set({ firesAt: sql`${schema.timers.firesAt} - ${shift}` })
+      .where(and(eq(schema.timers.userId, targetId), isNull(schema.timers.handledAt))).run();
+  });
+  return settleEscapes(ctx, targetId).length;
+}</code></pre>
+<p class="muted">Run → PASS. <code>settleEscapes</code> runs AFTER the shift so newly-starved dinos are stamped. Commit: <code>git add -A &amp;&amp; git commit -m "Add adminFastForward: shift a player's clock for QA"</code></p>
+</div>
+
+<hr>
+
+<!-- ===================== TASK 4 ===================== -->
+<h2>Task 4: The <code>/admin</code> module (wiring + inspect)</h2>
+<p class="files"><b>Files:</b> Create <code>src/modules/admin/index.ts</code>. Append to <code>tests/admin.test.ts</code>.</p>
+<div class="iface"><b>Consumes:</b> <code>requireOwner</code>, <code>adminGive</code>, <code>adminReset</code>, <code>adminFastForward</code>, <code>AdminError</code>, <code>settleEscapes</code>, <code>ModuleManifest</code>.<br><b>Produces:</b> <code>adminModule: ModuleManifest</code> (name <code>'admin'</code>) — <code>/admin give|inspect|reset|fast-forward</code>. No components.</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 1: Create <code>src/modules/admin/index.ts</code></label></p>
+<pre><code>import { SlashCommandBuilder, EmbedBuilder, MessageFlags, PermissionFlagsBits } from 'discord.js';
+import { eq, or } from 'drizzle-orm';
+import type { ModuleManifest } from '../../core/modules.js';
+import type { Ctx } from '../../core/context.js';
+import type { Rarity } from '../../data/types.js';
+import { schema } from '../../core/db/index.js';
+import { getOrCreateUser } from '../park/service.js';
+import { settleEscapes } from '../park/escapes.js';
+import { requireOwner } from './guard.js';
+import { adminGive, adminReset, adminFastForward, AdminError } from './service.js';
+
+const RARITIES: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+
+function inspectEmbed(ctx: Ctx, targetId: string, displayName: string): EmbedBuilder | null {
+  const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, targetId)).get();
+  if (!u) return null;
+  const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, targetId)).all();
+  const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, targetId)).all();
+  const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, targetId)).all();
+  const trades = ctx.db.select().from(schema.trades)
+    .where(or(eq(schema.trades.fromUser, targetId), eq(schema.trades.toUser, targetId))).all()
+    .filter((t) =&gt; t.status === 'pending').length;
+  const exps = ctx.db.select().from(schema.expeditions).where(eq(schema.expeditions.userId, targetId)).all()
+    .filter((e) =&gt; e.claimedAt === null).length;
+  const line = (s: string) =&gt; (s.length ? s.slice(0, 1024) : 'none');
+  return new EmbedBuilder().setTitle(`🔧 ${displayName} (${targetId})`).setColor(0x9b59d0).addFields(
+    { name: '💰 / 🍖 / 💎', value: `${u.cash} / ${u.food} / ${u.shards}`, inline: true },
+    { name: '⭐ Rating', value: `${(u.parkRating / 100).toFixed(1)} (hw ${(u.ratingHighWater / 100).toFixed(1)})`, inline: true },
+    { name: '🦕 Dinos', value: line(dinos.map((d) =&gt; `#${d.id} ${d.speciesId}${d.escapedAt !== null ? ' 🚨' : ''}${d.lotId ? ` @${d.lotId}` : ''}`).join('\n')), inline: false },
+    { name: '🥚 Eggs', value: line(eggs.map((e) =&gt; `#${e.id} ${e.rarity}${e.incubationStartedAt ? ' (incubating)' : ''}`).join('\n')), inline: false },
+    { name: '🏗️ Lots', value: line(lots.map((l) =&gt; `#${l.id} ${l.kind} lv${l.level}`).join('\n')), inline: false },
+    { name: '🤝 Trades / 🧭 Expeditions', value: `${trades} pending / ${exps} active`, inline: false },
+  );
+}
+
+export const adminModule: ModuleManifest = {
+  name: 'admin',
+  commands: [
+    { data: new SlashCommandBuilder().setName('admin').setDescription('Owner tools')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addSubcommand((s) =&gt; s.setName('give').setDescription('Grant resources to a player')
+          .addUserOption((o) =&gt; o.setName('user').setDescription('Recipient').setRequired(true))
+          .addIntegerOption((o) =&gt; o.setName('cash').setDescription('Cash').setMinValue(0))
+          .addIntegerOption((o) =&gt; o.setName('food').setDescription('Food').setMinValue(0))
+          .addIntegerOption((o) =&gt; o.setName('shards').setDescription('Shards').setMinValue(0))
+          .addStringOption((o) =&gt; o.setName('egg-rarity').setDescription('Grant an egg of this rarity')
+            .addChoices(...RARITIES.map((r) =&gt; ({ name: r, value: r }))))
+          .addStringOption((o) =&gt; o.setName('dino-species').setDescription('Grant a dino of this species id')))
+        .addSubcommand((s) =&gt; s.setName('inspect').setDescription('Dump a player’s raw state')
+          .addUserOption((o) =&gt; o.setName('user').setDescription('Player').setRequired(true)))
+        .addSubcommand((s) =&gt; s.setName('reset').setDescription('Reset a player to a fresh start')
+          .addUserOption((o) =&gt; o.setName('user').setDescription('Player').setRequired(true))
+          .addStringOption((o) =&gt; o.setName('confirm').setDescription('Type the player’s user id to confirm').setRequired(true)))
+        .addSubcommand((s) =&gt; s.setName('fast-forward').setDescription('Advance a player’s clock (QA)')
+          .addUserOption((o) =&gt; o.setName('user').setDescription('Player').setRequired(true))
+          .addIntegerOption((o) =&gt; o.setName('hours').setDescription('Hours to advance (1-720)').setRequired(true).setMinValue(1).setMaxValue(720))),
+      async execute(ctx, i) {
+        if (!(await requireOwner(ctx, i))) return;
+        const target = i.options.getUser('user', true);
+        const sub = i.options.getSubcommand();
+        try {
+          if (sub === 'give') {
+            adminGive(ctx, target.id, target.displayName, {
+              cash: i.options.getInteger('cash') ?? 0,
+              food: i.options.getInteger('food') ?? 0,
+              shards: i.options.getInteger('shards') ?? 0,
+              eggRarity: (i.options.getString('egg-rarity') as Rarity | null) ?? undefined,
+              dinoSpecies: i.options.getString('dino-species') ?? undefined,
+            });
+            await i.reply({ content: `✅ Gave resources to &lt;@${target.id}&gt;.`, flags: MessageFlags.Ephemeral });
+          } else if (sub === 'inspect') {
+            settleEscapes(ctx, target.id);
+            const embed = inspectEmbed(ctx, target.id, target.displayName);
+            if (!embed) { await i.reply({ content: 'That player has no park yet.', flags: MessageFlags.Ephemeral }); return; }
+            await i.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+          } else if (sub === 'reset') {
+            const confirm = i.options.getString('confirm', true);
+            if (confirm !== target.id) {
+              await i.reply({ content: `To reset, set \`confirm\` to the player's id: \`${target.id}\``, flags: MessageFlags.Ephemeral });
+              return;
+            }
+            const exists = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, target.id)).get();
+            if (!exists) { await i.reply({ content: 'That player has no park to reset.', flags: MessageFlags.Ephemeral }); return; }
+            adminReset(ctx, target.id);
+            await i.reply({ content: `♻️ Reset &lt;@${target.id}&gt; to a fresh start.`, flags: MessageFlags.Ephemeral });
+          } else {
+            getOrCreateUser(ctx, target.id, target.displayName);
+            const escaped = adminFastForward(ctx, target.id, i.options.getInteger('hours', true));
+            await i.reply({ content: `⏩ Fast-forwarded &lt;@${target.id}&gt;. ${escaped} dino(s) escaped.`, flags: MessageFlags.Ephemeral });
+          }
+        } catch (e) {
+          if (e instanceof AdminError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+          else throw e;
+        }
+      } },
+  ],
+  components: [],
+};</code></pre>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 2: Harness tests (append to <code>tests/admin.test.ts</code>)</label></p>
+<pre><code>import { adminModule } from '../src/modules/admin/index.js';
+
+async function run(user: string, sub: string, options: Record&lt;string, string | number&gt;) {
+  const cmd = fakeCommand({ name: 'admin', sub, user, options });
+  await adminModule.commands[0].execute(ctx, cmd.asChatInput());
+  return cmd;
+}
+
+describe('admin module', () =&gt; {
+  it('blocks a non-owner and mutates nothing', async () =&gt; {
+    getOrCreateUser(ctx, 't', 'T');
+    const cmd = await run('mallory', 'give', { user: 't', cash: 5000 });
+    expect((cmd.replies[0] as { content: string }).content).toContain('Owner only');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 't')).get()!.cash).toBe(500);
+  });
+  it('owner give adds the cash', async () =&gt; {
+    await run('owner', 'give', { user: 't', cash: 250 });
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 't')).get()!.cash).toBe(750);
+  });
+  it('inspect returns an ephemeral embed', async () =&gt; {
+    getOrCreateUser(ctx, 't', 'T');
+    const cmd = await run('owner', 'inspect', { user: 't' });
+    const reply = cmd.replies[0] as { embeds?: unknown[] };
+    expect(reply.embeds).toHaveLength(1);
+  });
+  it('reset requires the confirm to equal the target id', async () =&gt; {
+    getOrCreateUser(ctx, 't', 'T');
+    adminGive(ctx, 't', 'T', { cash: 9000 });
+    const bad = await run('owner', 'reset', { user: 't', confirm: 'wrong' });
+    expect((bad.replies[0] as { content: string }).content).toContain('confirm');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 't')).get()!.cash).toBe(9500);
+    await run('owner', 'reset', { user: 't', confirm: 't' });
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 't')).get()!.cash).toBe(500);
+  });
+});</code></pre>
+<p class="muted">Run <code>npm run typecheck &amp;&amp; npx vitest run</code> → green. Commit: <code>git add -A &amp;&amp; git commit -m "Add /admin command module with give, inspect, reset, fast-forward"</code></p>
+</div>
+
+<hr>
+
+<!-- ===================== TASK 5 ===================== -->
+<h2>Task 5: Register the module + docs</h2>
+<p class="files"><b>Files:</b> Modify <code>modules.json</code>, <code>src/index.ts</code>, <code>src/deploy-commands.ts</code>, <code>tests/registry-load.test.ts</code>, <code>tests/config.test.ts</code>, <code>docs/ops.md</code>.</p>
+<div class="callout"><b>The 5-site module-registration checklist.</b> Registering <code>adminModule</code> adds exactly one top-level command (<code>/admin</code>) → the registry command count goes <b>17 → 18</b>.</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 1: <code>modules.json</code> — add the flag</label></p>
+<pre><code>{ "park": true, "hatchery": true, "expeditions": true, "shop": true, "settings": true, "care": true, "trading": true, "leaderboards": true, "admin": true }</code></pre>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 2: <code>src/index.ts</code> and <code>src/deploy-commands.ts</code> — import + array</label></p>
+<p>In BOTH files, add the import after the leaderboards import:</p>
+<pre><code>import { adminModule } from './modules/admin/index.js';</code></pre>
+<p>and add <code>adminModule</code> to the end of the <code>new ModuleRegistry([...])</code> array in each.</p>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 3: <code>tests/registry-load.test.ts</code> — import, array, flags, count 17→18</label></p>
+<pre><code>import { adminModule } from '../src/modules/admin/index.js';
+// ... add adminModule to the array; add admin: true to the flags object; then:
+    expect(r.commands().length).toBe(18);</code></pre>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 4: <code>tests/config.test.ts</code> — expected-modules object</label></p>
+<pre><code>expect(cfg.modules).toEqual({ park: true, hatchery: true, expeditions: true, shop: true, settings: true, care: true, trading: true, leaderboards: true, admin: true });</code></pre>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 5: <code>docs/ops.md</code></label></p>
+<p>Add <code>"admin": true</code> to the example <code>modules.json</code> block; change the "Eight modules ship today:" list to "Nine modules ship today:" and append:</p>
+<pre><code>- `admin` — owner-only tools: grant resources, inspect/reset a player, fast-forward a player's clock (QA).</code></pre>
+<p>Add a note under the admin bullet or nearby: <em>Admin commands are gated to the <code>OWNER_ID</code> user and hidden from non-admins in the Discord UI. Set <code>OWNER_ID</code> in <code>.env</code>.</em> And add one Post-Deploy Smoke Check line: <code>- `/admin inspect user:@you` — returns your raw state (owner only).</code></p>
+</div>
+
+<div class="step">
+<p><input type="checkbox"><label> Step 6: Verify + commit</label></p>
+<pre><code>npm run typecheck &amp;&amp; npx vitest run &amp;&amp; npm run build
+git add -A
+git commit -m "Register the admin module and document owner tools"</code></pre>
+<p class="muted"><code>registry-load</code> now asserts 18; <code>config</code> regression expects 9 keys. Full suite green.</p>
+</div>
+
+<hr>
+
+<h2>Definition of Done</h2>
+<ul>
+<li><code>/admin give|inspect|reset|fast-forward</code> work, each owner-gated; a non-owner gets an ephemeral reject and no mutation.</li>
+<li>give is atomic (currency via <code>economy.apply</code>) + recomputes rating; reset requires a matching <code>confirm</code> and restores defaults; fast-forward shifts the target's timestamps and settles escapes.</li>
+<li>The <code>admin</code> module is registered at all five sites; <b>9 modules, 18 commands</b>; <code>registry-load</code> asserts 18, <code>config</code> expects 9 keys.</li>
+<li>No SQL migration. Full <code>npx vitest run</code> green; <code>npm run typecheck</code> and <code>npm run build</code> exit 0. Authorship RegEdits-TSC throughout; docs updated.</li>
+</ul>
+
+<h2>Out of scope (deferred)</h2>
+<p class="muted">Runtime module enable/disable (stays modules.json + restart), global economy tuning, a separate audit log (<code>tx_log</code> already records currency moves).</p>
+
+</body>
+</html>
