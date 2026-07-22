@@ -1,20 +1,40 @@
 import { SlashCommandBuilder, MessageFlags, EmbedBuilder } from 'discord.js';
+import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
 import { startExpedition, claimExpedition, activeExpedition, ExpeditionError } from './service.js';
 import { EXPEDITION_SITES } from '../../data/sites.js';
 import { InsufficientFundsError } from '../../core/economy.js';
-
-const siteChoices = Object.values(EXPEDITION_SITES).map((s) => ({ name: s.name, value: s.id }));
+import { schema } from '../../core/db/index.js';
+import { siteUnlocked } from '../park/rating.js';
+import { matches, respondRanked, fmtDuration } from '../../core/autocomplete.js';
 
 export const expeditionsModule: ModuleManifest = {
   name: 'expeditions',
   commands: [
     { data: new SlashCommandBuilder().setName('expedition').setDescription('Send a dig crew out')
         .addSubcommand((s) => s.setName('start').setDescription('Start an expedition')
-          .addStringOption((o) => o.setName('site').setDescription('Dig site').setRequired(true).addChoices(...siteChoices)))
+          .addStringOption((o) => o.setName('site').setDescription('Dig site — locked ones show their star requirement').setRequired(true).setAutocomplete(true)))
         .addSubcommand((s) => s.setName('status').setDescription('Check your active expedition'))
         .addSubcommand((s) => s.setName('claim').setDescription('Claim a returned expedition')),
+      async autocomplete(ctx, i) {
+        if (i.options.getSubcommand() !== 'start') { await i.respond([]); return; }
+        const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, i.user.id)).get();
+        const hw = user?.ratingHighWater ?? 0;
+        const q = String(i.options.getFocused());
+        await respondRanked(i, Object.values(EXPEDITION_SITES)
+          .filter((s) => matches(q, s.id, s.name))
+          .map((s) => {
+            const unlocked = siteUnlocked(s.unlockRating, hw);
+            return {
+              value: s.id, valid: unlocked,
+              label: unlocked
+                // 'en-US' pinned: labels are asserted verbatim in tests.
+                ? `🧭 ${s.name} — ${s.cost.toLocaleString('en-US')} cash, ${fmtDuration(s.durationMs)}`
+                : `🧭 ${s.name} — LOCKED, needs ★${(s.unlockRating / 100).toFixed(1)}`,
+            };
+          }));
+      },
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         const sub = i.options.getSubcommand();
