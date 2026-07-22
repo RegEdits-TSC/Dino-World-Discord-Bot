@@ -49,7 +49,7 @@ export const eggs = sqliteTable('eggs', {
   userId: text('user_id').notNull().references(() => users.discordId),
   rarity: text('rarity', { enum: ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] }).notNull(),
   speciesId: text('species_id'),
-  source: text('source', { enum: ['expedition', 'shop', 'trade'] }).notNull(),
+  source: text('source', { enum: ['expedition', 'shop', 'trade', 'admin'] }).notNull(),
   viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
   locked: integer('locked', { mode: 'boolean' }).notNull().default(false),
   obtainedAt: integer('obtained_at_ms').notNull(),
