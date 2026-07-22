@@ -5,6 +5,7 @@ import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, pendingIncome } from '../src/modules/park/service.js';
 import { requireOwner } from '../src/modules/admin/guard.js';
 import { adminGive, adminReset, adminFastForward, AdminError } from '../src/modules/admin/service.js';
+import { adminModule } from '../src/modules/admin/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });   // config.ownerId === 'owner'
@@ -80,5 +81,39 @@ describe('adminFastForward', () => {
   it('rejects hours outside 1..720', () => {
     expect(() => adminFastForward(ctx, 'p', 0)).toThrow(AdminError);
     expect(() => adminFastForward(ctx, 'p', 721)).toThrow(AdminError);
+  });
+});
+
+async function run(user: string, sub: string, options: Record<string, string | number>) {
+  const cmd = fakeCommand({ name: 'admin', sub, user, options });
+  await adminModule.commands[0].execute(ctx, cmd.asChatInput());
+  return cmd;
+}
+
+describe('admin module', () => {
+  it('blocks a non-owner and mutates nothing', async () => {
+    getOrCreateUser(ctx, 't', 'T');
+    const cmd = await run('mallory', 'give', { user: 't', cash: 5000 });
+    expect((cmd.replies[0] as { content: string }).content).toContain('Owner only');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 't')).get()!.cash).toBe(500);
+  });
+  it('owner give adds the cash', async () => {
+    await run('owner', 'give', { user: 't', cash: 250 });
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 't')).get()!.cash).toBe(750);
+  });
+  it('inspect returns an ephemeral embed', async () => {
+    getOrCreateUser(ctx, 't', 'T');
+    const cmd = await run('owner', 'inspect', { user: 't' });
+    const reply = cmd.replies[0] as { embeds?: unknown[] };
+    expect(reply.embeds).toHaveLength(1);
+  });
+  it('reset requires the confirm to equal the target id', async () => {
+    getOrCreateUser(ctx, 't', 'T');
+    adminGive(ctx, 't', 'T', { cash: 9000 });
+    const bad = await run('owner', 'reset', { user: 't', confirm: 'wrong' });
+    expect((bad.replies[0] as { content: string }).content).toContain('confirm');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 't')).get()!.cash).toBe(9500);
+    await run('owner', 'reset', { user: 't', confirm: 't' });
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 't')).get()!.cash).toBe(500);
   });
 });
