@@ -4,7 +4,7 @@ import { makeCtx, fakeCommand } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { requireOwner } from '../src/modules/admin/guard.js';
-import { adminGive, AdminError } from '../src/modules/admin/service.js';
+import { adminGive, adminReset, AdminError } from '../src/modules/admin/service.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });   // config.ownerId === 'owner'
@@ -43,5 +43,25 @@ describe('adminGive', () => {
   it('rejects an empty give and an unknown species', () => {
     expect(() => adminGive(ctx, 'p', 'P', {})).toThrow(AdminError);
     expect(() => adminGive(ctx, 'p', 'P', { dinoSpecies: 'godzilla' })).toThrow(AdminError);
+  });
+});
+
+describe('adminReset', () => {
+  it('wipes a player’s stuff and restores new-player defaults', () => {
+    getOrCreateUser(ctx, 'p', 'P');
+    adminGive(ctx, 'p', 'P', { cash: 9000, shards: 50, dinoSpecies: 'triceratops', eggRarity: 'rare' });
+    ctx.db.insert(schema.lots).values({ userId: 'p', type: 'paddock', kind: 'carnivore_paddock', name: 'Pen' }).run();
+    adminReset(ctx, 'p');
+    const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'p')).get()!;
+    expect(u.cash).toBe(500);
+    expect(u.food).toBe(20);
+    expect(u.shards).toBe(0);
+    expect(u.parkRating).toBe(0);
+    expect(u.ratingHighWater).toBe(0);
+    expect(u.parkName).toBe('New Park');
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, 'p')).all()).toHaveLength(0);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'p')).all()).toHaveLength(0);
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'p')).all()).toHaveLength(0);
+    expect(u.displayName).toBe('P');   // user row kept
   });
 });
