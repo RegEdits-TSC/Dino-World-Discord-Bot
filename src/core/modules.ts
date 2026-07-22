@@ -1,10 +1,12 @@
 import type { SlashCommandBuilder, SlashCommandSubcommandsOnlyBuilder, SlashCommandOptionsOnlyBuilder,
-  ChatInputCommandInteraction, ButtonInteraction } from 'discord.js';
+  ChatInputCommandInteraction, ButtonInteraction, AutocompleteInteraction } from 'discord.js';
 import type { Ctx } from './context.js';
 
 export interface CommandDef {
   data: SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder | SlashCommandOptionsOnlyBuilder;
   execute(ctx: Ctx, i: ChatInputCommandInteraction): Promise<void>;
+  // Providers only respond(); they never reply, defer, or create user rows.
+  autocomplete?(ctx: Ctx, i: AutocompleteInteraction): Promise<void>;
 }
 export interface ComponentDef {
   prefix: string;

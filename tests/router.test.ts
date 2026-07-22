@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { routeInteraction } from '../src/core/router.js';
 import { ModuleRegistry } from '../src/core/modules.js';
-import { makeCtx, fakeCommand, fakeButton } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, fakeAutocomplete } from './harness.js';
 import { schema } from '../src/core/db/index.js';
+import { eq } from 'drizzle-orm';
 
 describe('routeInteraction', () => {
   it('dispatches a command to the owning module and upserts user_guilds', async () => {
@@ -82,5 +83,55 @@ describe('routeInteraction', () => {
     });
     expect(() => new ModuleRegistry([mk('a', 'cmda'), mk('b', 'cmdb')], { a: true, b: true }))
       .toThrow(/Duplicate component prefix/);
+  });
+});
+
+describe('autocomplete routing', () => {
+  function acRegistry(handler?: (ctx: unknown, i: unknown) => Promise<void>) {
+    return new ModuleRegistry([{
+      name: 'm',
+      commands: [{
+        data: new SlashCommandBuilder().setName('ac').setDescription('d'),
+        execute: async () => {},
+        ...(handler ? { autocomplete: handler as never } : {}),
+      }],
+      components: [],
+    }], { m: true });
+  }
+
+  it('dispatches autocomplete to the command handler', async () => {
+    const ctx = makeCtx();
+    let called = false;
+    const registry = acRegistry(async (_ctx, i) => {
+      called = true;
+      await (i as { respond(c: unknown): Promise<void> }).respond([{ name: 'x', value: 1 }]);
+    });
+    const i = fakeAutocomplete({ name: 'ac', user: 'u1', focused: { name: 'egg', value: '' } });
+    await routeInteraction(ctx, registry, i.asInteraction());
+    expect(called).toBe(true);
+    expect(i.replies[0]).toEqual([{ name: 'x', value: 1 }]);
+  });
+
+  it('responds [] when the command has no autocomplete handler', async () => {
+    const ctx = makeCtx();
+    const i = fakeAutocomplete({ name: 'ac', user: 'u1', focused: { name: 'egg', value: '' } });
+    await routeInteraction(ctx, acRegistry(), i.asInteraction());
+    expect(i.replies[0]).toEqual([]);
+  });
+
+  it('responds [] when the provider throws, without crashing', async () => {
+    const ctx = makeCtx();
+    const registry = acRegistry(async () => { throw new Error('boom'); });
+    const i = fakeAutocomplete({ name: 'ac', user: 'u1', focused: { name: 'egg', value: '' } });
+    await routeInteraction(ctx, registry, i.asInteraction());
+    expect(i.replies[0]).toEqual([]);
+  });
+
+  it('does not touch presence on autocomplete', async () => {
+    const ctx = makeCtx();
+    const i = fakeAutocomplete({ name: 'ac', user: 'u1', guild: 'g1', focused: { name: 'egg', value: '' } });
+    await routeInteraction(ctx, acRegistry(), i.asInteraction());
+    const rows = ctx.db.select().from(schema.userGuilds).where(eq(schema.userGuilds.userId, 'u1')).all();
+    expect(rows).toEqual([]);
   });
 });

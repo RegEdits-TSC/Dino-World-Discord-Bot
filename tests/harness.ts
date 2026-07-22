@@ -3,7 +3,7 @@ import { EconomyService } from '../src/core/economy.js';
 import { Scheduler } from '../src/core/scheduler.js';
 import { mulberry32 } from '../src/core/rolls.js';
 import type { Ctx } from '../src/core/context.js';
-import type { ChatInputCommandInteraction, Interaction } from 'discord.js';
+import type { ChatInputCommandInteraction, Interaction, AutocompleteInteraction } from 'discord.js';
 
 export { mulberry32 } from '../src/core/rolls.js';
 
@@ -38,7 +38,7 @@ export function fakeCommand(opts: {
     user: { id: opts.user, displayName: opts.user },
     guildId: opts.guild ?? null,
     deferred: false, replied: false,
-    isChatInputCommand: () => true, isButton: () => false,
+    isChatInputCommand: () => true, isButton: () => false, isAutocomplete: () => false,
     options: {
       getSubcommand: () => opts.sub ?? null,
       getString: (k: string) => (opts.options?.[k] as string) ?? null,
@@ -58,6 +58,32 @@ export function fakeCommand(opts: {
   };
 }
 
+export function fakeAutocomplete(opts: {
+  name: string; sub?: string; user: string; guild?: string;
+  focused: { name: string; value: string };
+  options?: Record<string, string | number>;
+}): FakeInteraction & { asAutocomplete(): AutocompleteInteraction } {
+  const replies: unknown[] = [];
+  const raw = {
+    commandName: opts.name,
+    user: { id: opts.user, displayName: opts.user },
+    guildId: opts.guild ?? null,
+    isChatInputCommand: () => false, isButton: () => false, isAutocomplete: () => true,
+    options: {
+      getSubcommand: () => opts.sub ?? null,
+      getFocused: (full?: boolean) => (full ? opts.focused : opts.focused.value),
+      get: (k: string) => (opts.options?.[k] != null ? { value: opts.options[k] } : null),
+    },
+    respond: async (choices: unknown) => { replies.push(choices); },
+  };
+  return {
+    replies,
+    asChatInput: () => raw as unknown as ChatInputCommandInteraction,
+    asInteraction: () => raw as unknown as Interaction,
+    asAutocomplete: () => raw as unknown as AutocompleteInteraction,
+  };
+}
+
 export function fakeButton(opts: { customId: string; user: string; guild?: string }): FakeInteraction {
   const replies: unknown[] = [];
   const record = async (payload: unknown) => { replies.push(payload); };
@@ -66,7 +92,7 @@ export function fakeButton(opts: { customId: string; user: string; guild?: strin
     user: { id: opts.user, displayName: opts.user },
     guildId: opts.guild ?? null,
     deferred: false, replied: false,
-    isChatInputCommand: () => false, isButton: () => true,
+    isChatInputCommand: () => false, isButton: () => true, isAutocomplete: () => false,
     reply: record, editReply: record, followUp: record, update: record,
     deferReply: async () => { (raw as { deferred: boolean }).deferred = true; },
   };

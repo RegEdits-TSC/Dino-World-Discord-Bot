@@ -21,6 +21,17 @@ function touchPresence(ctx: Ctx, userId: string, displayName: string, guildId: s
 export async function routeInteraction(
   ctx: Ctx, registry: ModuleRegistry, interaction: Interaction,
 ): Promise<void> {
+  if (interaction.isAutocomplete()) {
+    const cmd = registry.findCommand(interaction.commandName);
+    try {
+      if (cmd?.autocomplete) await cmd.autocomplete(ctx, interaction);
+      else await interaction.respond([]);
+    } catch (err) {
+      logger.debug({ err }, 'autocomplete failed');
+      await interaction.respond([]).catch(() => {});
+    }
+    return;
+  }
   const isCommand = interaction.isChatInputCommand();
   const isButton = interaction.isButton();
   if (!isCommand && !isButton) return;
