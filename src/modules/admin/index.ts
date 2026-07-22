@@ -83,10 +83,12 @@ export const adminModule: ModuleManifest = {
             if (!exists) { await i.reply({ content: 'That player has no park to reset.', flags: MessageFlags.Ephemeral }); return; }
             adminReset(ctx, target.id);
             await i.reply({ content: `♻️ Reset <@${target.id}> to a fresh start.`, flags: MessageFlags.Ephemeral });
-          } else {
+          } else if (sub === 'fast-forward') {
             getOrCreateUser(ctx, target.id, target.displayName);
             const escaped = adminFastForward(ctx, target.id, i.options.getInteger('hours', true));
             await i.reply({ content: `⏩ Fast-forwarded <@${target.id}>. ${escaped} dino(s) escaped.`, flags: MessageFlags.Ephemeral });
+          } else {
+            throw new AdminError('Unknown subcommand.');
           }
         } catch (e) {
           if (e instanceof AdminError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });

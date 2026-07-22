@@ -7,6 +7,7 @@ import { getOrCreateUser, pendingIncome } from '../src/modules/park/service.js';
 import { requireOwner } from '../src/modules/admin/guard.js';
 import { adminGive, adminReset, adminFastForward, AdminError } from '../src/modules/admin/service.js';
 import { adminModule } from '../src/modules/admin/index.js';
+import { createTrade } from '../src/modules/trading/service.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });   // config.ownerId === 'owner'
@@ -65,6 +66,21 @@ describe('adminReset', () => {
     expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'p')).all()).toHaveLength(0);
     expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'p')).all()).toHaveLength(0);
     expect(u.displayName).toBe('P');   // user row kept
+  });
+});
+
+describe('adminReset + trades', () => {
+  it('unlocks a counterparty’s escrowed items when the reset target is the recipient', () => {
+    getOrCreateUser(ctx, 'o', 'O');
+    getOrCreateUser(ctx, 't', 'T');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both 2★ so createTrade passes
+    const dino = ctx.db.insert(schema.dinos).values({ userId: 'o', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
+    createTrade(ctx, 'o', 't', { dinoIds: [dino.id], eggIds: [], cash: 0, food: 0 }, { dinoIds: [], eggIds: [], cash: 0, food: 0 });
+    // dino now locked, owned by o, in a pending o->t trade
+    adminReset(ctx, 't');   // t is the RECIPIENT
+    const d = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dino.id)).get()!;
+    expect(d.userId).toBe('o');     // still o's
+    expect(d.locked).toBe(false);   // unlocked, not stranded
   });
 });
 
