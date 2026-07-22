@@ -1,10 +1,11 @@
-import { eq, or } from 'drizzle-orm';
+import { eq, or, and, isNull, isNotNull, sql } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import type { Rarity } from '../../data/types.js';
 import { getSpecies } from '../../data/species/index.js';
 import { getOrCreateUser } from '../park/service.js';
 import { recomputeRating } from '../park/rating.js';
+import { settleEscapes } from '../park/escapes.js';
 
 export class AdminError extends Error {}
 
@@ -47,4 +48,33 @@ export function adminReset(ctx: Ctx, targetId: string): void {
       shardsWindowStart: 0, shardsWindowEarned: 0, lastCollectAt: ctx.now(),
     }).where(eq(schema.users.discordId, targetId)).run();
   });
+}
+
+const HOUR_MS = 3_600_000;
+
+// Advance a player's clock by shifting their time-bearing columns backward, so the lazy
+// income/hunger/escape/incubation/expedition math sees `hours` of elapsed time. Returns the
+// number of dinos that escaped as a result.
+export function adminFastForward(ctx: Ctx, targetId: string, hours: number): number {
+  if (hours < 1 || hours > 720) throw new AdminError('hours must be between 1 and 720.');
+  const shift = hours * HOUR_MS;
+  ctx.db.transaction(() => {
+    ctx.db.update(schema.users).set({
+      lastCollectAt: sql`${schema.users.lastCollectAt} - ${shift}`,
+      shardsWindowStart: sql`${schema.users.shardsWindowStart} - ${shift}`,
+    }).where(eq(schema.users.discordId, targetId)).run();
+    ctx.db.update(schema.dinos).set({ lastFedAt: sql`${schema.dinos.lastFedAt} - ${shift}` })
+      .where(eq(schema.dinos.userId, targetId)).run();
+    ctx.db.update(schema.eggs).set({
+      incubationStartedAt: sql`${schema.eggs.incubationStartedAt} - ${shift}`,
+      hatchesAt: sql`${schema.eggs.hatchesAt} - ${shift}`,
+    }).where(and(eq(schema.eggs.userId, targetId), isNotNull(schema.eggs.incubationStartedAt))).run();
+    ctx.db.update(schema.expeditions).set({
+      departedAt: sql`${schema.expeditions.departedAt} - ${shift}`,
+      returnsAt: sql`${schema.expeditions.returnsAt} - ${shift}`,
+    }).where(eq(schema.expeditions.userId, targetId)).run();
+    ctx.db.update(schema.timers).set({ firesAt: sql`${schema.timers.firesAt} - ${shift}` })
+      .where(and(eq(schema.timers.userId, targetId), isNull(schema.timers.handledAt))).run();
+  });
+  return settleEscapes(ctx, targetId).length;
 }

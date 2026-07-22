@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { makeCtx, fakeCommand } from './harness.js';
 import { schema } from '../src/core/db/index.js';
-import { getOrCreateUser } from '../src/modules/park/service.js';
+import { getOrCreateUser, pendingIncome } from '../src/modules/park/service.js';
 import { requireOwner } from '../src/modules/admin/guard.js';
-import { adminGive, adminReset, AdminError } from '../src/modules/admin/service.js';
+import { adminGive, adminReset, adminFastForward, AdminError } from '../src/modules/admin/service.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });   // config.ownerId === 'owner'
@@ -63,5 +63,22 @@ describe('adminReset', () => {
     expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'p')).all()).toHaveLength(0);
     expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'p')).all()).toHaveLength(0);
     expect(u.displayName).toBe('P');   // user row kept
+  });
+});
+
+describe('adminFastForward', () => {
+  it('advances income and starves an assigned dino into escaping', () => {
+    getOrCreateUser(ctx, 'p', 'P');   // lastCollectAt = now = 0
+    const lot = ctx.db.insert(schema.lots).values({ userId: 'p', type: 'paddock', kind: 'carnivore_paddock', name: 'Pen' }).returning().get();
+    ctx.db.insert(schema.dinos).values({ userId: 'p', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    const escaped = adminFastForward(ctx, 'p', 720);   // 30 days back
+    expect(escaped).toBe(1);                            // starved past the escape threshold
+    expect(pendingIncome(ctx, 'p')).toBeGreaterThan(0); // income accrued over the elapsed time
+    const d = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, 'p')).get()!;
+    expect(d.escapedAt).not.toBeNull();
+  });
+  it('rejects hours outside 1..720', () => {
+    expect(() => adminFastForward(ctx, 'p', 0)).toThrow(AdminError);
+    expect(() => adminFastForward(ctx, 'p', 721)).toThrow(AdminError);
   });
 });
