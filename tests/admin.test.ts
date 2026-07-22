@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { MessageFlags } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { makeCtx, fakeCommand } from './harness.js';
 import { schema } from '../src/core/db/index.js';
@@ -101,11 +102,15 @@ describe('admin module', () => {
     await run('owner', 'give', { user: 't', cash: 250 });
     expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 't')).get()!.cash).toBe(750);
   });
-  it('inspect returns an ephemeral embed', async () => {
-    getOrCreateUser(ctx, 't', 'T');
+  it('inspect returns an ephemeral embed with the player state', async () => {
+    getOrCreateUser(ctx, 't', 'T');           // 500 cash by default
+    adminGive(ctx, 't', 'T', { cash: 777 });  // -> 1277
     const cmd = await run('owner', 'inspect', { user: 't' });
-    const reply = cmd.replies[0] as { embeds?: unknown[] };
+    const reply = cmd.replies[0] as { embeds: Array<{ data: { fields: Array<{ value: string }> } }>; flags?: number };
     expect(reply.embeds).toHaveLength(1);
+    expect(reply.flags).toBe(MessageFlags.Ephemeral);
+    const values = reply.embeds[0].data.fields.map((f) => f.value).join(' ');
+    expect(values).toContain('1277');   // cash field reflects the real state
   });
   it('reset requires the confirm to equal the target id', async () => {
     getOrCreateUser(ctx, 't', 'T');
@@ -115,5 +120,9 @@ describe('admin module', () => {
     expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 't')).get()!.cash).toBe(9500);
     await run('owner', 'reset', { user: 't', confirm: 't' });
     expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 't')).get()!.cash).toBe(500);
+  });
+  it('reset on a player with no park aborts cleanly', async () => {
+    const cmd = await run('owner', 'reset', { user: 'ghost', confirm: 'ghost' });
+    expect((cmd.replies[0] as { content: string }).content).toContain('no park to reset');
   });
 });
