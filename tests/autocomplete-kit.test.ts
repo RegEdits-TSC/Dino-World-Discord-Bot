@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { matches, respondRanked, emptyRow, fmtDuration, capitalize } from '../src/core/autocomplete.js';
+import { matches, respondRanked, emptyRow, fmtDuration, capitalize, eggLabel, dinoLabel, VERY_HUNGRY_MS } from '../src/core/autocomplete.js';
 import type { AcEntry } from '../src/core/autocomplete.js';
 import type { AutocompleteInteraction } from 'discord.js';
+import { getSpecies } from '../src/data/species/index.js';
 
 function fakeRespond() {
   const out: unknown[] = [];
@@ -79,5 +80,50 @@ describe('capitalize', () => {
   it('uppercases the first letter only', () => {
     expect(capitalize('rare')).toBe('Rare');
     expect(capitalize('')).toBe('');
+  });
+});
+
+const H = 3_600_000;
+
+function egg(over: Record<string, unknown> = {}) {
+  return {
+    id: 12, userId: 'u1', rarity: 'rare', speciesId: null, source: 'shop',
+    viaTrade: false, locked: false, obtainedAt: 0, incubationStartedAt: null, hatchesAt: null,
+    ...over,
+  } as never;
+}
+function dino(over: Record<string, unknown> = {}) {
+  return {
+    id: 7, userId: 'u1', lotId: 3, speciesId: 'velociraptor', nickname: null,
+    hunger: 100, lastFedAt: 0, escapedAt: null, viaTrade: false, locked: false, hatchedAt: 0,
+    ...over,
+  } as never;
+}
+
+describe('eggLabel', () => {
+  it('labels inventory, incubating, and ready states', () => {
+    expect(eggLabel(egg(), 0)).toBe('🥚 #12 Rare — in inventory');
+    expect(eggLabel(egg({ incubationStartedAt: 0, hatchesAt: 4 * H }), 40 * 60_000))
+      .toBe('🥚 #12 Rare — hatching, 3h 20m left');
+    expect(eggLabel(egg({ incubationStartedAt: 0, hatchesAt: 100 }), 100)).toBe('🥚 #12 Rare — READY');
+  });
+});
+
+describe('dinoLabel', () => {
+  const species = getSpecies('velociraptor');
+  it('shows fed-ago and lot for a healthy dino', () => {
+    expect(dinoLabel(dino(), species, 20 * H)).toBe('🦖 #7 Velociraptor — fed 20h ago (lot 3)');
+  });
+  it('shows fed just now under an hour, unassigned without a lot', () => {
+    expect(dinoLabel(dino({ lotId: null }), species, 30 * 60_000))
+      .toBe('🦖 #7 Velociraptor — fed just now (unassigned)');
+  });
+  it('flips to VERY HUNGRY at the 36h threshold', () => {
+    expect(dinoLabel(dino(), species, VERY_HUNGRY_MS)).toBe('🦖 #7 Velociraptor — VERY HUNGRY (lot 3)');
+    expect(dinoLabel(dino(), species, VERY_HUNGRY_MS - 1)).toBe('🦖 #7 Velociraptor — fed 35h ago (lot 3)');
+  });
+  it('ESCAPED overrides everything', () => {
+    expect(dinoLabel(dino({ escapedAt: 5 }), species, 100 * H))
+      .toBe('🦖 #7 Velociraptor — ESCAPED, rescue first');
   });
 });
