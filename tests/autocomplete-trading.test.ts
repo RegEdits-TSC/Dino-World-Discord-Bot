@@ -52,3 +52,79 @@ describe('/trade accept|decline|cancel id autocomplete', () => {
     expect(i.replies[0]).toEqual([{ name: 'No pending trades', value: 0 }]);
   });
 });
+
+describe('/trade offer id-list autocomplete', () => {
+  function seedInventory(ctx: ReturnType<typeof makeCtx>, userId: string) {
+    getOrCreateUser(ctx, userId, userId);
+    const dino = (over: Partial<typeof schema.dinos.$inferInsert> = {}) =>
+      ctx.db.insert(schema.dinos).values({ userId, speciesId: 'velociraptor', lastFedAt: 0, hatchedAt: 0, ...over }).returning().get();
+    const egg = (over: Partial<typeof schema.eggs.$inferInsert> = {}) =>
+      ctx.db.insert(schema.eggs).values({ userId, rarity: 'rare', source: 'shop', obtainedAt: 0, ...over }).returning().get();
+    return { dino, egg };
+  }
+
+  it('give-dinos: lists only tradeable dinos, completing the last token', async () => {
+    const ctx = makeCtx();
+    const inv = seedInventory(ctx, 'u1');
+    const ok = inv.dino({});
+    inv.dino({ locked: true });
+    inv.dino({ escapedAt: 1 });
+    inv.dino({ speciesId: 'indominus' });          // mythic — untradeable
+    const i = fakeAutocomplete({
+      name: 'trade', sub: 'offer', user: 'u1',
+      focused: { name: 'give-dinos', value: '' },
+    });
+    await cmd().autocomplete!(ctx, i.asAutocomplete());
+    expect(i.replies[0]).toEqual([{ name: `${ok.id} — 🦖 Velociraptor (rare)`, value: String(ok.id) }]);
+  });
+
+  it('give-eggs: excludes incubating and locked eggs, re-emits the prefix', async () => {
+    const ctx = makeCtx();
+    const inv = seedInventory(ctx, 'u1');
+    const ok = inv.egg({});
+    inv.egg({ incubationStartedAt: 0, hatchesAt: 99 });
+    inv.egg({ locked: true });
+    const i = fakeAutocomplete({
+      name: 'trade', sub: 'offer', user: 'u1',
+      focused: { name: 'give-eggs', value: '500, ' },
+    });
+    await cmd().autocomplete!(ctx, i.asAutocomplete());
+    expect(i.replies[0]).toEqual([{ name: `500, ${ok.id} — 🥚 rare egg`, value: `500, ${ok.id}` }]);
+  });
+
+  it('want-dinos: reads the in-flight user option and lists the counterparty\'s items', async () => {
+    const ctx = makeCtx();
+    seedInventory(ctx, 'u1');
+    const theirs = seedInventory(ctx, 'u2');
+    const target = theirs.dino({});
+    const i = fakeAutocomplete({
+      name: 'trade', sub: 'offer', user: 'u1',
+      focused: { name: 'want-dinos', value: '' },
+      options: { user: 'u2' },
+    });
+    await cmd().autocomplete!(ctx, i.asAutocomplete());
+    expect(i.replies[0]).toEqual([{ name: `${target.id} — 🦖 Velociraptor (rare)`, value: String(target.id) }]);
+  });
+
+  it('want-* without a picked user prompts for it', async () => {
+    const ctx = makeCtx();
+    seedInventory(ctx, 'u1');
+    const i = fakeAutocomplete({
+      name: 'trade', sub: 'offer', user: 'u1',
+      focused: { name: 'want-eggs', value: '' },
+    });
+    await cmd().autocomplete!(ctx, i.asAutocomplete());
+    expect(i.replies[0]).toEqual([{ name: 'Pick the user option first', value: '-' }]);
+  });
+
+  it('empty tradeable pool yields an informational row', async () => {
+    const ctx = makeCtx();
+    seedInventory(ctx, 'u1');   // no dinos seeded
+    const i = fakeAutocomplete({
+      name: 'trade', sub: 'offer', user: 'u1',
+      focused: { name: 'give-dinos', value: '' },
+    });
+    await cmd().autocomplete!(ctx, i.asAutocomplete());
+    expect(i.replies[0]).toEqual([{ name: 'You have no tradeable items', value: '-' }]);
+  });
+});

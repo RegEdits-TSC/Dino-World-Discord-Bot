@@ -7,7 +7,10 @@ import { getOrCreateUser } from '../park/service.js';
 import { createTrade, acceptTrade, declineTrade, cancelTrade, expireStale, listTrades, TradeError } from './service.js';
 import { parseIdList } from './validate.js';
 import { InsufficientFundsError } from '../../core/economy.js';
-import { matches, respondRanked, emptyRow } from '../../core/autocomplete.js';
+import { matches, respondRanked, emptyRow, listCompleter, type ListCandidate } from '../../core/autocomplete.js';
+import { getSpecies } from '../../data/species/index.js';
+import { TRADE_MAX_ITEMS_PER_SIDE } from '../../data/trade.js';
+import type { Ctx } from '../../core/context.js';
 
 function summarize(side: TradeSide): string {
   const parts: string[] = [];
@@ -18,18 +21,33 @@ function summarize(side: TradeSide): string {
   return parts.join(' + ') || 'nothing';
 }
 
+function tradeableDinos(ctx: Ctx, userId: string): ListCandidate[] {
+  return ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all()
+    .filter((d) => !d.locked && d.escapedAt === null && getSpecies(d.speciesId).rarity !== 'mythic')
+    .map((d) => {
+      const s = getSpecies(d.speciesId);
+      return { id: d.id, label: `🦖 ${s.name} (${s.rarity})` };
+    });
+}
+
+function tradeableEggs(ctx: Ctx, userId: string): ListCandidate[] {
+  return ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, userId)).all()
+    .filter((e) => !e.locked && e.rarity !== 'mythic' && e.incubationStartedAt === null)
+    .map((e) => ({ id: e.id, label: `🥚 ${e.rarity} egg` }));
+}
+
 export const tradingModule: ModuleManifest = {
   name: 'trading',
   commands: [
     { data: new SlashCommandBuilder().setName('trade').setDescription('Trade with another player')
         .addSubcommand((s) => s.setName('offer').setDescription('Offer a trade')
           .addUserOption((o) => o.setName('user').setDescription('Who to trade with').setRequired(true))
-          .addStringOption((o) => o.setName('give-dinos').setDescription('Your dino ids (comma-separated)'))
-          .addStringOption((o) => o.setName('give-eggs').setDescription('Your egg ids'))
+          .addStringOption((o) => o.setName('give-dinos').setDescription('Your dinos — type to add, comma-separated').setAutocomplete(true))
+          .addStringOption((o) => o.setName('give-eggs').setDescription('Your eggs — type to add, comma-separated').setAutocomplete(true))
           .addIntegerOption((o) => o.setName('give-cash').setDescription('Cash you give').setMinValue(0))
           .addIntegerOption((o) => o.setName('give-food').setDescription('Food you give').setMinValue(0))
-          .addStringOption((o) => o.setName('want-dinos').setDescription('Their dino ids you want'))
-          .addStringOption((o) => o.setName('want-eggs').setDescription('Their egg ids you want'))
+          .addStringOption((o) => o.setName('want-dinos').setDescription('Their dinos — pick the user first').setAutocomplete(true))
+          .addStringOption((o) => o.setName('want-eggs').setDescription('Their eggs — pick the user first').setAutocomplete(true))
           .addIntegerOption((o) => o.setName('want-cash').setDescription('Cash you want').setMinValue(0))
           .addIntegerOption((o) => o.setName('want-food').setDescription('Food you want').setMinValue(0)))
         .addSubcommand((s) => s.setName('list').setDescription('Your pending trades'))
@@ -110,7 +128,23 @@ export const tradingModule: ModuleManifest = {
           }));
           return;
         }
-        // sub === 'offer' handled in the next change (id-list completion)
+        if (sub === 'offer') {
+          const focused = i.options.getFocused(true);
+          const isWant = focused.name.startsWith('want-');
+          const isDino = focused.name.endsWith('-dinos');
+          if (!focused.name.endsWith('-dinos') && !focused.name.endsWith('-eggs')) { await i.respond([]); return; }
+          let ownerId = i.user.id;
+          if (isWant) {
+            const target = i.options.get('user')?.value;
+            if (typeof target !== 'string') { await i.respond([{ name: 'Pick the user option first', value: '-' }]); return; }
+            ownerId = target;
+          }
+          const candidates = isDino ? tradeableDinos(ctx, ownerId) : tradeableEggs(ctx, ownerId);
+          const rows = listCompleter(String(focused.value), candidates, { maxItems: TRADE_MAX_ITEMS_PER_SIDE });
+          await i.respond(rows.length ? rows
+            : [{ name: candidates.length ? 'No more matches' : (isWant ? 'They have no tradeable items' : 'You have no tradeable items'), value: '-' }]);
+          return;
+        }
         await i.respond([]);
       } },
   ],
