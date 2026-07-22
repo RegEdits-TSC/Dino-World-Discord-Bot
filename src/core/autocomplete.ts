@@ -64,3 +64,34 @@ export function dinoLabel(dino: DinoRow, species: Species, now: number): string 
   const hours = Math.floor(sinceFed / 3_600_000);
   return hours < 1 ? `${base} — fed just now ${loc}` : `${base} — fed ${hours}h ago ${loc}`;
 }
+
+export interface ListCandidate { id: number; label: string }
+
+// Completes the last token of a comma/whitespace-separated id list (same grammar as
+// parseIdList in src/modules/trading/validate.ts). Selecting a choice replaces the whole
+// field, so every value re-emits the prior ids as a prefix.
+export function listCompleter(
+  rawInput: string,
+  candidates: ListCandidate[],
+  opts: { maxItems: number },
+): Array<{ name: string; value: string }> {
+  const endsOpen = rawInput.trim() !== '' && !/[\s,]$/.test(rawInput);
+  const tokens = rawInput.split(/[\s,]+/).filter(Boolean);
+  const active = endsOpen ? tokens[tokens.length - 1] : '';
+  const prior = [...new Set(endsOpen ? tokens.slice(0, -1) : tokens)];
+  const prefix = prior.join(', ');
+  if (prior.length >= opts.maxItems) {
+    return [{ name: `Max ${opts.maxItems} items per side`, value: prefix }];
+  }
+  const taken = new Set(prior.map(Number));
+  const rows: Array<{ name: string; value: string }> = [];
+  for (const c of candidates) {
+    if (taken.has(c.id) || !matches(active, c.id, c.label)) continue;
+    const value = prefix ? `${prefix}, ${c.id}` : String(c.id);
+    if (value.length > MAX_NAME) return [{ name: 'List too long — type manually', value: prefix }];
+    const name = `${value} — ${c.label}`;
+    rows.push({ name: name.length <= MAX_NAME ? name : `…${name.slice(-(MAX_NAME - 1))}`, value });
+    if (rows.length === MAX_CHOICES) break;
+  }
+  return rows;
+}

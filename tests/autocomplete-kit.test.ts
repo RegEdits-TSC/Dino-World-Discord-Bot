@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matches, respondRanked, emptyRow, fmtDuration, capitalize, eggLabel, dinoLabel, VERY_HUNGRY_MS } from '../src/core/autocomplete.js';
+import { matches, respondRanked, emptyRow, fmtDuration, capitalize, eggLabel, dinoLabel, VERY_HUNGRY_MS, listCompleter } from '../src/core/autocomplete.js';
 import type { AcEntry } from '../src/core/autocomplete.js';
 import type { AutocompleteInteraction } from 'discord.js';
 import { getSpecies } from '../src/data/species/index.js';
@@ -125,5 +125,62 @@ describe('dinoLabel', () => {
   it('ESCAPED overrides everything', () => {
     expect(dinoLabel(dino({ escapedAt: 5 }), species, 100 * H))
       .toBe('🦖 #7 Velociraptor — ESCAPED, rescue first');
+  });
+});
+
+describe('listCompleter', () => {
+  const cands = [
+    { id: 12, label: '🦖 Velociraptor (rare)' },
+    { id: 45, label: '🦖 Triceratops (common)' },
+    { id: 47, label: '🥚 rare egg' },
+  ];
+
+  it('suggests all candidates for empty input', () => {
+    const rows = listCompleter('', cands, { maxItems: 5 });
+    expect(rows).toEqual([
+      { name: '12 — 🦖 Velociraptor (rare)', value: '12' },
+      { name: '45 — 🦖 Triceratops (common)', value: '45' },
+      { name: '47 — 🥚 rare egg', value: '47' },
+    ]);
+  });
+
+  it('completes the last token and re-emits the prefix', () => {
+    const rows = listCompleter('12, 4', cands, { maxItems: 5 });
+    expect(rows).toEqual([
+      { name: '12, 45 — 🦖 Triceratops (common)', value: '12, 45' },
+      { name: '12, 47 — 🥚 rare egg', value: '12, 47' },
+    ]);
+  });
+
+  it('treats a trailing separator as a fresh token and dedupes entered ids', () => {
+    const rows = listCompleter('12, ', cands, { maxItems: 5 });
+    expect(rows.map((r) => r.value)).toEqual(['12, 45', '12, 47']);
+  });
+
+  it('matches the active token against labels too', () => {
+    const rows = listCompleter('12, velo', cands, { maxItems: 5 });
+    expect(rows).toEqual([]);  // 12 already taken; only id 12 matches 'velo'
+    expect(listCompleter('velo', cands, { maxItems: 5 }))
+      .toEqual([{ name: '12 — 🦖 Velociraptor (rare)', value: '12' }]);
+  });
+
+  it('caps at maxItems prior ids', () => {
+    const rows = listCompleter('1, 2, 3, 4, 5, ', cands, { maxItems: 5 });
+    expect(rows).toEqual([{ name: 'Max 5 items per side', value: '1, 2, 3, 4, 5' }]);
+  });
+
+  it('bails out when the value would exceed 100 chars', () => {
+    const longPrefix = Array.from({ length: 24 }, (_, n) => String(1000 + n)).join(', ');  // 24*6-2 = 142 chars
+    const rows = listCompleter(`${longPrefix}, 4`, cands, { maxItems: 99 });
+    expect(rows).toEqual([{ name: 'List too long — type manually', value: longPrefix }]);
+  });
+
+  it('front-elides names over 100 chars but keeps the value intact', () => {
+    const bigLabel = { id: 45, label: 'x'.repeat(95) };
+    const rows = listCompleter('12, 4', [bigLabel], { maxItems: 5 });
+    expect(rows[0].value).toBe('12, 45');
+    expect(rows[0].name).toHaveLength(100);
+    expect(rows[0].name.startsWith('…')).toBe(true);
+    expect(rows[0].name.endsWith('x')).toBe(true);
   });
 });
