@@ -8,6 +8,7 @@ import { buyMythicEgg, mythicSpeciesChoices, ShardError } from '../shop/shards.j
 import { getSpecies } from '../../data/species/index.js';
 import { preHatchEmbed, crackButton, revealPayload } from './embeds.js';
 import { InsufficientFundsError } from '../../core/economy.js';
+import { matches, respondRanked, emptyRow, eggLabel } from '../../core/autocomplete.js';
 
 const mythicChoices = mythicSpeciesChoices().map((s) => ({ name: s.name, value: s.id }));
 
@@ -26,16 +27,24 @@ export const hatcheryModule: ModuleManifest = {
         await i.reply({ embeds: [new EmbedBuilder().setTitle('🥚 Eggs').setDescription(lines).setColor(0x3ba55c)] });
       } },
     { data: new SlashCommandBuilder().setName('incubate').setDescription('Start incubating an egg')
-        .addIntegerOption((o) => o.setName('egg').setDescription('Egg id from /eggs').setRequired(true)),
+        .addIntegerOption((o) => o.setName('egg').setDescription('Egg — type to search').setRequired(true).setAutocomplete(true)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         try {
           const egg = incubateEgg(ctx, i.user.id, i.options.getInteger('egg', true), i.guildId);
           await i.reply({ content: `🥚 Incubating your ${egg.rarity} egg — ready <t:${Math.floor(egg.hatchesAt! / 1000)}:R>.` });
         } catch (e) { if (e instanceof HatcheryError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
+      },
+      async autocomplete(ctx, i) {
+        const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, i.user.id)).all();
+        if (!eggs.length) { await respondRanked(i, [emptyRow('No eggs — get one from /shop egg or /expedition', 0)]); return; }
+        const q = String(i.options.getFocused());
+        await respondRanked(i, eggs
+          .filter((e) => matches(q, e.id, e.rarity))
+          .map((e) => ({ value: e.id, label: eggLabel(e, ctx.now()), valid: e.incubationStartedAt === null })));
       } },
     { data: new SlashCommandBuilder().setName('hatch').setDescription('Hatch a ready egg')
-        .addIntegerOption((o) => o.setName('egg').setDescription('Egg id from /eggs').setRequired(true)),
+        .addIntegerOption((o) => o.setName('egg').setDescription('Egg — type to search').setRequired(true).setAutocomplete(true)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         const eggId = i.options.getInteger('egg', true);
@@ -43,6 +52,14 @@ export const hatcheryModule: ModuleManifest = {
         if (!egg) { await i.reply({ content: 'You do not own that egg.', flags: MessageFlags.Ephemeral }); return; }
         if (egg.hatchesAt === null || egg.hatchesAt > ctx.now()) { await i.reply({ content: 'That egg is not ready to hatch.', flags: MessageFlags.Ephemeral }); return; }
         await i.reply({ embeds: [preHatchEmbed(egg.rarity)], components: [crackButton(eggId)] });
+      },
+      async autocomplete(ctx, i) {
+        const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, i.user.id)).all();
+        if (!eggs.length) { await respondRanked(i, [emptyRow('No eggs — get one from /shop egg or /expedition', 0)]); return; }
+        const q = String(i.options.getFocused());
+        await respondRanked(i, eggs
+          .filter((e) => matches(q, e.id, e.rarity))
+          .map((e) => ({ value: e.id, label: eggLabel(e, ctx.now()), valid: e.hatchesAt !== null && e.hatchesAt <= ctx.now() })));
       } },
     { data: new SlashCommandBuilder().setName('mythic').setDescription('Spend 500 shards on a Mythic egg (needs 4★)')
         .addStringOption((o) => o.setName('species').setDescription('Which Mythic').setRequired(true).addChoices(...mythicChoices)),
