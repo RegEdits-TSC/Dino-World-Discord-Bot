@@ -6,6 +6,8 @@ import type { Rarity } from '../../data/types.js';
 import { schema } from '../../core/db/index.js';
 import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
+import { allSpecies } from '../../data/species/index.js';
+import { matches, respondRanked, emptyRow } from '../../core/autocomplete.js';
 import { requireOwner } from './guard.js';
 import { adminGive, adminReset, adminFastForward, AdminError } from './service.js';
 
@@ -45,7 +47,7 @@ export const adminModule: ModuleManifest = {
           .addIntegerOption((o) => o.setName('shards').setDescription('Shards').setMinValue(0))
           .addStringOption((o) => o.setName('egg-rarity').setDescription('Grant an egg of this rarity')
             .addChoices(...RARITIES.map((r) => ({ name: r, value: r }))))
-          .addStringOption((o) => o.setName('dino-species').setDescription('Grant a dino of this species id')))
+          .addStringOption((o) => o.setName('dino-species').setDescription('Species — type to search').setAutocomplete(true)))
         .addSubcommand((s) => s.setName('inspect').setDescription('Dump a player’s raw state')
           .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true)))
         .addSubcommand((s) => s.setName('reset').setDescription('Reset a player to a fresh start')
@@ -94,6 +96,17 @@ export const adminModule: ModuleManifest = {
           if (e instanceof AdminError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
           else throw e;
         }
+      },
+      async autocomplete(ctx, i) {
+        if (i.user.id !== ctx.config.ownerId) { await i.respond([]); return; }
+        const focused = i.options.getFocused(true);
+        if (i.options.getSubcommand() !== 'give' || focused.name !== 'dino-species') { await i.respond([]); return; }
+        const q = String(focused.value);
+        const hits = allSpecies().filter((s) => matches(q, s.id, s.name, s.rarity));
+        if (!hits.length) { await respondRanked(i, [emptyRow('No species match', '-')]); return; }
+        await respondRanked(i, hits.map((s) => ({
+          value: s.id, valid: true, label: `${s.name} (${s.rarity}, ${s.diet})`,
+        })));
       } },
   ],
   components: [],

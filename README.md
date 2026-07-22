@@ -10,6 +10,9 @@ modular monolith so gameplay systems can be added or removed independently.
 `/park view` renders a PNG park-map image of your paddocks and facilities
 alongside the dashboard, falling back to the text-only embed if rendering
 is unavailable.
+Options that take an id — eggs, dinos, lots, trades, expedition sites, shop
+rarities, admin species — offer autocomplete suggestions as you type, with
+currently-valid picks listed first and everything else tagged with its state.
 
 ## Setup
 
@@ -35,6 +38,9 @@ Register the bot's slash commands with Discord:
 ```
 npm run deploy-commands
 ```
+
+Re-run this whenever command definitions change — autocomplete flags and
+option descriptions are part of the registered command shape.
 
 Start the bot in development mode (restarts on file changes):
 
