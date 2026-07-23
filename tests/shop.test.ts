@@ -51,3 +51,22 @@ describe('shop module', () => {
     expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()).toBeUndefined();
   });
 });
+
+describe('shop visuals', () => {
+  it('/shop view thumbnails the best egg in today\'s rotation', async () => {
+    const i = fakeCommand({ name: 'shop', sub: 'view', user: 'u1' });
+    await shopModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: Array<{ toJSON(): { thumbnail?: { url: string } } }>; files?: unknown[] };
+    // dailyEggOffers always returns ≥1 rarity with egg art present for all six rarities
+    expect(payload.embeds[0].toJSON().thumbnail?.url).toMatch(/^attachment:\/\/(common|uncommon|rare|epic|legendary)\.png$/);
+    expect(payload.files).toHaveLength(1);
+  });
+  it('/shop egg purchase replies with a rarity-colored embed and egg thumbnail', async () => {
+    const offers = dailyEggOffers(0, ctx.now());
+    const i = fakeCommand({ name: 'shop', sub: 'egg', user: 'u1', options: { rarity: offers[0] } });
+    await shopModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: Array<{ toJSON(): { thumbnail?: { url: string }; description?: string } }> };
+    expect(payload.embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${offers[0]}.png`);
+    expect(payload.embeds[0].toJSON().description).toContain('/incubate');
+  });
+});
