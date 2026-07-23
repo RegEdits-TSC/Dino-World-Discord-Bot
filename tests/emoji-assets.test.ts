@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createCanvas, Image } from '@napi-rs/canvas';
 import { renderSvg } from '../src/core/render-svg.js';
+import { EMOJI_FALLBACK } from '../src/core/emojis.js';
 
 const SVG_DIR = resolve(process.cwd(), 'assets/emojis/svg');
 const PNG_DIR = resolve(process.cwd(), 'assets/emojis/png');
@@ -90,5 +91,12 @@ describe('emoji assets', () => {
       }
     }
     expect(blackCount / opaqueCount).toBeLessThan(MAX_BLACK_SHARE);
+  });
+});
+
+describe('svg set parity', () => {
+  it('svg files exactly match the 21 fallback-table names', () => {
+    const names = readdirSync(SVG_DIR).filter((f) => f.endsWith('.svg')).map((f) => f.replace('.svg', '')).sort();
+    expect(names).toEqual(Object.keys(EMOJI_FALLBACK).sort());
   });
 });
