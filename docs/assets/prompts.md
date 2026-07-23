@@ -221,3 +221,107 @@ shell with glowing orange cracks).
 > Glossy cartoon mobile-game art style, bold dark outlines, vibrant saturated
 > colors, strong glossy highlights, clean cel shading with smooth gradients,
 > polished game-asset look. No text, no characters, no UI elements.
+
+---
+
+## Embed banners
+
+Five wide banners for the surfaces that have no site or egg art of their own.
+All generated with Higgsfield Nano Banana Pro at 3:2, then scaled to 1536×1024
+(the generator emits 1264×848; scaling to full width leaves ~6px of vertical
+excess, which is center-cropped).
+
+| File | Size | Use |
+|---|---|---|
+| `assets/images/banners/trading.png` | 1536×1024 | `/trade list` embed image |
+| `assets/images/banners/leaderboards.png` | 1536×1024 | `/top` embed image |
+| `assets/images/banners/help.png` | 1536×1024 | `/help` overview embed image |
+| `assets/images/banners/care.png` | 1536×1024 | care embed, dinos fed |
+| `assets/images/banners/care_neglect.png` | 1536×1024 | care embed, a dino is very hungry |
+
+These are the only prompts in this file whose subject is dinosaurs rather than
+scenery, so they drop the shared block's "no characters" clause and forbid only
+human ones. Everything else in the shared style block still applies.
+
+**Trading (`trading.png`):**
+
+> A wide cartoon scene of a lively prehistoric trading post in a lush dinosaur
+> park: a wooden market stall stacked with open crates of red meat and glossy
+> dinosaur eggs, a pile of gold coins and a small treasure chest on the
+> counter, colorful hanging cloth awning, two friendly cartoon dinosaurs facing
+> each other across the stall mid-trade — a green long-necked sauropod on the
+> left offering an egg, a small orange theropod on the right holding a pouch of
+> coins — leafy jungle ferns and a dirt path behind them, warm cheerful
+> afternoon daylight. Glossy cartoon mobile-game art style, bold dark outlines,
+> vibrant saturated colors, strong glossy highlights, clean cel shading with
+> smooth gradients, polished game-asset look. No text, no human characters, no
+> UI elements.
+
+**Leaderboards (`leaderboards.png`):**
+
+> A wide cartoon scene of a dinosaur park awards ceremony: a three-tier stone
+> podium in the center marked with first, second and third place steps, a huge
+> gleaming golden trophy cup standing on the tallest step, colorful triangular
+> bunting flags strung overhead, a small crowd of cheerful cartoon dinosaurs of
+> different colors gathered around the podium celebrating with raised heads,
+> lush green park grounds and palm trees behind, bright sunny daylight with
+> confetti in the air. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no human
+> characters, no UI elements.
+
+The model renders "1st / 2nd / 3rd" on the podium steps despite the no-text
+clause. That is kept deliberately — the numerals are correct and reinforce what
+the embed is for. Regenerating may or may not reproduce them.
+
+**Help (`help.png`):**
+
+> A wide cartoon scene of the grand entrance gates to a dinosaur park at golden
+> hour: two tall carved wooden gate posts topped with a large arching timber
+> crossbeam and a dinosaur skull emblem at its center, the heavy gates swung
+> open, a warm dirt path leading through them toward a lush valley of ferns,
+> palms and distant misty green hills where a long-necked sauropod grazes far
+> away, flaming torches on the gate posts, warm golden sunset light and soft
+> god rays. Glossy cartoon mobile-game art style, bold dark outlines, vibrant
+> saturated colors, strong glossy highlights, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no human characters, no UI
+> elements.
+
+**Care (`care.png`):**
+
+> A wide cartoon scene of a dinosaur park feeding station on a sunny morning: a
+> sturdy wooden feeding trough in the center heaped high with fresh green ferns
+> and leafy branches, a stack of hay bales and a wooden water barrel beside it,
+> a happy well-fed green long-necked sauropod leaning down to eat from the
+> trough with its eyes closed contentedly, a wooden fence and lush jungle
+> foliage behind, bright warm morning sunlight, cheerful and abundant. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated colors,
+> strong glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no human characters, no UI elements.
+
+**Care — neglected (`care_neglect.png`):**
+
+Generated with `care.png` attached as the `image` reference so the two read as
+the same place at two different moments. Regenerate it the same way, or the
+pair stops matching and the swap looks like a scene change rather than a
+warning.
+
+> Keep the exact same cartoon feeding station scene: same wooden trough in the
+> same position, same hay bales and water barrel, same wooden fence, same
+> jungle foliage, same camera framing and composition. Change only the mood to
+> neglected and hungry: the trough is now completely empty and bare with only a
+> few dry brown scraps in it, the water barrel is tipped and empty, the hay is
+> sparse and yellowed, and the long-necked sauropod now stands with its head
+> drooping low and sad hungry eyes, looking thinner and duller in color.
+> Overcast grey daylight with muted desaturated colors and long dull shadows
+> instead of warm sunshine. Glossy cartoon mobile-game art style, bold dark
+> outlines, clean cel shading with smooth gradients, polished game-asset look.
+> No text, no human characters, no UI elements.
+
+---
+
+## Emoji icons
+
+The 21 application emojis in `assets/emojis/` are **not** generated — they are
+hand-authored SVG rendered by `npm run build-emojis`. See the emoji bullets in
+the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.
