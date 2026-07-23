@@ -39,10 +39,11 @@ Site ids: `coastal_dig`, `amber_ridge`, `frozen_cliffs`, `volcano_core`.
 
 ## Egg rarities
 
-The six egg icons in `assets/images/eggs/` share one silhouette so they read as
-a set; rarity is expressed only through shell color, pattern, and escalating
-effects. Shell colors track the embed accent colors in
-`src/modules/hatchery/embeds.ts`.
+The six egg icons in `assets/images/eggs/` share one silhouette — an upright egg
+sitting in a low woven twig-and-leaf nest — so they read as a set; rarity is
+expressed only through shell design and subtle per-rarity nest dressing. Shell
+colors track the embed accent colors in `src/modules/hatchery/embeds.ts` (mythic
+is the exception: obsidian-and-lava to match the `volcano_core` site art).
 
 | File | Size | Use |
 |---|---|---|
@@ -51,51 +52,86 @@ effects. Shell colors track the embed accent colors in
 `<rarity>` is one of `common`, `uncommon`, `rare`, `epic`, `legendary`,
 `mythic`.
 
-**Workflow (reference chain):** generate the common egg first on a plain flat
-light-gray studio background, then generate the other five as image-edits of the
-common egg (Nano Banana Pro, `medias` role `image`) so the silhouette stays
-identical. Run each result through `remove_background`, then center on a
-1024×1024 transparent canvas. Any glow/rays/embers that fall outside the shell
-survive as floating islands on transparent — this matches the old floating egg
-look on the Discord embed background.
+**Hard no-glow rule:** no glow, rays, embers, sparkles, or light effects may
+extend beyond the egg/nest silhouette — off-silhouette glow survives background
+removal as floating islands or a light halo on transparency. Emissive detail is
+allowed only ON surfaces (crystal facets, engraved runes, lava cracks). Every
+prompt carries this rule verbatim.
+
+**Workflow (reference chain):** generate the common egg-in-nest first on a plain
+flat light-gray studio background, framed so the egg and nest fill almost the
+whole square with a small even margin. Then generate the other five as
+image-edits of the approved common (Nano Banana Pro, `medias` role `image`) so
+the egg silhouette and nest base stay identical — all five edit from the common
+directly, never from each other.
+
+**Post-processing** (each of the six): `remove_background`, then a defringe +
+fit pass onto a 1024×1024 transparent canvas. The studio background is light
+gray — nearly the tone of the white/gold shells — so the cutout keeps a light
+rim the egg's dark outline should have been. The pass: (1) keep only the largest
+connected region; (2) luminance-peel light boundary pixels inward until the edge
+reaches each egg's dark cartoon outline; (3) flood inward from the border through
+transparent + desaturated-light pixels to strip any near-white matte residue
+clinging to the outer nest edge (saturated art blocks the flood; interior
+highlights are walled off by the dark outlines); (4) shave 2px; (5) fit and
+center on the **egg's own axis** (top ~45% of the silhouette), not the whole
+bbox, so asymmetric nest dressing doesn't push the egg off-center. Verify: all
+border pixels transparent, exactly one connected region.
 
 **Common (reference egg):**
 
-> A single large cartoon dinosaur egg standing upright, perfectly centered:
-> smooth gray-white eggshell with scattered small brown speckles, one soft
-> glossy highlight on the upper left of the shell. Plain flat light-gray studio
-> background, no scenery. Centered composition, large readable shape filling
-> most of the frame. Glossy cartoon mobile-game art style, bold dark outlines,
-> vibrant saturated colors, strong glossy highlights, clean cel shading with
-> smooth gradients, polished game-asset look. No text, no characters, no UI
-> elements.
+> A single large cartoon dinosaur egg standing upright, sitting in a low woven
+> nest of brown twigs with two or three green leaves tucked in, perfectly
+> centered. The egg and its nest together fill almost the entire square frame,
+> edge to edge, with only a small even margin of background around them. Smooth
+> gray-white eggshell with scattered small brown speckles, one soft glossy
+> highlight on the upper left of the shell. The nest is a low ring around the
+> base, covering only the very bottom of the egg. Plain flat light-gray studio
+> background, no scenery, no ground shadow. No glow, rays, embers, sparkles, or
+> light effects extending beyond the egg or the nest; glowing details may appear
+> only on the surfaces themselves. Glossy cartoon mobile-game art style, bold
+> dark outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no
+> characters, no UI elements.
 
 **Reskin edits** (each generated with the common egg attached as the `image`
 reference). Prompt frame:
 
-> Keep the exact same cartoon dinosaur egg: same shape, same size, same
-> position, same outline, same framing, same plain flat light-gray studio
-> background. Change only the shell design: {RESKIN}. Glossy cartoon
-> mobile-game art style, bold dark outlines, vibrant saturated colors, strong
-> glossy highlights, clean cel shading with smooth gradients, polished
-> game-asset look. No text, no characters, no UI elements.
+> Keep the exact same cartoon dinosaur egg and the exact same woven twig nest:
+> same shape, same size, same position, same outline, same framing, same plain
+> flat light-gray studio background. Change only the egg shell design and add
+> small nest decorations: {SHELL}. {NEST}. No glow, rays, embers, sparkles, or
+> light effects extending beyond the egg or the nest; glowing details may appear
+> only on the surfaces themselves. Glossy cartoon mobile-game art style, bold
+> dark outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no
+> characters, no UI elements.
 
-`{RESKIN}` per rarity:
+`{SHELL}` / `{NEST}` per rarity:
 
-- **uncommon:** moss-green eggshell (around #2ecc71) decorated with a simple
-  pattern of small darker-green leaf shapes, subtle glossy highlight
-- **rare:** ocean-blue eggshell (around #3498db) with a wavy water-sheen pattern
-  wrapping the shell and a few small water droplets on the surface, glossy
-  wet-look highlights
-- **epic:** violet eggshell (around #9b59b6) with angular crystal facets
-  embedded in the surface and a soft purple glow emanating from the facets, kept
-  tight to the shell
-- **legendary:** polished golden eggshell (around #f1c40f) engraved with elegant
-  curved rune lines, radiating short golden rays of light kept close to the shell
-- **mythic:** jet-black obsidian eggshell covered in jagged glowing orange lava
-  cracks, faint orange embers rising just above the shell, dramatic inner glow
-  through the cracks, kept tight to the shell (matches the `volcano_core` site
-  obsidian-and-lava look)
+- **uncommon** — SHELL: moss-green eggshell (around #2ecc71) decorated with a
+  simple pattern of small darker-green leaf shapes, subtle glossy highlight.
+  NEST: weave a few extra fresh green leaves and tiny white flowers into the
+  twigs.
+- **rare** — SHELL: ocean-blue eggshell (around #3498db) with a wavy water-sheen
+  pattern wrapping the shell and a few small water droplets on the surface,
+  glossy wet-look highlights. NEST: tuck a few smooth blue pebbles and small
+  seashells between the twigs.
+- **epic** — SHELL: violet eggshell (around #9b59b6) with angular crystal facets
+  embedded in the surface, the facets catching bright glossy highlights on the
+  shell surface (add "no glowing aura or halo around the egg; the outline
+  against the background must be crisp" — the model tends to add a purple glow).
+  NEST: place a few small violet amethyst crystal shards among the twigs.
+- **legendary** — SHELL: polished golden eggshell (around #f1c40f) engraved with
+  elegant curved rune lines, the engraving gleaming on the shell surface only,
+  no rays of light. NEST: weave a thin gold ribbon and a few tiny gold trinkets
+  through the twigs.
+- **mythic** — SHELL: jet-black obsidian eggshell covered in jagged glowing
+  orange lava cracks, dramatic inner glow visible only through the cracks, no
+  floating embers (matches the `volcano_core` site obsidian-and-lava look).
+  NEST: charred dark twigs with a few ember-orange glowing tips. Do not add
+  pebbles or loose objects — the model repeatedly scattered them on the ground
+  outside the nest, where they become floating islands after matting.
 
 ## Coastal Dig (`coastal_dig`)
 
