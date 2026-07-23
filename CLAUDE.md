@@ -20,3 +20,12 @@
 - Embed art ships from `assets/images/` via `assetImage` (`src/core/images.ts`);
   a missing file means the embed renders without the image — absent art is
   never an error. Generation prompts live in `docs/assets/prompts.md`.
+- Emoji art is hand-authored SVG in `assets/emojis/svg/`, rendered to committed
+  128×128 transparent PNGs in `assets/emojis/png/` by `npm run build-emojis`
+  (`src/build-emojis.ts` + the `renderSvg` helper in `src/core/render-svg.ts`,
+  which decodes via `@napi-rs/canvas`'s bundled resvg). Known resvg gotcha:
+  `<ellipse fill="url(#gradient)">` with the default `objectBoundingBox`
+  gradientUnits renders solid black — use `gradientUnits="userSpaceOnUse"`
+  with `y1`/`y2` set to the ellipse's own pre-transform bbox instead (same
+  stop colors/offsets, just a different coordinate system). `circle`/`rect`/
+  `polygon` gradients are unaffected.

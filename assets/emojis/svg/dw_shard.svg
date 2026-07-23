@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7de8e0"/><stop offset="1" stop-color="#1f8a99"/></linearGradient></defs>
+  <polygon points="32,4 48,18 44,52 20,52 16,18" fill="url(#g)" stroke="#0f5560" stroke-width="3"/>
+  <path d="M26 16 Q38 22 26 28 Q38 34 26 40 Q38 46 26 50" fill="none" stroke="#e8fdfc" stroke-width="2.5" opacity="0.9"/>
+  <path d="M38 16 Q26 22 38 28 Q26 34 38 40 Q26 46 38 50" fill="none" stroke="#e8fdfc" stroke-width="2.5" opacity="0.6"/>
+  <ellipse cx="24" cy="12" rx="7" ry="3.5" fill="#ffffff" opacity="0.4" transform="rotate(-15 24 12)"/>
+</svg>
