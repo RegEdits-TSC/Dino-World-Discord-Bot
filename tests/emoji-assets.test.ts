@@ -14,12 +14,14 @@ const SIZE = 128;
 // this threshold; incidental antialiasing between adjacent dark shapes stays well under it.
 const MAX_BLACK_SHARE = 0.02;
 
-function decode(png: Buffer): Image { const i = new Image(); i.src = png; return i; }
-
 // @napi-rs/canvas decodes raster (PNG) sources asynchronously under the hood even though `Image.src =`
 // returns immediately with `complete: true` — drawImage right after assignment silently draws a blank
 // canvas. SVG decode (used by renderSvg itself) genuinely is synchronous, so only this PNG-reading path
-// needs the await.
+// needs the await. This is the only safe way to decode a buffer anywhere in this file before inspecting
+// pixels: there is deliberately no synchronous alternative here, because a synchronous helper is exactly
+// what let the corner-only assertions below pass vacuously before this file's pixel checks existed (see
+// CLAUDE.md / task history) — width/height come back populated correctly either way, so only a decoded
+// pixel read catches the gap.
 async function decodePng(png: Buffer): Promise<Image> {
   const i = new Image();
   i.src = png;
@@ -28,11 +30,22 @@ async function decodePng(png: Buffer): Promise<Image> {
 }
 
 describe('renderSvg', () => {
-  it('renders an SVG buffer to a PNG of the requested size', () => {
-    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="20" fill="#f00"/></svg>');
-    const img = decode(renderSvg(svg, 128));
+  it('renders an SVG buffer whose decoded pixels prove SVG decode completed synchronously', async () => {
+    // width/height are populated synchronously the instant `Image.src` is assigned, regardless of
+    // whether decoding actually finished — so a dimensions-only assertion here would pass identically
+    // even if renderSvg's un-awaited `img.decode()` call (see render-svg.ts) raced ahead of a blank
+    // canvas. Sampling a specific, unambiguous pixel is what actually proves the render happened.
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="20" fill="#ff0000"/></svg>');
+    const img = await decodePng(renderSvg(svg, 128));
     expect(img.width).toBe(128);
     expect(img.height).toBe(128);
+
+    const canvas = createCanvas(128, 128);
+    const c = canvas.getContext('2d');
+    c.drawImage(img, 0, 0);
+    // Circle center (32,32) in the 64×64 viewBox maps to (64,64) at 2x scale — well inside the r=20
+    // (scaled to 40px) fill, so this is unambiguously interior, not an antialiased edge pixel.
+    expect(Array.from(c.getImageData(64, 64, 1, 1).data)).toEqual([255, 0, 0, 255]);
   });
 });
 

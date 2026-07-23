@@ -31,4 +31,7 @@
   `polygon` gradients are unaffected. Worked example from `dw_food.svg`'s
   `<ellipse cx="27" cy="30" rx="18" ry="14">`: `y1 = cy - ry = 30 - 14 = 16`,
   `y2 = cy + ry = 30 + 14 = 44` — exactly the bbox `objectBoundingBox` would
-  have used.
+  have used. Separately: `tests/emoji-assets.test.ts` rejects any PNG whose opaque pixels are more
+  than 2% pure `#000000` (`MAX_BLACK_SHARE`), calibrated against the currency trio, none of which
+  use pure black — if a future SVG legitimately needs pure black across more of the canvas than
+  that, raise the threshold deliberately rather than fighting the guard.
