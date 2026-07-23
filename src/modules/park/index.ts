@@ -16,6 +16,7 @@ import { DECOR } from '../../data/decor.js';
 import { getSpecies } from '../../data/species/index.js';
 import { matches, respondRanked, emptyRow, dinoLabel } from '../../core/autocomplete.js';
 import { paginate, pageRow } from '../../core/paginate.js';
+import { emojiTag } from '../../core/emojis.js';
 import type { Ctx } from '../../core/context.js';
 
 const kindChoices = [...Object.keys(PADDOCKS), ...Object.keys(FACILITIES)]
@@ -228,7 +229,7 @@ export const parkModule: ModuleManifest = {
         if (i.customId === 'park:collect') {
           settleEscapes(ctx, i.user.id);
           const { amount } = collectIncome(ctx, i.user.id);
-          await i.reply({ content: amount > 0 ? `💰 Collected **${amount.toLocaleString()}** cash.` : 'Nothing to collect yet.', flags: MessageFlags.Ephemeral });
+          await i.reply({ content: amount > 0 ? `${emojiTag('dw_cash')} Collected **${amount.toLocaleString()}** cash.` : 'Nothing to collect yet.', flags: MessageFlags.Ephemeral });
           return;
         }
         const [, action, uid, pageStr] = i.customId.split(':');

@@ -10,6 +10,7 @@ import { allSpecies } from '../../data/species/index.js';
 import { matches, respondRanked, emptyRow } from '../../core/autocomplete.js';
 import { requireOwner } from './guard.js';
 import { adminGive, adminReset, adminFastForward, AdminError } from './service.js';
+import { emojiTag } from '../../core/emojis.js';
 
 const RARITIES: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
 
@@ -26,9 +27,9 @@ function inspectEmbed(ctx: Ctx, targetId: string, displayName: string): EmbedBui
     .filter((e) => e.claimedAt === null).length;
   const line = (s: string) => (s.length ? s.slice(0, 1024) : 'none');
   return new EmbedBuilder().setTitle(`🔧 ${displayName} (${targetId})`).setColor(0x9b59d0).addFields(
-    { name: '💰 / 🍖 / 💎', value: `${u.cash} / ${u.food} / ${u.shards}`, inline: true },
-    { name: '⭐ Rating', value: `${(u.parkRating / 100).toFixed(1)} (hw ${(u.ratingHighWater / 100).toFixed(1)})`, inline: true },
-    { name: '🦕 Dinos', value: line(dinos.map((d) => `#${d.id} ${d.speciesId}${d.escapedAt !== null ? ' 🚨' : ''}${d.lotId ? ` @${d.lotId}` : ''}`).join('\n')), inline: false },
+    { name: `${emojiTag('dw_cash')} / ${emojiTag('dw_food')} / ${emojiTag('dw_shard')}`, value: `${u.cash} / ${u.food} / ${u.shards}`, inline: true },
+    { name: `${emojiTag('dw_star')} Rating`, value: `${(u.parkRating / 100).toFixed(1)} (hw ${(u.ratingHighWater / 100).toFixed(1)})`, inline: true },
+    { name: '🦕 Dinos', value: line(dinos.map((d) => `#${d.id} ${d.speciesId}${d.escapedAt !== null ? ` ${emojiTag('dw_alert')}` : ''}${d.lotId ? ` @${d.lotId}` : ''}`).join('\n')), inline: false },
     { name: '🥚 Eggs', value: line(eggs.map((e) => `#${e.id} ${e.rarity}${e.incubationStartedAt ? ' (incubating)' : ''}`).join('\n')), inline: false },
     { name: '🏗️ Lots', value: line(lots.map((l) => `#${l.id} ${l.kind} lv${l.level}`).join('\n')), inline: false },
     { name: '🤝 Trades / 🧭 Expeditions', value: `${trades} pending / ${exps} active`, inline: false },
