@@ -1,7 +1,16 @@
 # Image generation prompts — expedition site art
 
-Generated with ChatGPT image generation. These prompts are the source of truth
-for regenerating or extending the set — keep them in sync with any new assets.
+The volcano/frozen banners and volcano thumb were generated with ChatGPT image
+generation; the remaining coastal/amber banners and the coastal/amber/frozen
+thumbs were generated with Higgsfield Nano Banana Pro. These prompts are the
+source of truth for regenerating or extending the set — keep them in sync with
+any new assets.
+
+Note on thumbs: some models render a "square cartoon game icon of …" prompt as
+a rounded-rectangle app-icon tile with a border. To force a full-bleed square
+(artwork to all four edges, no tile), phrase the thumb as a "close-up cartoon
+scene filling the entire square frame edge to edge … NOT an app icon — no
+rounded-rectangle tile, no border, no rounded corners" rather than "game icon".
 
 ## Shared style block
 
