@@ -3,6 +3,7 @@ import { Client, GatewayIntentBits, Events } from 'discord.js';
 import { loadConfig } from './core/config.js';
 import { createDb, migrateDb } from './core/db/index.js';
 import { EconomyService } from './core/economy.js';
+import { loadAppEmojis } from './core/emojis.js';
 import { logger } from './core/logger.js';
 import { ModuleRegistry } from './core/modules.js';
 import { clientSender, deliverNotification, eggHatchHandler, expeditionReturnHandler } from './core/notify.js';
@@ -44,6 +45,7 @@ client.on(Events.InteractionCreate, (i) => {
 client.on('error', (e) => logger.error({ err: e }, 'discord client error'));
 client.once(Events.ClientReady, (c) => {
   logger.info(`Logged in as ${c.user.tag}`);
+  void loadAppEmojis(client);
   scheduler.tick(Date.now()).catch((e) => logger.error({ err: e }, 'scheduler boot scan failed'));
 });
 await client.login(config.token);
