@@ -93,21 +93,22 @@ export const tradingModule: ModuleManifest = {
               food: i.options.getInteger('want-food') ?? 0,
             };
             const t = createTrade(ctx, i.user.id, target.id, offer, request);
+            await i.reply({ content: `🤝 Trade **#${t.id}** sent to <@${target.id}>.\nYou give: ${summarize(offer)}\nYou want: ${summarize(request)}\nThey run \`/trade accept id:${t.id}\`.` });
+            // originGuildId is the acting user's guild, so delivery falls back to DM when the counterparty isn't in that guild's notify channel.
             await ctx.notify(target.id, i.guildId,
               `📨 Trade #${t.id} from **${i.user.displayName}** — they give ${summarize(offer)}, they want ${summarize(request)}. Run \`/trade accept id:${t.id}\`.`);
-            await i.reply({ content: `🤝 Trade **#${t.id}** sent to <@${target.id}>.\nYou give: ${summarize(offer)}\nYou want: ${summarize(request)}\nThey run \`/trade accept id:${t.id}\`.` });
           } else if (sub === 'list') {
             await i.reply(tradeListPayload(ctx, i.user.id, 1));
           } else if (sub === 'accept') {
             const t = acceptTrade(ctx, i.user.id, i.options.getInteger('id', true));
-            await ctx.notify(t.fromUser, i.guildId, `✅ **${i.user.displayName}** accepted your trade #${t.id}!`);
             await i.reply({ content: `✅ Trade #${t.id} completed!` });
+            await ctx.notify(t.fromUser, i.guildId, `✅ **${i.user.displayName}** accepted your trade #${t.id}!`);
           } else if (sub === 'decline') {
             const declineId = i.options.getInteger('id', true);
             const declined = ctx.db.select().from(schema.trades).where(eq(schema.trades.id, declineId)).get();
             declineTrade(ctx, i.user.id, declineId);
-            if (declined) await ctx.notify(declined.fromUser, i.guildId, `❌ Your trade #${declined.id} was declined.`);
             await i.reply({ content: '❌ Trade declined.' });
+            if (declined) await ctx.notify(declined.fromUser, i.guildId, `❌ Your trade #${declined.id} was declined.`);
           } else {
             cancelTrade(ctx, i.user.id, i.options.getInteger('id', true));
             await i.reply({ content: '🚫 Trade cancelled.' });

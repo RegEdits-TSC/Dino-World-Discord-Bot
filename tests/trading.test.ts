@@ -222,4 +222,9 @@ describe('trade list pagination', () => {
     const payload = b.replies[0] as { embeds: Array<{ toJSON(): { footer?: { text: string } } }> };
     expect(payload.embeds[0].toJSON().footer?.text).toBe('Page 2/2');
   });
+  it('rejects another user\'s click', async () => {
+    const b = fakeButton({ customId: 'trade:list:a:2', user: 'b', guild: 'g1' });
+    await tradingModule.components[0].execute(ctx, b.asInteraction() as never);
+    expect((b.replies[0] as { content: string }).content).toContain('Not your');
+  });
 });

@@ -131,6 +131,12 @@ describe('egg list pagination', () => {
     const payload = b.replies[0] as { embeds: Array<{ toJSON(): { footer?: { text: string } } }> };
     expect(payload.embeds[0].toJSON().footer?.text).toBe('Page 2/2');
   });
+  it('rejects another user\'s click', async () => {
+    const hatchComponent = hatcheryModule.components.find((c) => c.prefix === 'hatch')!;
+    const b = fakeButton({ customId: 'hatch:eggs:u1:2', user: 'u2', guild: 'g1' });
+    await hatchComponent.execute(ctx, b.asInteraction() as never);
+    expect((b.replies[0] as { content: string }).content).toContain('Not your');
+  });
 });
 
 describe('/mythic confirm flow', () => {
