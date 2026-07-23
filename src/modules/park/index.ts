@@ -28,9 +28,9 @@ function dinoListPayload(ctx: Ctx, userId: string, page: number) {
   const nowMs = ctx.now();
   const lines = items.length
     ? items.map((d) => {
-        const status = d.dino.escapedAt !== null ? '🚨 ESCAPED — /rescue' : `${Math.round(d.comfort * 100)}% comfort`;
+        const status = d.dino.escapedAt !== null ? `${emojiTag('dw_alert')} ESCAPED — /rescue` : `${Math.round(d.comfort * 100)}% comfort`;
         const warn = d.dino.escapedAt === null && d.escapeAt !== null && d.escapeAt - nowMs <= ESCAPE_WARN_MS
-          ? ` — ⚠ escapes <t:${Math.floor(d.escapeAt / 1000)}:R>` : '';
+          ? ` — ${emojiTag('dw_hunger')} escapes <t:${Math.floor(d.escapeAt / 1000)}:R>` : '';
         const loc = d.dino.lotId ? `lot ${d.dino.lotId}` : 'unassigned';
         return `#${d.dino.id} ${d.species.name} — ${status}${warn} — ${loc}`;
       }).join('\n')

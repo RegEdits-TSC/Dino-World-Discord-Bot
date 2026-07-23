@@ -113,6 +113,20 @@ describe('park module commands', () => {
   });
 });
 
+describe('Collect button', () => {
+  it('shows a plain numeric label with the coin as a real emoji, not text', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 1234, 0, {});
+    const button = (p.components[0] as {
+      toJSON(): { components: Array<{ label: string; emoji?: { name: string; animated: boolean } }> };
+    }).toJSON().components[0];
+    expect(button.label).toBe('Collect 1,234');
+    // No app emoji map is loaded in tests, so this is the unicode fallback for dw_cash,
+    // resolved by discord.js into the button's structured emoji field (not embedded in the label).
+    expect(button.emoji).toEqual({ name: '💰', animated: false });
+  });
+});
+
 describe('dashboard warnings', () => {
   it('shows the at-risk count in the dino field', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
