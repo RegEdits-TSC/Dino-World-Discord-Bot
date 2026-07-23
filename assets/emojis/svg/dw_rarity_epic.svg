@@ -2,6 +2,6 @@
   <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c393e8"/><stop offset="1" stop-color="#7238a8"/></linearGradient></defs>
   <polygon points="32,8 54,26 32,56 10,26" fill="url(#g)" stroke="#3d1a5e" stroke-width="3"/>
   <polygon points="32,15 45,26 32,44 19,26" fill="#ffffff" opacity="0.25"/>
-  <polygon points="52,6 54,12 60,14 54,16 52,22 50,16 44,14 50,12" fill="#ffffff"/>
-  <polygon points="10,44 11,48 15,49 11,50 10,54 9,50 5,49 9,48" fill="#ffffff" opacity="0.8"/>
+  <polygon points="52,6 54,12 60,14 54,16 52,22 50,16 44,14 50,12" fill="#ffffff" stroke="#3d1a5e" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="10,44 11,48 15,49 11,50 10,54 9,50 5,49 9,48" fill="#ffffff" opacity="0.8" stroke="#3d1a5e" stroke-width="1.5" stroke-linejoin="round"/>
 </svg>
