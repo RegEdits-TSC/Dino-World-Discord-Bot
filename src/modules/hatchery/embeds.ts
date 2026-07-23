@@ -36,6 +36,7 @@ export function revealPayload(species: Species) {
       { name: 'Biome', value: species.biomeTags.join(', '), inline: true },
       { name: 'Income/hr', value: String(stats.incomePerHr), inline: true },
     );
+  embed.setFooter({ text: 'Next: /dino assign — unassigned dinos earn nothing.' });
   return { embeds: [embed], components: [], files: [], attachments: [] };
 }
 

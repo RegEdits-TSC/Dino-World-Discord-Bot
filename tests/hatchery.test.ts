@@ -86,6 +86,10 @@ describe('hatchery visuals', () => {
     expect(p.files).toEqual([]);
     expect(p.attachments).toEqual([]);
   });
+  it('reveal embed points at /dino assign', () => {
+    const p = revealPayload(getSpecies('velociraptor'));
+    expect(p.embeds[0].toJSON().footer?.text).toContain('/dino assign');
+  });
   it('eggListPayload thumbnails the ready egg over incubating and newest', () => {
     const ready = { ...addEgg('epic'), hatchesAt: 5, incubationStartedAt: 1 };
     const incubating = { ...addEgg('rare'), hatchesAt: 999_999, incubationStartedAt: 1 };

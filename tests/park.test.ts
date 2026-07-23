@@ -104,6 +104,13 @@ describe('park module commands', () => {
     expect(payload.embeds).toHaveLength(1);
     expect(payload.components).toHaveLength(1);
   });
+  it('/build paddock reply hints at assigning a dino', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'seed', 0);
+    const i = fakeCommand({ name: 'build', user: 'u1', options: { kind: 'herbivore_paddock' } });
+    await parkModule.commands.find((c) => c.data.name === 'build')!.execute(ctx, i.asChatInput());
+    expect((i.replies[0] as { content: string }).content).toContain('/dino assign');
+  });
 });
 
 describe('dashboard warnings', () => {

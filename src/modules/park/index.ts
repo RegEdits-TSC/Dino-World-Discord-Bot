@@ -102,7 +102,8 @@ export const parkModule: ModuleManifest = {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         try {
           const lot = buildLot(ctx, i.user.id, i.options.getString('kind', true));
-          await i.reply({ content: `🏗️ Built **${lot.name}** (lot #${lot.id}).` });
+          const hint = lot.type === 'paddock' ? ' Assign a dino with /dino assign to start earning.' : '';
+          await i.reply({ content: `🏗️ Built **${lot.name}** (lot #${lot.id}).${hint}` });
         } catch (e) {
           if (e instanceof LotLimitError) await i.reply({ content: 'All lots full. More slots unlock with park rating.', flags: MessageFlags.Ephemeral });
           else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash.', flags: MessageFlags.Ephemeral });
