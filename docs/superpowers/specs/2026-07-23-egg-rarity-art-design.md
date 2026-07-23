@@ -1,7 +1,7 @@
 # Egg rarity art regeneration — design
 
 Date: 2026-07-23
-Status: approved
+Status: superseded by `2026-07-23-egg-nest-art-design.md`
 
 ## Goal
 
