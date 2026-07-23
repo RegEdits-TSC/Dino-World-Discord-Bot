@@ -119,6 +119,39 @@ describe('dashboard warnings', () => {
     const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🦕 Dinos')!;
     expect(field.value).toBe('3');
   });
+  it('adds a capped field when capped', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 1, 480, 0, { capped: true });
+    const names = p.embeds[0].toJSON().fields!.map((f) => f.name);
+    expect(names).toContain('⛔ Income capped');
+  });
+  it('no capped field otherwise', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 1, 480, 0, {});
+    const names = p.embeds[0].toJSON().fields!.map((f) => f.name);
+    expect(names).not.toContain('⛔ Income capped');
+  });
+});
+
+describe('/park view cap warning condition', () => {
+  const viewFields = async () => {
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
+    return (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string }> } }> }).embeds[0].toJSON().fields!.map((f) => f.name);
+  };
+  it('warns once pending income has saturated the cap window', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'seed', 0);
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    ctx.db.insert(schema.dinos).values({ userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    ctx.setNow(9 * H); // past the default 8h cap, dino still earning (escape at 40h)
+    expect(await viewFields()).toContain('⛔ Income capped');
+  });
+  it('does not warn when nothing is earning, however long you idle', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.setNow(9 * H); // same elapsed time, zero pending
+    expect(await viewFields()).not.toContain('⛔ Income capped');
+  });
 });
 
 describe('/dino list escape countdown', () => {

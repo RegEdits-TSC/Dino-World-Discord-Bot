@@ -18,6 +18,9 @@ export function dashboardPayload(
       { name: '🦕 Dinos', value: dinoValue, inline: true },
       { name: '🏗️ Lots', value: lots.map((l) => `#${l.id} ${l.name} (lvl ${l.level})`).join('\n') || 'None — /build', inline: false },
     );
+  if (opts.capped) {
+    embed.addFields({ name: '⛔ Income capped', value: 'Idle earnings hit the Visitor Center cap — collect now to restart them.' });
+  }
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId('park:collect').setLabel(`💰 Collect ${pending.toLocaleString()}`).setStyle(ButtonStyle.Success),
   );

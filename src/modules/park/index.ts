@@ -2,7 +2,7 @@ import { SlashCommandBuilder, MessageFlags, EmbedBuilder } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
-import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, LotLimitError, UnknownKindError, toClockDinos } from './service.js';
+import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, toClockDinos } from './service.js';
 import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError } from './dinos.js';
 import { dashboardPayload, withParkImage } from './embeds.js';
@@ -66,7 +66,9 @@ export const parkModule: ModuleManifest = {
           const e = escapeAt(c);
           return e !== null && e - nowMs <= ESCAPE_WARN_MS;
         }).length;
-        const base = dashboardPayload(user, lots, dinos.length, pendingIncome(ctx, i.user.id), escapedCount, { atRiskCount });
+        const pending = pendingIncome(ctx, i.user.id);
+        const capped = pending > 0 && ctx.now() - user.lastCollectAt >= capHours(lots) * 3_600_000;
+        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped });
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
         await i.editReply(png ? withParkImage(base, png) : base);
