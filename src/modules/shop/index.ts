@@ -12,6 +12,10 @@ import { SELL_CASH } from '../../data/sell.js';
 import { DECOR } from '../../data/decor.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, capitalize } from '../../core/autocomplete.js';
+import { assetImage } from '../../core/images.js';
+import { RARITY_COLOR } from '../hatchery/embeds.js';
+import { RARITY } from '../../data/rarity.js';
+import type { AttachmentBuilder } from 'discord.js';
 
 const eggRarityChoices = (['common', 'uncommon', 'rare', 'epic', 'legendary'] as const).map((r) => ({ name: r, value: r }));
 
@@ -33,17 +37,29 @@ export const shopModule: ModuleManifest = {
             const eggLines = offers.length ? offers.map((r) => `• ${r} egg — ${SHOP_EGG_PRICES[r].toLocaleString()} cash`).join('\n') : 'No eggs today.';
             const foodLine = FOOD_BUNDLES.map((b) => `${b} food (${b * FOOD_UNIT_COST} cash)`).join(' · ');
             const decorLine = Object.values(DECOR).map((d) => `${d.name} (${d.cost})`).join(' · ');
-            await i.reply({ embeds: [new EmbedBuilder().setTitle('🏪 Shop — today').setColor(0x5865F2).addFields(
+            const embed = new EmbedBuilder().setTitle('🏪 Shop — today').setColor(0x5865F2).addFields(
               { name: '🥚 Eggs (/shop egg)', value: eggLines },
               { name: '🍖 Food (/shop food)', value: foodLine },
               { name: '🌴 Decor (/decorate)', value: decorLine },
-            )] });
+            );
+            const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+            const order = Object.keys(RARITY);
+            const best = offers.length ? offers.reduce((a, b) => (order.indexOf(b) > order.indexOf(a) ? b : a)) : null;
+            const img = best ? assetImage('eggs', best) : null;
+            if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }
+            await i.reply(payload);
           } else if (sub === 'egg') {
             const rarity = i.options.getString('rarity', true) as Rarity;
             const offers = dailyEggOffers(user.ratingHighWater, ctx.now());
             if (!offers.includes(rarity)) { await i.reply({ content: `A ${rarity} egg isn't in today's rotation — see /shop view.`, flags: MessageFlags.Ephemeral }); return; }
             const egg = buyEgg(ctx, i.user.id, rarity);
-            await i.reply({ content: `🥚 Bought a ${egg.rarity} egg (#${egg.id}). Incubate it with /incubate ${egg.id}.` });
+            const eggEmbed = new EmbedBuilder().setColor(RARITY_COLOR[egg.rarity] ?? 0x95a5a6)
+              .setTitle(`🥚 Bought a ${egg.rarity} egg (#${egg.id})`)
+              .setDescription(`Incubate it with /incubate ${egg.id}.`);
+            const eggPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [eggEmbed] };
+            const eggImg = assetImage('eggs', egg.rarity);
+            if (eggImg) { eggEmbed.setThumbnail(eggImg.url); eggPayload.files = [eggImg.file]; }
+            await i.reply(eggPayload);
           } else {
             buyFood(ctx, i.user.id, i.options.getInteger('units', true));
             await i.reply({ content: '🍖 Food purchased.' });

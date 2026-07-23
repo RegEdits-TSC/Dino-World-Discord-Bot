@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeCtx, fakeCommand } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
-import { topPlayers, collectionScore } from '../src/modules/leaderboards/service.js';
+import { topPlayers, collectionScore, playerRank } from '../src/modules/leaderboards/service.js';
 import { leaderboardsModule } from '../src/modules/leaderboards/index.js';
 import { schema } from '../src/core/db/index.js';
 
@@ -57,5 +57,36 @@ describe('/top command', () => {
     expect(desc).toMatch(/^\*\*1\.\*\* B/);                      // b has the most cash → ranked first
     expect(desc.indexOf('B')).toBeLessThan(desc.indexOf('C'));   // b before c
     expect(desc.indexOf('C')).toBeLessThan(desc.indexOf('A'));   // c before a
+  });
+});
+
+describe('playerRank', () => {
+  beforeEach(() => { ctx = makeCtx(); }); // discard the outer describe's pre-seeded users
+  // New users start with cash 500 (schema default); apply deltas on top.
+  const seed = (id: string, extraCash: number) => {
+    getOrCreateUser(ctx, id, id);
+    if (extraCash > 0) ctx.economy.apply(id, { cash: extraCash }, 'seed', 0);
+  };
+  it('ranks with the same ordering as topPlayers', () => {
+    seed('a', 200); seed('b', 100); seed('c', 0);   // cash: 700 / 600 / 500
+    expect(playerRank(ctx, 'cash', 'global', null, 'b')).toEqual({ rank: 2, value: 600 });
+  });
+  it('returns null for an unknown user', () => {
+    expect(playerRank(ctx, 'cash', 'global', null, 'nobody')).toBeNull();
+  });
+  it('/top adds a your-rank footer when the caller is outside the shown rows', async () => {
+    for (let n = 0; n < 11; n++) seed(`rich${n}`, 1_000 + n);
+    seed('poorest', 0);
+    const i = fakeCommand({ name: 'top', user: 'poorest', options: { metric: 'cash', scope: 'global' } });
+    await leaderboardsModule.commands[0].execute(ctx, i.asChatInput());
+    const embed = (i.replies[0] as { embeds: Array<{ toJSON(): { footer?: { text: string } } }> }).embeds[0].toJSON();
+    expect(embed.footer?.text).toMatch(/^Your rank: #12 — /);
+  });
+  it('/top has no footer when the caller is in the top rows', async () => {
+    seed('rich', 9_999);
+    const i = fakeCommand({ name: 'top', user: 'rich', options: { metric: 'cash', scope: 'global' } });
+    await leaderboardsModule.commands[0].execute(ctx, i.asChatInput());
+    const embed = (i.replies[0] as { embeds: Array<{ toJSON(): { footer?: { text: string } } }> }).embeds[0].toJSON();
+    expect(embed.footer).toBeUndefined();
   });
 });

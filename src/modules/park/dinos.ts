@@ -3,7 +3,7 @@ import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { getSpecies } from '../../data/species/index.js';
 import { DECOR } from '../../data/decor.js';
-import { comfortAt } from '../../core/clock.js';
+import { comfortAt, escapeAt } from '../../core/clock.js';
 import { toClockDinos, type Lot } from './service.js';
 import { recomputeRating } from './rating.js';
 
@@ -53,5 +53,10 @@ export function decorateLot(ctx: Ctx, userId: string, lotId: number, decorKind: 
 
 export function listDinos(ctx: Ctx, userId: string) {
   const { clockDinos, dinos } = toClockDinos(ctx, userId);
-  return dinos.map((d, i) => ({ dino: d, species: getSpecies(d.speciesId), comfort: comfortAt(clockDinos[i], ctx.now()) }));
+  return dinos.map((d, i) => ({
+    dino: d,
+    species: getSpecies(d.speciesId),
+    comfort: comfortAt(clockDinos[i], ctx.now()),
+    escapeAt: escapeAt(clockDinos[i]),
+  }));
 }

@@ -4,6 +4,7 @@ import { makeCtx, fakeCommand } from './harness.js';
 import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, BASE_LOT_SLOTS } from '../src/modules/park/service.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
+import { dashboardPayload } from '../src/modules/park/embeds.js';
 
 const H = 3_600_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -102,5 +103,79 @@ describe('park module commands', () => {
     const payload = i.replies[0] as { embeds: unknown[]; components: unknown[] };
     expect(payload.embeds).toHaveLength(1);
     expect(payload.components).toHaveLength(1);
+  });
+  it('/build paddock reply hints at assigning a dino', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'seed', 0);
+    const i = fakeCommand({ name: 'build', user: 'u1', options: { kind: 'herbivore_paddock' } });
+    await parkModule.commands.find((c) => c.data.name === 'build')!.execute(ctx, i.asChatInput());
+    expect((i.replies[0] as { content: string }).content).toContain('/dino assign');
+  });
+});
+
+describe('dashboard warnings', () => {
+  it('shows the at-risk count in the dino field', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 3, 0, 0, { atRiskCount: 2 });
+    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🦕 Dinos')!;
+    expect(field.value).toContain('⚠ 2 at risk');
+  });
+  it('omits the warning at zero', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 3, 0, 0, {});
+    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🦕 Dinos')!;
+    expect(field.value).toBe('3');
+  });
+  it('adds a capped field when capped', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 1, 480, 0, { capped: true });
+    const names = p.embeds[0].toJSON().fields!.map((f) => f.name);
+    expect(names).toContain('⛔ Income capped');
+  });
+  it('no capped field otherwise', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 1, 480, 0, {});
+    const names = p.embeds[0].toJSON().fields!.map((f) => f.name);
+    expect(names).not.toContain('⛔ Income capped');
+  });
+});
+
+describe('/park view cap warning condition', () => {
+  const viewFields = async () => {
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
+    return (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string }> } }> }).embeds[0].toJSON().fields!.map((f) => f.name);
+  };
+  it('warns once pending income has saturated the cap window', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'seed', 0);
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    ctx.db.insert(schema.dinos).values({ userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    ctx.setNow(9 * H); // past the default 8h cap, dino still earning (escape at 40h)
+    expect(await viewFields()).toContain('⛔ Income capped');
+  });
+  it('does not warn when nothing is earning, however long you idle', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.setNow(9 * H); // same elapsed time, zero pending
+    expect(await viewFields()).not.toContain('⛔ Income capped');
+  });
+});
+
+describe('/dino list escape countdown', () => {
+  it('warns only inside the ESCAPE_WARN_MS window', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'seed', 0);
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    const H = 3_600_000;
+    ctx.setNow(100 * H);
+    const esc = 40 * H; // escapeAt - lastFedAt for this species/paddock
+    // escapes in 11h → inside the 12h window
+    ctx.db.insert(schema.dinos).values({ userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: ctx.now() - (esc - 11 * H), hatchedAt: 0 }).run();
+    // escapes in 13h → outside
+    ctx.db.insert(schema.dinos).values({ userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: ctx.now() - (esc - 13 * H), hatchedAt: 0 }).run();
+    const i = fakeCommand({ name: 'dino', sub: 'list', user: 'u1' });
+    await parkModule.commands.find((c) => c.data.name === 'dino')!.execute(ctx, i.asChatInput());
+    const desc = (i.replies[0] as { embeds: Array<{ toJSON(): { description?: string } }> }).embeds[0].toJSON().description!;
+    expect(desc.match(/⚠ escapes/g)).toHaveLength(1);
   });
 });

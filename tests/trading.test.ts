@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeCtx } from './harness.js';
+import { makeCtx, fakeButton } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { createTrade, acceptTrade, TradeError } from '../src/modules/trading/service.js';
 import { declineTrade, cancelTrade, expireStale, listTrades } from '../src/modules/trading/service.js';
@@ -161,5 +161,70 @@ describe('trading module', () => {
     const acceptCmd = fakeCommand({ name: 'trade', sub: 'accept', user: 'b', options: { id: t.id } });
     await tradingModule.commands[0].execute(ctx, acceptCmd.asChatInput());
     expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.userId).toBe('b');
+  });
+});
+
+describe('trade notifications', () => {
+  it('offer pings the recipient', async () => {
+    ctx.economy.apply('a', { cash: 1_000 }, 'seed', 0);
+    const i = fakeCommand({ name: 'trade', sub: 'offer', user: 'a', guild: 'g1', options: { user: 'b', 'give-cash': 100 } });
+    await tradingModule.commands[0].execute(ctx, i.asChatInput());
+    expect(ctx.notifications).toHaveLength(1);
+    expect(ctx.notifications[0].userId).toBe('b');
+    expect(ctx.notifications[0].originGuildId).toBe('g1');
+    expect(ctx.notifications[0].message).toContain('/trade accept');
+  });
+  it('accept pings the offerer', async () => {
+    ctx.economy.apply('a', { cash: 1_000 }, 'seed', 0);
+    const t = createTrade(ctx, 'a', 'b', { dinoIds: [], eggIds: [], cash: 100, food: 0 }, { dinoIds: [], eggIds: [], cash: 0, food: 0 });
+    const i = fakeCommand({ name: 'trade', sub: 'accept', user: 'b', guild: 'g1', options: { id: t.id } });
+    await tradingModule.commands[0].execute(ctx, i.asChatInput());
+    expect(ctx.notifications.some((n) => n.userId === 'a' && n.message.includes('accepted'))).toBe(true);
+  });
+  it('decline pings the offerer', async () => {
+    ctx.economy.apply('a', { cash: 1_000 }, 'seed', 0);
+    const t = createTrade(ctx, 'a', 'b', { dinoIds: [], eggIds: [], cash: 100, food: 0 }, { dinoIds: [], eggIds: [], cash: 0, food: 0 });
+    const i = fakeCommand({ name: 'trade', sub: 'decline', user: 'b', guild: 'g1', options: { id: t.id } });
+    await tradingModule.commands[0].execute(ctx, i.asChatInput());
+    expect(ctx.notifications.some((n) => n.userId === 'a' && n.message.includes('declined'))).toBe(true);
+  });
+});
+
+describe('trade list pagination', () => {
+  it('has the trade module\'s first ComponentDef under the trade prefix', () => {
+    expect(tradingModule.components[0].prefix).toBe('trade');
+  });
+  it('/trade list with 11 pending trades shows Page 1/2', async () => {
+    for (let n = 0; n < 11; n++) {
+      ctx.db.insert(schema.trades).values({
+        fromUser: 'b', toUser: 'a',
+        offer: { dinoIds: [], eggIds: [], cash: 1, food: 0 },
+        request: { dinoIds: [], eggIds: [], cash: 0, food: 0 },
+        status: 'pending', createdAt: ctx.now(),
+      }).run();
+    }
+    const i = fakeCommand({ name: 'trade', sub: 'list', user: 'a' });
+    await tradingModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: Array<{ toJSON(): { footer?: { text: string } } }> };
+    expect(payload.embeds[0].toJSON().footer?.text).toBe('Page 1/2');
+  });
+  it('a trade:list:a:2 click by \'a\' updates to page 2', async () => {
+    for (let n = 0; n < 11; n++) {
+      ctx.db.insert(schema.trades).values({
+        fromUser: 'b', toUser: 'a',
+        offer: { dinoIds: [], eggIds: [], cash: 1, food: 0 },
+        request: { dinoIds: [], eggIds: [], cash: 0, food: 0 },
+        status: 'pending', createdAt: ctx.now(),
+      }).run();
+    }
+    const b = fakeButton({ customId: 'trade:list:a:2', user: 'a', guild: 'g1' });
+    await tradingModule.components[0].execute(ctx, b.asInteraction() as never);
+    const payload = b.replies[0] as { embeds: Array<{ toJSON(): { footer?: { text: string } } }> };
+    expect(payload.embeds[0].toJSON().footer?.text).toBe('Page 2/2');
+  });
+  it('rejects another user\'s click', async () => {
+    const b = fakeButton({ customId: 'trade:list:a:2', user: 'b', guild: 'g1' });
+    await tradingModule.components[0].execute(ctx, b.asInteraction() as never);
+    expect((b.replies[0] as { content: string }).content).toContain('Not your');
   });
 });

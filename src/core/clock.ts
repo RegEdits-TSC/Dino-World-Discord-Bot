@@ -4,6 +4,8 @@ import type { Species, PaddockDef } from '../data/types.js';
 export const HUNGER_DRAIN_MS = 48 * 3_600_000;   // spec §3.4
 export const GRACE_MS = 8 * 3_600_000;
 export const ESCAPE_COMFORT = 0.25;
+/** Show "escapes soon" warnings when the escape instant is within this window. */
+export const ESCAPE_WARN_MS = 12 * 3_600_000;
 
 export interface ClockDino {
   species: Species; paddock: PaddockDef | null; decor: string[];
@@ -37,7 +39,7 @@ function comfortCrossing(d: ClockDino): number | null {
 }
 
 /** Raw escape instant (crossing + grace), independent of any observation time. */
-function rawEscape(d: ClockDino): number | null {
+export function escapeAt(d: ClockDino): number | null {
   if (d.escapedAt !== null) return d.escapedAt;
   const crossing = comfortCrossing(d);
   return crossing === null ? null : crossing + GRACE_MS;
@@ -46,7 +48,7 @@ function rawEscape(d: ClockDino): number | null {
 /** The escape instant if the dino has escaped as of `from`, else null. */
 export function escapeMoment(d: ClockDino, from: number): number | null {
   if (d.escapedAt !== null) return d.escapedAt;
-  const esc = rawEscape(d);
+  const esc = escapeAt(d);
   return esc !== null && esc <= from ? esc : null;
 }
 
@@ -60,7 +62,7 @@ export function accruedIncome(
     if (!d.paddock) continue;                                // unassigned earns nothing
     if (d.escapedAt !== null && d.escapedAt <= from) continue; // already escaped before window
     let dinoEnd = end;
-    const esc = rawEscape(d);
+    const esc = escapeAt(d);
     if (esc !== null) dinoEnd = Math.min(dinoEnd, Math.max(from, esc));
     const hungerZero = d.lastFedAt + (d.hungerAtFed / 100) * HUNGER_DRAIN_MS;
     dinoEnd = Math.min(dinoEnd, Math.max(from, hungerZero));

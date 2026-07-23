@@ -1,7 +1,7 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
-import { topPlayers, type Metric, type Scope } from './service.js';
+import { topPlayers, playerRank, type Metric, type Scope } from './service.js';
 
 const METRIC_LABEL: Record<Metric, string> = { rating: '⭐ Rating', cash: '💰 Cash', collection: '🦕 Collection' };
 function formatValue(metric: Metric, value: number): string {
@@ -24,9 +24,14 @@ export const leaderboardsModule: ModuleManifest = {
         const body = rows.length
           ? rows.map((r, idx) => `**${idx + 1}.** ${r.displayName} — ${formatValue(metric, r.value)}`).join('\n')
           : 'No players yet.';
-        await i.reply({ embeds: [new EmbedBuilder()
+        const embed = new EmbedBuilder()
           .setTitle(`🏆 Top ${METRIC_LABEL[metric]} — ${scope}`)
-          .setDescription(body).setColor(0xf1c40f)] });
+          .setDescription(body).setColor(0xf1c40f);
+        if (!rows.some((r) => r.userId === i.user.id)) {
+          const mine = playerRank(ctx, metric, scope, i.guildId, i.user.id);
+          if (mine) embed.setFooter({ text: `Your rank: #${mine.rank} — ${formatValue(metric, mine.value)}` });
+        }
+        await i.reply({ embeds: [embed] });
       } },
   ],
   components: [],

@@ -17,3 +17,6 @@
   tests/config.test.ts (expected modules).
 - Changing any command builder requires `npm run deploy-commands` and exactly
   one running bot instance per token.
+- Embed art ships from `assets/images/` via `assetImage` (`src/core/images.ts`);
+  a missing file means the embed renders without the image — absent art is
+  never an error. Generation prompts live in `docs/assets/prompts.md`.

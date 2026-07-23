@@ -2,21 +2,42 @@ import { SlashCommandBuilder, MessageFlags, EmbedBuilder } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
-import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, LotLimitError, UnknownKindError } from './service.js';
+import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, toClockDinos } from './service.js';
 import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError } from './dinos.js';
 import { dashboardPayload, withParkImage } from './embeds.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
 import { InsufficientFundsError } from '../../core/economy.js';
+import { escapeAt, ESCAPE_WARN_MS } from '../../core/clock.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { FACILITIES } from '../../data/facilities.js';
 import { DECOR } from '../../data/decor.js';
 import { getSpecies } from '../../data/species/index.js';
 import { matches, respondRanked, emptyRow, dinoLabel } from '../../core/autocomplete.js';
+import { paginate, pageRow } from '../../core/paginate.js';
+import type { Ctx } from '../../core/context.js';
 
 const kindChoices = [...Object.keys(PADDOCKS), ...Object.keys(FACILITIES)]
   .map((k) => ({ name: k.replaceAll('_', ' '), value: k }));
+
+function dinoListPayload(ctx: Ctx, userId: string, page: number) {
+  const all = listDinos(ctx, userId);
+  const { items, page: p, pages } = paginate(all, page);
+  const nowMs = ctx.now();
+  const lines = items.length
+    ? items.map((d) => {
+        const status = d.dino.escapedAt !== null ? '🚨 ESCAPED — /rescue' : `${Math.round(d.comfort * 100)}% comfort`;
+        const warn = d.dino.escapedAt === null && d.escapeAt !== null && d.escapeAt - nowMs <= ESCAPE_WARN_MS
+          ? ` — ⚠ escapes <t:${Math.floor(d.escapeAt / 1000)}:R>` : '';
+        const loc = d.dino.lotId ? `lot ${d.dino.lotId}` : 'unassigned';
+        return `#${d.dino.id} ${d.species.name} — ${status}${warn} — ${loc}`;
+      }).join('\n')
+    : 'No dinos yet. Hatch one!';
+  const embed = new EmbedBuilder().setTitle('🦕 Your dinos').setDescription(lines).setColor(0x3ba55c)
+    .setFooter({ text: `Page ${p}/${pages}` });
+  return { embeds: [embed], components: pages > 1 ? [pageRow('park', 'dinos', userId, p, pages)] : [] };
+}
 
 export const parkModule: ModuleManifest = {
   name: 'park',
@@ -58,7 +79,16 @@ export const parkModule: ModuleManifest = {
         const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, i.user.id)).all();
         const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all();
         const escapedCount = dinos.filter((d) => d.escapedAt !== null).length;
-        const base = dashboardPayload(user, lots, dinos.length, pendingIncome(ctx, i.user.id), escapedCount);
+        const { clockDinos } = toClockDinos(ctx, i.user.id);
+        const nowMs = ctx.now();
+        const atRiskCount = clockDinos.filter((c) => {
+          if (c.escapedAt !== null) return false;
+          const e = escapeAt(c);
+          return e !== null && e - nowMs <= ESCAPE_WARN_MS;
+        }).length;
+        const pending = pendingIncome(ctx, i.user.id);
+        const capped = pending > 0 && ctx.now() - user.lastCollectAt >= capHours(lots) * 3_600_000;
+        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped });
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
         await i.editReply(png ? withParkImage(base, png) : base);
@@ -72,7 +102,8 @@ export const parkModule: ModuleManifest = {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         try {
           const lot = buildLot(ctx, i.user.id, i.options.getString('kind', true));
-          await i.reply({ content: `🏗️ Built **${lot.name}** (lot #${lot.id}).` });
+          const hint = lot.type === 'paddock' ? ' Assign a dino with /dino assign to start earning.' : '';
+          await i.reply({ content: `🏗️ Built **${lot.name}** (lot #${lot.id}).${hint}` });
         } catch (e) {
           if (e instanceof LotLimitError) await i.reply({ content: 'All lots full. More slots unlock with park rating.', flags: MessageFlags.Ephemeral });
           else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash.', flags: MessageFlags.Ephemeral });
@@ -122,15 +153,7 @@ export const parkModule: ModuleManifest = {
         const sub = i.options.getSubcommand();
         try {
           if (sub === 'list') {
-            const dinos = listDinos(ctx, i.user.id);
-            const lines = dinos.length
-              ? dinos.map((d) => {
-                  const status = d.dino.escapedAt !== null ? '🚨 ESCAPED — /rescue' : `${Math.round(d.comfort * 100)}% comfort`;
-                  const loc = d.dino.lotId ? `lot ${d.dino.lotId}` : 'unassigned';
-                  return `#${d.dino.id} ${d.species.name} — ${status} — ${loc}`;
-                }).join('\n')
-              : 'No dinos yet. Hatch one!';
-            await i.reply({ embeds: [new EmbedBuilder().setTitle('🦕 Your dinos').setDescription(lines).setColor(0x3ba55c)] });
+            await i.reply(dinoListPayload(ctx, i.user.id, 1));
           } else if (sub === 'assign') {
             assignDino(ctx, i.user.id, i.options.getInteger('dino', true), i.options.getInteger('lot', true));
             await i.reply({ content: '🦕 Assigned.' });
@@ -206,6 +229,13 @@ export const parkModule: ModuleManifest = {
           settleEscapes(ctx, i.user.id);
           const { amount } = collectIncome(ctx, i.user.id);
           await i.reply({ content: amount > 0 ? `💰 Collected **${amount.toLocaleString()}** cash.` : 'Nothing to collect yet.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        const [, action, uid, pageStr] = i.customId.split(':');
+        if (action === 'dinos') {
+          if (i.user.id !== uid) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
+          settleEscapes(ctx, i.user.id);
+          await i.update(dinoListPayload(ctx, i.user.id, Number(pageStr)));
         }
       },
     },

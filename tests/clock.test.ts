@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hungerAt, paddockFit, comfortAt, escapeMoment, accruedIncome, HUNGER_DRAIN_MS, GRACE_MS } from '../src/core/clock.js';
+import { hungerAt, paddockFit, comfortAt, escapeMoment, accruedIncome, HUNGER_DRAIN_MS, GRACE_MS, escapeAt, ESCAPE_WARN_MS } from '../src/core/clock.js';
 import { triceratops } from '../src/data/species/triceratops.js';
 import { velociraptor } from '../src/data/species/velociraptor.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
@@ -62,5 +62,20 @@ describe('accruedIncome', () => {
     // hungerAtFed 10, fit 1.0 => hunger hits 0 at 4.8h; true income 60 * (0.5*0.10*4.8) = 14.4 -> floor 14
     const starving = fedTrike({ hungerAtFed: 10 });
     expect(accruedIncome([starving], 0, 24, 0, 8 * H)).toBe(14);
+  });
+});
+
+describe('escapeAt', () => {
+  const base = { hungerAtFed: 100, lastFedAt: 0, escapedAt: null };
+  it('is null for an unassigned dino', () => {
+    expect(escapeAt({ ...base, species: triceratops, paddock: null, decor: [] })).toBeNull();
+  });
+  it('is crossing + grace for an assigned dino', () => {
+    const e = escapeAt({ ...base, species: triceratops, paddock: herb, decor: [] });
+    expect(e).not.toBeNull();
+    expect(e!).toBeGreaterThan(GRACE_MS); // crossing is strictly positive from full hunger
+  });
+  it('returns the stamped instant for an already-escaped dino', () => {
+    expect(escapeAt({ ...base, escapedAt: 123, species: triceratops, paddock: herb, decor: [] })).toBe(123);
   });
 });
