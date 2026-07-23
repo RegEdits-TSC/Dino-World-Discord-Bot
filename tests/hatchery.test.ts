@@ -6,6 +6,8 @@ import { incubateEgg, hatchEgg, incubatorSlots, HatcheryError } from '../src/mod
 import { hatcheryModule } from '../src/modules/hatchery/index.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
+import { preHatchPayload, eggListPayload, revealPayload } from '../src/modules/hatchery/embeds.js';
+import { getSpecies } from '../src/data/species/index.js';
 
 const M = 60_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -63,5 +65,43 @@ describe('hatchery module', () => {
     const payload = b.replies[0] as { embeds: unknown[] };
     expect(payload.embeds).toHaveLength(1);
     expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, 'u1')).all()).toHaveLength(1);
+  });
+});
+
+describe('hatchery visuals', () => {
+  it('preHatchPayload sets the hero egg image and attaches the file', () => {
+    const p = preHatchPayload('rare', 7);
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare.png');
+    expect(p.files).toHaveLength(1);
+    expect(p.components).toHaveLength(1); // crack button preserved
+  });
+  it('preHatchPayload degrades to no image when the asset is missing', () => {
+    const p = preHatchPayload('not-a-rarity', 7);
+    expect(p.embeds[0].toJSON().image).toBeUndefined();
+    expect(p.files).toBeUndefined();
+  });
+  it('revealPayload clears attachments so the egg image disappears on crack', () => {
+    const p = revealPayload(getSpecies('velociraptor'));
+    expect(p.files).toEqual([]);
+    expect(p.attachments).toEqual([]);
+  });
+  it('eggListPayload thumbnails the ready egg over incubating and newest', () => {
+    const ready = { ...addEgg('epic'), hatchesAt: 5, incubationStartedAt: 1 };
+    const incubating = { ...addEgg('rare'), hatchesAt: 999_999, incubationStartedAt: 1 };
+    const newest = addEgg('common');
+    const p = eggListPayload([newest, incubating, ready], 10);
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://epic.png');
+    expect(p.files).toHaveLength(1);
+  });
+  it('eggListPayload falls back to newest-obtained when nothing is incubating', () => {
+    const older = { ...addEgg('common'), obtainedAt: 1 };
+    const newer = { ...addEgg('legendary'), obtainedAt: 2 };
+    const p = eggListPayload([older, newer], 10);
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://legendary.png');
+  });
+  it('eggListPayload with no eggs has no thumbnail', () => {
+    const p = eggListPayload([], 10);
+    expect(p.embeds[0].toJSON().thumbnail).toBeUndefined();
+    expect(p.files).toBeUndefined();
   });
 });

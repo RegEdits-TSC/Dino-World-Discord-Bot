@@ -1,8 +1,10 @@
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type AttachmentBuilder } from 'discord.js';
 import type { Species } from '../../data/types.js';
 import { RARITY } from '../../data/rarity.js';
+import { assetImage } from '../../core/images.js';
+import type { Egg } from './service.js';
 
-const RARITY_COLOR: Record<string, number> = {
+export const RARITY_COLOR: Record<string, number> = {
   common: 0x95a5a6, uncommon: 0x2ecc71, rare: 0x3498db, epic: 0x9b59b6, legendary: 0xf1c40f, mythic: 0xe74c3c,
 };
 
@@ -15,6 +17,14 @@ export function preHatchEmbed(rarity: string) {
   return new EmbedBuilder().setColor(RARITY_COLOR[rarity] ?? 0x95a5a6)
     .setTitle(`🥚 A ${rarity} egg trembles…`).setDescription('Something stirs inside. Crack it open!');
 }
+export function preHatchPayload(rarity: string, eggId: number) {
+  const embed = preHatchEmbed(rarity);
+  const payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof crackButton>[]; files?: AttachmentBuilder[] } =
+    { embeds: [embed], components: [crackButton(eggId)] };
+  const img = assetImage('eggs', rarity);
+  if (img) { embed.setImage(img.url); payload.files = [img.file]; }
+  return payload;
+}
 export function revealPayload(species: Species) {
   const stats = RARITY[species.rarity];
   const embed = new EmbedBuilder().setColor(RARITY_COLOR[species.rarity] ?? 0x95a5a6)
@@ -25,5 +35,26 @@ export function revealPayload(species: Species) {
       { name: 'Biome', value: species.biomeTags.join(', '), inline: true },
       { name: 'Income/hr', value: String(stats.incomePerHr), inline: true },
     );
-  return { embeds: [embed], components: [] };
+  return { embeds: [embed], components: [], files: [], attachments: [] };
+}
+
+// The egg the player most likely acts on next: ready-to-hatch, else incubating, else newest.
+function featuredEgg(eggs: Egg[], now: number): Egg | undefined {
+  return eggs.find((e) => e.hatchesAt !== null && e.hatchesAt <= now)
+    ?? eggs.find((e) => e.hatchesAt !== null && e.hatchesAt > now)
+    ?? [...eggs].sort((a, b) => b.obtainedAt - a.obtainedAt)[0];
+}
+
+export function eggListPayload(eggs: Egg[], now: number) {
+  const lines = eggs.length ? eggs.map((e) => {
+    const status = e.hatchesAt === null ? 'in inventory'
+      : e.hatchesAt <= now ? 'READY — /hatch' : `hatching (ready <t:${Math.floor(e.hatchesAt / 1000)}:R>)`;
+    return `#${e.id} — ${e.rarity} egg — ${status}`;
+  }).join('\n') : 'No eggs. Run /expedition or /shop.';
+  const embed = new EmbedBuilder().setTitle('🥚 Eggs').setDescription(lines).setColor(0x3ba55c);
+  const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+  const featured = featuredEgg(eggs, now);
+  const img = featured ? assetImage('eggs', featured.rarity) : null;
+  if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }
+  return payload;
 }
