@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
@@ -60,14 +60,12 @@ export const hatcheryModule: ModuleManifest = {
         .addStringOption((o) => o.setName('species').setDescription('Which Mythic').setRequired(true).addChoices(...mythicChoices)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
-        try {
-          const egg = buyMythicEgg(ctx, i.user.id, i.options.getString('species', true));
-          await i.reply({ content: `🌟 A Mythic **${getSpecies(egg.speciesId!).name}** egg is yours! Incubate it with /incubate ${egg.id}.` });
-        } catch (e) {
-          if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough shards (need 500).', flags: MessageFlags.Ephemeral });
-          else throw e;
-        }
+        const speciesId = i.options.getString('species', true);
+        const species = getSpecies(speciesId);
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId(`mythic:confirm:${speciesId}`).setLabel('🌟 Confirm — 500 shards').setStyle(ButtonStyle.Danger),
+        );
+        await i.reply({ content: `Spend **500 shards** on a Mythic **${species.name}** egg?`, components: [row], flags: MessageFlags.Ephemeral });
       } },
   ],
   components: [
@@ -86,6 +84,19 @@ export const hatcheryModule: ModuleManifest = {
           await i.update(revealPayload(species));
         } catch (e) {
           if (e instanceof HatcheryError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e;
+        }
+      } },
+    { prefix: 'mythic', async execute(ctx, i) {
+        const [, action, speciesId] = i.customId.split(':');
+        if (action !== 'confirm') return;
+        getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        try {
+          const egg = buyMythicEgg(ctx, i.user.id, speciesId);
+          await i.update({ content: `🌟 A Mythic **${getSpecies(egg.speciesId!).name}** egg is yours! Incubate it with /incubate ${egg.id}.`, components: [] });
+        } catch (e) {
+          if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough shards (need 500).', flags: MessageFlags.Ephemeral });
+          else throw e;
         }
       } },
   ],

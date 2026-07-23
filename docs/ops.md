@@ -369,8 +369,8 @@ A ~5-minute manual test to run in a development Discord server after each releas
    - Should confirm the notification channel was set.
    - Future hatch/expedition pings should post to that channel instead of falling back to DM.
 
-   **n) `/mythic species:<name>` (requires 4★ high-water park rating and 500 shards) → grants a Mythic egg.**
-   - Should deduct the shards and grant a Mythic egg of the requested species.
+   **n) `/mythic species:<name>` (requires 4★ high-water park rating and 500 shards)**
+   - Should show a confirm button and deduct nothing yet; confirming should deduct the shards and grant a Mythic egg of the requested species.
 
 5. **Test the care loop** (care module — feeding and rescue):
 

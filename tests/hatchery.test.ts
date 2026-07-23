@@ -8,6 +8,7 @@ import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 import { preHatchPayload, eggListPayload, revealPayload } from '../src/modules/hatchery/embeds.js';
 import { getSpecies } from '../src/data/species/index.js';
+import { mythicSpeciesChoices } from '../src/modules/shop/shards.js';
 
 const M = 60_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -125,5 +126,29 @@ describe('egg list pagination', () => {
     await hatchComponent.execute(ctx, b.asInteraction() as never);
     const payload = b.replies[0] as { embeds: Array<{ toJSON(): { footer?: { text: string } } }> };
     expect(payload.embeds[0].toJSON().footer?.text).toBe('Page 2/2');
+  });
+});
+
+describe('/mythic confirm flow', () => {
+  const mythicId = mythicSpeciesChoices()[0].id;
+  beforeEach(() => {
+    ctx.economy.apply('u1', { shards: 500 }, 'seed', 0);
+    ctx.db.update(schema.users).set({ ratingHighWater: 400 }).where(eq(schema.users.discordId, 'u1')).run();
+  });
+  it('command replies with a confirm button and spends nothing', async () => {
+    const i = fakeCommand({ name: 'mythic', user: 'u1', options: { species: mythicId } });
+    await hatcheryModule.commands.find((c) => c.data.name === 'mythic')!.execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as { components: unknown[]; content: string };
+    expect(payload.content).toContain('500 shards');
+    expect(payload.components).toHaveLength(1);
+    const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+    expect(user.shards).toBe(500); // nothing charged yet
+  });
+  it('confirm button buys the egg', async () => {
+    const b = fakeButton({ customId: `mythic:confirm:${mythicId}`, user: 'u1', guild: 'g1' });
+    const mythicComponent = hatcheryModule.components.find((c) => c.prefix === 'mythic')!;
+    await mythicComponent.execute(ctx, b.asInteraction() as never);
+    const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'u1')).all();
+    expect(eggs.some((e) => e.rarity === 'mythic')).toBe(true);
   });
 });
