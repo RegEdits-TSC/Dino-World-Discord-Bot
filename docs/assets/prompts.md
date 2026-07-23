@@ -1,10 +1,11 @@
-# Image generation prompts — expedition site art
+# Image generation prompts — egg + expedition site art
 
 The volcano/frozen banners and volcano thumb were generated with ChatGPT image
 generation; the remaining coastal/amber banners and the coastal/amber/frozen
-thumbs were generated with Higgsfield Nano Banana Pro. These prompts are the
-source of truth for regenerating or extending the set — keep them in sync with
-any new assets.
+thumbs were generated with Higgsfield Nano Banana Pro. The six egg rarities were
+generated with Higgsfield Nano Banana Pro as a reference chain (see the Egg
+rarities section). These prompts are the source of truth for regenerating or
+extending the set — keep them in sync with any new assets.
 
 Note on thumbs: some models render a "square cartoon game icon of …" prompt as
 a rounded-rectangle app-icon tile with a border. To force a full-bleed square
@@ -35,6 +36,66 @@ composition with one central landmark and a simple background (readable at
 Site ids: `coastal_dig`, `amber_ridge`, `frozen_cliffs`, `volcano_core`.
 
 ---
+
+## Egg rarities
+
+The six egg icons in `assets/images/eggs/` share one silhouette so they read as
+a set; rarity is expressed only through shell color, pattern, and escalating
+effects. Shell colors track the embed accent colors in
+`src/modules/hatchery/embeds.ts`.
+
+| File | Size | Use |
+|---|---|---|
+| `assets/images/eggs/<rarity>.png` | 1024×1024, transparent | hatch-reveal hero + shop/hatchery embed thumbnail |
+
+`<rarity>` is one of `common`, `uncommon`, `rare`, `epic`, `legendary`,
+`mythic`.
+
+**Workflow (reference chain):** generate the common egg first on a plain flat
+light-gray studio background, then generate the other five as image-edits of the
+common egg (Nano Banana Pro, `medias` role `image`) so the silhouette stays
+identical. Run each result through `remove_background`, then center on a
+1024×1024 transparent canvas. Any glow/rays/embers that fall outside the shell
+survive as floating islands on transparent — this matches the old floating egg
+look on the Discord embed background.
+
+**Common (reference egg):**
+
+> A single large cartoon dinosaur egg standing upright, perfectly centered:
+> smooth gray-white eggshell with scattered small brown speckles, one soft
+> glossy highlight on the upper left of the shell. Plain flat light-gray studio
+> background, no scenery. Centered composition, large readable shape filling
+> most of the frame. Glossy cartoon mobile-game art style, bold dark outlines,
+> vibrant saturated colors, strong glossy highlights, clean cel shading with
+> smooth gradients, polished game-asset look. No text, no characters, no UI
+> elements.
+
+**Reskin edits** (each generated with the common egg attached as the `image`
+reference). Prompt frame:
+
+> Keep the exact same cartoon dinosaur egg: same shape, same size, same
+> position, same outline, same framing, same plain flat light-gray studio
+> background. Change only the shell design: {RESKIN}. Glossy cartoon
+> mobile-game art style, bold dark outlines, vibrant saturated colors, strong
+> glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no characters, no UI elements.
+
+`{RESKIN}` per rarity:
+
+- **uncommon:** moss-green eggshell (around #2ecc71) decorated with a simple
+  pattern of small darker-green leaf shapes, subtle glossy highlight
+- **rare:** ocean-blue eggshell (around #3498db) with a wavy water-sheen pattern
+  wrapping the shell and a few small water droplets on the surface, glossy
+  wet-look highlights
+- **epic:** violet eggshell (around #9b59b6) with angular crystal facets
+  embedded in the surface and a soft purple glow emanating from the facets, kept
+  tight to the shell
+- **legendary:** polished golden eggshell (around #f1c40f) engraved with elegant
+  curved rune lines, radiating short golden rays of light kept close to the shell
+- **mythic:** jet-black obsidian eggshell covered in jagged glowing orange lava
+  cracks, faint orange embers rising just above the shell, dramatic inner glow
+  through the cracks, kept tight to the shell (matches the `volcano_core` site
+  obsidian-and-lava look)
 
 ## Coastal Dig (`coastal_dig`)
 
