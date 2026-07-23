@@ -1,5 +1,6 @@
-import { createCanvas, GlobalFonts, type SKRSContext2D } from '@napi-rs/canvas';
+import { createCanvas, GlobalFonts, Image, type SKRSContext2D } from '@napi-rs/canvas';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import type { ParkSnapshot, SnapshotLot } from '../../modules/park/snapshot.js';
 import { lotIcon, tilePalette, dinoGlyph, RARITY_COLOR } from '../../data/render-icons.js';
 
@@ -27,6 +28,18 @@ function ensureFonts(): void {
   fontsReady = true;
 }
 
+// SVG source, not a PNG: renderParkPng is synchronous and raster decode is not.
+let hudCash: Image | null | undefined;
+function hudCashIcon(): Image | null {
+  if (hudCash !== undefined) return hudCash;
+  try {
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/emojis/svg/dw_cash.svg'));
+    hudCash = img;
+  } catch { hudCash = null; }
+  return hudCash;
+}
+
 function rrect(c: SKRSContext2D, x: number, y: number, w: number, h: number, r: number): void {
   c.beginPath(); c.roundRect(x, y, w, h, r);
 }
@@ -45,6 +58,13 @@ function iconValue(c: SKRSContext2D, x: number, y: number, emoji: string, value:
   const ew = c.measureText(emoji).width;
   c.font = `${size}px "${SANS}"`; c.fillText(value, x + ew + 6, y);
   return x + ew + 6 + c.measureText(value).width;
+}
+
+// Like iconValue, but with a drawn icon instead of an emoji glyph.
+function iconImageValue(c: SKRSContext2D, x: number, y: number, img: Image, value: string, size: number): number {
+  c.drawImage(img, x, y - size + 3, size, size);
+  c.font = `${size}px "${SANS}"`; c.fillText(value, x + size + 6, y);
+  return x + size + 6 + c.measureText(value).width;
 }
 
 function drawTile(c: SKRSContext2D, lot: SnapshotLot, x: number, y: number): void {
@@ -97,7 +117,10 @@ export function renderParkPng(snap: ParkSnapshot): Buffer {
   c.font = `24px "${SANS}"`; c.fillText(trunc(c, snap.parkName, dims.width * 0.42), PAD, 40);
   let sx = dims.width * 0.46;
   sx = iconValue(c, sx, 40, '⭐', (snap.parkRating / 100).toFixed(1), 22) + 18;
-  sx = iconValue(c, sx, 40, '💰', snap.cash.toLocaleString(), 22) + 18;
+  const cashIcon = hudCashIcon();
+  sx = (cashIcon
+    ? iconImageValue(c, sx, 40, cashIcon, snap.cash.toLocaleString(), 22)
+    : iconValue(c, sx, 40, '💰', snap.cash.toLocaleString(), 22)) + 18;
   const dinoText = snap.escapedCount > 0 ? `${snap.dinoCount} (${snap.escapedCount}🚨)` : String(snap.dinoCount);
   iconValue(c, sx, 40, '🦕', dinoText, 22);
 
