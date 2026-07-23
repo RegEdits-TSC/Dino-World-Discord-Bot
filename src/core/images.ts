@@ -16,7 +16,7 @@ function present(abs: string): boolean {
 // Missing asset = null; callers render the embed without the image. The bot
 // must work with zero, some, or all assets present. `name` values come from
 // internal enums (rarities, site ids) — never user input.
-export function assetImage(kind: 'eggs' | 'sites', name: string): ImageRef | null {
+export function assetImage(kind: 'eggs' | 'sites' | 'banners', name: string): ImageRef | null {
   const fileName = `${name}.png`;
   const abs = resolve(process.cwd(), 'assets/images', kind, fileName);
   if (!present(abs)) return null;

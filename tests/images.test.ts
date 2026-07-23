@@ -16,4 +16,7 @@ describe('assetImage', () => {
     expect(assetImage('eggs', 'mythic')).not.toBeNull();
     expect(assetImage('eggs', 'mythic')).not.toBeNull();
   });
+  it('accepts the banners kind and null-degrades when absent', () => {
+    expect(assetImage('banners', 'no-such-banner')).toBeNull();
+  });
 });
