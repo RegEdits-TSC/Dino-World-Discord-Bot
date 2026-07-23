@@ -6,8 +6,26 @@ import { renderSvg } from '../src/core/render-svg.js';
 
 const SVG_DIR = resolve(process.cwd(), 'assets/emojis/svg');
 const PNG_DIR = resolve(process.cwd(), 'assets/emojis/png');
+const SIZE = 128;
+
+// Pure black makes up a negligible share of any legitimately rendered emoji: every outline in the
+// approved set is a dark brown/green/blue/purple (e.g. #7a5a10, #5e1a12, #0f5560), never black. The
+// resvg gradient-ellipse bug (see CLAUDE.md) instead fills a whole shape solid black, which dwarfs
+// this threshold; incidental antialiasing between adjacent dark shapes stays well under it.
+const MAX_BLACK_SHARE = 0.02;
 
 function decode(png: Buffer): Image { const i = new Image(); i.src = png; return i; }
+
+// @napi-rs/canvas decodes raster (PNG) sources asynchronously under the hood even though `Image.src =`
+// returns immediately with `complete: true` — drawImage right after assignment silently draws a blank
+// canvas. SVG decode (used by renderSvg itself) genuinely is synchronous, so only this PNG-reading path
+// needs the await.
+async function decodePng(png: Buffer): Promise<Image> {
+  const i = new Image();
+  i.src = png;
+  await i.decode();
+  return i;
+}
 
 describe('renderSvg', () => {
   it('renders an SVG buffer to a PNG of the requested size', () => {
@@ -23,15 +41,41 @@ describe('emoji assets', () => {
   it('at least the currency trio exists', () => {
     expect(svgs).toEqual(expect.arrayContaining(['dw_cash.svg', 'dw_food.svg', 'dw_shard.svg']));
   });
-  it.each(svgs)('%s has a 128×128 PNG sibling with transparent corners', (f) => {
+  it.each(svgs)('%s has a 128×128 PNG sibling that actually rendered the artwork', async (f) => {
     const png = readFileSync(resolve(PNG_DIR, f.replace('.svg', '.png')));
-    const img = decode(png);
-    expect(img.width).toBe(128);
-    expect(img.height).toBe(128);
-    const canvas = createCanvas(128, 128);
+    const img = await decodePng(png);
+    expect(img.width).toBe(SIZE);
+    expect(img.height).toBe(SIZE);
+    const canvas = createCanvas(SIZE, SIZE);
     const c = canvas.getContext('2d');
     c.drawImage(img, 0, 0);
-    expect(c.getImageData(0, 0, 1, 1).data[3]).toBe(0);       // top-left corner alpha
-    expect(c.getImageData(127, 127, 1, 1).data[3]).toBe(0);   // bottom-right corner alpha
+
+    const corners: Array<[number, number]> = [[0, 0], [SIZE - 1, 0], [0, SIZE - 1], [SIZE - 1, SIZE - 1]];
+    for (const [x, y] of corners) {
+      expect(c.getImageData(x, y, 1, 1).data[3]).toBe(0);
+    }
+
+    // Central region must hold real art: an SVG that renders as an entirely empty transparent square
+    // (e.g. a bad viewBox or a fill that resolves to nothing) would otherwise pass every corner check
+    // above trivially, since a blank canvas is transparent everywhere including its corners.
+    const centerData = c.getImageData(SIZE / 4, SIZE / 4, SIZE / 2, SIZE / 2).data;
+    let centerOpaque = 0;
+    for (let i = 3; i < centerData.length; i += 4) {
+      if (centerData[i] === 255) centerOpaque++;
+    }
+    expect(centerOpaque).toBeGreaterThan(0);
+
+    // Whole-image black share catches the resvg gradient-ellipse bug: a gradient that collapses to
+    // solid black fills an entire shape, not just its outline, so it blows well past MAX_BLACK_SHARE.
+    const fullData = c.getImageData(0, 0, SIZE, SIZE).data;
+    let opaqueCount = 0;
+    let blackCount = 0;
+    for (let i = 0; i < fullData.length; i += 4) {
+      if (fullData[i + 3] === 255) {
+        opaqueCount++;
+        if (fullData[i] === 0 && fullData[i + 1] === 0 && fullData[i + 2] === 0) blackCount++;
+      }
+    }
+    expect(blackCount / opaqueCount).toBeLessThan(MAX_BLACK_SHARE);
   });
 });

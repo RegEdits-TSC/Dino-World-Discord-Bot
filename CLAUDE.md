@@ -28,4 +28,7 @@
   gradientUnits renders solid black — use `gradientUnits="userSpaceOnUse"`
   with `y1`/`y2` set to the ellipse's own pre-transform bbox instead (same
   stop colors/offsets, just a different coordinate system). `circle`/`rect`/
-  `polygon` gradients are unaffected.
+  `polygon` gradients are unaffected. Worked example from `dw_food.svg`'s
+  `<ellipse cx="27" cy="30" rx="18" ry="14">`: `y1 = cy - ry = 30 - 14 = 16`,
+  `y2 = cy + ry = 30 + 14 = 44` — exactly the bbox `objectBoundingBox` would
+  have used.
