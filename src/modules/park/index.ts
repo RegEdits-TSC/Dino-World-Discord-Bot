@@ -2,13 +2,14 @@ import { SlashCommandBuilder, MessageFlags, EmbedBuilder } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
-import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, LotLimitError, UnknownKindError } from './service.js';
+import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, LotLimitError, UnknownKindError, toClockDinos } from './service.js';
 import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError } from './dinos.js';
 import { dashboardPayload, withParkImage } from './embeds.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
 import { InsufficientFundsError } from '../../core/economy.js';
+import { escapeAt, ESCAPE_WARN_MS } from '../../core/clock.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { FACILITIES } from '../../data/facilities.js';
 import { DECOR } from '../../data/decor.js';
@@ -58,7 +59,14 @@ export const parkModule: ModuleManifest = {
         const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, i.user.id)).all();
         const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all();
         const escapedCount = dinos.filter((d) => d.escapedAt !== null).length;
-        const base = dashboardPayload(user, lots, dinos.length, pendingIncome(ctx, i.user.id), escapedCount);
+        const { clockDinos } = toClockDinos(ctx, i.user.id);
+        const nowMs = ctx.now();
+        const atRiskCount = clockDinos.filter((c) => {
+          if (c.escapedAt !== null) return false;
+          const e = escapeAt(c);
+          return e !== null && e - nowMs <= ESCAPE_WARN_MS;
+        }).length;
+        const base = dashboardPayload(user, lots, dinos.length, pendingIncome(ctx, i.user.id), escapedCount, { atRiskCount });
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
         await i.editReply(png ? withParkImage(base, png) : base);
@@ -123,11 +131,14 @@ export const parkModule: ModuleManifest = {
         try {
           if (sub === 'list') {
             const dinos = listDinos(ctx, i.user.id);
+            const nowMs = ctx.now();
             const lines = dinos.length
               ? dinos.map((d) => {
                   const status = d.dino.escapedAt !== null ? '🚨 ESCAPED — /rescue' : `${Math.round(d.comfort * 100)}% comfort`;
+                  const warn = d.dino.escapedAt === null && d.escapeAt !== null && d.escapeAt - nowMs <= ESCAPE_WARN_MS
+                    ? ` — ⚠ escapes <t:${Math.floor(d.escapeAt / 1000)}:R>` : '';
                   const loc = d.dino.lotId ? `lot ${d.dino.lotId}` : 'unassigned';
-                  return `#${d.dino.id} ${d.species.name} — ${status} — ${loc}`;
+                  return `#${d.dino.id} ${d.species.name} — ${status}${warn} — ${loc}`;
                 }).join('\n')
               : 'No dinos yet. Hatch one!';
             await i.reply({ embeds: [new EmbedBuilder().setTitle('🦕 Your dinos').setDescription(lines).setColor(0x3ba55c)] });
