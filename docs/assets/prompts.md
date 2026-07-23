@@ -1,11 +1,13 @@
-# Image generation prompts — egg + expedition site art
+# Image generation prompts — egg, expedition site, and banner art
 
 The volcano/frozen banners and volcano thumb were generated with ChatGPT image
 generation; the remaining coastal/amber banners and the coastal/amber/frozen
 thumbs were generated with Higgsfield Nano Banana Pro. The six egg rarities were
 generated with Higgsfield Nano Banana Pro as a reference chain (see the Egg
-rarities section). These prompts are the source of truth for regenerating or
-extending the set — keep them in sync with any new assets.
+rarities section). The five embed banners were generated with Higgsfield Nano
+Banana Pro, `care_neglect` as a reference chain off `care`. These prompts are
+the source of truth for regenerating or extending the set — keep them in sync
+with any new assets.
 
 Note on thumbs: some models render a "square cartoon game icon of …" prompt as
 a rounded-rectangle app-icon tile with a border. To force a full-bleed square
@@ -241,7 +243,10 @@ excess, which is center-cropped).
 
 These are the only prompts in this file whose subject is dinosaurs rather than
 scenery, so they drop the shared block's "no characters" clause and forbid only
-human ones. Everything else in the shared style block still applies.
+human ones. The rest of the shared style block applies unchanged, with one
+exception: `care_neglect.png` also drops "vibrant saturated colors, strong
+glossy highlights", because the whole point of that variant is muted,
+desaturated, overcast — keeping the clause would fight the prompt.
 
 **Trading (`trading.png`):**
 
