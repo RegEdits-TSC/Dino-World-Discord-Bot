@@ -20,8 +20,10 @@ export function setEmojiMap(entries: Record<string, string>): void { tags = new 
 export function clearEmojiMap(): void { tags = new Map(); }
 
 // Never call at module top level — the map loads after client ready.
+// EMOJI_FALLBACK is looked up with hasOwn so names like 'constructor' or
+// 'toString' can't resolve through the Object.prototype chain.
 export function emojiTag(name: string): string {
-  return tags.get(name) ?? EMOJI_FALLBACK[name] ?? '';
+  return tags.get(name) ?? (Object.hasOwn(EMOJI_FALLBACK, name) ? EMOJI_FALLBACK[name] : '');
 }
 
 // Gem prefix for rarity text: '<:dw_rarity_rare:id> ' or '' when absent, so
