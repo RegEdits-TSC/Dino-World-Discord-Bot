@@ -13,8 +13,8 @@ export function collectionScore(ctx: Ctx, userId: string): number {
   return [...owned].reduce((s, id) => s + RARITY_WEIGHT[getSpecies(id).rarity], 0);
 }
 
-export function topPlayers(
-  ctx: Ctx, metric: Metric, scope: Scope, guildId: string | null, limit = 10,
+function scored(
+  ctx: Ctx, metric: Metric, scope: Scope, guildId: string | null,
 ): Array<{ userId: string; displayName: string; value: number }> {
   // Candidate set: server scope = users seen in this guild (via user_guilds); global = all users.
   let users: Array<typeof schema.users.$inferSelect>;
@@ -40,11 +40,25 @@ export function topPlayers(
   // interacts. Acceptable for a leaderboard.
   // Note: parkRating is stored ×100 (stars×100); the command layer (Task 7) divides
   // by 100 for display.
-  const scored = users.map((u) => ({
+  const rows = users.map((u) => ({
     userId: u.discordId,
     displayName: u.displayName || u.discordId,
     value: metric === 'cash' ? u.cash : metric === 'rating' ? u.parkRating : collectionScore(ctx, u.discordId),
   }));
-  scored.sort((a, b) => b.value - a.value);
-  return scored.slice(0, Math.max(0, limit));
+  rows.sort((a, b) => b.value - a.value);
+  return rows;
+}
+
+export function topPlayers(
+  ctx: Ctx, metric: Metric, scope: Scope, guildId: string | null, limit = 10,
+): Array<{ userId: string; displayName: string; value: number }> {
+  return scored(ctx, metric, scope, guildId).slice(0, Math.max(0, limit));
+}
+
+export function playerRank(
+  ctx: Ctx, metric: Metric, scope: Scope, guildId: string | null, userId: string,
+): { rank: number; value: number } | null {
+  const all = scored(ctx, metric, scope, guildId);
+  const idx = all.findIndex((r) => r.userId === userId);
+  return idx === -1 ? null : { rank: idx + 1, value: all[idx].value };
 }
