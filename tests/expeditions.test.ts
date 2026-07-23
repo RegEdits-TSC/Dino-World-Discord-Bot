@@ -58,7 +58,7 @@ describe('expedition visuals', () => {
     const i = fakeCommand({ name: 'expedition', sub: 'start', user: 'u1', guild: 'g1', options: { site: 'coastal_dig' } });
     await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { title?: string } }> };
-    expect(payload.embeds[0].toJSON().title).toContain('Coastal Dig');
+    expect(payload.embeds[0].toJSON().title).toBe('🧭 🐚 Coastal Dig');
   });
   it('/expedition claim embed still renders when banner art is absent', async () => {
     ctx.economy.apply('u1', { cash: 1_000 }, 'seed', 0);
@@ -67,6 +67,6 @@ describe('expedition visuals', () => {
     const i = fakeCommand({ name: 'expedition', sub: 'claim', user: 'u1', guild: 'g1' });
     await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { title?: string } }> };
-    expect(payload.embeds[0].toJSON().title).toContain('Coastal Dig');
+    expect(payload.embeds[0].toJSON().title).toBe('🧭 🐚 Coastal Dig — returned!');
   });
 });

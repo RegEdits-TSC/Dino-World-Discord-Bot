@@ -1,9 +1,17 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import type { AttachmentBuilder } from 'discord.js';
 import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
 import { topPlayers, playerRank, type Metric, type Scope } from './service.js';
+import { assetImage } from '../../core/images.js';
+import { emojiTag } from '../../core/emojis.js';
 
-const METRIC_LABEL: Record<Metric, string> = { rating: '⭐ Rating', cash: '💰 Cash', collection: '🦕 Collection' };
+// Never call emojiTag at module scope — the app-emoji map loads after the
+// client is ready, so a module-level constant would freeze the unicode
+// fallback forever. Compute the label per call instead.
+function metricLabel(metric: Metric): string {
+  return { rating: `${emojiTag('dw_star')} Rating`, cash: `${emojiTag('dw_cash')} Cash`, collection: '🦕 Collection' }[metric];
+}
 function formatValue(metric: Metric, value: number): string {
   return metric === 'rating' ? (value / 100).toFixed(1) : value.toLocaleString();
 }
@@ -25,13 +33,16 @@ export const leaderboardsModule: ModuleManifest = {
           ? rows.map((r, idx) => `**${idx + 1}.** ${r.displayName} — ${formatValue(metric, r.value)}`).join('\n')
           : 'No players yet.';
         const embed = new EmbedBuilder()
-          .setTitle(`🏆 Top ${METRIC_LABEL[metric]} — ${scope}`)
+          .setTitle(`🏆 Top ${metricLabel(metric)} — ${scope}`)
           .setDescription(body).setColor(0xf1c40f);
         if (!rows.some((r) => r.userId === i.user.id)) {
           const mine = playerRank(ctx, metric, scope, i.guildId, i.user.id);
           if (mine) embed.setFooter({ text: `Your rank: #${mine.rank} — ${formatValue(metric, mine.value)}` });
         }
-        await i.reply({ embeds: [embed] });
+        const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+        const banner = assetImage('banners', 'leaderboards');
+        if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+        await i.reply(payload);
       } },
   ],
   components: [],

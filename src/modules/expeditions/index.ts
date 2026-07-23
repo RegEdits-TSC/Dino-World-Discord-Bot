@@ -10,10 +10,17 @@ import { schema } from '../../core/db/index.js';
 import { siteUnlocked } from '../park/rating.js';
 import { matches, respondRanked, fmtDuration } from '../../core/autocomplete.js';
 import { assetImage } from '../../core/images.js';
+import { emojiTag } from '../../core/emojis.js';
+
+// '🌋 ' when the site marker resolves, '' when it doesn't — keeps titles clean either way.
+function siteMarker(siteId: string): string {
+  const t = emojiTag(`dw_site_${siteId}`);
+  return t ? `${t} ` : '';
+}
 
 function sitePayload(siteId: string, description: string) {
   const embed = new EmbedBuilder().setColor(0xe8590c)
-    .setTitle(`🧭 ${EXPEDITION_SITES[siteId].name}`).setDescription(description);
+    .setTitle(`🧭 ${siteMarker(siteId)}${EXPEDITION_SITES[siteId].name}`).setDescription(description);
   const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
   const img = assetImage('sites', `${siteId}-thumb`);
   if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }
@@ -61,9 +68,9 @@ export const expeditionsModule: ModuleManifest = {
               : `⏳ Digging — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.`));
           } else {
             const { loot, site } = claimExpedition(ctx, i.user.id);
-            const embed = new EmbedBuilder().setColor(0xe8590c).setTitle(`🧭 ${site.name} — returned!`)
+            const embed = new EmbedBuilder().setColor(0xe8590c).setTitle(`🧭 ${siteMarker(site.id)}${site.name} — returned!`)
               .setDescription(`Found a **${loot.eggRarity}** egg!`)
-              .addFields({ name: '💰 Cash', value: `+${loot.cash}`, inline: true }, { name: '🍖 Food', value: `+${loot.food}`, inline: true });
+              .addFields({ name: `${emojiTag('dw_cash')} Cash`, value: `+${loot.cash}`, inline: true }, { name: `${emojiTag('dw_food')} Food`, value: `+${loot.food}`, inline: true });
             const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
             const banner = assetImage('sites', `${site.id}-banner`);
             if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
