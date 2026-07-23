@@ -14,7 +14,7 @@ help, care) painterly banner art matching the existing site banners.
 **In:**
 - 21 custom Discord application emojis (SVG-authored, glossy game-icon style)
 - 5 embed banners (AI-generated, painterly, matching site-banner style)
-- Park-map HUD: cash PNG icon replacing the 💰 glyph in `draw.ts`
+- Park-map HUD: drawn cash icon replacing the 💰 glyph in `draw.ts`
 - Build/deploy/runtime pipeline for app emojis with unicode fallback
 
 **Out (explicitly deferred):**
@@ -75,9 +75,15 @@ painterly site-art style (same pipeline as `assets/images/sites/`).
 
 ### HUD
 
-`assets/images/hud/cash.png` — 64×64 render of the `dw_cash` SVG, drawn
-by `src/core/render/draw.ts` in the stats bar (at the existing HUD icon
-size) instead of the 💰 text glyph.
+`src/core/render/draw.ts` draws `assets/emojis/svg/dw_cash.svg` in the stats
+bar (at the existing HUD icon size) instead of the 💰 text glyph.
+
+The icon is drawn from the SVG source rather than a rendered PNG because
+`renderParkPng` is synchronous and `@napi-rs/canvas` decodes PNG buffers
+asynchronously — setting `Image.src` from PNG bytes and calling `drawImage`
+in the same tick silently draws nothing, whereas SVG buffers decode
+synchronously. This also keeps `dw_cash.svg` the single source for the coin,
+with no second copy to keep in sync.
 
 ## Production pipeline
 
@@ -86,7 +92,6 @@ size) instead of the 💰 text glyph.
 ```
 assets/emojis/svg/dw_cash.svg …   ← 21 hand-authored SVG sources
 assets/emojis/png/dw_cash.png …   ← 128×128 rendered output, committed
-assets/images/hud/cash.png        ← HUD-size render
 ```
 
 - `src/build-emojis.ts` (`npm run build-emojis`): renders every SVG in
@@ -152,15 +157,17 @@ message content, and buttons all switch to `emojiTag`.
 | `notify.ts` | escape alerts get `dw_alert` |
 | hatchery/shop/trading rosters | rarity gems prefix rarity text |
 | park embeds (text side) | lot lines get `dw_lot_*`; canvas map tiles keep emoji glyphs |
-| `render/draw.ts` | HUD 💰 glyph → draw `hud/cash.png` |
+| `render/draw.ts` | HUD 💰 glyph → draw `dw_cash.svg` |
 | `core/images.ts` | `assetImage` gains kind `'banners'` |
 
 ## Testing
 
 - **Asset tests** (extend existing image tests): every SVG in
   `assets/emojis/svg/` has a PNG sibling; PNGs are 128×128 with an alpha
-  channel and non-empty content; 5 banners + HUD PNG exist with correct
-  dimensions.
+  channel and non-empty content; the 5 banners exist with correct
+  dimensions. A park-render test asserts the HUD cash icon actually draws,
+  since a failed decode is silent (`drawImage` becomes a no-op and every
+  structural assertion still passes).
 - **`core/emojis.ts` unit tests**: unknown name → unicode fallback; map
   loaded → custom tag; button-emoji variant shape correct.
 - **Existing embed tests**: run without an emoji map, so `emojiTag` falls

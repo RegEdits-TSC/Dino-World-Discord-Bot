@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace unicode placeholder glyphs with 21 bot-owned custom Discord application emojis (SVG-authored), add 5 painterly embed banners, and swap the park-map HUD 💰 glyph for a PNG icon.
+**Goal:** Replace unicode placeholder glyphs with 21 bot-owned custom Discord application emojis (SVG-authored), add 5 painterly embed banners, and swap the park-map HUD 💰 glyph for the drawn cash icon.
 
 **Architecture:** SVG sources in `assets/emojis/svg/` are rasterized to committed 128×128 PNGs by a build script (`@napi-rs/canvas`, existing dep). A deploy script syncs PNGs to Discord application emojis by name using a committed sha256 manifest. At runtime, `core/emojis.ts` fetches the app-emoji map on client ready and `emojiTag(name)` returns the custom tag or a unicode fallback — missing emoji is never an error (same null-degrade philosophy as `assetImage`). Banners extend `assetImage` with a `'banners'` kind.
 
@@ -207,7 +207,7 @@ git commit -m "Add application emoji runtime with unicode fallback"
 - Consumes: `@napi-rs/canvas` (`createCanvas`, `Image` — `Image.src = <svg Buffer>` decodes SVG synchronously via built-in resvg).
 - Produces:
   - `renderSvg(svg: Buffer, size: number): Buffer` from `src/core/render-svg.js` (PNG buffer, size×size, transparent background)
-  - `npm run build-emojis` — renders every `assets/emojis/svg/*.svg` → `assets/emojis/png/<name>.png` at 128×128 (plus, from Task 5 on, the HUD icon)
+  - `npm run build-emojis` — renders every `assets/emojis/svg/*.svg` → `assets/emojis/png/<name>.png` at 128×128
   - Committed PNGs in `assets/emojis/png/`
 
 - [ ] **Step 1: Write the failing test**
@@ -676,48 +676,19 @@ git commit -m "Complete 21-icon application emoji set"
 
 ---
 
-### Task 5: HUD cash icon — build output + draw.ts
+### Task 5: HUD cash icon in draw.ts
 
 **Files:**
-- Modify: `src/build-emojis.ts` (HUD render)
 - Modify: `src/core/render/draw.ts` (imports ~line 1, new helpers near `iconValue` ~line 42, HUD block ~line 100)
-- Test: `tests/emoji-assets.test.ts` (HUD asset check), `tests/render-draw.test.ts` (existing suite must stay green)
+- Test: `tests/render-draw.test.ts`
 
 **Interfaces:**
-- Consumes: `renderSvg` (Task 2), `dw_cash.svg` (Task 2).
-- Produces: `assets/images/hud/cash.png` (64×64, committed). `renderParkPng` draws it in the stats bar, falling back to the 💰 glyph when the file is missing.
+- Consumes: `assets/emojis/svg/dw_cash.svg` (Task 2).
+- Produces: nothing exported. `renderParkPng` draws the cash icon in the stats bar, falling back to the 💰 glyph when the SVG is missing.
 
-- [ ] **Step 1: Add the failing asset test**
+**Why the SVG and not a PNG:** `renderParkPng` is synchronous, and Task 2 established that `@napi-rs/canvas` decodes a **PNG** buffer asynchronously — setting `Image.src` from PNG bytes and calling `drawImage` in the same tick silently draws nothing. SVG buffers decode synchronously (this is what `src/core/render-svg.ts` relies on, pinned by a content assertion in `tests/emoji-assets.test.ts`). So the HUD draws the SVG source directly. This also means no HUD PNG asset, no build-script change, and no second copy of the coin to keep in sync — `dw_cash.svg` is the single source. Do not "optimize" this into a PNG load.
 
-Append to `tests/emoji-assets.test.ts`:
-
-```ts
-describe('hud assets', () => {
-  it('hud cash icon is a 64×64 png', () => {
-    const img = decode(readFileSync(resolve(process.cwd(), 'assets/images/hud/cash.png')));
-    expect(img.width).toBe(64);
-    expect(img.height).toBe(64);
-  });
-});
-```
-
-Run: `npx vitest run tests/emoji-assets.test.ts` — Expected: FAIL (ENOENT).
-
-- [ ] **Step 2: Extend the build script**
-
-In `src/build-emojis.ts`, after the emoji loop add:
-
-```ts
-const HUD_DIR = resolve(process.cwd(), 'assets/images/hud');
-mkdirSync(HUD_DIR, { recursive: true });
-writeFileSync(resolve(HUD_DIR, 'cash.png'), renderSvg(readFileSync(resolve(SVG_DIR, 'dw_cash.svg')), 64));
-console.log('Rendered HUD cash icon to assets/images/hud/cash.png.');
-```
-
-Run: `npm run build-emojis && npx vitest run tests/emoji-assets.test.ts`
-Expected: PASS.
-
-- [ ] **Step 3: Draw it in the HUD**
+- [ ] **Step 1: Draw the icon in the HUD**
 
 In `src/core/render/draw.ts`:
 
@@ -728,21 +699,22 @@ import { createCanvas, GlobalFonts, Image, type SKRSContext2D } from '@napi-rs/c
 import { readFileSync } from 'node:fs';
 ```
 
-Add below `ensureFonts` (icon cached like fonts; missing file degrades to the glyph):
+Add below `ensureFonts` (icon cached like the fonts; a missing file degrades to the glyph, matching how absent art is never an error elsewhere in this codebase):
 
 ```ts
+// SVG source, not a PNG: renderParkPng is synchronous and raster decode is not.
 let hudCash: Image | null | undefined;
 function hudCashIcon(): Image | null {
   if (hudCash !== undefined) return hudCash;
   try {
     const img = new Image();
-    img.src = readFileSync(resolve(process.cwd(), 'assets/images/hud/cash.png'));
+    img.src = readFileSync(resolve(process.cwd(), 'assets/emojis/svg/dw_cash.svg'));
     hudCash = img;
   } catch { hudCash = null; }
   return hudCash;
 }
 
-// Like iconValue, but with a raster icon instead of an emoji glyph.
+// Like iconValue, but with a drawn icon instead of an emoji glyph.
 function iconImageValue(c: SKRSContext2D, x: number, y: number, img: Image, value: string, size: number): number {
   c.drawImage(img, x, y - size + 3, size, size);
   c.font = `${size}px "${SANS}"`; c.fillText(value, x + size + 6, y);
@@ -765,18 +737,26 @@ with:
     : iconValue(c, sx, 40, '💰', snap.cash.toLocaleString(), 22)) + 18;
 ```
 
-- [ ] **Step 4: Run render tests**
+- [ ] **Step 2: Add a regression test that the icon actually draws**
+
+The failure mode this guards is silent: if the icon fails to decode, `drawImage` is a no-op and the HUD renders with a blank gap where the coin should be — every existing structural assertion (buffer returned, dimensions correct) still passes.
+
+Add a test to `tests/render-draw.test.ts` that renders a park snapshot, decodes the PNG **with an awaited `Image.decode()`** (never the unawaited form — see Task 2), and scans the icon's bounding box in the stats bar for gold coin pixels. Derive the box from the HUD block's own coordinates (`sx` starts at `dims.width * 0.46`, the rating stat is drawn first, baseline `y = 40`, `size = 22`), and assert at least one pixel there is in the coin's gold family (roughly `r >= 150`, `g >= 110`, `b <= 110`) rather than flat header background.
+
+**Prove the guard fires before you trust it:** temporarily make `hudCashIcon()` return `null` so the glyph fallback runs, confirm the test fails, then restore. Report both outputs. A test you have not watched fail is not a regression test.
+
+- [ ] **Step 3: Run render tests**
 
 Run: `npx vitest run tests/render-draw.test.ts tests/park-view-image.test.ts tests/render-client.test.ts`
-Expected: PASS (renderer contract unchanged — output buffer, dimensions).
+Expected: PASS (renderer contract unchanged — output buffer, dimensions — plus the new icon assertion).
 
-- [ ] **Step 5: Full check and commit**
+- [ ] **Step 4: Full check and commit**
 
 Run: `npm test && npm run typecheck`
 Expected: all green.
 
 ```bash
-git add src/build-emojis.ts src/core/render/draw.ts assets/images/hud tests/emoji-assets.test.ts
+git add src/core/render/draw.ts tests/render-draw.test.ts
 git commit -m "Draw HUD cash icon in park renderer with glyph fallback"
 ```
 
