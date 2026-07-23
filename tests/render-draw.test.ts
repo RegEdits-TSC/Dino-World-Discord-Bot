@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createCanvas, Image } from '@napi-rs/canvas';
-import { gridDims, renderParkPng } from '../src/core/render/draw.js';
+import { gridDims, renderParkPng, dinoStatText } from '../src/core/render/draw.js';
 import type { ParkSnapshot } from '../src/modules/park/snapshot.js';
 
 describe('gridDims', () => {
@@ -10,6 +10,38 @@ describe('gridDims', () => {
     expect(gridDims(4).rows).toBe(2);
     expect(gridDims(9).rows).toBe(3);
     expect(gridDims(3).width).toBe(gridDims(9).width);
+  });
+});
+
+// dinoStatText is the value string iconValue draws for the dino-count stat, entirely in the SANS
+// font. SANS has no emoji coverage, so any codepoint outside its Latin range renders as a
+// missing-glyph "tofu" box — which is exactly what happened when this string used to embed a 🚨
+// (U+1F6A8) emoji for the escaped count. Testing the exact wording alone ("does it say '2 escaped'")
+// would be weak here, because the original bug's wording was arguably fine — '2🚨' also communicated
+// "2 escaped" — it was *which font drew it* that broke. So this test asserts the causal invariant
+// instead: every codepoint in the composed string must stay inside SANS's coverage, which is what
+// actually prevents tofu, regardless of exact phrasing. (0x250 is a generous cutoff — comfortably
+// above all of Latin Extended-A/B and comfortably below the emoji blocks, which start at 0x1F000+.)
+//
+// A pixel-level "no tofu visible" assertion was considered and rejected: unlike the coin SVG's own
+// defined stroke color (a value we author and control), the tofu glyph's shape/color is an
+// undocumented fallback rendered by the font/engine's .notdef path — asserting on its exact pixels
+// would be brittle to font or @napi-rs/canvas upgrades unrelated to this bug, and a shape we have no
+// stable source-of-truth for. The character-range check below fails deterministically and for the
+// right reason if an emoji is ever reintroduced into this specific SANS-drawn string.
+describe('dinoStatText', () => {
+  it('keeps the escaped count visible as plain text, not dropped', () => {
+    expect(dinoStatText(14, 0)).toBe('14');
+    expect(dinoStatText(14, 2)).toBe('14 (2 escaped)');
+  });
+
+  it('never emits a codepoint outside SANS Latin coverage (guards against a re-introduced emoji causing tofu)', () => {
+    for (const [dinoCount, escapedCount] of [[0, 0], [14, 2], [3, 3], [100, 1]] as const) {
+      const text = dinoStatText(dinoCount, escapedCount);
+      for (const ch of text) {
+        expect(ch.codePointAt(0)!).toBeLessThan(0x250);
+      }
+    }
   });
 });
 

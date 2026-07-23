@@ -67,6 +67,14 @@ function iconImageValue(c: SKRSContext2D, x: number, y: number, img: Image, valu
   return x + size + 6 + c.measureText(value).width;
 }
 
+// Pure text composition for the dino-count HUD stat. iconValue draws its `value` argument entirely
+// in SANS, which has no emoji coverage — so this must never embed an emoji (that previously drew as
+// a missing-glyph "tofu" box when an alert emoji was packed into this same string). Plain words carry
+// the escaped-count information instead, staying inside one font for the whole run.
+export function dinoStatText(dinoCount: number, escapedCount: number): string {
+  return escapedCount > 0 ? `${dinoCount} (${escapedCount} escaped)` : String(dinoCount);
+}
+
 function drawTile(c: SKRSContext2D, lot: SnapshotLot, x: number, y: number): void {
   const pal = tilePalette(lot.type);
   rrect(c, x, y, TILE_W, TILE_H, 12); c.fillStyle = pal.fill; c.fill();
@@ -121,8 +129,7 @@ export function renderParkPng(snap: ParkSnapshot): Buffer {
   sx = (cashIcon
     ? iconImageValue(c, sx, 40, cashIcon, snap.cash.toLocaleString(), 22)
     : iconValue(c, sx, 40, '💰', snap.cash.toLocaleString(), 22)) + 18;
-  const dinoText = snap.escapedCount > 0 ? `${snap.dinoCount} (${snap.escapedCount}🚨)` : String(snap.dinoCount);
-  iconValue(c, sx, 40, '🦕', dinoText, 22);
+  iconValue(c, sx, 40, '🦕', dinoStatText(snap.dinoCount, snap.escapedCount), 22);
 
   for (let idx = 0; idx < snap.lots.length; idx++) {
     const col = idx % COLS, row = Math.floor(idx / COLS);
