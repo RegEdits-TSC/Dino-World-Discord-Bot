@@ -1017,13 +1017,16 @@ const LOT_EMOJI: Record<string, string> = {
 };
 ```
 
-and change the lots line to:
+and change the lots line to (the conditional space keeps the row clean when a lot kind has no icon — never post-process with `.replace`, which would also collapse legitimate double spaces):
 
 ```ts
-      { name: '🏗️ Lots', value: lots.map((l) => `#${l.id} ${emojiTag(LOT_EMOJI[l.kind] ?? '')} ${l.name} (lvl ${l.level})`.replace('  ', ' ')).join('\n') || 'None — /build', inline: false },
+      { name: '🏗️ Lots', value: lots.map((l) => {
+        const e = emojiTag(LOT_EMOJI[l.kind] ?? '');
+        return `#${l.id} ${e ? `${e} ` : ''}${l.name} (lvl ${l.level})`;
+      }).join('\n') || 'None — /build', inline: false },
 ```
 
-**Note:** if the `lots` rows passed to this embed lack a `kind` property, extend the caller's select in `src/modules/park/index.ts` to include it — check the row type first.
+**Resolved:** `Lot` (from `./service.js`) already carries `kind` — see `src/modules/park/service.ts:51`. No caller change needed.
 
 Collect button — emoji moves out of the label:
 
@@ -1082,13 +1085,23 @@ git commit -m "Use application emojis in park and admin embeds"
 
 - [ ] **Step 1: Expeditions**
 
-In `src/modules/expeditions/index.ts` (add `emojiTag` import). Site marker into `sitePayload` title:
+In `src/modules/expeditions/index.ts` (add `emojiTag` import). Add a small helper above `sitePayload` and use it for both titles (conditional space, never `.replace`):
 
 ```ts
-    .setTitle(`🧭 ${emojiTag(`dw_site_${siteId}`)} ${EXPEDITION_SITES[siteId].name}`.replace('  ', ' ')).setDescription(description);
+// '🌋 ' when the site marker resolves, '' when it doesn't — keeps titles clean either way.
+function siteMarker(siteId: string): string {
+  const t = emojiTag(`dw_site_${siteId}`);
+  return t ? `${t} ` : '';
+}
 ```
 
-(`replace('  ', ' ')` collapses the double space when the tag is empty — but fallbacks 🌋🐚🟠❄️ are non-empty, so in tests the marker appears; update `tests/expeditions.test.ts` title assertions accordingly.)
+Site title in `sitePayload`:
+
+```ts
+    .setTitle(`🧭 ${siteMarker(siteId)}${EXPEDITION_SITES[siteId].name}`).setDescription(description);
+```
+
+(The unicode fallbacks 🌋🐚🟠❄️ are non-empty, so the marker appears in tests — update `tests/expeditions.test.ts` title assertions accordingly.)
 
 Claim embed fields:
 
@@ -1099,7 +1112,7 @@ Claim embed fields:
 Claim title gets the marker too:
 
 ```ts
-            const embed = new EmbedBuilder().setColor(0xe8590c).setTitle(`🧭 ${emojiTag(`dw_site_${site.id}`)} ${site.name} — returned!`)
+            const embed = new EmbedBuilder().setColor(0xe8590c).setTitle(`🧭 ${siteMarker(site.id)}${site.name} — returned!`)
 ```
 
 - [ ] **Step 2: Leaderboards — lazy labels + banner**
