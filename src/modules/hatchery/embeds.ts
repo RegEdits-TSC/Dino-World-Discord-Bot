@@ -2,6 +2,7 @@ import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type Attach
 import type { Species } from '../../data/types.js';
 import { RARITY } from '../../data/rarity.js';
 import { assetImage } from '../../core/images.js';
+import { paginate, pageRow } from '../../core/paginate.js';
 import type { Egg } from './service.js';
 
 export const RARITY_COLOR: Record<string, number> = {
@@ -45,14 +46,19 @@ function featuredEgg(eggs: Egg[], now: number): Egg | undefined {
     ?? [...eggs].sort((a, b) => b.obtainedAt - a.obtainedAt)[0];
 }
 
-export function eggListPayload(eggs: Egg[], now: number) {
-  const lines = eggs.length ? eggs.map((e) => {
+export function eggListPayload(eggs: Egg[], now: number, userId: string, page = 1) {
+  const { items, page: p, pages } = paginate(eggs, page);
+  const lines = items.length ? items.map((e) => {
     const status = e.hatchesAt === null ? 'in inventory'
       : e.hatchesAt <= now ? 'READY — /hatch' : `hatching (ready <t:${Math.floor(e.hatchesAt / 1000)}:R>)`;
     return `#${e.id} — ${e.rarity} egg — ${status}`;
   }).join('\n') : 'No eggs. Run /expedition or /shop.';
-  const embed = new EmbedBuilder().setTitle('🥚 Eggs').setDescription(lines).setColor(0x3ba55c);
-  const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+  const embed = new EmbedBuilder().setTitle('🥚 Eggs').setDescription(lines).setColor(0x3ba55c)
+    .setFooter({ text: `Page ${p}/${pages}` });
+  const payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof pageRow>[]; files?: AttachmentBuilder[] } =
+    { embeds: [embed], components: pages > 1 ? [pageRow('hatch', 'eggs', userId, p, pages)] : [] };
+  // Featured thumbnail is computed from ALL eggs, not just the current page, so the
+  // "act on next" egg keeps showing even when it lives on a different page.
   const featured = featuredEgg(eggs, now);
   const img = featured ? assetImage('eggs', featured.rarity) : null;
   if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }

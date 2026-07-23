@@ -19,7 +19,7 @@ export const hatcheryModule: ModuleManifest = {
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, i.user.id)).all();
-        await i.reply(eggListPayload(eggs, ctx.now()));
+        await i.reply(eggListPayload(eggs, ctx.now(), i.user.id));
       } },
     { data: new SlashCommandBuilder().setName('incubate').setDescription('Start incubating an egg')
         .addIntegerOption((o) => o.setName('egg').setDescription('Egg — type to search').setRequired(true).setAutocomplete(true)),
@@ -72,8 +72,15 @@ export const hatcheryModule: ModuleManifest = {
   ],
   components: [
     { prefix: 'hatch', async execute(ctx, i) {
-        const [, action, idStr] = i.customId.split(':');
+        const [, action, a2, a3] = i.customId.split(':');
+        if (action === 'eggs') {
+          if (i.user.id !== a2) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
+          const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, i.user.id)).all();
+          await i.update({ ...eggListPayload(eggs, ctx.now(), i.user.id, Number(a3)), attachments: [] });
+          return;
+        }
         if (action !== 'crack') return;
+        const idStr = a2;
         try {
           const { species } = hatchEgg(ctx, i.user.id, Number(idStr));
           await i.update(revealPayload(species));

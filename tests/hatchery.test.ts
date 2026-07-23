@@ -89,19 +89,41 @@ describe('hatchery visuals', () => {
     const ready = { ...addEgg('epic'), hatchesAt: 5, incubationStartedAt: 1 };
     const incubating = { ...addEgg('rare'), hatchesAt: 999_999, incubationStartedAt: 1 };
     const newest = addEgg('common');
-    const p = eggListPayload([newest, incubating, ready], 10);
+    const p = eggListPayload([newest, incubating, ready], 10, 'u1');
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://epic.png');
     expect(p.files).toHaveLength(1);
   });
   it('eggListPayload falls back to newest-obtained when nothing is incubating', () => {
     const older = { ...addEgg('common'), obtainedAt: 1 };
     const newer = { ...addEgg('legendary'), obtainedAt: 2 };
-    const p = eggListPayload([older, newer], 10);
+    const p = eggListPayload([older, newer], 10, 'u1');
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://legendary.png');
   });
   it('eggListPayload with no eggs has no thumbnail', () => {
-    const p = eggListPayload([], 10);
+    const p = eggListPayload([], 10, 'u1');
     expect(p.embeds[0].toJSON().thumbnail).toBeUndefined();
     expect(p.files).toBeUndefined();
+  });
+});
+
+describe('egg list pagination', () => {
+  it('/eggs with 11 eggs shows Page 1/2 footer and a hatch:eggs:u1:2 Next button', async () => {
+    for (let n = 0; n < 11; n++) addEgg('common');
+    const i = fakeCommand({ name: 'eggs', user: 'u1' });
+    await hatcheryModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as {
+      embeds: Array<{ toJSON(): { footer?: { text: string } } }>;
+      components: Array<{ toJSON(): { components: Array<{ custom_id: string }> } }>;
+    };
+    expect(payload.embeds[0].toJSON().footer?.text).toBe('Page 1/2');
+    expect(payload.components[0].toJSON().components[1].custom_id).toBe('hatch:eggs:u1:2');
+  });
+  it('hatch:eggs button click by the owner updates to page 2', async () => {
+    for (let n = 0; n < 11; n++) addEgg('common');
+    const b = fakeButton({ customId: 'hatch:eggs:u1:2', user: 'u1', guild: 'g1' });
+    const hatchComponent = hatcheryModule.components.find((c) => c.prefix === 'hatch')!;
+    await hatchComponent.execute(ctx, b.asInteraction() as never);
+    const payload = b.replies[0] as { embeds: Array<{ toJSON(): { footer?: { text: string } } }> };
+    expect(payload.embeds[0].toJSON().footer?.text).toBe('Page 2/2');
   });
 });

@@ -10,6 +10,7 @@ import { InsufficientFundsError } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, listCompleter, type ListCandidate } from '../../core/autocomplete.js';
 import { getSpecies } from '../../data/species/index.js';
 import { TRADE_MAX_ITEMS_PER_SIDE } from '../../data/trade.js';
+import { paginate, pageRow } from '../../core/paginate.js';
 import type { Ctx } from '../../core/context.js';
 
 function summarize(side: TradeSide): string {
@@ -34,6 +35,18 @@ function tradeableEggs(ctx: Ctx, userId: string): ListCandidate[] {
   return ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, userId)).all()
     .filter((e) => !e.locked && e.rarity !== 'mythic' && e.incubationStartedAt === null)
     .map((e) => ({ id: e.id, label: `🥚 ${e.rarity} egg` }));
+}
+
+function tradeListPayload(ctx: Ctx, userId: string, page: number) {
+  const all = listTrades(ctx, userId);
+  const { items, page: p, pages } = paginate(all, page);
+  const lines = items.length ? items.map((t) => {
+    const dir = t.fromUser === userId ? `→ <@${t.toUser}>` : `← <@${t.fromUser}>`;
+    return `**#${t.id}** ${dir} — give ${summarize(t.fromUser === userId ? t.offer : t.request)} / get ${summarize(t.fromUser === userId ? t.request : t.offer)}`;
+  }).join('\n') : 'No pending trades.';
+  const embed = new EmbedBuilder().setTitle('🤝 Pending trades').setDescription(lines).setColor(0x5865F2)
+    .setFooter({ text: `Page ${p}/${pages}` });
+  return { embeds: [embed], components: pages > 1 ? [pageRow('trade', 'list', userId, p, pages)] : [] };
 }
 
 export const tradingModule: ModuleManifest = {
@@ -84,12 +97,7 @@ export const tradingModule: ModuleManifest = {
               `📨 Trade #${t.id} from **${i.user.displayName}** — they give ${summarize(offer)}, they want ${summarize(request)}. Run \`/trade accept id:${t.id}\`.`);
             await i.reply({ content: `🤝 Trade **#${t.id}** sent to <@${target.id}>.\nYou give: ${summarize(offer)}\nYou want: ${summarize(request)}\nThey run \`/trade accept id:${t.id}\`.` });
           } else if (sub === 'list') {
-            const trades = listTrades(ctx, i.user.id);
-            const lines = trades.length ? trades.map((t) => {
-              const dir = t.fromUser === i.user.id ? `→ <@${t.toUser}>` : `← <@${t.fromUser}>`;
-              return `**#${t.id}** ${dir} — give ${summarize(t.fromUser === i.user.id ? t.offer : t.request)} / get ${summarize(t.fromUser === i.user.id ? t.request : t.offer)}`;
-            }).join('\n') : 'No pending trades.';
-            await i.reply({ embeds: [new EmbedBuilder().setTitle('🤝 Pending trades').setDescription(lines).setColor(0x5865F2)] });
+            await i.reply(tradeListPayload(ctx, i.user.id, 1));
           } else if (sub === 'accept') {
             const t = acceptTrade(ctx, i.user.id, i.options.getInteger('id', true));
             await ctx.notify(t.fromUser, i.guildId, `✅ **${i.user.displayName}** accepted your trade #${t.id}!`);
@@ -154,5 +162,13 @@ export const tradingModule: ModuleManifest = {
         await i.respond([]);
       } },
   ],
-  components: [],
+  components: [
+    { prefix: 'trade', async execute(ctx, i) {
+        const [, action, uid, pageStr] = i.customId.split(':');
+        if (action !== 'list') return;
+        if (i.user.id !== uid) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
+        expireStale(ctx, i.user.id);
+        await i.update(tradeListPayload(ctx, i.user.id, Number(pageStr)));
+      } },
+  ],
 };

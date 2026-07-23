@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeCtx, fakeCommand } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton } from './harness.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { assignDino, unassignDino, decorateLot, paddockCapacity, listDinos, AssignError } from '../src/modules/park/dinos.js';
 import { parkModule } from '../src/modules/park/index.js';
@@ -84,6 +84,23 @@ describe('park dino commands', () => {
     await dinoCmd.execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: Array<{ data: { description?: string } }> };
     expect(payload.embeds[0].data.description).toContain('ESCAPED');
+  });
+});
+
+describe('dino list pagination', () => {
+  it('page button re-renders the requested page for the owner', async () => {
+    for (let n = 0; n < 11; n++) {
+      ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'velociraptor', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    }
+    const b = fakeButton({ customId: 'park:dinos:u1:2', user: 'u1', guild: 'g1' });
+    await parkModule.components[0].execute(ctx, b.asInteraction() as never);
+    const payload = b.replies[0] as { embeds: Array<{ toJSON(): { footer?: { text: string } } }> };
+    expect(payload.embeds[0].toJSON().footer?.text).toBe('Page 2/2');
+  });
+  it('rejects another user\'s click', async () => {
+    const b = fakeButton({ customId: 'park:dinos:u1:2', user: 'u2', guild: 'g1' });
+    await parkModule.components[0].execute(ctx, b.asInteraction() as never);
+    expect((b.replies[0] as { content: string }).content).toContain('Not your');
   });
 });
 
