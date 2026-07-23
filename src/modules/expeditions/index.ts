@@ -1,4 +1,5 @@
 import { SlashCommandBuilder, MessageFlags, EmbedBuilder } from 'discord.js';
+import type { AttachmentBuilder } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
@@ -8,6 +9,16 @@ import { InsufficientFundsError } from '../../core/economy.js';
 import { schema } from '../../core/db/index.js';
 import { siteUnlocked } from '../park/rating.js';
 import { matches, respondRanked, fmtDuration } from '../../core/autocomplete.js';
+import { assetImage } from '../../core/images.js';
+
+function sitePayload(siteId: string, description: string) {
+  const embed = new EmbedBuilder().setColor(0xe8590c)
+    .setTitle(`🧭 ${EXPEDITION_SITES[siteId].name}`).setDescription(description);
+  const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+  const img = assetImage('sites', `${siteId}-thumb`);
+  if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }
+  return payload;
+}
 
 export const expeditionsModule: ModuleManifest = {
   name: 'expeditions',
@@ -41,17 +52,22 @@ export const expeditionsModule: ModuleManifest = {
         try {
           if (sub === 'start') {
             const exp = startExpedition(ctx, i.user.id, i.options.getString('site', true), i.guildId);
-            await i.reply({ content: `🧭 Crew dispatched to **${EXPEDITION_SITES[exp.siteId].name}** — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.` });
+            await i.reply(sitePayload(exp.siteId, `Crew dispatched — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.`));
           } else if (sub === 'status') {
             const exp = activeExpedition(ctx, i.user.id);
-            await i.reply(exp
-              ? { content: exp.returnsAt <= ctx.now() ? '✅ Back! Use /expedition claim.' : `⏳ At **${EXPEDITION_SITES[exp.siteId].name}**, back <t:${Math.floor(exp.returnsAt / 1000)}:R>.` }
-              : { content: 'No active expedition. Start one with /expedition start.', flags: MessageFlags.Ephemeral });
+            if (!exp) { await i.reply({ content: 'No active expedition. Start one with /expedition start.', flags: MessageFlags.Ephemeral }); return; }
+            await i.reply(sitePayload(exp.siteId, exp.returnsAt <= ctx.now()
+              ? '✅ Back! Use /expedition claim.'
+              : `⏳ Digging — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.`));
           } else {
             const { loot, site } = claimExpedition(ctx, i.user.id);
-            await i.reply({ embeds: [new EmbedBuilder().setColor(0xe8590c).setTitle(`🧭 ${site.name} — returned!`)
+            const embed = new EmbedBuilder().setColor(0xe8590c).setTitle(`🧭 ${site.name} — returned!`)
               .setDescription(`Found a **${loot.eggRarity}** egg!`)
-              .addFields({ name: '💰 Cash', value: `+${loot.cash}`, inline: true }, { name: '🍖 Food', value: `+${loot.food}`, inline: true })] });
+              .addFields({ name: '💰 Cash', value: `+${loot.cash}`, inline: true }, { name: '🍖 Food', value: `+${loot.food}`, inline: true });
+            const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+            const banner = assetImage('sites', `${site.id}-banner`);
+            if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+            await i.reply(payload);
           }
         } catch (e) {
           if (e instanceof ExpeditionError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
