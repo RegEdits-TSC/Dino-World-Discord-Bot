@@ -13,6 +13,12 @@ is unavailable.
 Options that take an id — eggs, dinos, lots, trades, expedition sites, shop
 rarities, admin species — offer autocomplete suggestions as you type, with
 currently-valid picks listed first and everything else tagged with its state.
+`/help [topic]` is how to play — run it with no topic for a first-ten-minutes
+walkthrough plus a full command map, or pass a topic (park, eggs, expeditions,
+shop, care, trading, ranks) for a focused guide on that system.
+Embeds carry generated art — egg icons per rarity, expedition site art — living
+under `assets/images/`; every embed degrades gracefully and still renders,
+just without the image, when a file is absent.
 
 ## Setup
 
