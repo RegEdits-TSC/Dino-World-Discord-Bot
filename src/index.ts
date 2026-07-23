@@ -5,7 +5,7 @@ import { createDb, migrateDb } from './core/db/index.js';
 import { EconomyService } from './core/economy.js';
 import { logger } from './core/logger.js';
 import { ModuleRegistry } from './core/modules.js';
-import { clientSender, eggHatchHandler, expeditionReturnHandler } from './core/notify.js';
+import { clientSender, deliverNotification, eggHatchHandler, expeditionReturnHandler } from './core/notify.js';
 import { routeInteraction } from './core/router.js';
 import { Scheduler } from './core/scheduler.js';
 import { parkModule } from './modules/park/index.js';
@@ -27,6 +27,7 @@ const scheduler = new Scheduler(db);
 const ctx: Ctx = {
   db, economy: new EconomyService(db), config, scheduler,
   now: () => Date.now(), rng: Math.random,
+  notify: (userId, originGuildId, message) => deliverNotification(sender, ctx, userId, originGuildId, message),
 };
 const registry = new ModuleRegistry([parkModule, hatcheryModule, expeditionsModule, shopModule, settingsModule, careModule, tradingModule, leaderboardsModule, adminModule, helpModule], config.modules);
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });

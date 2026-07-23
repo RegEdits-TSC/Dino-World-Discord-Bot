@@ -80,6 +80,8 @@ export const tradingModule: ModuleManifest = {
               food: i.options.getInteger('want-food') ?? 0,
             };
             const t = createTrade(ctx, i.user.id, target.id, offer, request);
+            await ctx.notify(target.id, i.guildId,
+              `📨 Trade #${t.id} from **${i.user.displayName}** — they give ${summarize(offer)}, they want ${summarize(request)}. Run \`/trade accept id:${t.id}\`.`);
             await i.reply({ content: `🤝 Trade **#${t.id}** sent to <@${target.id}>.\nYou give: ${summarize(offer)}\nYou want: ${summarize(request)}\nThey run \`/trade accept id:${t.id}\`.` });
           } else if (sub === 'list') {
             const trades = listTrades(ctx, i.user.id);
@@ -90,9 +92,13 @@ export const tradingModule: ModuleManifest = {
             await i.reply({ embeds: [new EmbedBuilder().setTitle('🤝 Pending trades').setDescription(lines).setColor(0x5865F2)] });
           } else if (sub === 'accept') {
             const t = acceptTrade(ctx, i.user.id, i.options.getInteger('id', true));
+            await ctx.notify(t.fromUser, i.guildId, `✅ **${i.user.displayName}** accepted your trade #${t.id}!`);
             await i.reply({ content: `✅ Trade #${t.id} completed!` });
           } else if (sub === 'decline') {
-            declineTrade(ctx, i.user.id, i.options.getInteger('id', true));
+            const declineId = i.options.getInteger('id', true);
+            const declined = ctx.db.select().from(schema.trades).where(eq(schema.trades.id, declineId)).get();
+            declineTrade(ctx, i.user.id, declineId);
+            if (declined) await ctx.notify(declined.fromUser, i.guildId, `❌ Your trade #${declined.id} was declined.`);
             await i.reply({ content: '❌ Trade declined.' });
           } else {
             cancelTrade(ctx, i.user.id, i.options.getInteger('id', true));

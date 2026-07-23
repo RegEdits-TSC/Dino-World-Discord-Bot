@@ -163,3 +163,29 @@ describe('trading module', () => {
     expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.userId).toBe('b');
   });
 });
+
+describe('trade notifications', () => {
+  it('offer pings the recipient', async () => {
+    ctx.economy.apply('a', { cash: 1_000 }, 'seed', 0);
+    const i = fakeCommand({ name: 'trade', sub: 'offer', user: 'a', guild: 'g1', options: { user: 'b', 'give-cash': 100 } });
+    await tradingModule.commands[0].execute(ctx, i.asChatInput());
+    expect(ctx.notifications).toHaveLength(1);
+    expect(ctx.notifications[0].userId).toBe('b');
+    expect(ctx.notifications[0].originGuildId).toBe('g1');
+    expect(ctx.notifications[0].message).toContain('/trade accept');
+  });
+  it('accept pings the offerer', async () => {
+    ctx.economy.apply('a', { cash: 1_000 }, 'seed', 0);
+    const t = createTrade(ctx, 'a', 'b', { dinoIds: [], eggIds: [], cash: 100, food: 0 }, { dinoIds: [], eggIds: [], cash: 0, food: 0 });
+    const i = fakeCommand({ name: 'trade', sub: 'accept', user: 'b', guild: 'g1', options: { id: t.id } });
+    await tradingModule.commands[0].execute(ctx, i.asChatInput());
+    expect(ctx.notifications.some((n) => n.userId === 'a' && n.message.includes('accepted'))).toBe(true);
+  });
+  it('decline pings the offerer', async () => {
+    ctx.economy.apply('a', { cash: 1_000 }, 'seed', 0);
+    const t = createTrade(ctx, 'a', 'b', { dinoIds: [], eggIds: [], cash: 100, food: 0 }, { dinoIds: [], eggIds: [], cash: 0, food: 0 });
+    const i = fakeCommand({ name: 'trade', sub: 'decline', user: 'b', guild: 'g1', options: { id: t.id } });
+    await tradingModule.commands[0].execute(ctx, i.asChatInput());
+    expect(ctx.notifications.some((n) => n.userId === 'a' && n.message.includes('declined'))).toBe(true);
+  });
+});

@@ -7,9 +7,10 @@ import type { ChatInputCommandInteraction, Interaction, AutocompleteInteraction 
 
 export { mulberry32 } from '../src/core/rolls.js';
 
-export function makeCtx(overrides: Partial<Ctx> & { nowMs?: number } = {}): Ctx & { setNow(ms: number): void } {
+export function makeCtx(overrides: Partial<Ctx> & { nowMs?: number } = {}): Ctx & { setNow(ms: number): void; notifications: Array<{ userId: string; originGuildId: string | null; message: string }> } {
   const db = createDb(':memory:'); migrateDb(db);
   let nowMs = overrides.nowMs ?? 0;
+  const notifications: Array<{ userId: string; originGuildId: string | null; message: string }> = [];
   return {
     db, economy: new EconomyService(db),
     config: { token: 't', clientId: 'c', databasePath: ':memory:', ownerId: 'owner', modules: {} },
@@ -17,6 +18,8 @@ export function makeCtx(overrides: Partial<Ctx> & { nowMs?: number } = {}): Ctx 
     now: () => nowMs,
     rng: mulberry32(42),
     setNow: (ms: number) => { nowMs = ms; },
+    notify: async (userId: string, originGuildId: string | null, message: string) => { notifications.push({ userId, originGuildId, message }); },
+    notifications,
     ...overrides,
   };
 }
