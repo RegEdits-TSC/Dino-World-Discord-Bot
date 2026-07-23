@@ -15,7 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "deploy-commands": "tsx src/deploy-commands.ts",
-    "build-emojis": "tsx src/build-emojis.ts"
+    "build-emojis": "tsx src/build-emojis.ts",
+    "deploy-emojis": "tsx src/deploy-emojis.ts"
   },
   "keywords": [],
   "author": "",

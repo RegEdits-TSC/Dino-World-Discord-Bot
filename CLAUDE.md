@@ -35,3 +35,10 @@
   than 2% pure `#000000` (`MAX_BLACK_SHARE`), calibrated against the currency trio, none of which
   use pure black — if a future SVG legitimately needs pure black across more of the canvas than
   that, raise the threshold deliberately rather than fighting the guard.
+- Custom app emojis: SVG sources in `assets/emojis/svg/`, rendered via
+  `npm run build-emojis` (PNGs committed), synced with `npm run deploy-emojis`
+  (manifest.json tracks deployed hashes). Runtime lookup is `emojiTag` /
+  `rarityEmoji` (`src/core/emojis.ts`) — unicode fallback when unset, so a
+  missing emoji is never an error. Never call `emojiTag` in a module-level
+  constant (map loads after client ready), and never put custom emoji tags
+  in autocomplete labels (Discord renders them as literal text there).
