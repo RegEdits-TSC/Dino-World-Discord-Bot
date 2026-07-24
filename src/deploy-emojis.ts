@@ -14,8 +14,14 @@ const local = new Map<string, Buffer>();
 for (const f of readdirSync(PNG_DIR).filter((n) => n.endsWith('.png')).sort()) {
   local.set(f.replace('.png', ''), readFileSync(resolve(PNG_DIR, f)));
 }
-const manifest: Record<string, string> = existsSync(MANIFEST)
-  ? JSON.parse(readFileSync(MANIFEST, 'utf8')) : {};
+let manifest: Record<string, string> = {};
+if (existsSync(MANIFEST)) {
+  try {
+    manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
+  } catch {
+    throw new Error(`Corrupt manifest at ${MANIFEST} — delete it and rerun (this safely re-uploads everything).`);
+  }
+}
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 
 const res = await rest.get(Routes.applicationEmojis(config.clientId)) as

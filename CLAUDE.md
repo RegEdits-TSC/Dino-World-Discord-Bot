@@ -32,7 +32,13 @@
   constant** (the map loads after client ready, so module init would freeze
   the fallback permanently), and **never put a custom emoji tag in an
   autocomplete label** (Discord renders it as literal text there). Neither
-  mistake fails a test, because tests load no map. Known resvg gotcha:
+  mistake fails a test, because tests load no map. **Never pass a rarity tag
+  (`rarityEmoji(...)`) to `ButtonBuilder.setEmoji`** — unlike every other call
+  site, `setEmoji` throws rather than degrading: `resolvePartialEmoji('')`
+  returns `null` and the builder rejects it, and the six rarity gems
+  legitimately return `''` when no map is loaded. Today only `dw_cash` is
+  passed to `setEmoji`, so this is currently safe, but it's a live hazard for
+  future button work. Known resvg gotcha:
   `<ellipse fill="url(#gradient)">` with the default `objectBoundingBox`
   gradientUnits renders solid black — use `gradientUnits="userSpaceOnUse"`
   with `y1`/`y2` set to the ellipse's own pre-transform bbox instead (same

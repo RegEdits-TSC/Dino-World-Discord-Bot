@@ -3,7 +3,10 @@ import type { Client } from 'discord.js';
 import { emojiTag, rarityEmoji, setEmojiMap, clearEmojiMap, EMOJI_FALLBACK, loadAppEmojis } from '../src/core/emojis.js';
 import { logger } from '../src/core/logger.js';
 
-afterEach(() => clearEmojiMap());
+afterEach(() => {
+  clearEmojiMap();
+  vi.restoreAllMocks();
+});
 
 describe('emojiTag', () => {
   it('falls back to unicode when no map is loaded', () => {
@@ -94,7 +97,5 @@ describe('loadAppEmojis', () => {
     expect(emojiTag('dw_cash')).toBe('💰');
     expect(emojiTag('dw_food')).toBe('🍖');
     expect(warnSpy).toHaveBeenCalledTimes(1);
-
-    warnSpy.mockRestore();
   });
 });
