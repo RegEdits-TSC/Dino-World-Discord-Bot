@@ -1,10 +1,10 @@
-import { SlashCommandBuilder, MessageFlags, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
 import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, toClockDinos } from './service.js';
 import { settleEscapes } from './escapes.js';
-import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError } from './dinos.js';
+import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError } from './dinos.js';
 import { dashboardPayload, withParkImage } from './embeds.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
@@ -32,7 +32,8 @@ function dinoListPayload(ctx: Ctx, userId: string, page: number) {
         const warn = d.dino.escapedAt === null && d.escapeAt !== null && d.escapeAt - nowMs <= ESCAPE_WARN_MS
           ? ` — ${emojiTag('dw_hunger')} escapes <t:${Math.floor(d.escapeAt / 1000)}:R>` : '';
         const loc = d.dino.lotId ? `lot ${d.dino.lotId}` : 'unassigned';
-        return `#${d.dino.id} ${d.species.name} — ${status}${warn} — ${loc}`;
+        const habitat = d.mismatch ? ' — ⚠️ wrong habitat' : '';
+        return `#${d.dino.id} ${d.species.name} — ${status}${warn}${habitat} — ${loc}`;
       }).join('\n')
     : 'No dinos yet. Hatch one!';
   const embed = new EmbedBuilder().setTitle('🦕 Your dinos').setDescription(lines).setColor(0x3ba55c)
@@ -89,7 +90,9 @@ export const parkModule: ModuleManifest = {
         }).length;
         const pending = pendingIncome(ctx, i.user.id);
         const capped = pending > 0 && ctx.now() - user.lastCollectAt >= capHours(lots) * 3_600_000;
-        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped });
+        const mismatchCount = clockDinos.filter((c) =>
+          c.paddock !== null && c.escapedAt === null && c.paddock.diet !== c.species.diet).length;
+        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount });
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
         await i.editReply(png ? withParkImage(base, png) : base);
@@ -156,8 +159,20 @@ export const parkModule: ModuleManifest = {
           if (sub === 'list') {
             await i.reply(dinoListPayload(ctx, i.user.id, 1));
           } else if (sub === 'assign') {
-            assignDino(ctx, i.user.id, i.options.getInteger('dino', true), i.options.getInteger('lot', true));
-            await i.reply({ content: '🦕 Assigned.' });
+            const dinoId = i.options.getInteger('dino', true);
+            const lotId = i.options.getInteger('lot', true);
+            try {
+              assignDino(ctx, i.user.id, dinoId, lotId);
+              await i.reply({ content: '🦕 Assigned.' });
+            } catch (e) {
+              if (!(e instanceof DietMismatchError)) throw e;
+              const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+                new ButtonBuilder().setCustomId(`park:assignyes:${i.user.id}:${dinoId}:${lotId}`)
+                  .setLabel('Assign anyway').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId(`park:assignno:${i.user.id}`)
+                  .setLabel('Cancel').setStyle(ButtonStyle.Secondary));
+              await i.reply({ content: `⚠️ ${e.message}`, components: [row], flags: MessageFlags.Ephemeral });
+            }
           } else {
             unassignDino(ctx, i.user.id, i.options.getInteger('dino', true));
             await i.reply({ content: '🦕 Unassigned.' });
@@ -232,7 +247,21 @@ export const parkModule: ModuleManifest = {
           await i.reply({ content: amount > 0 ? `${emojiTag('dw_cash')} Collected **${amount.toLocaleString()}** cash.` : 'Nothing to collect yet.', flags: MessageFlags.Ephemeral });
           return;
         }
-        const [, action, uid, pageStr] = i.customId.split(':');
+        const parts = i.customId.split(':');
+        const [, action, uid, pageStr] = parts;
+        if (action === 'assignyes' || action === 'assignno') {
+          if (i.user.id !== uid) { await i.reply({ content: 'Not your assignment.', flags: MessageFlags.Ephemeral }); return; }
+          if (action === 'assignno') { await i.update({ content: 'Assignment cancelled.', components: [] }); return; }
+          settleEscapes(ctx, i.user.id);
+          try {
+            assignDino(ctx, i.user.id, Number(parts[3]), Number(parts[4]), { allowMismatch: true });
+            await i.update({ content: '🦕 Assigned — wrong habitat, comfort halved.', components: [] });
+          } catch (e) {
+            if (e instanceof AssignError) await i.update({ content: e.message, components: [] });
+            else throw e;
+          }
+          return;
+        }
         if (action === 'dinos') {
           if (i.user.id !== uid) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
           settleEscapes(ctx, i.user.id);

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeCtx, fakeCommand, fakeButton } from './harness.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
-import { assignDino, unassignDino, decorateLot, paddockCapacity, listDinos, AssignError } from '../src/modules/park/dinos.js';
+import { assignDino, unassignDino, decorateLot, paddockCapacity, listDinos, AssignError, DietMismatchError } from '../src/modules/park/dinos.js';
 import { parkModule } from '../src/modules/park/index.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
@@ -113,5 +113,45 @@ describe('park visits', () => {
     const payload = i.replies[0] as { embeds: unknown[]; components?: unknown[] };
     expect(payload.embeds).toHaveLength(1);
     expect(payload.components).toBeUndefined();
+  });
+});
+
+describe('diet mismatch confirm', () => {
+  it('throws DietMismatchError for a wrong-diet assignment unless allowMismatch', () => {
+    const lot = buildLot(ctx, 'u1', 'carnivore_paddock');
+    const d = addDino();                                       // triceratops, herbivore
+    expect(() => assignDino(ctx, 'u1', d.id, lot.id)).toThrow(DietMismatchError);
+    assignDino(ctx, 'u1', d.id, lot.id, { allowMismatch: true });
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.lotId).toBe(lot.id);
+  });
+  it('matched-diet assignment is unaffected', () => {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    expect(() => assignDino(ctx, 'u1', addDino().id, lot.id)).not.toThrow();
+  });
+  it('listDinos flags mismatched dinos', () => {
+    const lot = buildLot(ctx, 'u1', 'carnivore_paddock');
+    const d = addDino();
+    assignDino(ctx, 'u1', d.id, lot.id, { allowMismatch: true });
+    const row = listDinos(ctx, 'u1').find((x) => x.dino.id === d.id)!;
+    expect(row.mismatch).toBe(true);
+  });
+  it('/dino assign replies with Confirm/Cancel buttons on mismatch, and the yes button assigns', async () => {
+    const lot = buildLot(ctx, 'u1', 'carnivore_paddock');
+    const d = addDino();
+    const dinoCmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const i = fakeCommand({ name: 'dino', sub: 'assign', user: 'u1', options: { dino: d.id, lot: lot.id } });
+    await dinoCmd.execute(ctx, i.asChatInput());
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.lotId).toBeNull();
+    const payload = i.replies[0] as { content: string; components: unknown[] };
+    expect(payload.content).toContain('herbivore');
+    expect(payload.components).toHaveLength(1);
+    const b = fakeButton({ customId: `park:assignyes:u1:${d.id}:${lot.id}`, user: 'u1' });
+    await parkModule.components[0].execute(ctx, b.asInteraction() as never);
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.lotId).toBe(lot.id);
+  });
+  it('rejects another user\'s confirm click', async () => {
+    const b = fakeButton({ customId: 'park:assignyes:u1:1:1', user: 'u2' });
+    await parkModule.components[0].execute(ctx, b.asInteraction() as never);
+    expect((b.replies[0] as { content: string }).content).toContain('Not your');
   });
 });

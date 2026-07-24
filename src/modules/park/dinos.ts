@@ -3,11 +3,18 @@ import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { getSpecies } from '../../data/species/index.js';
 import { DECOR } from '../../data/decor.js';
+import { PADDOCKS } from '../../data/paddocks.js';
+import type { Diet } from '../../data/types.js';
 import { comfortAt, escapeAt } from '../../core/clock.js';
 import { toClockDinos, type Lot } from './service.js';
 import { recomputeRating } from './rating.js';
 
 export class AssignError extends Error {}
+export class DietMismatchError extends Error {
+  constructor(public speciesName: string, public dinoDiet: Diet, public paddockName: string) {
+    super(`${speciesName} is a ${dinoDiet} — ${paddockName} halves its comfort: it earns less and escapes sooner.`);
+  }
+}
 export function paddockCapacity(level: number): number { return 2 * level; }
 
 function ownedPaddock(ctx: Ctx, userId: string, lotId: number): Lot {
@@ -18,7 +25,7 @@ function ownedPaddock(ctx: Ctx, userId: string, lotId: number): Lot {
   return lot;
 }
 
-export function assignDino(ctx: Ctx, userId: string, dinoId: number, lotId: number): void {
+export function assignDino(ctx: Ctx, userId: string, dinoId: number, lotId: number, opts: { allowMismatch?: boolean } = {}): void {
   const dino = ctx.db.select().from(schema.dinos)
     .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
   if (!dino) throw new AssignError('You do not own that dino.');
@@ -27,6 +34,10 @@ export function assignDino(ctx: Ctx, userId: string, dinoId: number, lotId: numb
   const occupants = ctx.db.select().from(schema.dinos)
     .where(and(eq(schema.dinos.userId, userId), eq(schema.dinos.lotId, lotId), ne(schema.dinos.id, dinoId))).all().length;
   if (occupants >= paddockCapacity(lot.level)) throw new AssignError('That paddock is full.');
+  const species = getSpecies(dino.speciesId);
+  const paddock = PADDOCKS[lot.kind];
+  if (!opts.allowMismatch && paddock.diet !== species.diet)
+    throw new DietMismatchError(species.name, species.diet, paddock.name);
   ctx.db.update(schema.dinos).set({ lotId }).where(eq(schema.dinos.id, dinoId)).run();
   recomputeRating(ctx, userId);
 }
@@ -58,5 +69,6 @@ export function listDinos(ctx: Ctx, userId: string) {
     species: getSpecies(d.speciesId),
     comfort: comfortAt(clockDinos[i], ctx.now()),
     escapeAt: escapeAt(clockDinos[i]),
+    mismatch: clockDinos[i].paddock !== null && clockDinos[i].paddock!.diet !== clockDinos[i].species.diet,
   }));
 }

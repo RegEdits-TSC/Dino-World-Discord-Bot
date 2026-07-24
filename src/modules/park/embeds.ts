@@ -9,11 +9,12 @@ const LOT_EMOJI: Record<string, string> = {
 
 export function dashboardPayload(
   user: User, lots: Lot[], dinoCount: number, pending: number, escapedCount = 0,
-  opts: { atRiskCount?: number; capped?: boolean } = {},
+  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number } = {},
 ) {
   const extras: string[] = [];
   if (escapedCount > 0) extras.push(`${escapedCount} ${emojiTag('dw_alert')} escaped`);
   if (opts.atRiskCount) extras.push(`${emojiTag('dw_hunger')} ${opts.atRiskCount} at risk`);
+  if (opts.mismatchCount) extras.push(`⚠️ ${opts.mismatchCount} wrong habitat`);
   const dinoValue = extras.length ? `${dinoCount} (${extras.join(', ')})` : String(dinoCount);
   const embed = new EmbedBuilder()
     .setTitle(`🏞️ ${user.parkName}`)
