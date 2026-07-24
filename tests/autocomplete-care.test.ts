@@ -44,6 +44,28 @@ describe('/feed one autocomplete', () => {
   });
 });
 
+describe('/feed one food autocomplete', () => {
+  it('lists only the target dino\'s diet, affordable first, with unicode labels', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1');                          // starter: 10 ferns, 10 fish
+    const d = seedDino(ctx, { speciesId: 'triceratops' });     // herbivore, feedCost 5
+    const i = fakeAutocomplete({ name: 'feed', sub: 'one', user: 'u1',
+      focused: { name: 'food', value: '' }, options: { dino: d.id } });
+    await cmd('feed').autocomplete!(ctx, i.asAutocomplete());
+    const rows = i.replies[0] as Array<{ name: string; value: string }>;
+    expect(rows.map((r) => r.value)).toEqual(['ferns', 'fruit_basket', 'royal_greens']);
+    expect(rows[0].name).toBe('🌿 Ferns ×10 — fills 100');
+    expect(rows[1].name).toBe('🍎 Fruit Basket ×0 — fills 125, not enough');
+  });
+  it('hints to pick the dino first when the dino option is empty', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const i = fakeAutocomplete({ name: 'feed', sub: 'one', user: 'u1', focused: { name: 'food', value: '' } });
+    await cmd('feed').autocomplete!(ctx, i.asAutocomplete());
+    expect(i.replies[0]).toEqual([{ name: 'Pick the dino option first', value: '-' }]);
+  });
+});
+
 describe('/rescue autocomplete', () => {
   it('ranks escaped dinos first with the ESCAPED tag', async () => {
     const ctx = makeCtx();

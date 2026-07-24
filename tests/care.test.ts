@@ -171,4 +171,13 @@ describe('care module', () => {
     expect(payload.files).toHaveLength(1);
     expect(payload.files![0].name).toBe('care.png');
   });
+
+  it('/feed one food:<id> passes the explicit pick through (wrong diet is an ephemeral error)', async () => {
+    const d = addDino();
+    const i = fakeCommand({ name: 'feed', sub: 'one', user: 'u1', options: { dino: d.id, food: 'fish' } });
+    await careModule.commands[0].execute(ctx, i.asChatInput());
+    const reply = i.replies[0] as { content?: string; flags?: unknown };
+    expect(reply.content).toBe("Triceratops is a herbivore — it won't eat Fish.");
+    expect(reply.flags).toBeDefined();
+  });
 });

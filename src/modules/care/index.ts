@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, MessageFlags, EmbedBuilder, type AttachmentBuilder } from 'discord.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
@@ -9,7 +9,8 @@ import { feedDino, feedAll, rescueDino, CareError } from './service.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { hungerAt } from '../../core/clock.js';
 import { getSpecies } from '../../data/species/index.js';
-import { FOODS, type FoodId } from '../../data/foods.js';
+import { FOODS, foodsForDiet, type FoodId } from '../../data/foods.js';
+import { RARITY } from '../../data/rarity.js';
 import { matches, respondRanked, emptyRow, dinoLabel, VERY_HUNGRY_MS } from '../../core/autocomplete.js';
 import { emojiTag } from '../../core/emojis.js';
 import { assetImage } from '../../core/images.js';
@@ -41,7 +42,8 @@ export const careModule: ModuleManifest = {
   commands: [
     { data: new SlashCommandBuilder().setName('feed').setDescription('Feed your dinos')
         .addSubcommand((s) => s.setName('one').setDescription('Feed a single dino')
-          .addIntegerOption((o) => o.setName('dino').setDescription('Dino — type to search').setRequired(true).setAutocomplete(true)))
+          .addIntegerOption((o) => o.setName('dino').setDescription('Dino — type to search').setRequired(true).setAutocomplete(true))
+          .addStringOption((o) => o.setName('food').setDescription('Food — leave empty to auto-pick the cheapest').setAutocomplete(true)))
         .addSubcommand((s) => s.setName('all').setDescription('Feed every hungry dino, hungriest first')),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
@@ -55,7 +57,8 @@ export const careModule: ModuleManifest = {
             await i.reply(carePayload(ctx, i.user.id, skipped.length
               ? `${msg} Skipped ${skipped.length} (no matching food — /shop food).` : msg));
           } else {
-            const { species, food, cost } = feedDino(ctx, i.user.id, i.options.getInteger('dino', true));
+            const { species, food, cost } = feedDino(ctx, i.user.id,
+              i.options.getInteger('dino', true), i.options.getString('food') ?? undefined);
             await i.reply(carePayload(ctx, i.user.id, `Fed your ${species.name} (−${cost} ${food.name}).`));
           }
         } catch (e) {
@@ -66,9 +69,31 @@ export const careModule: ModuleManifest = {
       },
       async autocomplete(ctx, i) {
         if (i.options.getSubcommand() !== 'one') { await i.respond([]); return; }
+        const focused = i.options.getFocused(true);
+        if (focused.name === 'food') {
+          const dinoId = i.options.get('dino')?.value;
+          if (dinoId == null) { await i.respond([{ name: 'Pick the dino option first', value: '-' }]); return; }
+          const dino = ctx.db.select().from(schema.dinos)
+            .where(and(eq(schema.dinos.id, Number(dinoId)), eq(schema.dinos.userId, i.user.id))).get();
+          if (!dino) { await i.respond([{ name: 'Pick the dino option first', value: '-' }]); return; }
+          const species = getSpecies(dino.speciesId);
+          const cost = RARITY[species.rarity].feedCost;
+          const inv = ctx.economy.getFoodInventory(i.user.id);
+          const q = String(focused.value);
+          await respondRanked(i, foodsForDiet(species.diet)
+            .filter((f) => matches(q, f.id, f.name))
+            .map((f) => {
+              const held = inv[f.id] ?? 0;
+              const affordable = held >= cost;
+              // Unicode fallback only: custom emoji tags render as literal text in autocomplete.
+              return { value: f.id, valid: affordable,
+                label: `${f.fallback} ${f.name} ×${held} — fills ${f.fillTo}${affordable ? '' : ', not enough'}` };
+            }));
+          return;
+        }
         const dinos = settledDinos(ctx, i.user.id);
         if (!dinos?.length) { await respondRanked(i, [emptyRow('No dinos — hatch an egg first', 0)]); return; }
-        const q = String(i.options.getFocused());
+        const q = String(focused.value);
         const now = ctx.now();
         await respondRanked(i, dinos
           .map((d) => ({ d, species: getSpecies(d.speciesId) }))
