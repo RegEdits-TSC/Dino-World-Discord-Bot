@@ -154,4 +154,11 @@ describe('diet mismatch confirm', () => {
     await parkModule.components[0].execute(ctx, b.asInteraction() as never);
     expect((b.replies[0] as { content: string }).content).toContain('Not your');
   });
+  it('cancel button leaves the dino unassigned and reports cancellation', async () => {
+    const d = addDino();
+    const b = fakeButton({ customId: 'park:assignno:u1', user: 'u1' });
+    await parkModule.components[0].execute(ctx, b.asInteraction() as never);
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.lotId).toBeNull();
+    expect((b.replies[0] as { content: string }).content).toContain('cancelled');
+  });
 });
