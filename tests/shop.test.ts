@@ -76,7 +76,7 @@ describe('shop visuals', () => {
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { thumbnail?: { url: string } } }>; files?: unknown[] };
     // dailyEggOffers always returns ≥1 rarity with egg art present for all six rarities
     expect(payload.embeds[0].toJSON().thumbnail?.url).toMatch(/^attachment:\/\/(common|uncommon|rare|epic|legendary)\.png$/);
-    expect(payload.files).toHaveLength(1);
+    expect(payload.files!.length).toBeGreaterThanOrEqual(1);   // egg thumbnail; food-market banner may add a second
   });
   it('/shop egg purchase replies with a rarity-colored embed and egg thumbnail', async () => {
     const offers = dailyEggOffers(0, ctx.now());
