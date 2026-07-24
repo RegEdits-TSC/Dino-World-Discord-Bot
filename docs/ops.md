@@ -48,9 +48,17 @@ This guide covers deploying Dino World to production, running it as a system ser
 
    **Dev vs production scope:** if `DEV_GUILD_ID` is set in `.env`, `deploy-commands` registers to that guild only — this propagates **instantly**, which is ideal for testing. Leave `DEV_GUILD_ID` unset in production to register commands **globally** (available in every server the bot joins; global registration can take up to ~1 hour to appear). Do not have both a global set and a guild set with the same command names, or that guild will show each command twice.
 
-6. **Start the bot**:
+6. **Deploy custom application emojis**:
+   ```bash
+   npm run deploy-emojis
+   ```
+   This uploads the 21 custom emojis to the bot's Discord application and writes `assets/emojis/manifest.json` (emoji name → sha256 of the uploaded PNG). **Commit that file right away.** If it goes missing, the next `deploy-emojis` run sees every hash as changed and deletes + recreates all 21 emojis with new snowflake IDs — every message already posted with an old `<:dw_cash:ID>` tag then renders as a broken emoji, silently and with no way to recover it by rerunning. This is the only irreversible live write in the deploy; run it once, after the code is built, before starting the bot.
+
+7. **Start the bot**:
    - **Direct**: `node dist/index.js`
    - **With systemd** (recommended): See the section below.
+
+   Start (or restart) the bot **after** `deploy-emojis` has run — the runtime emoji map (`emojiTag` / `rarityEmoji`) is fetched once at `ClientReady`, so a bot process already running when the emojis changed won't pick up the new IDs until it restarts.
 
 The bot will log "Logged in as ..." when connected. It stores all state in the SQLite database at `DATABASE_PATH`.
 
@@ -58,11 +66,14 @@ The bot will log "Logged in as ..." when connected. It stores all state in the S
 
 `/park view` renders a PNG park map in a worker thread using `@napi-rs/canvas`
 (native, prebuilt binaries — no system libraries to install). Fonts are bundled
-at `assets/fonts/` (Noto Sans + Noto Color Emoji) and must ship with the deploy;
-they are read relative to the process working directory, so run the bot from the
-repo root (the systemd unit already sets `WorkingDirectory`). If rendering fails
-or exceeds ~3s, `/park view` automatically falls back to the text-only embed —
-the command never fails because of the renderer.
+at `assets/fonts/` (Noto Sans + Noto Color Emoji), the HUD coin icon is drawn
+straight from `assets/emojis/svg/dw_cash.svg`, and embed art (egg icons, site
+thumbnails, banners) lives under `assets/images/` — all three directories must
+ship with the deploy. They are read relative to the process working directory,
+so run the bot from the repo root (the systemd unit already sets
+`WorkingDirectory`). If rendering fails or exceeds ~3s, `/park view`
+automatically falls back to the text-only embed — the command never fails
+because of the renderer.
 
 ## Running as a Service
 
@@ -272,12 +283,19 @@ Then:
    npm run deploy-commands
    ```
 
-5. **Restart the service**:
+5. **Redeploy emojis** (if any emoji SVG/PNG changed in this release):
+   ```bash
+   npm run deploy-emojis
+   ```
+   Then commit the updated `assets/emojis/manifest.json` — see step 6 of **Deployment Steps** above for why losing that file is costly. Do this before restarting the service in the next step.
+
+6. **Restart the service**:
    ```bash
    sudo systemctl restart dino-world
    ```
+   Restart **after** `deploy-emojis`, not before — the runtime emoji map is fetched once at `ClientReady`, so an already-running process won't see new emoji IDs until it restarts.
 
-6. **Verify** it started: Check logs and confirm the bot is online in your test server.
+7. **Verify** it started: Check logs and confirm the bot is online in your test server.
 
 ## Release Smoke Test
 

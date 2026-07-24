@@ -48,6 +48,18 @@ npm run deploy-commands
 Re-run this whenever command definitions change — autocomplete flags and
 option descriptions are part of the registered command shape.
 
+Build and upload the bot's 21 custom application emojis:
+
+```
+npm run build-emojis
+npm run deploy-emojis
+```
+
+`build-emojis` renders the hand-authored SVGs under `assets/emojis/svg/` to
+committed PNGs under `assets/emojis/png/`; `deploy-emojis` uploads any
+changed PNGs to Discord and writes `assets/emojis/manifest.json`, which must
+be committed afterward — see [Operations Runbook](docs/ops.md) for why.
+
 Start the bot in development mode (restarts on file changes):
 
 ```
