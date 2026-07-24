@@ -19,6 +19,12 @@ expeditions, shop, care, trading, ranks) for a focused guide on that system.
 Embeds carry generated art — egg icons per rarity, expedition site art — living
 under `assets/images/`; every embed degrades gracefully and still renders,
 just without the image, when a file is absent.
+Food comes in six diet-typed items — Ferns, Fruit Basket, and Royal Greens for
+herbivores; Fish, Goat, and Prime Steak for carnivores — bought by item and
+quantity via `/shop food item:<food> units:<n>`, with carnivore food costing
+about 20% more than the matching herbivore tier. Higher tiers overfill hunger
+(up to 150) so dinos stay fed longer between feedings, and `/feed` only
+accepts food matching a dino's diet.
 
 ## Setup
 

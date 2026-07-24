@@ -56,3 +56,10 @@
   buffers decode synchronously, which is why `renderSvg` needs no await and why
   the park renderer draws its HUD cash icon straight from `dw_cash.svg` rather
   than a PNG (`renderParkPng` is synchronous).
+- Food is typed (`src/data/foods.ts`, 3 tiers × 2 diets) and lives in the
+  `food_inventory` table — `users.food` no longer exists. Feeding sets
+  `hunger = fillTo` (up to 150): `comfortAt` clamps the hunger term at 100, and
+  `accruedIncome` must stay piecewise across the hunger-100 crossing — a plain
+  two-point trapezoid over-/under-pays overfed dinos. Autocomplete labels use
+  `FoodDef.fallback` unicode, never `emojiTag`/`foodEmoji` (custom tags render
+  as literal text in autocomplete).

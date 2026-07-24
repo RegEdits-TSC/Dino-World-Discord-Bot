@@ -323,6 +323,14 @@ warning.
 > outlines, clean cel shading with smooth gradients, polished game-asset look.
 > No text, no human characters, no UI elements.
 
+### shop_food_market (banners/shop_food_market.png)
+
+Jurassic-park gift-shop food market stall, wooden counter with two clearly split
+display sides: left side lush greens — fern bundles, fruit baskets, crowned
+premium lettuce; right side butcher/fishmonger — fresh fish on ice, hanging meat
+leg, marbled steak. Warm tropical daylight, painted-illustration style matching
+the existing site banners, no text, no people, 16:9.
+
 ---
 
 ## Emoji icons

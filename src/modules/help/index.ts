@@ -19,6 +19,7 @@ export const HELP_TOPICS: Record<string, { title: string; body: string }> = {
     '`/upgrade lot:<id>` — raise a lot one level.',
     '`/decorate lot:<id> item:<decor>` — decor boosts comfort for matching biomes.',
     'Income accrues while dinos are comfortable, up to your Visitor Center cap — collect often.',
+    'Dinos in the wrong-diet paddock earn half comfort — the bot warns before you assign one.',
   ].join('\n') },
   eggs: { title: '🥚 Eggs', body: [
     '`/eggs` — your eggs and incubator status.',
@@ -35,16 +36,18 @@ export const HELP_TOPICS: Record<string, { title: string; body: string }> = {
   shop: { title: '🏪 Shop', body: [
     '`/shop view` — today\'s egg rotation (changes daily), food, decor.',
     '`/shop egg rarity:<r>` — buy an egg from today\'s rotation.',
-    '`/shop food item:<food> units:<n>` — food for feeding, matched to each dino\'s diet.',
+    '`/shop food item:<food> units:<n>` — diet-matched food; carnivore food costs ~20% more.',
     '`/sell dino:<id>` — sell a dino for cash + shards (shards buy Mythics).',
   ].join('\n') },
   care: { title: '🍖 Care', body: [
-    '`/feed one dino:<id>` or `/feed all` — feeding resets hunger; costs food by rarity.',
+    '`/feed one dino:<id> [food:<item>]` or `/feed all` — feeding resets hunger; costs food by rarity.',
+    'Dinos only eat their diet: herbivores get Ferns/Fruit Basket/Royal Greens, carnivores get Fish/Goat/Prime Steak.',
+    'Premium food overfills hunger (up to 150) so dinos stay fed longer.',
     'Hunger drains over 48h. Low comfort long enough → the dino escapes and stops earning.',
     '`/rescue dino:<id>` — recapture an escaped dino for a fee.',
   ].join('\n') },
   trading: { title: '🤝 Trading', body: [
-    '`/trade offer user:<u> ...` — offer dinos/eggs/cash/food for theirs.',
+    '`/trade offer user:<u> ...` — offer dinos/eggs/cash/food (item + qty) for theirs.',
     '`/trade list` — pending trades. `/trade accept|decline id:<id>` as recipient, `/trade cancel id:<id>` as sender.',
     'Offers expire after a while; offered items are locked until resolved.',
   ].join('\n') },
