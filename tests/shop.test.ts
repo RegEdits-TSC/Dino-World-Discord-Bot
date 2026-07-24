@@ -52,6 +52,22 @@ describe('shop module', () => {
   });
 });
 
+describe('sell confirm button', () => {
+  it('/sell shows a Confirm sale button with the cash emoji, not text', async () => {
+    const d = ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'velociraptor', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
+    const i = fakeCommand({ name: 'sell', user: 'u1', options: { dino: d.id } });
+    await shopModule.commands[1].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as {
+      components: Array<{ toJSON(): { components: Array<{ label: string; emoji?: { name: string; animated: boolean } }> } }>;
+    };
+    const button = payload.components[0].toJSON().components[0];
+    expect(button.label).toBe('Confirm sale');
+    // No app emoji map is loaded in tests, so this is the unicode fallback for dw_cash,
+    // resolved by discord.js into the button's structured emoji field (not embedded in the label).
+    expect(button.emoji).toEqual({ name: '💰', animated: false });
+  });
+});
+
 describe('shop visuals', () => {
   it('/shop view thumbnails the best egg in today\'s rotation', async () => {
     const i = fakeCommand({ name: 'shop', sub: 'view', user: 'u1' });
