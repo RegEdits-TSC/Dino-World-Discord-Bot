@@ -3,6 +3,7 @@ import { RARITY } from '../src/data/rarity.js';
 import { getSpecies, allSpecies } from '../src/data/species/index.js';
 import { FACILITIES } from '../src/data/facilities.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
+import { FOODS, foodsForDiet, getFood, STARTER_FOOD } from '../src/data/foods.js';
 
 describe('game data', () => {
   it('every species has a valid rarity entry', () => {
@@ -43,5 +44,41 @@ describe('game data', () => {
     expect(PADDOCKS.carnivore_paddock).toBeDefined();
     expect(PADDOCKS.carnivore_paddock.diet).toBe('carnivore');
     expect(PADDOCKS.carnivore_paddock.buildCost).toBe(2000);
+  });
+});
+
+describe('food catalog', () => {
+  it('has 3 tiers per diet with monotonically increasing cost and fill', () => {
+    for (const diet of ['herbivore', 'carnivore'] as const) {
+      const foods = foodsForDiet(diet);
+      expect(foods).toHaveLength(3);
+      expect(foods.map((f) => f.tier)).toEqual([1, 2, 3]);
+      for (let i = 1; i < foods.length; i++) {
+        expect(foods[i].unitCost).toBeGreaterThan(foods[i - 1].unitCost);
+        expect(foods[i].fillTo).toBeGreaterThan(foods[i - 1].fillTo);
+      }
+    }
+  });
+  it('prices carnivore food at exactly +20% over the same herbivore tier', () => {
+    const herb = foodsForDiet('herbivore');
+    const carn = foodsForDiet('carnivore');
+    for (let t = 0; t < 3; t++) {
+      expect(carn[t].unitCost).toBe(herb[t].unitCost * 1.2);
+      expect(carn[t].fillTo).toBe(herb[t].fillTo);
+    }
+  });
+  it('matches the spec table exactly', () => {
+    expect(FOODS.ferns).toMatchObject({ diet: 'herbivore', tier: 1, unitCost: 10, fillTo: 100 });
+    expect(FOODS.fruit_basket).toMatchObject({ diet: 'herbivore', tier: 2, unitCost: 15, fillTo: 125 });
+    expect(FOODS.royal_greens).toMatchObject({ diet: 'herbivore', tier: 3, unitCost: 20, fillTo: 150 });
+    expect(FOODS.fish).toMatchObject({ diet: 'carnivore', tier: 1, unitCost: 12, fillTo: 100 });
+    expect(FOODS.goat).toMatchObject({ diet: 'carnivore', tier: 2, unitCost: 18, fillTo: 125 });
+    expect(FOODS.prime_steak).toMatchObject({ diet: 'carnivore', tier: 3, unitCost: 24, fillTo: 150 });
+  });
+  it('getFood throws on unknown id', () => {
+    expect(() => getFood('pizza')).toThrow(/Unknown food/);
+  });
+  it('starter pantry covers both diets with tier-1 food', () => {
+    expect(STARTER_FOOD).toEqual({ ferns: 10, fish: 10 });
   });
 });
