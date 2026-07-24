@@ -49,7 +49,7 @@ function tradeListPayload(ctx: Ctx, userId: string, page: number) {
   const { items, page: p, pages } = paginate(all, page);
   const lines = items.length ? items.map((t) => {
     const dir = t.fromUser === userId ? `→ <@${t.toUser}>` : `← <@${t.fromUser}>`;
-    return `**#${t.id}** ${dir} — give ${summarize(t.fromUser === userId ? t.offer : t.request)} / get ${summarize(t.fromUser === userId ? t.request : t.offer)}`;
+    return `**#${t.id}** ${dir} — give ${summarize(t.fromUser === userId ? t.offer : t.request, emojiTag)} / get ${summarize(t.fromUser === userId ? t.request : t.offer, emojiTag)}`;
   }).join('\n') : 'No pending trades.';
   const embed = new EmbedBuilder().setTitle('🤝 Pending trades').setDescription(lines).setColor(0x5865F2)
     .setFooter({ text: `Page ${p}/${pages}` });
