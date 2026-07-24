@@ -9,6 +9,7 @@ import { feedDino, feedAll, rescueDino, CareError } from './service.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { hungerAt } from '../../core/clock.js';
 import { getSpecies } from '../../data/species/index.js';
+import { FOODS, type FoodId } from '../../data/foods.js';
 import { matches, respondRanked, emptyRow, dinoLabel, VERY_HUNGRY_MS } from '../../core/autocomplete.js';
 import { emojiTag } from '../../core/emojis.js';
 import { assetImage } from '../../core/images.js';
@@ -47,16 +48,19 @@ export const careModule: ModuleManifest = {
         settleEscapes(ctx, i.user.id);
         try {
           if (i.options.getSubcommand() === 'all') {
-            const { fed, skipped } = feedAll(ctx, i.user.id);
-            const msg = fed.length ? `Fed ${fed.length} dino(s).` : 'Nothing needed feeding.';
-            await i.reply(carePayload(ctx, i.user.id, skipped.length ? `${msg} Skipped ${skipped.length} (not enough food).` : msg));
+            const { fed, skipped, spent } = feedAll(ctx, i.user.id);
+            const spentText = Object.entries(spent)
+              .map(([id, q]) => `−${q} ${FOODS[id as FoodId].name}`).join(', ');
+            const msg = fed.length ? `Fed ${fed.length} dino(s) (${spentText}).` : 'Nothing needed feeding.';
+            await i.reply(carePayload(ctx, i.user.id, skipped.length
+              ? `${msg} Skipped ${skipped.length} (no matching food — /shop food).` : msg));
           } else {
-            const { species, cost } = feedDino(ctx, i.user.id, i.options.getInteger('dino', true));
-            await i.reply(carePayload(ctx, i.user.id, `Fed your ${species.name} (−${cost} food).`));
+            const { species, food, cost } = feedDino(ctx, i.user.id, i.options.getInteger('dino', true));
+            await i.reply(carePayload(ctx, i.user.id, `Fed your ${species.name} (−${cost} ${food.name}).`));
           }
         } catch (e) {
           if (e instanceof CareError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough food — buy some with /shop food.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: `${e.message} — buy more with /shop food.`, flags: MessageFlags.Ephemeral });
           else throw e;
         }
       },

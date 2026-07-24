@@ -6,6 +6,7 @@ import { getSpecies } from '../../data/species/index.js';
 import { FACILITIES } from '../../data/facilities.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { lotSlots } from '../../data/progression.js';
+import { STARTER_FOOD } from '../../data/foods.js';
 import { recomputeRating } from './rating.js';
 
 export const BASE_LOT_SLOTS = 3;
@@ -19,9 +20,15 @@ export function getOrCreateUser(ctx: Ctx, userId: string, displayName: string): 
   const existing = ctx.db.select().from(schema.users)
     .where(eq(schema.users.discordId, userId)).get();
   if (existing) return existing;
-  return ctx.db.insert(schema.users).values({
-    discordId: userId, displayName, lastCollectAt: ctx.now(), createdAt: ctx.now(),
-  }).returning().get();
+  return ctx.db.transaction(() => {
+    const u = ctx.db.insert(schema.users).values({
+      discordId: userId, displayName, lastCollectAt: ctx.now(), createdAt: ctx.now(),
+    }).returning().get();
+    for (const [foodId, qty] of Object.entries(STARTER_FOOD)) {
+      ctx.db.insert(schema.foodInventory).values({ userId, foodId, qty }).run();
+    }
+    return u;
+  });
 }
 
 export function facilityBonusPct(lots: Lot[]): number {

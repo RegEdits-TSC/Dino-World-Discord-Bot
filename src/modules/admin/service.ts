@@ -2,6 +2,7 @@ import { eq, or, and, isNull, isNotNull, sql, inArray } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import type { Rarity } from '../../data/types.js';
+import { FOODS, STARTER_FOOD, type FoodId } from '../../data/foods.js';
 import { getSpecies } from '../../data/species/index.js';
 import { getOrCreateUser } from '../park/service.js';
 import { recomputeRating } from '../park/rating.js';
@@ -10,19 +11,21 @@ import { settleEscapes } from '../park/escapes.js';
 export class AdminError extends Error {}
 
 export interface GiveArgs {
-  cash?: number; food?: number; shards?: number; eggRarity?: Rarity; dinoSpecies?: string;
+  cash?: number; food?: { foodId: FoodId; qty: number }; shards?: number; eggRarity?: Rarity; dinoSpecies?: string;
 }
 
 // Grant resources to a player. Atomic; currency via economy.apply; rating recomputed after.
 export function adminGive(ctx: Ctx, targetId: string, displayName: string, args: GiveArgs): void {
-  const { cash = 0, food = 0, shards = 0, eggRarity, dinoSpecies } = args;
+  const { cash = 0, food, shards = 0, eggRarity, dinoSpecies } = args;
   if (!cash && !food && !shards && !eggRarity && !dinoSpecies) throw new AdminError('Nothing to give.');
+  if (food && !(food.foodId in FOODS)) throw new AdminError(`Unknown food: ${food.foodId}`);
   if (dinoSpecies) {
     try { getSpecies(dinoSpecies); } catch { throw new AdminError(`Unknown species: ${dinoSpecies}`); }
   }
   getOrCreateUser(ctx, targetId, displayName);
   ctx.db.transaction(() => {
-    if (cash || food || shards) ctx.economy.apply(targetId, { cash, food, shards }, 'admin:give', ctx.now());
+    if (cash || food || shards) ctx.economy.apply(targetId,
+      { cash, shards, foods: food ? { [food.foodId]: food.qty } : {} }, 'admin:give', ctx.now());
     if (eggRarity) ctx.db.insert(schema.eggs).values({
       userId: targetId, rarity: eggRarity, speciesId: null, source: 'admin', obtainedAt: ctx.now(),
     }).run();
@@ -55,9 +58,13 @@ export function adminReset(ctx: Ctx, targetId: string): void {
     ctx.db.delete(schema.trades)
       .where(or(eq(schema.trades.fromUser, targetId), eq(schema.trades.toUser, targetId))).run();
     ctx.db.update(schema.users).set({
-      cash: 500, food: 20, shards: 0, parkRating: 0, ratingHighWater: 0, parkName: 'New Park',
+      cash: 500, shards: 0, parkRating: 0, ratingHighWater: 0, parkName: 'New Park',
       shardsWindowStart: 0, shardsWindowEarned: 0, lastCollectAt: ctx.now(),
     }).where(eq(schema.users.discordId, targetId)).run();
+    ctx.db.delete(schema.foodInventory).where(eq(schema.foodInventory.userId, targetId)).run();
+    for (const [foodId, qty] of Object.entries(STARTER_FOOD)) {
+      ctx.db.insert(schema.foodInventory).values({ userId: targetId, foodId, qty }).run();
+    }
   });
 }
 

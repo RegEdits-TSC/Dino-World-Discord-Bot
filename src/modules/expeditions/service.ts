@@ -5,10 +5,11 @@ import type { Rarity } from '../../data/types.js';
 import { EXPEDITION_SITES, type SiteDef } from '../../data/sites.js';
 import { siteUnlocked } from '../park/rating.js';
 import { rollRarityFromOdds, rollIntInclusive } from '../../core/rolls.js';
+import { foodsForDiet, type FoodId } from '../../data/foods.js';
 
 export class ExpeditionError extends Error {}
 export type Expedition = typeof schema.expeditions.$inferSelect;
-export interface Loot { eggRarity: Rarity; cash: number; food: number }
+export interface Loot { eggRarity: Rarity; cash: number; food: { foodId: FoodId; qty: number } }
 
 function highWater(ctx: Ctx, userId: string): number {
   return ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!.ratingHighWater;
@@ -42,13 +43,14 @@ export function claimExpedition(ctx: Ctx, userId: string): { loot: Loot; site: S
   if (exp.returnsAt > ctx.now()) throw new ExpeditionError('Your expedition has not returned yet.');
   const site = EXPEDITION_SITES[exp.siteId];
   const eggRarity = rollRarityFromOdds(site.eggOdds, ctx.rng);
+  const lootDiet = ctx.rng() < 0.5 ? 'herbivore' : 'carnivore';
   const loot: Loot = {
     eggRarity,
     cash: rollIntInclusive(site.bonusCash[0], site.bonusCash[1], ctx.rng),
-    food: rollIntInclusive(site.bonusFood[0], site.bonusFood[1], ctx.rng),
+    food: { foodId: foodsForDiet(lootDiet)[0].id, qty: rollIntInclusive(site.bonusFood[0], site.bonusFood[1], ctx.rng) },
   };
   return ctx.db.transaction(() => {
-    ctx.economy.apply(userId, { cash: loot.cash, food: loot.food }, `expedition-loot:${exp.siteId}`, ctx.now());
+    ctx.economy.apply(userId, { cash: loot.cash, foods: { [loot.food.foodId]: loot.food.qty } }, `expedition-loot:${exp.siteId}`, ctx.now());
     ctx.db.insert(schema.eggs).values({
       userId, rarity: eggRarity, speciesId: null, source: 'expedition', obtainedAt: ctx.now(),
     }).run();

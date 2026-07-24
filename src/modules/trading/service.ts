@@ -4,6 +4,7 @@ import type { TradeSide } from '../../core/db/schema.js';
 import type { Ctx } from '../../core/context.js';
 import { getSpecies } from '../../data/species/index.js';
 import { TradeError, sideItemCount } from './validate.js';
+import { FOODS, type FoodId } from '../../data/foods.js';
 import { TRADE_MIN_RATING, TRADE_DAILY_CAP, TRADE_MAX_ITEMS_PER_SIDE, TRADE_EXPIRY_MS } from '../../data/trade.js';
 import { recomputeRating } from '../park/rating.js';
 
@@ -20,11 +21,19 @@ export function liveRating(ctx: Ctx, userId: string): number {
 // skipLockCheck: at accept time, the OFFER side's items are locked BY THIS trade — expected, not an exploit.
 export function verifySide(ctx: Ctx, userId: string, side: TradeSide, opts: { skipLockCheck?: boolean } = {}): void {
   if (sideItemCount(side) > TRADE_MAX_ITEMS_PER_SIDE) throw new TradeError(`At most ${TRADE_MAX_ITEMS_PER_SIDE} items per side.`);
-  if (side.cash < 0 || side.food < 0) throw new TradeError('Amounts cannot be negative.');
+  if (side.cash < 0) throw new TradeError('Amounts cannot be negative.');
+  for (const [foodId, qty] of Object.entries(side.foods)) {
+    if (!(foodId in FOODS)) throw new TradeError('Unknown food in trade.');
+    if (!Number.isInteger(qty) || qty <= 0) throw new TradeError('Food amounts must be positive integers.');
+  }
   const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get();
   if (!user) throw new TradeError('Unknown user.');
   if (user.cash < side.cash) throw new TradeError('Not enough cash for the trade.');
-  if (user.food < side.food) throw new TradeError('Not enough food for the trade.');
+  const inv = ctx.economy.getFoodInventory(userId);
+  for (const [foodId, qty] of Object.entries(side.foods)) {
+    if ((inv[foodId as FoodId] ?? 0) < qty)
+      throw new TradeError(`Not enough ${FOODS[foodId as FoodId].name} for the trade.`);
+  }
   for (const id of side.dinoIds) {
     const d = ctx.db.select().from(schema.dinos).where(and(eq(schema.dinos.id, id), eq(schema.dinos.userId, userId))).get();
     if (!d) throw new TradeError(`You do not own dino #${id}.`);
@@ -90,8 +99,15 @@ export function acceptTrade(ctx: Ctx, userId: string, tradeId: number): Trade {
     moveItems(ctx, trade.offer, trade.toUser);      // offer → recipient
     moveItems(ctx, trade.request, trade.fromUser);  // request → sender
     // cash/food net: sender pays offer.*, receives request.*; recipient the inverse (sums to zero → no money created)
-    ctx.economy.apply(trade.fromUser, { cash: trade.request.cash - trade.offer.cash, food: trade.request.food - trade.offer.food }, `trade:${trade.id}`, ctx.now());
-    ctx.economy.apply(trade.toUser, { cash: trade.offer.cash - trade.request.cash, food: trade.offer.food - trade.request.food }, `trade:${trade.id}`, ctx.now());
+    const foodNet = (get: TradeSide, give: TradeSide): Partial<Record<FoodId, number>> => {
+      const out: Record<string, number> = {};
+      for (const [id, q] of Object.entries(get.foods)) out[id] = (out[id] ?? 0) + q;
+      for (const [id, q] of Object.entries(give.foods)) out[id] = (out[id] ?? 0) - q;
+      for (const id of Object.keys(out)) if (out[id] === 0) delete out[id];
+      return out;
+    };
+    ctx.economy.apply(trade.fromUser, { cash: trade.request.cash - trade.offer.cash, foods: foodNet(trade.request, trade.offer) }, `trade:${trade.id}`, ctx.now());
+    ctx.economy.apply(trade.toUser, { cash: trade.offer.cash - trade.request.cash, foods: foodNet(trade.offer, trade.request) }, `trade:${trade.id}`, ctx.now());
     return ctx.db.update(schema.trades).set({ status: 'accepted', resolvedAt: ctx.now() })
       .where(eq(schema.trades.id, tradeId)).returning().get();
   });

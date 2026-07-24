@@ -10,4 +10,10 @@ describe('database', () => {
       db.update(schema.users).set({ cash: -1 }).run()
     ).toThrow();
   });
+  it('enforces non-negative food_inventory qty', () => {
+    const db = createDb(':memory:'); migrateDb(db);
+    db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    db.insert(schema.foodInventory).values({ userId: 'u1', foodId: 'ferns', qty: 1 }).run();
+    expect(() => db.update(schema.foodInventory).set({ qty: -1 }).run()).toThrow();
+  });
 });

@@ -7,7 +7,7 @@ import { dailyEggOffers, buyEgg, buyFood, ShopError } from './service.js';
 import { sellDino, previewSell, ShardError } from './shards.js';
 import { schema } from '../../core/db/index.js';
 import { getSpecies } from '../../data/species/index.js';
-import { SHOP_EGG_PRICES, FOOD_BUNDLES, FOOD_UNIT_COST } from '../../data/shop.js';
+import { SHOP_EGG_PRICES } from '../../data/shop.js';
 import { SELL_CASH } from '../../data/sell.js';
 import { DECOR } from '../../data/decor.js';
 import { InsufficientFundsError } from '../../core/economy.js';
@@ -27,7 +27,8 @@ export const shopModule: ModuleManifest = {
         .addSubcommand((s) => s.setName('view').setDescription("Today's shop"))
         .addSubcommand((s) => s.setName('egg').setDescription('Buy an egg')
           .addStringOption((o) => o.setName('rarity').setDescription("Egg rarity — today's rotation shows prices").setRequired(true).setAutocomplete(true)))
-        .addSubcommand((s) => s.setName('food').setDescription('Buy food units')
+        .addSubcommand((s) => s.setName('food').setDescription('Buy food')
+          .addStringOption((o) => o.setName('item').setDescription('Food — type to search').setRequired(true).setAutocomplete(true))
           .addIntegerOption((o) => o.setName('units').setDescription('How many').setRequired(true).setMinValue(1))),
       async execute(ctx, i) {
         const user = getOrCreateUser(ctx, i.user.id, i.user.displayName);
@@ -36,7 +37,7 @@ export const shopModule: ModuleManifest = {
           if (sub === 'view') {
             const offers = dailyEggOffers(user.ratingHighWater, ctx.now());
             const eggLines = offers.length ? offers.map((r) => `• ${rarityEmoji(r)}${r} egg — ${SHOP_EGG_PRICES[r].toLocaleString()} cash`).join('\n') : 'No eggs today.';
-            const foodLine = FOOD_BUNDLES.map((b) => `${b} food (${b * FOOD_UNIT_COST} cash)`).join(' · ');
+            const foodLine = 'See /shop food';
             const decorLine = Object.values(DECOR).map((d) => `${d.name} (${d.cost})`).join(' · ');
             const embed = new EmbedBuilder().setTitle('🏪 Shop — today').setColor(0x5865F2).addFields(
               { name: '🥚 Eggs (/shop egg)', value: eggLines },
@@ -62,8 +63,8 @@ export const shopModule: ModuleManifest = {
             if (eggImg) { eggEmbed.setThumbnail(eggImg.url); eggPayload.files = [eggImg.file]; }
             await i.reply(eggPayload);
           } else {
-            buyFood(ctx, i.user.id, i.options.getInteger('units', true));
-            await i.reply({ content: `${emojiTag('dw_food')} Food purchased.` });
+            const { food, total } = buyFood(ctx, i.user.id, i.options.getString('item', true), i.options.getInteger('units', true));
+            await i.reply({ content: `${emojiTag(food.emoji)} Bought ${i.options.getInteger('units', true)}× ${food.name} for ${total.toLocaleString()} cash.` });
           }
         } catch (e) {
           if (e instanceof ShopError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });

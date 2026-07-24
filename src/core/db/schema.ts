@@ -8,7 +8,6 @@ export const users = sqliteTable('users', {
   parkRating: integer('park_rating').notNull().default(0),
   ratingHighWater: integer('rating_high_water').notNull().default(0),
   cash: integer('cash').notNull().default(500),
-  food: integer('food').notNull().default(20),
   shards: integer('shards').notNull().default(0),
   shardsWindowStart: integer('shards_window_start_ms').notNull().default(0),
   shardsWindowEarned: integer('shards_window_earned').notNull().default(0),
@@ -16,8 +15,16 @@ export const users = sqliteTable('users', {
   createdAt: integer('created_at_ms').notNull(),
 }, (t) => [
   check('cash_nonneg', sql`${t.cash} >= 0`),
-  check('food_nonneg', sql`${t.food} >= 0`),
   check('shards_nonneg', sql`${t.shards} >= 0`),
+]);
+
+export const foodInventory = sqliteTable('food_inventory', {
+  userId: text('user_id').notNull().references(() => users.discordId),
+  foodId: text('food_id').notNull(),
+  qty: integer('qty').notNull().default(0),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.foodId] }),
+  check('food_qty_nonneg', sql`${t.qty} >= 0`),
 ]);
 
 export const lots = sqliteTable('lots', {
@@ -63,11 +70,12 @@ export const expeditions = sqliteTable('expeditions', {
   siteId: text('site_id').notNull(),
   departedAt: integer('departed_at_ms').notNull(),
   returnsAt: integer('returns_at_ms').notNull(),
-  loot: text('loot', { mode: 'json' }).$type<{ eggRarity: string; cash: number; food: number } | null>(),
+  loot: text('loot', { mode: 'json' })
+    .$type<{ eggRarity: string; cash: number; food: { foodId: string; qty: number } } | null>(),
   claimedAt: integer('claimed_at_ms'),
 });
 
-export interface TradeSide { dinoIds: number[]; eggIds: number[]; cash: number; food: number }
+export interface TradeSide { dinoIds: number[]; eggIds: number[]; cash: number; foods: Record<string, number> }
 
 export const trades = sqliteTable('trades', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -85,6 +93,7 @@ export const txLog = sqliteTable('tx_log', {
   userId: text('user_id').notNull(),
   cashDelta: integer('cash_delta').notNull().default(0),
   foodDelta: integer('food_delta').notNull().default(0),
+  foodId: text('food_id'),
   shardsDelta: integer('shards_delta').notNull().default(0),
   reason: text('reason').notNull(),
   createdAt: integer('created_at_ms').notNull(),

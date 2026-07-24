@@ -3,7 +3,8 @@ import type { Ctx } from '../../core/context.js';
 import type { Rarity } from '../../data/types.js';
 import { mulberry32 } from '../../core/rolls.js';
 import { shopCeiling } from '../park/rating.js';
-import { SHOP_EGG_PRICES, FOOD_UNIT_COST, LEGENDARY_DAY_CHANCE } from '../../data/shop.js';
+import { SHOP_EGG_PRICES, LEGENDARY_DAY_CHANCE } from '../../data/shop.js';
+import { FOODS, type FoodDef } from '../../data/foods.js';
 
 export class ShopError extends Error {}
 type Egg = typeof schema.eggs.$inferSelect;
@@ -33,7 +34,11 @@ export function buyEgg(ctx: Ctx, userId: string, rarity: Rarity): Egg {
   });
 }
 
-export function buyFood(ctx: Ctx, userId: string, units: number): void {
+export function buyFood(ctx: Ctx, userId: string, foodId: string, units: number): { food: FoodDef; total: number } {
   if (units <= 0) throw new ShopError('Amount must be positive.');
-  ctx.economy.apply(userId, { cash: -(units * FOOD_UNIT_COST), food: units }, `shop-food:${units}`, ctx.now());
+  const food = (FOODS as Record<string, FoodDef | undefined>)[foodId];
+  if (!food) throw new ShopError('Unknown food.');
+  const total = units * food.unitCost;
+  ctx.economy.apply(userId, { cash: -total, foods: { [food.id]: units } }, `shop-food:${food.id}:${units}`, ctx.now());
+  return { food, total };
 }

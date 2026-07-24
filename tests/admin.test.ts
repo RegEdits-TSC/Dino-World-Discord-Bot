@@ -47,6 +47,10 @@ describe('adminGive', () => {
     expect(() => adminGive(ctx, 'p', 'P', {})).toThrow(AdminError);
     expect(() => adminGive(ctx, 'p', 'P', { dinoSpecies: 'godzilla' })).toThrow(AdminError);
   });
+  it('grants a typed food stack', () => {
+    adminGive(ctx, 'p', 'P', { food: { foodId: 'goat', qty: 5 } });   // getOrCreateUser seeds p
+    expect(ctx.economy.getFoodInventory('p').goat).toBe(5);
+  });
 });
 
 describe('adminReset', () => {
@@ -57,7 +61,7 @@ describe('adminReset', () => {
     adminReset(ctx, 'p');
     const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'p')).get()!;
     expect(u.cash).toBe(500);
-    expect(u.food).toBe(20);
+    expect(ctx.economy.getFoodInventory('p')).toEqual({ ferns: 10, fish: 10 });
     expect(u.shards).toBe(0);
     expect(u.parkRating).toBe(0);
     expect(u.ratingHighWater).toBe(0);
@@ -75,7 +79,7 @@ describe('adminReset + trades', () => {
     getOrCreateUser(ctx, 't', 'T');
     ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both 2★ so createTrade passes
     const dino = ctx.db.insert(schema.dinos).values({ userId: 'o', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
-    createTrade(ctx, 'o', 't', { dinoIds: [dino.id], eggIds: [], cash: 0, food: 0 }, { dinoIds: [], eggIds: [], cash: 0, food: 0 });
+    createTrade(ctx, 'o', 't', { dinoIds: [dino.id], eggIds: [], cash: 0, foods: {} }, { dinoIds: [], eggIds: [], cash: 0, foods: {} });
     // dino now locked, owned by o, in a pending o->t trade
     adminReset(ctx, 't');   // t is the RECIPIENT
     const d = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dino.id)).get()!;

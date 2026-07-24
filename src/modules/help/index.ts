@@ -35,7 +35,7 @@ export const HELP_TOPICS: Record<string, { title: string; body: string }> = {
   shop: { title: '🏪 Shop', body: [
     '`/shop view` — today\'s egg rotation (changes daily), food, decor.',
     '`/shop egg rarity:<r>` — buy an egg from today\'s rotation.',
-    '`/shop food units:<n>` — food for feeding.',
+    '`/shop food item:<food> units:<n>` — food for feeding, matched to each dino\'s diet.',
     '`/sell dino:<id>` — sell a dino for cash + shards (shards buy Mythics).',
   ].join('\n') },
   care: { title: '🍖 Care', body: [

@@ -10,6 +10,7 @@ import { parseIdList } from './validate.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, listCompleter, type ListCandidate } from '../../core/autocomplete.js';
 import { getSpecies } from '../../data/species/index.js';
+import { FOODS, type FoodId } from '../../data/foods.js';
 import { TRADE_MAX_ITEMS_PER_SIDE } from '../../data/trade.js';
 import { paginate, pageRow } from '../../core/paginate.js';
 import type { Ctx } from '../../core/context.js';
@@ -25,7 +26,10 @@ function summarize(side: TradeSide, e: (name: string) => string = (n) => EMOJI_F
   if (side.dinoIds.length) parts.push(`🦕 dinos ${side.dinoIds.join(',')}`);
   if (side.eggIds.length) parts.push(`🥚 eggs ${side.eggIds.join(',')}`);
   if (side.cash) parts.push(`${e('dw_cash')} ${side.cash}`);
-  if (side.food) parts.push(`${e('dw_food')} ${side.food}`);
+  for (const [id, q] of Object.entries(side.foods)) {
+    const f = FOODS[id as FoodId];
+    parts.push(`${e(f?.emoji ?? 'dw_food')} ${q} ${f?.name ?? id}`);
+  }
   return parts.join(' + ') || 'nothing';
 }
 
@@ -69,11 +73,9 @@ export const tradingModule: ModuleManifest = {
           .addStringOption((o) => o.setName('give-dinos').setDescription('Your dinos — type to add, comma-separated').setAutocomplete(true))
           .addStringOption((o) => o.setName('give-eggs').setDescription('Your eggs — type to add, comma-separated').setAutocomplete(true))
           .addIntegerOption((o) => o.setName('give-cash').setDescription('Cash you give').setMinValue(0))
-          .addIntegerOption((o) => o.setName('give-food').setDescription('Food you give').setMinValue(0))
           .addStringOption((o) => o.setName('want-dinos').setDescription('Their dinos — pick the user first').setAutocomplete(true))
           .addStringOption((o) => o.setName('want-eggs').setDescription('Their eggs — pick the user first').setAutocomplete(true))
-          .addIntegerOption((o) => o.setName('want-cash').setDescription('Cash you want').setMinValue(0))
-          .addIntegerOption((o) => o.setName('want-food').setDescription('Food you want').setMinValue(0)))
+          .addIntegerOption((o) => o.setName('want-cash').setDescription('Cash you want').setMinValue(0)))
         .addSubcommand((s) => s.setName('list').setDescription('Your pending trades'))
         .addSubcommand((s) => s.setName('accept').setDescription('Accept a trade')
           .addIntegerOption((o) => o.setName('id').setDescription('Trade — type to search').setRequired(true).setAutocomplete(true)))
@@ -95,13 +97,13 @@ export const tradingModule: ModuleManifest = {
               dinoIds: parseIdList(i.options.getString('give-dinos') ?? ''),
               eggIds: parseIdList(i.options.getString('give-eggs') ?? ''),
               cash: i.options.getInteger('give-cash') ?? 0,
-              food: i.options.getInteger('give-food') ?? 0,
+              foods: {},
             };
             const request: TradeSide = {
               dinoIds: parseIdList(i.options.getString('want-dinos') ?? ''),
               eggIds: parseIdList(i.options.getString('want-eggs') ?? ''),
               cash: i.options.getInteger('want-cash') ?? 0,
-              food: i.options.getInteger('want-food') ?? 0,
+              foods: {},
             };
             const t = createTrade(ctx, i.user.id, target.id, offer, request);
             await i.reply({ content: `🤝 Trade **#${t.id}** sent to <@${target.id}>.\nYou give: ${summarize(offer, emojiTag)}\nYou want: ${summarize(request, emojiTag)}\nThey run \`/trade accept id:${t.id}\`.` });

@@ -10,10 +10,10 @@ import { VERY_HUNGRY_MS } from '../src/core/autocomplete.js';
 
 const H = 3_600_000;
 let ctx: ReturnType<typeof makeCtx>;
-beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); ctx.economy.apply('u1', { food: 1_000 }, 'seed', 0); });
+beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); ctx.economy.apply('u1', { foods: { ferns: 1_000 } }, 'seed', 0); });
 const addDino = (over: Record<string, unknown> = {}) =>
   ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0, ...over }).returning().get();
-const food = () => ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.food;
+const food = () => ctx.economy.getFoodInventory('u1').ferns ?? 0;
 const dinoRow = (id: number) => ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, id)).get()!;
 
 describe('feedDino', () => {
@@ -23,6 +23,7 @@ describe('feedDino', () => {
     const before = food();
     const res = feedDino(ctx, 'u1', d.id);               // triceratops = common, feedCost 5
     expect(res.cost).toBe(5);
+    expect(res.food.id).toBe('ferns');
     expect(food()).toBe(before - 5);
     const row = dinoRow(d.id);
     expect(row.hunger).toBe(100);
@@ -31,6 +32,26 @@ describe('feedDino', () => {
   it('refuses to feed an escaped dino', () => {
     const d = addDino({ escapedAt: 1 });
     expect(() => feedDino(ctx, 'u1', d.id)).toThrow(CareError);
+  });
+  it('hard-blocks feeding wrong-diet food even when named explicitly', () => {
+    const d = addDino();                                       // triceratops, herbivore
+    expect(() => feedDino(ctx, 'u1', d.id, 'fish'))
+      .toThrow("Triceratops is a herbivore — it won't eat Fish.");
+  });
+  it('auto-picks the cheapest owned matching item and overfills with premium', () => {
+    ctx.economy.apply('u1', { foods: { royal_greens: 100 } }, 'seed', 0);
+    const d = addDino();
+    // ferns (tier 1) owned from the task-wide seed — auto-pick prefers them over royal_greens
+    const auto = feedDino(ctx, 'u1', d.id);
+    expect(auto.food.id).toBe('ferns');
+    const premium = feedDino(ctx, 'u1', d.id, 'royal_greens');
+    expect(premium.food.fillTo).toBe(150);
+    expect(dinoRow(d.id).hunger).toBe(150);
+  });
+  it('errors with a shop hint when no matching-diet food is held', () => {
+    ctx.db.delete(schema.foodInventory).run();
+    const d = addDino();
+    expect(() => feedDino(ctx, 'u1', d.id)).toThrow('You have no herbivore food — buy Ferns with /shop food.');
   });
 });
 
@@ -45,7 +66,8 @@ describe('feedAll', () => {
     expect(dinoRow(hungry.id).hunger).toBe(100);
   });
   it('feeds as many as affordable, reports the rest skipped', () => {
-    ctx.db.update(schema.users).set({ food: 7 }).where(eq(schema.users.discordId, 'u1')).run();
+    ctx.db.delete(schema.foodInventory).where(eq(schema.foodInventory.userId, 'u1')).run();
+    ctx.db.insert(schema.foodInventory).values({ userId: 'u1', foodId: 'ferns', qty: 7 }).run();  // two commons need 5 each
     const a = addDino({ hunger: 100, lastFedAt: 0 });
     const b = addDino({ hunger: 100, lastFedAt: 0 });
     ctx.setNow(48 * H);
@@ -53,6 +75,16 @@ describe('feedAll', () => {
     expect(fed).toHaveLength(1);
     expect(skipped).toHaveLength(1);
     expect(food()).toBe(2);                              // 7 - 5
+  });
+  it('feedAll picks per-dino diets and reports spend per item', () => {
+    ctx.economy.apply('u1', { foods: { fish: 100 } }, 'seed', 0);
+    const herb = addDino({ hunger: 100, lastFedAt: 0 });
+    const carn = ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'dilophosaurus', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
+    ctx.setNow(48 * H);
+    const { fed, spent } = feedAll(ctx, 'u1');
+    expect(fed).toEqual(expect.arrayContaining([herb.id, carn.id]));
+    expect(spent.ferns).toBe(5);                               // common herbivore
+    expect(spent.fish).toBe(10);                               // uncommon carnivore, feedCost 10
   });
 });
 
@@ -90,7 +122,7 @@ describe('care module', () => {
     expect(dinoRow(d.id).hunger).toBe(100);
     const json = careReply(i).embeds[0].toJSON();
     expect(json.title).toBe('🍖 Care');                    // dw_food fallback — no emoji map in tests
-    expect(json.description).toBe('Fed 1 dino(s).');
+    expect(json.description).toBe('Fed 1 dino(s) (−5 Ferns).');
   });
 
   it('/feed one replies with a Care embed describing the fed dino', async () => {
@@ -100,7 +132,7 @@ describe('care module', () => {
     await careModule.commands[0].execute(ctx, i.asChatInput());
     const json = careReply(i).embeds[0].toJSON();
     expect(json.title).toBe('🍖 Care');
-    expect(json.description).toBe('Fed your Triceratops (−5 food).');
+    expect(json.description).toBe('Fed your Triceratops (−5 Ferns).');
   });
 
   it('care banner is care.png when no dino is very hungry', async () => {

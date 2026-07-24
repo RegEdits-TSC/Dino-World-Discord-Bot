@@ -10,6 +10,7 @@ import { allSpecies } from '../../data/species/index.js';
 import { matches, respondRanked, emptyRow } from '../../core/autocomplete.js';
 import { requireOwner } from './guard.js';
 import { adminGive, adminReset, adminFastForward, AdminError } from './service.js';
+import { FOODS, type FoodId } from '../../data/foods.js';
 import { emojiTag } from '../../core/emojis.js';
 
 const RARITIES: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
@@ -27,7 +28,8 @@ function inspectEmbed(ctx: Ctx, targetId: string, displayName: string): EmbedBui
     .filter((e) => e.claimedAt === null).length;
   const line = (s: string) => (s.length ? s.slice(0, 1024) : 'none');
   return new EmbedBuilder().setTitle(`🔧 ${displayName} (${targetId})`).setColor(0x9b59d0).addFields(
-    { name: `${emojiTag('dw_cash')} / ${emojiTag('dw_food')} / ${emojiTag('dw_shard')}`, value: `${u.cash} / ${u.food} / ${u.shards}`, inline: true },
+    { name: `${emojiTag('dw_cash')} / ${emojiTag('dw_food')} / ${emojiTag('dw_shard')}`,
+      value: `${u.cash} / ${Object.entries(ctx.economy.getFoodInventory(targetId)).map(([id, q]) => `${id}:${q}`).join(' ') || '0'} / ${u.shards}`, inline: true },
     { name: `${emojiTag('dw_star')} Rating`, value: `${(u.parkRating / 100).toFixed(1)} (hw ${(u.ratingHighWater / 100).toFixed(1)})`, inline: true },
     { name: '🦕 Dinos', value: line(dinos.map((d) => `#${d.id} ${d.speciesId}${d.escapedAt !== null ? ` ${emojiTag('dw_alert')}` : ''}${d.lotId ? ` @${d.lotId}` : ''}`).join('\n')), inline: false },
     { name: '🥚 Eggs', value: line(eggs.map((e) => `#${e.id} ${e.rarity}${e.incubationStartedAt ? ' (incubating)' : ''}`).join('\n')), inline: false },
@@ -44,7 +46,9 @@ export const adminModule: ModuleManifest = {
         .addSubcommand((s) => s.setName('give').setDescription('Grant resources to a player')
           .addUserOption((o) => o.setName('user').setDescription('Recipient').setRequired(true))
           .addIntegerOption((o) => o.setName('cash').setDescription('Cash').setMinValue(0))
-          .addIntegerOption((o) => o.setName('food').setDescription('Food').setMinValue(0))
+          .addStringOption((o) => o.setName('food-item').setDescription('Food item')
+            .addChoices(...Object.values(FOODS).map((f) => ({ name: f.name, value: f.id }))))
+          .addIntegerOption((o) => o.setName('food-qty').setDescription('Food quantity').setMinValue(1))
           .addIntegerOption((o) => o.setName('shards').setDescription('Shards').setMinValue(0))
           .addStringOption((o) => o.setName('egg-rarity').setDescription('Grant an egg of this rarity')
             .addChoices(...RARITIES.map((r) => ({ name: r, value: r }))))
@@ -63,9 +67,15 @@ export const adminModule: ModuleManifest = {
         const sub = i.options.getSubcommand();
         try {
           if (sub === 'give') {
+            const foodItem = i.options.getString('food-item') as FoodId | null;
+            const foodQty = i.options.getInteger('food-qty');
+            if ((foodItem === null) !== (foodQty === null)) {
+              await i.reply({ content: 'Set both food-item and food-qty, or neither.', flags: MessageFlags.Ephemeral });
+              return;
+            }
             adminGive(ctx, target.id, target.displayName, {
               cash: i.options.getInteger('cash') ?? 0,
-              food: i.options.getInteger('food') ?? 0,
+              food: foodItem && foodQty ? { foodId: foodItem, qty: foodQty } : undefined,
               shards: i.options.getInteger('shards') ?? 0,
               eggRarity: (i.options.getString('egg-rarity') as Rarity | null) ?? undefined,
               dinoSpecies: i.options.getString('dino-species') ?? undefined,

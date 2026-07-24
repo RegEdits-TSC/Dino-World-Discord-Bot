@@ -13,7 +13,7 @@ beforeEach(() => { ctx = makeCtx();
   getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
   ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both at 2★ so the gate passes
 });
-const empty = { dinoIds: [] as number[], eggIds: [] as number[], cash: 0, food: 0 };
+const empty = { dinoIds: [] as number[], eggIds: [] as number[], cash: 0, foods: {} as Record<string, number> };
 const addDino = (user: string, speciesId = 'triceratops', over: Record<string, unknown> = {}) =>
   ctx.db.insert(schema.dinos).values({ userId: user, speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0, ...over }).returning().get();
 
@@ -116,6 +116,20 @@ describe('acceptTrade', () => {
     acceptTrade(ctx, 'b', t.id);
     expect(() => acceptTrade(ctx, 'b', t.id)).toThrow(TradeError);   // status no longer pending
   });
+  it('moves typed food both ways and nets to zero', () => {
+    ctx.db.delete(schema.foodInventory).run();            // isolate from the starter pantry
+    ctx.economy.apply('a', { foods: { fish: 10 } }, 'seed', 0);
+    ctx.economy.apply('b', { foods: { ferns: 4 } }, 'seed', 0);
+    const t = createTrade(ctx, 'a', 'b', { ...empty, foods: { fish: 10 } }, { ...empty, foods: { ferns: 4 } });
+    acceptTrade(ctx, 'b', t.id);
+    expect(ctx.economy.getFoodInventory('a')).toEqual({ ferns: 4 });
+    expect(ctx.economy.getFoodInventory('b')).toEqual({ fish: 10 });
+  });
+  it('rejects offering food you do not hold and counts food stacks toward the item cap', () => {
+    expect(() => createTrade(ctx, 'a', 'b', { ...empty, foods: { goat: 1 } }, empty)).toThrow(TradeError);  // a holds no goat
+    const ids = [1, 2, 3, 4, 5];
+    expect(() => createTrade(ctx, 'a', 'b', { ...empty, dinoIds: ids, foods: { goat: 1 } }, empty)).toThrow(TradeError);
+  });
 });
 
 describe('trade lifecycle', () => {
@@ -176,14 +190,14 @@ describe('trade notifications', () => {
   });
   it('accept pings the offerer', async () => {
     ctx.economy.apply('a', { cash: 1_000 }, 'seed', 0);
-    const t = createTrade(ctx, 'a', 'b', { dinoIds: [], eggIds: [], cash: 100, food: 0 }, { dinoIds: [], eggIds: [], cash: 0, food: 0 });
+    const t = createTrade(ctx, 'a', 'b', { dinoIds: [], eggIds: [], cash: 100, foods: {} }, { dinoIds: [], eggIds: [], cash: 0, foods: {} });
     const i = fakeCommand({ name: 'trade', sub: 'accept', user: 'b', guild: 'g1', options: { id: t.id } });
     await tradingModule.commands[0].execute(ctx, i.asChatInput());
     expect(ctx.notifications.some((n) => n.userId === 'a' && n.message.includes('accepted'))).toBe(true);
   });
   it('decline pings the offerer', async () => {
     ctx.economy.apply('a', { cash: 1_000 }, 'seed', 0);
-    const t = createTrade(ctx, 'a', 'b', { dinoIds: [], eggIds: [], cash: 100, food: 0 }, { dinoIds: [], eggIds: [], cash: 0, food: 0 });
+    const t = createTrade(ctx, 'a', 'b', { dinoIds: [], eggIds: [], cash: 100, foods: {} }, { dinoIds: [], eggIds: [], cash: 0, foods: {} });
     const i = fakeCommand({ name: 'trade', sub: 'decline', user: 'b', guild: 'g1', options: { id: t.id } });
     await tradingModule.commands[0].execute(ctx, i.asChatInput());
     expect(ctx.notifications.some((n) => n.userId === 'a' && n.message.includes('declined'))).toBe(true);
@@ -198,8 +212,8 @@ describe('trade list pagination', () => {
     for (let n = 0; n < 11; n++) {
       ctx.db.insert(schema.trades).values({
         fromUser: 'b', toUser: 'a',
-        offer: { dinoIds: [], eggIds: [], cash: 1, food: 0 },
-        request: { dinoIds: [], eggIds: [], cash: 0, food: 0 },
+        offer: { dinoIds: [], eggIds: [], cash: 1, foods: {} },
+        request: { dinoIds: [], eggIds: [], cash: 0, foods: {} },
         status: 'pending', createdAt: ctx.now(),
       }).run();
     }
@@ -212,8 +226,8 @@ describe('trade list pagination', () => {
     for (let n = 0; n < 11; n++) {
       ctx.db.insert(schema.trades).values({
         fromUser: 'b', toUser: 'a',
-        offer: { dinoIds: [], eggIds: [], cash: 1, food: 0 },
-        request: { dinoIds: [], eggIds: [], cash: 0, food: 0 },
+        offer: { dinoIds: [], eggIds: [], cash: 1, foods: {} },
+        request: { dinoIds: [], eggIds: [], cash: 0, foods: {} },
         status: 'pending', createdAt: ctx.now(),
       }).run();
     }

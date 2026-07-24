@@ -24,11 +24,12 @@ describe('shop', () => {
     expect(bal().cash).toBe(200_000);               // started 500 + 200,000 seed = 200,500; − 500 = 200,000
     expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'u1')).all()).toHaveLength(1);
   });
-  it('buyFood credits food and charges cash', () => {
-    const before = bal().food;
-    buyFood(ctx, 'u1', 50);                          // 50 units * 10 = 500 cash
-    expect(bal().food).toBe(before + 50);
-    expect(bal().cash).toBe(200_000);               // 200,500 − 500
+  it('buyFood credits typed inventory and charges cash, rejecting unknown items', () => {
+    const before = ctx.economy.getFoodInventory('u1').fish ?? 0;   // starter fish
+    buyFood(ctx, 'u1', 'fish', 50);                  // 50 units * 12 = 600 cash
+    expect(ctx.economy.getFoodInventory('u1').fish).toBe(before + 50);
+    expect(bal().cash).toBe(200_500 - 600);
+    expect(() => buyFood(ctx, 'u1', 'pizza', 1)).toThrow(ShopError);
   });
   it('buyEgg rejects mythic', () => {
     expect(() => buyEgg(ctx, 'u1', 'mythic')).toThrow(ShopError);

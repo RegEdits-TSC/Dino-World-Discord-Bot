@@ -8,7 +8,7 @@ describe('trade validate helpers', () => {
     expect(() => parseIdList('1,-2')).toThrow(TradeError);
     expect(() => parseIdList('a')).toThrow(TradeError);
   });
-  it('sideItemCount counts dinos + eggs only', () => {
-    expect(sideItemCount({ dinoIds: [1, 2], eggIds: [3], cash: 500, food: 5 })).toBe(3);
+  it('sideItemCount counts dinos + eggs + food stacks', () => {
+    expect(sideItemCount({ dinoIds: [1, 2], eggIds: [3], cash: 500, foods: { fish: 2 } })).toBe(4);
   });
 });

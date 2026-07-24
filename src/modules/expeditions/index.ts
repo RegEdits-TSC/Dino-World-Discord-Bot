@@ -8,6 +8,7 @@ import { EXPEDITION_SITES } from '../../data/sites.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { schema } from '../../core/db/index.js';
 import { siteUnlocked } from '../park/rating.js';
+import { FOODS } from '../../data/foods.js';
 import { matches, respondRanked, fmtDuration } from '../../core/autocomplete.js';
 import { assetImage } from '../../core/images.js';
 import { emojiTag, rarityEmoji } from '../../core/emojis.js';
@@ -70,7 +71,9 @@ export const expeditionsModule: ModuleManifest = {
             const { loot, site } = claimExpedition(ctx, i.user.id);
             const embed = new EmbedBuilder().setColor(0xe8590c).setTitle(`🧭 ${siteMarker(site.id)}${site.name} — returned!`)
               .setDescription(`Found a **${rarityEmoji(loot.eggRarity)}${loot.eggRarity}** egg!`)
-              .addFields({ name: `${emojiTag('dw_cash')} Cash`, value: `+${loot.cash}`, inline: true }, { name: `${emojiTag('dw_food')} Food`, value: `+${loot.food}`, inline: true });
+              .addFields(
+                { name: `${emojiTag('dw_cash')} Cash`, value: `+${loot.cash}`, inline: true },
+                { name: `${emojiTag(FOODS[loot.food.foodId].emoji)} ${FOODS[loot.food.foodId].name}`, value: `+${loot.food.qty}`, inline: true });
             const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
             const banner = assetImage('sites', `${site.id}-banner`);
             if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
