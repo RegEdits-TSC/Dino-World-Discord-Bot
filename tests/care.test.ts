@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import type { EmbedBuilder } from 'discord.js';
 import { makeCtx, fakeCommand } from './harness.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { feedDino, feedAll, rescueDino, CareError } from '../src/modules/care/service.js';
 import { careModule } from '../src/modules/care/index.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
+import { VERY_HUNGRY_MS } from '../src/core/autocomplete.js';
 
 const H = 3_600_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -75,13 +77,53 @@ describe('rescueDino', () => {
   });
 });
 
+type CarePayload = { embeds: EmbedBuilder[]; files?: Array<{ name: string | null }> };
+const careReply = (i: { replies: unknown[] }) => i.replies[0] as CarePayload;
+
 describe('care module', () => {
-  it('/feed all feeds hungry dinos via the command', async () => {
+  it('/feed all feeds hungry dinos via the command, replying with a Care embed', async () => {
     const d = addDino({ hunger: 100, lastFedAt: 0 });
     ctx.setNow(48 * 3_600_000);
     const i = fakeCommand({ name: 'feed', sub: 'all', user: 'u1' });
     await careModule.commands[0].execute(ctx, i.asChatInput());
     expect(i.replies).toHaveLength(1);
     expect(dinoRow(d.id).hunger).toBe(100);
+    const json = careReply(i).embeds[0].toJSON();
+    expect(json.title).toBe('🍖 Care');                    // dw_food fallback — no emoji map in tests
+    expect(json.description).toBe('Fed 1 dino(s).');
+  });
+
+  it('/feed one replies with a Care embed describing the fed dino', async () => {
+    const d = addDino({ hunger: 50, lastFedAt: 0 });
+    ctx.setNow(24 * H);
+    const i = fakeCommand({ name: 'feed', sub: 'one', user: 'u1', options: { dino: d.id } });
+    await careModule.commands[0].execute(ctx, i.asChatInput());
+    const json = careReply(i).embeds[0].toJSON();
+    expect(json.title).toBe('🍖 Care');
+    expect(json.description).toBe('Fed your Triceratops (−5 food).');
+  });
+
+  it('care banner is care.png when no dino is very hungry', async () => {
+    addDino({ hunger: 100, lastFedAt: 1 * H });               // fed recently, well under VERY_HUNGRY_MS
+    ctx.setNow(1 * H);
+    const i = fakeCommand({ name: 'feed', sub: 'all', user: 'u1' });
+    await careModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = careReply(i);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://care.png');
+    expect(payload.files).toHaveLength(1);
+    expect(payload.files![0].name).toBe('care.png');
+  });
+
+  it('care banner is care_neglect.png when a dino has gone unfed past VERY_HUNGRY_MS', async () => {
+    const neglected = addDino({ hunger: 100, lastFedAt: 0 });  // never fed — stays behind
+    const fedNow = addDino({ hunger: 100, lastFedAt: 0 });     // this one gets fed by the command below
+    ctx.setNow(VERY_HUNGRY_MS + 4 * H);
+    const i = fakeCommand({ name: 'feed', sub: 'one', user: 'u1', options: { dino: fedNow.id } });
+    await careModule.commands[0].execute(ctx, i.asChatInput());
+    expect(dinoRow(neglected.id).lastFedAt).toBe(0);           // confirms it really was left behind
+    const payload = careReply(i);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://care_neglect.png');
+    expect(payload.files).toHaveLength(1);
+    expect(payload.files![0].name).toBe('care_neglect.png');
   });
 });

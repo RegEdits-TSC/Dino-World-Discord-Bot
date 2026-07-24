@@ -2,6 +2,7 @@ import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type Attach
 import type { Species } from '../../data/types.js';
 import { RARITY } from '../../data/rarity.js';
 import { assetImage } from '../../core/images.js';
+import { rarityEmoji } from '../../core/emojis.js';
 import { paginate, pageRow } from '../../core/paginate.js';
 import type { Egg } from './service.js';
 
@@ -16,7 +17,7 @@ export function crackButton(eggId: number) {
 }
 export function preHatchEmbed(rarity: string) {
   return new EmbedBuilder().setColor(RARITY_COLOR[rarity] ?? 0x95a5a6)
-    .setTitle(`🥚 A ${rarity} egg trembles…`).setDescription('Something stirs inside. Crack it open!');
+    .setTitle(`🥚 A ${rarityEmoji(rarity)}${rarity} egg trembles…`).setDescription('Something stirs inside. Crack it open!');
 }
 export function preHatchPayload(rarity: string, eggId: number) {
   const embed = preHatchEmbed(rarity);
@@ -29,7 +30,7 @@ export function preHatchPayload(rarity: string, eggId: number) {
 export function revealPayload(species: Species) {
   const stats = RARITY[species.rarity];
   const embed = new EmbedBuilder().setColor(RARITY_COLOR[species.rarity] ?? 0x95a5a6)
-    .setTitle(`✨ ${species.rarity.toUpperCase()} — ${species.name}!`)
+    .setTitle(`✨ ${rarityEmoji(species.rarity)}${species.rarity.toUpperCase()} — ${species.name}!`)
     .setDescription(species.flavor)
     .addFields(
       { name: 'Diet', value: species.diet, inline: true },
@@ -52,7 +53,7 @@ export function eggListPayload(eggs: Egg[], now: number, userId: string, page = 
   const lines = items.length ? items.map((e) => {
     const status = e.hatchesAt === null ? 'in inventory'
       : e.hatchesAt <= now ? 'READY — /hatch' : `hatching (ready <t:${Math.floor(e.hatchesAt / 1000)}:R>)`;
-    return `#${e.id} — ${e.rarity} egg — ${status}`;
+    return `#${e.id} — ${rarityEmoji(e.rarity)}${e.rarity} egg — ${status}`;
   }).join('\n') : 'No eggs. Run /expedition or /shop.';
   const embed = new EmbedBuilder().setTitle('🥚 Eggs').setDescription(lines).setColor(0x3ba55c)
     .setFooter({ text: `Page ${p}/${pages}` });

@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, EmbedBuilder, type AttachmentBuilder } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
@@ -9,7 +9,22 @@ import { feedDino, feedAll, rescueDino, CareError } from './service.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { hungerAt } from '../../core/clock.js';
 import { getSpecies } from '../../data/species/index.js';
-import { matches, respondRanked, emptyRow, dinoLabel } from '../../core/autocomplete.js';
+import { matches, respondRanked, emptyRow, dinoLabel, VERY_HUNGRY_MS } from '../../core/autocomplete.js';
+import { emojiTag } from '../../core/emojis.js';
+import { assetImage } from '../../core/images.js';
+
+// Care replies carry a banner: care_neglect.png when any of the player's non-escaped
+// dinos has gone unfed past the VERY HUNGRY threshold, care.png otherwise.
+function carePayload(ctx: Ctx, userId: string, description: string) {
+  const embed = new EmbedBuilder().setTitle(`${emojiTag('dw_food')} Care`).setColor(0x3ba55c).setDescription(description);
+  const now = ctx.now();
+  const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all();
+  const neglected = dinos.some((d) => d.escapedAt === null && now - d.lastFedAt >= VERY_HUNGRY_MS);
+  const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+  const banner = assetImage('banners', neglected ? 'care_neglect' : 'care');
+  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+  return payload;
+}
 
 // Autocomplete-safe dino listing: settleEscapes crashes for users with no row
 // (toClockDinos uses .get()!), so guard on row existence and never create one here.
@@ -33,11 +48,11 @@ export const careModule: ModuleManifest = {
         try {
           if (i.options.getSubcommand() === 'all') {
             const { fed, skipped } = feedAll(ctx, i.user.id);
-            const msg = fed.length ? `🍖 Fed ${fed.length} dino(s).` : '🍖 Nothing needed feeding.';
-            await i.reply({ content: skipped.length ? `${msg} Skipped ${skipped.length} (not enough food).` : msg });
+            const msg = fed.length ? `Fed ${fed.length} dino(s).` : 'Nothing needed feeding.';
+            await i.reply(carePayload(ctx, i.user.id, skipped.length ? `${msg} Skipped ${skipped.length} (not enough food).` : msg));
           } else {
             const { species, cost } = feedDino(ctx, i.user.id, i.options.getInteger('dino', true));
-            await i.reply({ content: `🍖 Fed your ${species.name} (−${cost} food).` });
+            await i.reply(carePayload(ctx, i.user.id, `Fed your ${species.name} (−${cost} food).`));
           }
         } catch (e) {
           if (e instanceof CareError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });

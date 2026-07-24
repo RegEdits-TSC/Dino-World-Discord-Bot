@@ -1,5 +1,6 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, type AttachmentBuilder } from 'discord.js';
 import type { ModuleManifest } from '../../core/modules.js';
+import { assetImage } from '../../core/images.js';
 
 export const HELP_TOPICS: Record<string, { title: string; body: string }> = {
   'getting-started': { title: '🦕 Getting started', body: [
@@ -73,7 +74,10 @@ export const helpModule: ModuleManifest = {
           .addFields(Object.entries(HELP_TOPICS).map(([key, t]) => ({
             name: t.title, value: `\`/help topic:${key}\``, inline: true,
           })));
-        await i.reply({ embeds: [overview] });
+        const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [overview] };
+        const banner = assetImage('banners', 'help');
+        if (banner) { overview.setImage(banner.url); payload.files = [banner.file]; }
+        await i.reply(payload);
       } },
   ],
   components: [],
