@@ -94,4 +94,13 @@ describe('shop visuals', () => {
     expect(foodField.value).toContain('🌿 Ferns — 10/unit, fills 100');
     expect(foodField.value).toContain('🥩 Prime Steak — 24/unit, fills 150');
   });
+  it('/shop view attaches the food-market banner image and file together', async () => {
+    // Guards attach-all-or-nothing: setImage without the matching file renders a
+    // broken image in Discord. shop_food_market.png ships in the repo.
+    const i = fakeCommand({ name: 'shop', sub: 'view', user: 'u1' });
+    await shopModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: Array<{ toJSON(): { image?: { url: string } } }>; files?: Array<{ name?: string | null }> };
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://shop_food_market.png');
+    expect(payload.files!.some((f) => f.name === 'shop_food_market.png')).toBe(true);
+  });
 });
