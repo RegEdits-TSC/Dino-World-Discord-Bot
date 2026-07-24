@@ -228,7 +228,7 @@ shell with glowing orange cracks).
 
 ## Embed banners
 
-Five wide banners for the surfaces that have no site or egg art of their own.
+Six wide banners for the surfaces that have no site or egg art of their own.
 All generated with Higgsfield Nano Banana Pro at 3:2, then scaled to 1536×1024
 (the generator emits 1264×848; scaling to full width leaves ~6px of vertical
 excess, which is center-cropped).
@@ -240,6 +240,7 @@ excess, which is center-cropped).
 | `assets/images/banners/help.png` | 1536×1024 | `/help` overview embed image |
 | `assets/images/banners/care.png` | 1536×1024 | care embed, dinos fed |
 | `assets/images/banners/care_neglect.png` | 1536×1024 | care embed, a dino is very hungry |
+| `assets/images/banners/shop_food_market.png` | 1536×1024 | `/shop view` food market embed image |
 
 These are the only prompts in this file whose subject is dinosaurs rather than
 scenery, so they drop the shared block's "no characters" clause and forbid only
@@ -329,7 +330,8 @@ Jurassic-park gift-shop food market stall, wooden counter with two clearly split
 display sides: left side lush greens — fern bundles, fruit baskets, crowned
 premium lettuce; right side butcher/fishmonger — fresh fish on ice, hanging meat
 leg, marbled steak. Warm tropical daylight, painted-illustration style matching
-the existing site banners, no text, no people, 16:9.
+the existing site banners, no text, no people, 3:2 (scaled and center-cropped
+to 1536×1024 like the other banners).
 
 ---
 
