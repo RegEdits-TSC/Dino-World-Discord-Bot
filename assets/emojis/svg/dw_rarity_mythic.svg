@@ -1,9 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eda2f2"/><stop offset="1" stop-color="#a127a8"/></linearGradient></defs>
-  <circle cx="32" cy="32" r="29" fill="none" stroke="#d14ad9" stroke-width="2.5" opacity="0.85"/>
-  <circle cx="32" cy="32" r="24" fill="none" stroke="#d14ad9" stroke-width="2" opacity="0.5"/>
-  <polygon points="32,10 52,27 32,54 12,27" fill="url(#g)" stroke="#5e1462" stroke-width="3"/>
-  <polygon points="32,16 44,27 32,43 20,27" fill="#ffffff" opacity="0.25"/>
-  <polygon points="52,4 54,10 60,12 54,14 52,20 50,14 44,12 50,10" fill="#ffffff" stroke="#5e1462" stroke-width="1.5" stroke-linejoin="round"/>
-  <polygon points="10,42 11,46 15,47 11,48 10,52 9,50 5,47 9,46" fill="#ffffff" opacity="0.8" stroke="#5e1462" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="32,3 39,18 55,13 50,29 63,32 50,35 55,51 39,46 32,61 25,46 9,51 14,35 1,32 14,29 9,13 25,18" fill="url(#g)" stroke="#5e1462" stroke-width="3.5" stroke-linejoin="round"/>
+  <ellipse cx="26" cy="23" rx="7" ry="4" fill="#ffffff" opacity="0.3" transform="rotate(-20 26 23)"/>
 </svg>
