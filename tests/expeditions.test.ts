@@ -3,6 +3,7 @@ import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { startExpedition, activeExpedition, claimExpedition, listSites, ExpeditionError } from '../src/modules/expeditions/service.js';
 import { schema } from '../src/core/db/index.js';
+import { STARTER_FOOD } from '../src/data/foods.js';
 import { eq } from 'drizzle-orm';
 
 let ctx: ReturnType<typeof makeCtx>;
@@ -30,6 +31,9 @@ describe('expeditions', () => {
     const { loot } = claimExpedition(ctx, 'u1');
     expect(['common', 'uncommon']).toContain(loot.eggRarity);
     expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'u1')).all()).toHaveLength(1);
+    expect(loot.food.qty).toBeGreaterThanOrEqual(2);
+    expect(['ferns', 'fish']).toContain(loot.food.foodId);
+    expect(ctx.economy.getFoodInventory('u1')[loot.food.foodId]).toBe((STARTER_FOOD[loot.food.foodId] ?? 0) + loot.food.qty);
     expect(activeExpedition(ctx, 'u1')).toBeUndefined();
     startExpedition(ctx, 'u1', 'coastal_dig', 'g1');
   });
