@@ -79,3 +79,26 @@ describe('escapeAt', () => {
     expect(escapeAt({ ...base, escapedAt: 123, species: triceratops, paddock: herb, decor: [] })).toBe(123);
   });
 });
+
+describe('overfill (hungerAtFed > 100)', () => {
+  it('clamps comfort at fit while hunger is above 100', () => {
+    // fillTo 150, fit 1.0: comfort must be 1.0 at t=0, not 1.5
+    expect(comfortAt(fedTrike({ hungerAtFed: 150 }), 0)).toBe(1.0);
+    // hunger drains 150 -> 100 over 24h; still clamped at the crossing
+    expect(comfortAt(fedTrike({ hungerAtFed: 150 }), 24 * H)).toBe(1.0);
+    // 12h past the crossing: hunger 75 -> comfort 0.75
+    expect(comfortAt(fedTrike({ hungerAtFed: 150 }), 36 * H)).toBeCloseTo(0.75);
+  });
+  it('integrates income piecewise across the hunger-100 crossing', () => {
+    // hungerAtFed 150, fit 1.0, window 0..36h. Crossing at 24h (150->100 at 100/48h drain).
+    // Segment 1: comfort flat 1.0 for 24h = 24 comfort-hours.
+    // Segment 2: comfort 1.0 -> 0.75 over 12h, mean 0.875 = 10.5 comfort-hours.
+    // A naive two-point trapezoid over the whole window would give (1.0+0.75)/2*36 = 31.5 — wrong.
+    // Correct: 34.5 * 60/hr = 2070.
+    expect(accruedIncome([fedTrike({ hungerAtFed: 150 })], 0, 48, 0, 36 * H)).toBe(2070);
+  });
+  it('delays the escape moment when overfed', () => {
+    // fit 1.0: comfort crosses 0.25 at hunger 25. From 150 that is (150-25)/100*48h = 60h; +8h grace.
+    expect(escapeAt(fedTrike({ hungerAtFed: 150 }))).toBe(60 * H + GRACE_MS);
+  });
+});

@@ -25,7 +25,8 @@ export function paddockFit(species: Species, paddock: PaddockDef, decor: string[
 
 export function comfortAt(d: ClockDino, at: number): number {
   if (!d.paddock) return 0;
-  return (hungerAt(d.hungerAtFed, d.lastFedAt, at) / 100) * paddockFit(d.species, d.paddock, d.decor);
+  // Overfilled dinos (fillTo up to 150) sit at full comfort until hunger drains back under 100.
+  return (Math.min(100, hungerAt(d.hungerAtFed, d.lastFedAt, at)) / 100) * paddockFit(d.species, d.paddock, d.decor);
 }
 
 /** Time at which comfort first crosses below ESCAPE_COMFORT, or null if it never does while assigned. */
@@ -67,9 +68,15 @@ export function accruedIncome(
     const hungerZero = d.lastFedAt + (d.hungerAtFed / 100) * HUNGER_DRAIN_MS;
     dinoEnd = Math.min(dinoEnd, Math.max(from, hungerZero));
     if (dinoEnd <= from) continue;
-    const mean = (comfortAt(d, from) + comfortAt(d, dinoEnd)) / 2;
-    const hours = (dinoEnd - from) / 3_600_000;
-    total += RARITY[d.species.rarity].incomePerHr * mean * hours;
+    // Comfort is piecewise linear with a knee where hunger crosses 100 (overfill).
+    // A two-point mean is exact on each side of the knee but wrong across it.
+    const seg = (a: number, b: number) =>
+      ((comfortAt(d, a) + comfortAt(d, b)) / 2) * ((b - a) / 3_600_000);
+    const knee = d.lastFedAt + Math.max(0, (d.hungerAtFed - 100) / 100) * HUNGER_DRAIN_MS;
+    const comfortHours = knee > from && knee < dinoEnd
+      ? seg(from, knee) + seg(knee, dinoEnd)
+      : seg(from, dinoEnd);
+    total += RARITY[d.species.rarity].incomePerHr * comfortHours;
   }
   return Math.floor(total * (1 + facilityBonusPct / 100));
 }
