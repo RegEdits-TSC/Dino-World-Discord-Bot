@@ -176,6 +176,20 @@ describe('trading module', () => {
     await tradingModule.commands[0].execute(ctx, acceptCmd.asChatInput());
     expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.userId).toBe('b');
   });
+  it('/trade offer with give-food and give-food-qty creates a typed-food trade', async () => {
+    ctx.economy.apply('a', { foods: { fish: 10 } }, 'seed', 0);
+    const i = fakeCommand({ name: 'trade', sub: 'offer', user: 'a',
+      options: { user: 'b', 'give-food': 'fish', 'give-food-qty': 10 } });
+    await tradingModule.commands[0].execute(ctx, i.asChatInput());
+    const t = ctx.db.select().from(schema.trades).where(eq(schema.trades.fromUser, 'a')).get()!;
+    expect(t.offer.foods).toEqual({ fish: 10 });
+    expect((i.replies[0] as { content: string }).content).toContain('10 Fish');
+  });
+  it('/trade offer with a food item but no qty is an ephemeral error', async () => {
+    const i = fakeCommand({ name: 'trade', sub: 'offer', user: 'a', options: { user: 'b', 'give-food': 'fish' } });
+    await tradingModule.commands[0].execute(ctx, i.asChatInput());
+    expect((i.replies[0] as { flags?: unknown }).flags).toBeDefined();
+  });
 });
 
 describe('trade notifications', () => {

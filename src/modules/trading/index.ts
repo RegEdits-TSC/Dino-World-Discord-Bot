@@ -73,9 +73,13 @@ export const tradingModule: ModuleManifest = {
           .addStringOption((o) => o.setName('give-dinos').setDescription('Your dinos — type to add, comma-separated').setAutocomplete(true))
           .addStringOption((o) => o.setName('give-eggs').setDescription('Your eggs — type to add, comma-separated').setAutocomplete(true))
           .addIntegerOption((o) => o.setName('give-cash').setDescription('Cash you give').setMinValue(0))
+          .addStringOption((o) => o.setName('give-food').setDescription('Food item you give').setAutocomplete(true))
+          .addIntegerOption((o) => o.setName('give-food-qty').setDescription('How many of the food item').setMinValue(1))
           .addStringOption((o) => o.setName('want-dinos').setDescription('Their dinos — pick the user first').setAutocomplete(true))
           .addStringOption((o) => o.setName('want-eggs').setDescription('Their eggs — pick the user first').setAutocomplete(true))
-          .addIntegerOption((o) => o.setName('want-cash').setDescription('Cash you want').setMinValue(0)))
+          .addIntegerOption((o) => o.setName('want-cash').setDescription('Cash you want').setMinValue(0))
+          .addStringOption((o) => o.setName('want-food').setDescription('Food item you want').setAutocomplete(true))
+          .addIntegerOption((o) => o.setName('want-food-qty').setDescription('How many of the food item').setMinValue(1)))
         .addSubcommand((s) => s.setName('list').setDescription('Your pending trades'))
         .addSubcommand((s) => s.setName('accept').setDescription('Accept a trade')
           .addIntegerOption((o) => o.setName('id').setDescription('Trade — type to search').setRequired(true).setAutocomplete(true)))
@@ -93,17 +97,22 @@ export const tradingModule: ModuleManifest = {
             if (target.bot) { await i.reply({ content: 'You cannot trade with a bot.', flags: MessageFlags.Ephemeral }); return; }
             getOrCreateUser(ctx, target.id, target.displayName);   // ensure the recipient has a park row
             expireStale(ctx, target.id);
+            const sideFoods = (item: string | null, qty: number | null): Record<string, number> => {
+              if (!item && !qty) return {};
+              if (!item || !qty) throw new TradeError('Set both the food item and its qty, or neither.');
+              return { [item]: qty };
+            };
             const offer: TradeSide = {
               dinoIds: parseIdList(i.options.getString('give-dinos') ?? ''),
               eggIds: parseIdList(i.options.getString('give-eggs') ?? ''),
               cash: i.options.getInteger('give-cash') ?? 0,
-              foods: {},
+              foods: sideFoods(i.options.getString('give-food'), i.options.getInteger('give-food-qty')),
             };
             const request: TradeSide = {
               dinoIds: parseIdList(i.options.getString('want-dinos') ?? ''),
               eggIds: parseIdList(i.options.getString('want-eggs') ?? ''),
               cash: i.options.getInteger('want-cash') ?? 0,
-              foods: {},
+              foods: sideFoods(i.options.getString('want-food'), i.options.getInteger('want-food-qty')),
             };
             const t = createTrade(ctx, i.user.id, target.id, offer, request);
             await i.reply({ content: `🤝 Trade **#${t.id}** sent to <@${target.id}>.\nYou give: ${summarize(offer, emojiTag)}\nYou want: ${summarize(request, emojiTag)}\nThey run \`/trade accept id:${t.id}\`.` });
@@ -158,6 +167,22 @@ export const tradingModule: ModuleManifest = {
         }
         if (sub === 'offer') {
           const focused = i.options.getFocused(true);
+          if (focused.name === 'give-food' || focused.name === 'want-food') {
+            let ownerId = i.user.id;
+            if (focused.name === 'want-food') {
+              const target = i.options.get('user')?.value;
+              if (typeof target !== 'string') { await i.respond([{ name: 'Pick the user option first', value: '-' }]); return; }
+              ownerId = target;
+            }
+            const inv = ctx.economy.getFoodInventory(ownerId);
+            const q = String(focused.value);
+            const who = focused.name === 'give-food' ? 'you hold' : 'they hold';
+            await respondRanked(i, Object.values(FOODS)
+              .filter((f) => matches(q, f.id, f.name, f.diet))
+              .map((f) => ({ value: f.id, valid: (inv[f.id] ?? 0) > 0,
+                label: `${f.fallback} ${f.name} — ${who} ${inv[f.id] ?? 0}` })));
+            return;
+          }
           const isWant = focused.name.startsWith('want-');
           const isDino = focused.name.endsWith('-dinos');
           if (!focused.name.endsWith('-dinos') && !focused.name.endsWith('-eggs')) { await i.respond([]); return; }

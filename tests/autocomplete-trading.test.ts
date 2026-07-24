@@ -128,3 +128,17 @@ describe('/trade offer id-list autocomplete', () => {
     expect(i.replies[0]).toEqual([{ name: 'You have no tradeable items', value: '-' }]);
   });
 });
+
+describe('/trade offer food autocomplete', () => {
+  it('give-food lists own holdings; want-food needs the user option first', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'a', 'A');                            // starter: 10 ferns, 10 fish
+    const give = fakeAutocomplete({ name: 'trade', sub: 'offer', user: 'a', focused: { name: 'give-food', value: '' } });
+    await tradingModule.commands[0].autocomplete!(ctx, give.asAutocomplete());
+    const rows = give.replies[0] as Array<{ name: string; value: string }>;
+    expect(rows.find((r) => r.value === 'ferns')!.name).toBe('🌿 Ferns — you hold 10');
+    const want = fakeAutocomplete({ name: 'trade', sub: 'offer', user: 'a', focused: { name: 'want-food', value: '' } });
+    await tradingModule.commands[0].autocomplete!(ctx, want.asAutocomplete());
+    expect(want.replies[0]).toEqual([{ name: 'Pick the user option first', value: '-' }]);
+  });
+});
