@@ -13,6 +13,8 @@ export const EMOJI_FALLBACK: Record<string, string> = {
   dw_site_amber_ridge: '🟠', dw_site_frozen_cliffs: '❄️',
   dw_lot_carnivore: '🦖', dw_lot_herbivore: '🦕', dw_lot_food_court: '🍔',
   dw_lot_hatchery: '🥚', dw_lot_visitor: '🏛️',
+  dw_ferns: '🌿', dw_fruit_basket: '🍎', dw_royal_greens: '🥬',
+  dw_fish: '🐟', dw_goat: '🍖', dw_prime_steak: '🥩',
 };
 
 let tags = new Map<string, string>();

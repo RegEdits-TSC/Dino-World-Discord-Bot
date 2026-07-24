@@ -26,7 +26,7 @@ describe('/trade accept|decline|cancel id autocomplete', () => {
     await cmd().autocomplete!(ctx, i.asAutocomplete());
     const rows = i.replies[0] as Array<{ name: string; value: number }>;
     expect(rows.map((r) => r.value)).toEqual([incoming.id, outgoing.id]);
-    expect(rows[0].name).toBe(`🤝 #${incoming.id} ← u2 — give  5 Ferns / get 💰 100`);
+    expect(rows[0].name).toBe(`🤝 #${incoming.id} ← u2 — give 🌿 5 Ferns / get 💰 100`);
     expect(rows[1].name).toContain('your outgoing, use /trade cancel');
   });
 
@@ -39,7 +39,7 @@ describe('/trade accept|decline|cancel id autocomplete', () => {
     await cmd().autocomplete!(ctx, i.asAutocomplete());
     const rows = i.replies[0] as Array<{ name: string; value: number }>;
     expect(rows.map((r) => r.value)).toEqual([outgoing.id, incoming.id]);
-    expect(rows[0].name).toBe(`🤝 #${outgoing.id} → u2 — give 💰 100 / get  5 Ferns`);
+    expect(rows[0].name).toBe(`🤝 #${outgoing.id} → u2 — give 💰 100 / get 🌿 5 Ferns`);
   });
 
   it('expired trades vanish (expireStale runs first)', async () => {
