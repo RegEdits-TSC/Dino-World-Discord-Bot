@@ -126,4 +126,17 @@ describe('care module', () => {
     expect(payload.files).toHaveLength(1);
     expect(payload.files![0].name).toBe('care_neglect.png');
   });
+
+  it('care banner stays care.png when the long-unfed dino has escaped', async () => {
+    const escaped = addDino({ hunger: 100, lastFedAt: 0, escapedAt: 1 }); // never fed, but escaped — must not count as neglected
+    const fedNow = addDino({ hunger: 100, lastFedAt: 0 });                // this one gets fed by the command below
+    ctx.setNow(VERY_HUNGRY_MS + 4 * H);
+    const i = fakeCommand({ name: 'feed', sub: 'one', user: 'u1', options: { dino: fedNow.id } });
+    await careModule.commands[0].execute(ctx, i.asChatInput());
+    expect(dinoRow(escaped.id).lastFedAt).toBe(0);              // confirms it really was left unfed
+    const payload = careReply(i);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://care.png');
+    expect(payload.files).toHaveLength(1);
+    expect(payload.files![0].name).toBe('care.png');
+  });
 });
