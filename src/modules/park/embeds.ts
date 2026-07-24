@@ -9,7 +9,7 @@ const LOT_EMOJI: Record<string, string> = {
 
 export function dashboardPayload(
   user: User, lots: Lot[], dinoCount: number, pending: number, escapedCount = 0,
-  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number } = {},
+  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string } = {},
 ) {
   const extras: string[] = [];
   if (escapedCount > 0) extras.push(`${escapedCount} ${emojiTag('dw_alert')} escaped`);
@@ -21,6 +21,7 @@ export function dashboardPayload(
     .setColor(0x3ba55c)
     .addFields(
       { name: `${emojiTag('dw_cash')} Cash`, value: user.cash.toLocaleString(), inline: true },
+      { name: `${emojiTag('dw_food')} Food`, value: opts.foodLine ?? 'none — /shop food', inline: true },
       { name: `${emojiTag('dw_star')} Rating`, value: (user.parkRating / 100).toFixed(1), inline: true },
       { name: '🦕 Dinos', value: dinoValue, inline: true },
       { name: '🏗️ Lots', value: lots.map((l) => {

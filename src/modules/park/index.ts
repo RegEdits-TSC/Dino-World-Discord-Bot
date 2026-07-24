@@ -16,7 +16,8 @@ import { DECOR } from '../../data/decor.js';
 import { getSpecies } from '../../data/species/index.js';
 import { matches, respondRanked, emptyRow, dinoLabel } from '../../core/autocomplete.js';
 import { paginate, pageRow } from '../../core/paginate.js';
-import { emojiTag } from '../../core/emojis.js';
+import { emojiTag, foodEmoji } from '../../core/emojis.js';
+import { FOODS, type FoodId } from '../../data/foods.js';
 import type { Ctx } from '../../core/context.js';
 
 const kindChoices = [...Object.keys(PADDOCKS), ...Object.keys(FACILITIES)]
@@ -69,7 +70,10 @@ export const parkModule: ModuleManifest = {
           const tlots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, targetUser.id)).all();
           const tdinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, targetUser.id)).all();
           const tescaped = tdinos.filter((d) => d.escapedAt !== null).length;
-          const payload = dashboardPayload(fresh, tlots, tdinos.length, 0, tescaped);
+          const tinv = ctx.economy.getFoodInventory(targetUser.id);
+          const tfoodLine = (Object.entries(tinv) as Array<[FoodId, number]>)
+            .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
+          const payload = dashboardPayload(fresh, tlots, tdinos.length, 0, tescaped, { foodLine: tfoodLine });
           const base = { embeds: payload.embeds };
           let png: Buffer | undefined;
           try { png = await renderPark(buildParkSnapshot(ctx, targetUser.id)); } catch { png = undefined; }
@@ -92,7 +96,10 @@ export const parkModule: ModuleManifest = {
         const capped = pending > 0 && ctx.now() - user.lastCollectAt >= capHours(lots) * 3_600_000;
         const mismatchCount = clockDinos.filter((c) =>
           c.paddock !== null && c.escapedAt === null && c.paddock.diet !== c.species.diet).length;
-        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount });
+        const inv = ctx.economy.getFoodInventory(i.user.id);
+        const foodLine = (Object.entries(inv) as Array<[FoodId, number]>)
+          .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
+        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine });
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
         await i.editReply(png ? withParkImage(base, png) : base);

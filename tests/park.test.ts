@@ -193,3 +193,17 @@ describe('/dino list escape countdown', () => {
     expect(desc.match(/⚠ escapes/g)).toHaveLength(1);
   });
 });
+
+describe('dashboard food line', () => {
+  it('/park view lists held food items grouped after cash', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const parkCmd = parkModule.commands.find((c) => c.data.name === 'park')!;
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await parkCmd.execute(ctx, i.asChatInput());
+    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> })
+      .embeds[0].toJSON().fields!;
+    const food = fields.find((f) => f.name.includes('Food'))!;
+    expect(food.value).toContain('🌿 Ferns ×10');               // starter pantry
+    expect(food.value).toContain('🐟 Fish ×10');
+  });
+});
