@@ -20,10 +20,19 @@
 - Embed art ships from `assets/images/` via `assetImage` (`src/core/images.ts`);
   a missing file means the embed renders without the image — absent art is
   never an error. Generation prompts live in `docs/assets/prompts.md`.
-- Emoji art is hand-authored SVG in `assets/emojis/svg/`, rendered to committed
-  128×128 transparent PNGs in `assets/emojis/png/` by `npm run build-emojis`
-  (`src/build-emojis.ts` + the `renderSvg` helper in `src/core/render-svg.ts`,
-  which decodes via `@napi-rs/canvas`'s bundled resvg). Known resvg gotcha:
+- Custom app emojis are hand-authored SVG in `assets/emojis/svg/`, rendered to
+  committed 128×128 transparent PNGs in `assets/emojis/png/` by
+  `npm run build-emojis` (`src/build-emojis.ts` + the `renderSvg` helper in
+  `src/core/render-svg.ts`, which decodes via `@napi-rs/canvas`'s bundled
+  resvg), and uploaded to Discord by `npm run deploy-emojis`
+  (`assets/emojis/manifest.json` tracks deployed hashes so reruns only touch
+  what changed). Runtime lookup is `emojiTag` / `rarityEmoji`
+  (`src/core/emojis.ts`) — unicode fallback when the map isn't loaded, so a
+  missing emoji is never an error. **Never call `emojiTag` in a module-level
+  constant** (the map loads after client ready, so module init would freeze
+  the fallback permanently), and **never put a custom emoji tag in an
+  autocomplete label** (Discord renders it as literal text there). Neither
+  mistake fails a test, because tests load no map. Known resvg gotcha:
   `<ellipse fill="url(#gradient)">` with the default `objectBoundingBox`
   gradientUnits renders solid black — use `gradientUnits="userSpaceOnUse"`
   with `y1`/`y2` set to the ellipse's own pre-transform bbox instead (same
@@ -35,10 +44,9 @@
   than 2% pure `#000000` (`MAX_BLACK_SHARE`), calibrated against the currency trio, none of which
   use pure black — if a future SVG legitimately needs pure black across more of the canvas than
   that, raise the threshold deliberately rather than fighting the guard.
-- Custom app emojis: SVG sources in `assets/emojis/svg/`, rendered via
-  `npm run build-emojis` (PNGs committed), synced with `npm run deploy-emojis`
-  (manifest.json tracks deployed hashes). Runtime lookup is `emojiTag` /
-  `rarityEmoji` (`src/core/emojis.ts`) — unicode fallback when unset, so a
-  missing emoji is never an error. Never call `emojiTag` in a module-level
-  constant (map loads after client ready), and never put custom emoji tags
-  in autocomplete labels (Discord renders them as literal text there).
+- `@napi-rs/canvas` decodes **PNG** buffers asynchronously — setting `Image.src`
+  from PNG bytes and drawing in the same tick silently yields a blank canvas,
+  with no error. Always `await img.decode()` before drawing a PNG. **SVG**
+  buffers decode synchronously, which is why `renderSvg` needs no await and why
+  the park renderer draws its HUD cash icon straight from `dw_cash.svg` rather
+  than a PNG (`renderParkPng` is synchronous).
