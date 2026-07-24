@@ -1,4 +1,5 @@
 import { SlashCommandBuilder, MessageFlags, EmbedBuilder } from 'discord.js';
+import type { AttachmentBuilder } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import type { TradeSide } from '../../core/db/schema.js';
@@ -12,13 +13,19 @@ import { getSpecies } from '../../data/species/index.js';
 import { TRADE_MAX_ITEMS_PER_SIDE } from '../../data/trade.js';
 import { paginate, pageRow } from '../../core/paginate.js';
 import type { Ctx } from '../../core/context.js';
+import { emojiTag, EMOJI_FALLBACK } from '../../core/emojis.js';
+import { assetImage } from '../../core/images.js';
 
-function summarize(side: TradeSide): string {
+// Default formatter is the unicode fallback table, so autocomplete call
+// sites (Discord renders custom emoji as literal text there) can call
+// summarize(side) unchanged and keep their verbatim-label tests passing.
+// Reply/notify call sites pass emojiTag explicitly.
+function summarize(side: TradeSide, e: (name: string) => string = (n) => EMOJI_FALLBACK[n] ?? ''): string {
   const parts: string[] = [];
   if (side.dinoIds.length) parts.push(`🦕 dinos ${side.dinoIds.join(',')}`);
   if (side.eggIds.length) parts.push(`🥚 eggs ${side.eggIds.join(',')}`);
-  if (side.cash) parts.push(`💰 ${side.cash}`);
-  if (side.food) parts.push(`🍖 ${side.food}`);
+  if (side.cash) parts.push(`${e('dw_cash')} ${side.cash}`);
+  if (side.food) parts.push(`${e('dw_food')} ${side.food}`);
   return parts.join(' + ') || 'nothing';
 }
 
@@ -46,7 +53,11 @@ function tradeListPayload(ctx: Ctx, userId: string, page: number) {
   }).join('\n') : 'No pending trades.';
   const embed = new EmbedBuilder().setTitle('🤝 Pending trades').setDescription(lines).setColor(0x5865F2)
     .setFooter({ text: `Page ${p}/${pages}` });
-  return { embeds: [embed], components: pages > 1 ? [pageRow('trade', 'list', userId, p, pages)] : [] };
+  const payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof pageRow>[]; files?: AttachmentBuilder[] } =
+    { embeds: [embed], components: pages > 1 ? [pageRow('trade', 'list', userId, p, pages)] : [] };
+  const banner = assetImage('banners', 'trading');
+  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+  return payload;
 }
 
 export const tradingModule: ModuleManifest = {
@@ -93,10 +104,10 @@ export const tradingModule: ModuleManifest = {
               food: i.options.getInteger('want-food') ?? 0,
             };
             const t = createTrade(ctx, i.user.id, target.id, offer, request);
-            await i.reply({ content: `🤝 Trade **#${t.id}** sent to <@${target.id}>.\nYou give: ${summarize(offer)}\nYou want: ${summarize(request)}\nThey run \`/trade accept id:${t.id}\`.` });
+            await i.reply({ content: `🤝 Trade **#${t.id}** sent to <@${target.id}>.\nYou give: ${summarize(offer, emojiTag)}\nYou want: ${summarize(request, emojiTag)}\nThey run \`/trade accept id:${t.id}\`.` });
             // originGuildId is the acting user's guild, so delivery falls back to DM when the counterparty isn't in that guild's notify channel.
             await ctx.notify(target.id, i.guildId,
-              `📨 Trade #${t.id} from **${i.user.displayName}** — they give ${summarize(offer)}, they want ${summarize(request)}. Run \`/trade accept id:${t.id}\`.`);
+              `📨 Trade #${t.id} from **${i.user.displayName}** — they give ${summarize(offer, emojiTag)}, they want ${summarize(request, emojiTag)}. Run \`/trade accept id:${t.id}\`.`);
           } else if (sub === 'list') {
             await i.reply(tradeListPayload(ctx, i.user.id, 1));
           } else if (sub === 'accept') {
@@ -169,7 +180,7 @@ export const tradingModule: ModuleManifest = {
         if (action !== 'list') return;
         if (i.user.id !== uid) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
         expireStale(ctx, i.user.id);
-        await i.update(tradeListPayload(ctx, i.user.id, Number(pageStr)));
+        await i.update({ ...tradeListPayload(ctx, i.user.id, Number(pageStr)), attachments: [] });
       } },
   ],
 };

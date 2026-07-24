@@ -16,6 +16,7 @@ import { assetImage } from '../../core/images.js';
 import { RARITY_COLOR } from '../hatchery/embeds.js';
 import { RARITY } from '../../data/rarity.js';
 import type { AttachmentBuilder } from 'discord.js';
+import { emojiTag, rarityEmoji } from '../../core/emojis.js';
 
 const eggRarityChoices = (['common', 'uncommon', 'rare', 'epic', 'legendary'] as const).map((r) => ({ name: r, value: r }));
 
@@ -34,12 +35,12 @@ export const shopModule: ModuleManifest = {
         try {
           if (sub === 'view') {
             const offers = dailyEggOffers(user.ratingHighWater, ctx.now());
-            const eggLines = offers.length ? offers.map((r) => `• ${r} egg — ${SHOP_EGG_PRICES[r].toLocaleString()} cash`).join('\n') : 'No eggs today.';
+            const eggLines = offers.length ? offers.map((r) => `• ${rarityEmoji(r)}${r} egg — ${SHOP_EGG_PRICES[r].toLocaleString()} cash`).join('\n') : 'No eggs today.';
             const foodLine = FOOD_BUNDLES.map((b) => `${b} food (${b * FOOD_UNIT_COST} cash)`).join(' · ');
             const decorLine = Object.values(DECOR).map((d) => `${d.name} (${d.cost})`).join(' · ');
             const embed = new EmbedBuilder().setTitle('🏪 Shop — today').setColor(0x5865F2).addFields(
               { name: '🥚 Eggs (/shop egg)', value: eggLines },
-              { name: '🍖 Food (/shop food)', value: foodLine },
+              { name: `${emojiTag('dw_food')} Food (/shop food)`, value: foodLine },
               { name: '🌴 Decor (/decorate)', value: decorLine },
             );
             const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
@@ -54,7 +55,7 @@ export const shopModule: ModuleManifest = {
             if (!offers.includes(rarity)) { await i.reply({ content: `A ${rarity} egg isn't in today's rotation — see /shop view.`, flags: MessageFlags.Ephemeral }); return; }
             const egg = buyEgg(ctx, i.user.id, rarity);
             const eggEmbed = new EmbedBuilder().setColor(RARITY_COLOR[egg.rarity] ?? 0x95a5a6)
-              .setTitle(`🥚 Bought a ${egg.rarity} egg (#${egg.id})`)
+              .setTitle(`🥚 Bought a ${rarityEmoji(egg.rarity)}${egg.rarity} egg (#${egg.id})`)
               .setDescription(`Incubate it with /incubate ${egg.id}.`);
             const eggPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [eggEmbed] };
             const eggImg = assetImage('eggs', egg.rarity);
@@ -62,7 +63,7 @@ export const shopModule: ModuleManifest = {
             await i.reply(eggPayload);
           } else {
             buyFood(ctx, i.user.id, i.options.getInteger('units', true));
-            await i.reply({ content: '🍖 Food purchased.' });
+            await i.reply({ content: `${emojiTag('dw_food')} Food purchased.` });
           }
         } catch (e) {
           if (e instanceof ShopError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
@@ -98,7 +99,7 @@ export const shopModule: ModuleManifest = {
           if (!p.sellable) { await i.reply({ content: 'That dino cannot be sold (Mythic or locked).', flags: MessageFlags.Ephemeral }); return; }
           const shardText = p.capReached ? '0 shards (daily cap reached)' : `${p.minShards}–${p.maxShards} shards`;
           const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder().setCustomId(`sell:confirm:${dinoId}`).setLabel('💰 Confirm sale').setStyle(ButtonStyle.Danger));
+            new ButtonBuilder().setCustomId(`sell:confirm:${dinoId}`).setEmoji(emojiTag('dw_cash')).setLabel('Confirm sale').setStyle(ButtonStyle.Danger));
           await i.reply({ content: `Sell dino #${dinoId} for ${p.cashValue.toLocaleString()} cash + ${shardText}?`, components: [row], flags: MessageFlags.Ephemeral });
         } catch (e) { if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
       },
@@ -125,7 +126,7 @@ export const shopModule: ModuleManifest = {
         try {
           const res = sellDino(ctx, i.user.id, Number(idStr));
           const cap = res.capped ? ' (shard cap reached)' : '';
-          await i.update({ content: `💰 Sold for **${res.cash.toLocaleString()}** cash and **${res.shards}** shards${cap}.`, components: [] });
+          await i.update({ content: `${emojiTag('dw_cash')} Sold for **${res.cash.toLocaleString()}** cash and **${res.shards}** shards${cap}.`, components: [] });
         } catch (e) { if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
       } },
   ],

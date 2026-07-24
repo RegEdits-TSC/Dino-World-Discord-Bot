@@ -228,3 +228,16 @@ describe('trade list pagination', () => {
     expect((b.replies[0] as { content: string }).content).toContain('Not your');
   });
 });
+
+describe('trading visuals', () => {
+  it('/trade list attaches the trading banner image and file together', async () => {
+    // assets/images/banners/trading.png ships in the repo, so this exercises
+    // the real attached path — asserting the URL without the file (or vice versa)
+    // is exactly the broken-image bug this test guards against.
+    const i = fakeCommand({ name: 'trade', sub: 'list', user: 'a' });
+    await tradingModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: Array<{ toJSON(): { image?: { url: string } } }>; files?: unknown[] };
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://trading.png');
+    expect(payload.files).toHaveLength(1);
+  });
+});
