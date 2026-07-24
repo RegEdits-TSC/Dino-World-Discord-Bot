@@ -1,5 +1,6 @@
 import type { Client } from 'discord.js';
 import { logger } from './logger.js';
+import { FOODS, type FoodId } from '../data/foods.js';
 
 // Unicode fallbacks for every application emoji. Rarity gems fall back to '',
 // since rarity is always also conveyed by text right next to them.
@@ -31,6 +32,12 @@ export function emojiTag(name: string): string {
 export function rarityEmoji(rarity: string): string {
   const t = emojiTag(`dw_rarity_${rarity}`);
   return t ? `${t} ` : '';
+}
+
+// Emoji prefix for a food item: '<:dw_ferns:id> ' or the '🌿 ' unicode fallback.
+export function foodEmoji(id: FoodId): string {
+  const t = emojiTag(FOODS[id].emoji);
+  return t ? `${t} ` : `${FOODS[id].fallback} `;
 }
 
 export async function loadAppEmojis(client: Client): Promise<void> {

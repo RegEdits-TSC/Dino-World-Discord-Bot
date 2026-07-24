@@ -7,7 +7,7 @@ import { dailyEggOffers, buyEgg, buyFood, ShopError } from './service.js';
 import { sellDino, previewSell, ShardError } from './shards.js';
 import { schema } from '../../core/db/index.js';
 import { getSpecies } from '../../data/species/index.js';
-import { SHOP_EGG_PRICES } from '../../data/shop.js';
+import { SHOP_EGG_PRICES, FOOD_BUNDLES } from '../../data/shop.js';
 import { SELL_CASH } from '../../data/sell.js';
 import { DECOR } from '../../data/decor.js';
 import { InsufficientFundsError } from '../../core/economy.js';
@@ -16,7 +16,8 @@ import { assetImage } from '../../core/images.js';
 import { RARITY_COLOR } from '../hatchery/embeds.js';
 import { RARITY } from '../../data/rarity.js';
 import type { AttachmentBuilder } from 'discord.js';
-import { emojiTag, rarityEmoji } from '../../core/emojis.js';
+import { emojiTag, rarityEmoji, foodEmoji } from '../../core/emojis.js';
+import { FOODS, foodsForDiet } from '../../data/foods.js';
 
 const eggRarityChoices = (['common', 'uncommon', 'rare', 'epic', 'legendary'] as const).map((r) => ({ name: r, value: r }));
 
@@ -37,11 +38,14 @@ export const shopModule: ModuleManifest = {
           if (sub === 'view') {
             const offers = dailyEggOffers(user.ratingHighWater, ctx.now());
             const eggLines = offers.length ? offers.map((r) => `• ${rarityEmoji(r)}${r} egg — ${SHOP_EGG_PRICES[r].toLocaleString()} cash`).join('\n') : 'No eggs today.';
-            const foodLine = 'See /shop food';
+            const foodLines = (['herbivore', 'carnivore'] as const).map((diet) =>
+              foodsForDiet(diet).map((f) => `${foodEmoji(f.id)}${f.name} — ${f.unitCost}/unit, fills ${f.fillTo}`).join('\n'))
+              .join('\n');
+            const bundleHint = `Buy any amount — e.g. ${FOOD_BUNDLES.join('/')}.`;
             const decorLine = Object.values(DECOR).map((d) => `${d.name} (${d.cost})`).join(' · ');
             const embed = new EmbedBuilder().setTitle('🏪 Shop — today').setColor(0x5865F2).addFields(
               { name: '🥚 Eggs (/shop egg)', value: eggLines },
-              { name: `${emojiTag('dw_food')} Food (/shop food)`, value: foodLine },
+              { name: `${emojiTag('dw_food')} Food Market (/shop food)`, value: `${foodLines}\n${bundleHint}` },
               { name: '🌴 Decor (/decorate)', value: decorLine },
             );
             const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
@@ -49,6 +53,8 @@ export const shopModule: ModuleManifest = {
             const best = offers.length ? offers.reduce((a, b) => (order.indexOf(b) > order.indexOf(a) ? b : a)) : null;
             const img = best ? assetImage('eggs', best) : null;
             if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }
+            const foodBanner = assetImage('banners', 'shop_food_market');
+            if (foodBanner) { embed.setImage(foodBanner.url); payload.files = [...(payload.files ?? []), foodBanner.file]; }
             await i.reply(payload);
           } else if (sub === 'egg') {
             const rarity = i.options.getString('rarity', true) as Rarity;
@@ -73,6 +79,16 @@ export const shopModule: ModuleManifest = {
         }
       },
       async autocomplete(ctx, i) {
+        if (i.options.getSubcommand() === 'food') {
+          const inv = ctx.economy.getFoodInventory(i.user.id);
+          const q = String(i.options.getFocused());
+          await respondRanked(i, Object.values(FOODS)
+            .filter((f) => matches(q, f.id, f.name, f.diet))
+            .map((f) => ({ value: f.id, valid: true,
+              // Unicode fallback only — custom tags render literally in autocomplete.
+              label: `${f.fallback} ${f.name} — ${f.unitCost} cash/unit, fills ${f.fillTo} (own ${inv[f.id] ?? 0})` })));
+          return;
+        }
         if (i.options.getSubcommand() !== 'egg') { await i.respond([]); return; }
         const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, i.user.id)).get();
         const offers = dailyEggOffers(user?.ratingHighWater ?? 0, ctx.now());

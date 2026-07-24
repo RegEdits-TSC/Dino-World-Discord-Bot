@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { Client } from 'discord.js';
 import { emojiTag, rarityEmoji, setEmojiMap, clearEmojiMap, EMOJI_FALLBACK, loadAppEmojis } from '../src/core/emojis.js';
 import { logger } from '../src/core/logger.js';
+import { foodEmoji } from '../src/core/emojis.js';
 
 afterEach(() => {
   clearEmojiMap();
@@ -97,5 +98,12 @@ describe('loadAppEmojis', () => {
     expect(emojiTag('dw_cash')).toBe('💰');
     expect(emojiTag('dw_food')).toBe('🍖');
     expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('foodEmoji', () => {
+  it('prefixes the unicode fallback with a trailing space when no map is loaded', () => {
+    expect(foodEmoji('ferns')).toBe('🌿 ');
+    expect(foodEmoji('prime_steak')).toBe('🥩 ');
   });
 });

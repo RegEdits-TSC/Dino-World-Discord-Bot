@@ -86,4 +86,12 @@ describe('shop visuals', () => {
     expect(payload.embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${offers[0]}.png`);
     expect(payload.embeds[0].toJSON().description).toContain('/incubate');
   });
+  it('/shop view lists the food market grouped by diet', async () => {
+    const i = fakeCommand({ name: 'shop', sub: 'view', user: 'u1' });
+    await shopModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
+    const foodField = payload.embeds[0].toJSON().fields!.find((f) => f.name.includes('Food'))!;
+    expect(foodField.value).toContain('🌿 Ferns — 10/unit, fills 100');
+    expect(foodField.value).toContain('🥩 Prime Steak — 24/unit, fills 150');
+  });
 });

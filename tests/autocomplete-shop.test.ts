@@ -57,3 +57,16 @@ describe('/sell dino autocomplete', () => {
     expect(rows[3].name).toBe(`🦖 #${mythic.id} Indominus rex — MYTHIC, can't sell`);
   });
 });
+
+describe('/shop food item autocomplete', () => {
+  it('lists all six foods with owned quantities in unicode', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1');                          // starter: 10 ferns, 10 fish
+    const i = fakeAutocomplete({ name: 'shop', sub: 'food', user: 'u1', focused: { name: 'item', value: '' } });
+    await shopModule.commands[0].autocomplete!(ctx, i.asAutocomplete());
+    const rows = i.replies[0] as Array<{ name: string; value: string }>;
+    expect(rows).toHaveLength(6);
+    expect(rows.find((r) => r.value === 'ferns')!.name).toBe('🌿 Ferns — 10 cash/unit, fills 100 (own 10)');
+    expect(rows.find((r) => r.value === 'goat')!.name).toBe('🍖 Goat — 18 cash/unit, fills 125 (own 0)');
+  });
+});
