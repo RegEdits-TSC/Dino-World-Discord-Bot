@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
-import { readFileSync, readdirSync } from 'node:fs';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { migrateDb, schema } from '../src/core/db/index.js';
 
 const DRIZZLE = resolve(process.cwd(), 'drizzle');
 const sqlFiles = readdirSync(DRIZZLE).filter((f) => f.endsWith('.sql')).sort();
@@ -53,5 +57,46 @@ describe('0001 diet food types migration', () => {
     expect(() => db.prepare(`UPDATE food_inventory SET qty = -1`).run()).toThrow();
     expect(() => db.prepare(`INSERT INTO food_inventory (user_id, food_id, qty) VALUES ('u1', 'ferns', 1)`).run())
       .toThrow();                                  // PK (user_id, food_id)
+  });
+});
+
+// The block above replays the raw SQL statement-by-statement (each PRAGMA takes
+// effect, FK enforcement defaults off) — it verifies the SQL logic but NOT the
+// path the bot actually runs. drizzle's migrator wraps the whole migration in a
+// transaction, where `PRAGMA foreign_keys=OFF` is a no-op, so a populated DB
+// with FK enforcement on fails on `DROP TABLE users`. This exercises that path.
+describe('0001 via the real drizzle migrator (production path)', () => {
+  it('applies 0001 to a populated 0000 database without a foreign-key failure', () => {
+    // Reach the 0000 schema through a scratch folder holding only that migration,
+    // seed a user + a child dino (the FK that blocks the table drop), then run the
+    // real migrateDb so drizzle applies 0001 exactly as the bot does at startup.
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    const zero = readdirSync(DRIZZLE).filter((f) => f.startsWith('0000') && f.endsWith('.sql'))[0];
+    cpSync(resolve(DRIZZLE, zero), resolve(scratch, zero));
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx === 0);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');                     // production createDb sets this
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });             // apply 0000 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, food, cash, last_collect_at_ms, created_at_ms) VALUES ('u1', 30, 500, 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO dinos (user_id, species_id, hunger, last_fed_at_ms, hatched_at_ms) VALUES ('u1', 'triceratops', 100, 0, 0)`).run();
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();            // RED before the fix: FOREIGN KEY constraint failed on DROP TABLE users
+      const cols = (sqlite.prepare(`SELECT name FROM pragma_table_info('users')`).all() as Array<{ name: string }>).map((r) => r.name);
+      expect(cols).not.toContain('food');
+      expect(sqlite.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='food_inventory'`).get()).toBeTruthy();
+      expect((sqlite.prepare(`SELECT cash FROM users WHERE discord_id='u1'`).get() as { cash: number }).cash).toBe(500 + 300);
+      expect((sqlite.prepare(`SELECT count(*) n FROM tx_log WHERE reason='food-refund:migration'`).get() as { n: number }).n).toBe(1);
+      // migrateDb must leave FK enforcement ON — runtime integrity depends on it.
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
   });
 });

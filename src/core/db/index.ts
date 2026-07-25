@@ -17,5 +17,15 @@ export function createDb(path: string): Db {
 
 export function migrateDb(db: Db): void {
   const folder = fileURLToPath(new URL('../../../drizzle', import.meta.url));
-  migrate(db, { migrationsFolder: folder });
+  // drizzle runs each migration inside a transaction, and `PRAGMA foreign_keys`
+  // is a no-op mid-transaction — so a table-recreate migration's own OFF/ON
+  // pragmas never take effect and `DROP TABLE` fails against child rows on a
+  // populated DB. Toggle enforcement here, outside the transaction, then restore
+  // it (the runtime relies on foreign_keys = ON, set in createDb).
+  db.$client.pragma('foreign_keys = OFF');
+  try {
+    migrate(db, { migrationsFolder: folder });
+  } finally {
+    db.$client.pragma('foreign_keys = ON');
+  }
 }
