@@ -63,3 +63,12 @@
   two-point trapezoid over-/under-pays overfed dinos. Autocomplete labels use
   `FoodDef.fallback` unicode, never `emojiTag`/`foodEmoji` (custom tags render
   as literal text in autocomplete).
+- `migrateDb` (`src/core/db/index.ts`) brackets `migrate()` with
+  `foreign_keys = OFF`/`ON`. This is load-bearing, not cleanup: drizzle runs each
+  migration inside a transaction where `PRAGMA foreign_keys` is a no-op, so a
+  table-recreate migration (SQLite column drop) would otherwise fail
+  `DROP TABLE` against child rows on a **populated** DB (`createDb` sets FK on).
+  Consequence for tests: an empty-DB migration test or a raw-SQL replay
+  (`db.exec` per statement) passes even when the real migrator would fail — a
+  migration test must seed a parent **and** a child row and run the real
+  `migrateDb` (see the "production path" block in `tests/migration.test.ts`).
