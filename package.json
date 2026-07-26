@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:live": "tsx scripts/test-live.ts",
     "deploy-commands": "tsx src/deploy-commands.ts",
     "build-emojis": "tsx src/build-emojis.ts",
     "deploy-emojis": "tsx src/deploy-emojis.ts"
