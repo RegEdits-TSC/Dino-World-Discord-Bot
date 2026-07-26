@@ -88,11 +88,40 @@ npm run build
 
 ## Testing
 
-Run the test suite with:
+There are two tiers, plus a repo command that runs both.
+
+Run the offline suite with:
 
 ```
 npm test
 ```
+
+This is a strict Discord-semantics simulation — reply-once and defer rules,
+payload-size limits, and option getters checked against each command's real
+builder are all enforced the way discord.js itself would enforce them. It
+covers every entry point (commands, buttons, autocomplete) and the
+multi-step journeys that string them together (hatch an egg, run an
+expedition, trade with another player, and so on).
+
+Run the live sweep against a dev guild with:
+
+```
+npm run test:live
+```
+
+This tier is REST-only: it deploys the current builders to `DEV_GUILD_ID` so
+Discord itself validates them, then drives the same commands and posts every
+resulting embed, button row, and image to `TEST_CHANNEL_ID` for a human to
+scroll through and cosmetically review, and checks that every emoji the bot
+references is actually deployed. It never opens a gateway connection, so it's
+safe to run while the bot is live — it won't collide with the running
+instance's session. Requires `DISCORD_TOKEN`, `DEV_GUILD_ID`, and
+`TEST_CHANNEL_ID` set in `.env`.
+
+The `/verify` repo command runs typecheck, both test tiers (skipping the live
+sweep if its env vars aren't set), and reports a pass/fail summary.
+
+CI runs typecheck and the offline suite on every push and pull request.
 
 ## Deployment & Operations
 

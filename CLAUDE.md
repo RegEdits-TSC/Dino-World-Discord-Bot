@@ -12,11 +12,31 @@
   `settleEscapes` (guard on the user row existing first: it crashes for
   unknown users) and `expireStale`. Router-level errors degrade to an empty
   suggestion list.
-- Registering a new module touches 5 sites: modules.json, src/index.ts,
-  src/deploy-commands.ts, tests/registry-load.test.ts (command count),
-  tests/config.test.ts (expected modules).
+- Registering a new module touches 4 sites: modules.json, `src/core/module-list.ts`
+  (the `ALL_MODULES` array), tests/registry-load.test.ts (command count),
+  tests/config.test.ts (expected modules). `src/index.ts` and
+  `src/deploy-commands.ts` both import `ALL_MODULES` from that one list rather
+  than declaring their own, so they no longer need a manual edit.
 - Changing any command builder requires `npm run deploy-commands` and exactly
-  one running bot instance per token.
+  one running bot instance per token. Example: `/sell`'s `dino` option now sets
+  `.setAutocomplete(true)` — its autocomplete handler already existed but was
+  dead because the builder never advertised the option as autocompleting to
+  Discord — and that builder change needed the same one-time redeploy.
+- The fakes in `tests/harness.ts` (`fakeCommand`/`fakeAutocomplete`/`fakeButton`)
+  enforce the real interaction lifecycle — reply-once, and defer-before-
+  editReply/followUp — throwing the same `InteractionAlreadyReplied`/
+  `InteractionNotReplied` errors discord.js would, validate every reply payload
+  against Discord's message limits, and back `getString`/`getInteger`/etc.
+  option getters with the command's real builder JSON: a fixture option key or
+  a getter called with the wrong type for that option throws instead of
+  silently returning null or the wrong value. Synthetic command names the
+  module registry doesn't know about (router tests use these) skip builder
+  lookup entirely and fall back to the old permissive getters.
+- `npm run test:live` (`scripts/test-live.ts`) posts the payload gallery — every
+  case's real embeds, components, and images — to `TEST_CHANNEL_ID` for
+  cosmetic review. It's REST-only: it deploys builders and posts messages over
+  `discord.js`'s REST client, never logging in a second gateway session, so
+  it's safe to run against the dev guild while the bot is live.
 - Embed art ships from `assets/images/` via `assetImage` (`src/core/images.ts`);
   a missing file means the embed renders without the image — absent art is
   never an error. Generation prompts live in `docs/assets/prompts.md`.
