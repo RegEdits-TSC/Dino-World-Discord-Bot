@@ -107,7 +107,7 @@ export const shopModule: ModuleManifest = {
           })));
       } },
     { data: new SlashCommandBuilder().setName('sell').setDescription('Sell a dino for cash + shards')
-        .addIntegerOption((o) => o.setName('dino').setDescription('Dino id from /dino list').setRequired(true)),
+        .addIntegerOption((o) => o.setName('dino').setDescription('Dino id from /dino list').setRequired(true).setAutocomplete(true)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         const dinoId = i.options.getInteger('dino', true);
