@@ -35,13 +35,10 @@ describe('/feed one autocomplete', () => {
     expect(i.replies[0]).toEqual([{ name: 'No dinos — hatch an egg first', value: 0 }]);
   });
 
-  it('responds [] for the all subcommand', async () => {
-    const ctx = makeCtx();
-    getOrCreateUser(ctx, 'u1', 'u1');
-    const i = fakeAutocomplete({ name: 'feed', sub: 'all', user: 'u1', focused: { name: 'dino', value: '' } });
-    await cmd('feed').autocomplete!(ctx, i.asAutocomplete());
-    expect(i.replies[0]).toEqual([]);
-  });
+  // No test for the "wrong subcommand" branch of the autocomplete guard:
+  // 'all' defines zero options, so Discord can never focus 'dino' (or
+  // anything) on it — there is no builder-realistic fixture that reaches
+  // that branch, and the harness now rejects unrealistic ones.
 });
 
 describe('/feed one food autocomplete', () => {

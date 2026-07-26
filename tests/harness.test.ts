@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeCtx, fakeCommand, fakeButton, mulberry32, replyText } from './harness.js';
+import { makeCtx, fakeCommand, fakeAutocomplete, fakeButton, mulberry32, replyText } from './harness.js';
 
 describe('harness', () => {
   it('ctx time is controllable and rng deterministic', () => {
@@ -64,5 +64,43 @@ describe('harness', () => {
     expect(replyText('plain')).toBe('plain');
     expect(replyText({ content: 'obj' })).toBe('obj');
     expect(replyText({ embeds: [] })).toBe('');
+  });
+  it('rejects an option name the builder does not define', () => {
+    expect(() => fakeCommand({ name: 'incubate', user: 'u1', options: { egg: 1, speces: 'typo' } }))
+      .toThrow(/speces/);
+    const i = fakeCommand({ name: 'incubate', user: 'u1', options: { egg: 1 } }).asChatInput();
+    expect(() => i.options.getString('nope')).toThrow(/not defined/);
+  });
+  it('rejects a getter whose type disagrees with the builder', () => {
+    const i = fakeCommand({ name: 'incubate', user: 'u1', options: { egg: 1 } }).asChatInput();
+    expect(() => i.options.getString('egg')).toThrow(/type/);   // egg is an Integer option
+    expect(i.options.getInteger('egg')).toBe(1);
+  });
+  it('required getter throws when the fixture omits the option', () => {
+    const i = fakeCommand({ name: 'incubate', user: 'u1' }).asChatInput();
+    expect(() => i.options.getInteger('egg', true)).toThrow(/Required option/);
+    expect(i.options.getInteger('egg')).toBeNull();
+  });
+  it('enforces subcommand names against the builder', () => {
+    expect(() => fakeCommand({ name: 'shop', user: 'u1' })).toThrow(/subcommand/);
+    expect(() => fakeCommand({ name: 'shop', sub: 'nope', user: 'u1' })).toThrow(/nope/);
+    expect(() => fakeCommand({ name: 'incubate', sub: 'extra', user: 'u1', options: { egg: 1 } }))
+      .toThrow(/no subcommands/);
+  });
+  it('keeps permissive mode for synthetic commands unknown to the registry', () => {
+    const i = fakeCommand({ name: 'zzz-test', user: 'u1', options: { anything: 'goes' } }).asChatInput();
+    expect(i.options.getString('anything')).toBe('goes');
+  });
+  it('autocomplete fake rejects a focused option without the builder flag', () => {
+    expect(() => fakeAutocomplete({ name: 'expedition', sub: 'start', user: 'u1', focused: { name: 'site', value: '' } }))
+      .not.toThrow();
+    expect(() => fakeAutocomplete({ name: 'top', user: 'u1', focused: { name: 'metric', value: '' } }))
+      .toThrow(/autocomplete/);
+  });
+  it('autocomplete respond() is once-only and validated', async () => {
+    const fa = fakeAutocomplete({ name: 'incubate', user: 'u1', focused: { name: 'egg', value: '' } });
+    const a = fa.asAutocomplete();
+    await a.respond([]);
+    await expect(a.respond([])).rejects.toThrow(/already responded/);
   });
 });

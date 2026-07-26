@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeCtx, fakeAutocomplete } from './harness.js';
+import { makeCtx, fakeAutocomplete, installTestEmojiMap } from './harness.js';
 import { shopModule } from '../src/modules/shop/index.js';
 import { dailyEggOffers } from '../src/modules/shop/service.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
@@ -68,5 +68,18 @@ describe('/shop food item autocomplete', () => {
     expect(rows).toHaveLength(6);
     expect(rows.find((r) => r.value === 'ferns')!.name).toBe('🌿 Ferns — 10 cash/unit, fills 100 (own 10)');
     expect(rows.find((r) => r.value === 'goat')!.name).toBe('🍖 Goat — 18 cash/unit, fills 125 (own 0)');
+  });
+
+  it('food item labels contain no custom emoji tags even with the map loaded', async () => {
+    const restore = installTestEmojiMap();
+    try {
+      const ctx = makeCtx();
+      getOrCreateUser(ctx, 'u1', 'u1');
+      const fa = fakeAutocomplete({ name: 'shop', sub: 'food', user: 'u1', focused: { name: 'item', value: '' } });
+      await shopModule.commands.find((c) => c.data.name === 'shop')!.autocomplete!(ctx, fa.asAutocomplete());
+      const choices = fa.replies[0] as Array<{ name: string }>;
+      expect(choices.length).toBeGreaterThan(0);
+      for (const c of choices) expect(c.name).not.toMatch(/<a?:\w+:\d+>/);
+    } finally { restore(); }
   });
 });

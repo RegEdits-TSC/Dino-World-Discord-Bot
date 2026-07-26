@@ -3,6 +3,7 @@ import type { Client } from 'discord.js';
 import { emojiTag, rarityEmoji, setEmojiMap, clearEmojiMap, EMOJI_FALLBACK, loadAppEmojis } from '../src/core/emojis.js';
 import { logger } from '../src/core/logger.js';
 import { foodEmoji } from '../src/core/emojis.js';
+import { installTestEmojiMap } from './harness.js';
 
 afterEach(() => {
   clearEmojiMap();
@@ -106,5 +107,15 @@ describe('foodEmoji', () => {
   it('prefixes the unicode fallback with a trailing space when no map is loaded', () => {
     expect(foodEmoji('ferns')).toBe('🌿 ');
     expect(foodEmoji('prime_steak')).toBe('🥩 ');
+  });
+});
+
+describe('custom-tag arm under a loaded map', () => {
+  it('foodEmoji uses the custom tag when the map is loaded, fallback otherwise', () => {
+    const restore = installTestEmojiMap();
+    try {
+      expect(foodEmoji('ferns')).toMatch(/^<:dw_ferns:\d+> $/);
+    } finally { restore(); }
+    expect(foodEmoji('ferns')).toBe('🌿 ');
   });
 });

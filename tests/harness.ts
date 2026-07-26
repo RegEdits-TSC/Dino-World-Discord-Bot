@@ -4,7 +4,11 @@ import { Scheduler } from '../src/core/scheduler.js';
 import { mulberry32 } from '../src/core/rolls.js';
 import type { Ctx } from '../src/core/context.js';
 import type { ChatInputCommandInteraction, Interaction, AutocompleteInteraction } from 'discord.js';
-import { validateMessagePayload } from './lib/discord-limits.js';
+import { ApplicationCommandOptionType } from 'discord.js';
+import { ModuleRegistry } from '../src/core/modules.js';
+import { ALL_MODULES } from '../src/core/module-list.js';
+import { EMOJI_FALLBACK, setEmojiMap, clearEmojiMap } from '../src/core/emojis.js';
+import { validateMessagePayload, validateAutocompleteChoices } from './lib/discord-limits.js';
 
 export { mulberry32 } from '../src/core/rolls.js';
 
@@ -22,6 +26,62 @@ export function makeCtx(overrides: Partial<Ctx> & { nowMs?: number } = {}): Ctx 
     notify: async (userId: string, originGuildId: string | null, message: string) => { notifications.push({ userId, originGuildId, message }); },
     notifications,
     ...overrides,
+  };
+}
+
+export const testRegistry = new ModuleRegistry(
+  ALL_MODULES, Object.fromEntries(ALL_MODULES.map((m) => [m.name, true])));
+
+interface OptSpec { name: string; type: number; autocomplete: boolean }
+interface BuilderSpec { hasSubs: boolean; options: Map<string, OptSpec> }
+interface OptJson { type: number; name: string; autocomplete?: boolean; options?: OptJson[] }
+
+// Resolve the real builder for a command; null → synthetic test command,
+// which keeps the old permissive getters (router tests use stub commands).
+function builderSpec(name: string, sub: string | null | undefined): BuilderSpec | null {
+  const cmd = testRegistry.findCommand(name);
+  if (!cmd) return null;
+  const json = cmd.data.toJSON() as { options?: OptJson[] };
+  const subs = (json.options ?? []).filter((o) => o.type === ApplicationCommandOptionType.Subcommand);
+  let opts: OptJson[] | undefined;
+  if (subs.length > 0) {
+    if (!sub) throw new Error(`fakeCommand: /${name} requires a subcommand (${subs.map((s) => s.name).join(', ')})`);
+    const s = subs.find((x) => x.name === sub);
+    if (!s) throw new Error(`fakeCommand: /${name} has no subcommand '${sub}'`);
+    opts = s.options;
+  } else {
+    if (sub) throw new Error(`fakeCommand: /${name} has no subcommands (got '${sub}')`);
+    opts = json.options;
+  }
+  const map = new Map<string, OptSpec>();
+  for (const o of opts ?? []) map.set(o.name, { name: o.name, type: o.type, autocomplete: o.autocomplete === true });
+  return { hasSubs: subs.length > 0, options: map };
+}
+
+function requiredMissing(k: string): Error {
+  const e = new Error(`Required option "${k}" not found.`);
+  (e as Error & { code: string }).code = 'CommandInteractionOptionNotFound';
+  return e;
+}
+
+function makeGetter<T>(
+  spec: BuilderSpec | null, fixtures: Record<string, unknown> | undefined,
+  label: string, expected: number[], convert: (v: unknown) => T,
+): (k: string, required?: boolean) => T | null {
+  return (k, required = false) => {
+    if (spec) {
+      const o = spec.options.get(k);
+      if (!o) throw new Error(`option '${k}' is not defined in the ${label} builder`);
+      if (!expected.includes(o.type)) {
+        throw new Error(`option '${k}' in ${label} is builder type ${o.type}, read with the wrong getter (expected one of ${expected.join('/')})`);
+      }
+    }
+    const v = fixtures?.[k];
+    if (v == null) {
+      if (required) throw requiredMissing(k);
+      return null;
+    }
+    return convert(v);
   };
 }
 
@@ -48,11 +108,19 @@ export interface FakeInteraction {
 
 export function fakeCommand(opts: {
   name: string; sub?: string; user: string; guild?: string;
-  options?: Record<string, string | number>;
+  options?: Record<string, string | number | boolean | { id: string; bot?: boolean }>;
 }): FakeInteraction {
   const replies: unknown[] = [];
   const deferOpts: unknown[] = [];
   const label = `/${opts.name}${opts.sub ? ` ${opts.sub}` : ''}`;
+  const spec = builderSpec(opts.name, opts.sub ?? null);
+  if (spec) {
+    for (const k of Object.keys(opts.options ?? {})) {
+      if (!spec.options.has(k)) {
+        throw new Error(`fakeCommand ${label}: fixture option '${k}' is not defined in the builder`);
+      }
+    }
+  }
   const raw = {
     commandName: opts.name,
     user: { id: opts.user, displayName: opts.user },
@@ -61,12 +129,15 @@ export function fakeCommand(opts: {
     isChatInputCommand: () => true, isButton: () => false, isAutocomplete: () => false,
     options: {
       getSubcommand: () => opts.sub ?? null,
-      getString: (k: string) => (opts.options?.[k] as string) ?? null,
-      getInteger: (k: string) => (opts.options?.[k] as number) ?? null,
-      getUser: (k: string) => {
-        const id = opts.options?.[k];
-        return id != null ? { id: String(id), displayName: String(id), bot: false } : null;
-      },
+      getString: makeGetter(spec, opts.options, label, [ApplicationCommandOptionType.String], String),
+      getInteger: makeGetter(spec, opts.options, label, [ApplicationCommandOptionType.Integer], Number),
+      getBoolean: makeGetter(spec, opts.options, label, [ApplicationCommandOptionType.Boolean], Boolean),
+      getUser: makeGetter(spec, opts.options, label, [ApplicationCommandOptionType.User], (v) =>
+        typeof v === 'object' && v !== null
+          ? { displayName: String((v as { id: string }).id), bot: false, ...(v as object) }
+          : { id: String(v), displayName: String(v), bot: false }),
+      getChannel: makeGetter(spec, opts.options, label, [ApplicationCommandOptionType.Channel], (v) =>
+        ({ id: String(v), type: 0 })),   // 0 = ChannelType.GuildText
     },
     reply: async (payload: unknown) => {
       if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
@@ -101,6 +172,13 @@ export function fakeAutocomplete(opts: {
   options?: Record<string, string | number>;
 }): FakeInteraction & { asAutocomplete(): AutocompleteInteraction } {
   const replies: unknown[] = [];
+  const spec = builderSpec(opts.name, opts.sub ?? null);
+  if (spec) {
+    const o = spec.options.get(opts.focused.name);
+    if (!o) throw new Error(`fakeAutocomplete /${opts.name}: focused option '${opts.focused.name}' is not in the builder`);
+    if (!o.autocomplete) throw new Error(`fakeAutocomplete /${opts.name}: option '${opts.focused.name}' does not set autocomplete in the builder`);
+  }
+  let responded = false;
   const raw = {
     commandName: opts.name,
     user: { id: opts.user, displayName: opts.user },
@@ -111,7 +189,12 @@ export function fakeAutocomplete(opts: {
       getFocused: (full?: boolean) => (full ? opts.focused : opts.focused.value),
       get: (k: string) => (opts.options?.[k] != null ? { value: opts.options[k] } : null),
     },
-    respond: async (choices: unknown) => { replies.push(choices); },
+    respond: async (choices: unknown) => {
+      if (responded) throw new Error(`/${opts.name} autocomplete already responded`);
+      responded = true;
+      validateAutocompleteChoices(choices, `/${opts.name} autocomplete`);
+      replies.push(choices);
+    },
   };
   return {
     replies, deferOpts: [] as unknown[],
@@ -166,4 +249,15 @@ export function fakeButton(opts: { customId: string; user: string; guild?: strin
     asChatInput: () => raw as unknown as ChatInputCommandInteraction,
     asInteraction: () => raw as unknown as Interaction,
   };
+}
+
+// Install a synthetic custom-emoji map covering every known emoji name, so
+// tests can exercise the custom-tag arms that production hits after client
+// ready. Returns the restore function; call it in finally/afterEach.
+export function installTestEmojiMap(): () => void {
+  const entries: Record<string, string> = {};
+  let id = 900000;
+  for (const name of Object.keys(EMOJI_FALLBACK)) entries[name] = `<:${name}:${id++}>`;
+  setEmojiMap(entries);
+  return clearEmojiMap;
 }

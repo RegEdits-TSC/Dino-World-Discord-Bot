@@ -32,10 +32,8 @@ describe('/expedition start site autocomplete', () => {
     expect(ctx.db.select().from(schema.users).all()).toEqual([]);
   });
 
-  it('responds [] for other subcommands', async () => {
-    const ctx = makeCtx();
-    const i = fakeAutocomplete({ name: 'expedition', sub: 'status', user: 'u1', focused: { name: 'site', value: '' } });
-    await cmd().autocomplete!(ctx, i.asAutocomplete());
-    expect(i.replies[0]).toEqual([]);
-  });
+  // No test for the "wrong subcommand" branch of the autocomplete guard:
+  // 'status' and 'claim' define zero options, so Discord can never focus
+  // 'site' (or anything) on them — there is no builder-realistic fixture
+  // that reaches that branch, and the harness now rejects unrealistic ones.
 });
