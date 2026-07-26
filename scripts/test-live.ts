@@ -78,6 +78,8 @@ const readyEgg = ctx.db.insert(schema.eggs).values({ userId: P1, rarity: 'rare',
 incubateEgg(ctx, P1, readyEgg.id, devGuildId);
 ctx.db.update(schema.eggs).set({ hatchesAt: ctx.now() - 1 }).run();   // force-ready for /hatch
 const spareDino = ctx.db.select().from(schema.dinos).all()[1];
+// buildLot/assignDino above ran recomputeRating, which unconditionally overwrote parkRating below TRADE_MIN_RATING — restore it so createTrade's rating gate passes.
+ctx.db.update(schema.users).set({ parkRating: 200 }).run();
 createTrade(ctx, P1, P2, { dinoIds: [spareDino.id], eggIds: [], cash: 0, foods: {} }, { dinoIds: [], eggIds: [], cash: 1000, foods: {} });
 startExpedition(ctx, P1, 'coastal_dig', devGuildId);
 
