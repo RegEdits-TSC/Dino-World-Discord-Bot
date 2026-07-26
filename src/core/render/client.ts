@@ -1,10 +1,10 @@
 import { Worker } from 'node:worker_threads';
 import type { ParkSnapshot } from '../../modules/park/snapshot.js';
+import type { WorkerReply } from './protocol.js';
 
 export const RENDER_TIMEOUT_MS = 3000;
 
 type Runner = (snapshot: ParkSnapshot) => Promise<Buffer>;
-interface WorkerReply { id: number; ok: boolean; png?: Buffer; error?: string }
 
 // Reject if `p` doesn't settle within `ms`.
 export function raceTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -32,20 +32,30 @@ function getWorker(): Worker {
   return worker;
 }
 
-const runOnWorker: Runner = (snapshot) => new Promise<Buffer>((res, rej) => {
-  let w: Worker;
-  try { w = getWorker(); } catch (e) { rej(e instanceof Error ? e : new Error(String(e))); return; }
-  const id = ++seq;
-  const onMsg = (m: WorkerReply) => {
-    if (m.id !== id) return;   // reply for an older, abandoned request — ignore
-    cleanup();
-    m.ok && m.png ? res(Buffer.from(m.png)) : rej(new Error(m.error ?? 'render failed'));
-  };
-  const onErr = (e: unknown) => { cleanup(); rej(e instanceof Error ? e : new Error(String(e))); };
-  function cleanup() { w.off('message', onMsg); w.off('error', onErr); }
-  w.on('message', onMsg); w.on('error', onErr);
-  w.postMessage({ id, snapshot });
-});
+export interface WorkerLike {
+  on(ev: string, fn: (...a: any[]) => void): unknown;
+  off(ev: string, fn: (...a: any[]) => void): unknown;
+  postMessage(m: unknown): void;
+}
+
+export function createRunner(getW: () => WorkerLike): Runner {
+  return (snapshot) => new Promise<Buffer>((res, rej) => {
+    let w: WorkerLike;
+    try { w = getW(); } catch (e) { rej(e instanceof Error ? e : new Error(String(e))); return; }
+    const id = ++seq;
+    const onMsg = (m: WorkerReply) => {
+      if (m.id !== id) return;   // reply for an older, abandoned request — ignore
+      cleanup();
+      m.ok && m.png ? res(Buffer.from(m.png)) : rej(new Error(m.error ?? 'render failed'));
+    };
+    const onErr = (e: unknown) => { cleanup(); rej(e instanceof Error ? e : new Error(String(e))); };
+    function cleanup() { w.off('message', onMsg as never); w.off('error', onErr as never); }
+    w.on('message', onMsg as never); w.on('error', onErr as never);
+    w.postMessage({ id, snapshot });
+  });
+}
+
+const runOnWorker: Runner = createRunner(getWorker);
 
 // Serialize renders through the single worker; each guarded by a timeout.
 // `run` is injectable for testing; production uses the real worker runner.
