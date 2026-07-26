@@ -6,7 +6,7 @@ This guide covers deploying Dino World to production, running it as a system ser
 
 ### Prerequisites
 
-- **Node.js**: Install the current LTS version via [nvm](https://github.com/nvm-sh/nvm) (or your system package manager). The bot requires Node.js 18 or later.
+- **Node.js**: Install the current LTS version via [nvm](https://github.com/nvm-sh/nvm) (or your system package manager). The bot requires Node.js 22 or later — `better-sqlite3` 13 ships an N-API 10 binary that needs Node 22+, and `package.json` sets `engines.node` to `>=22`.
 - **Git**: For cloning and pulling updates.
 - **SQLite**: Usually included with the OS; required for local database operations.
 
@@ -14,8 +14,8 @@ This guide covers deploying Dino World to production, running it as a system ser
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-org/dino-world-bot.git
-   cd dino-world-bot
+   git clone https://github.com/RegEdits-TSC/Dino-World-Discord-Bot.git
+   cd Dino-World-Discord-Bot
    ```
 
 2. **Set up environment**:
