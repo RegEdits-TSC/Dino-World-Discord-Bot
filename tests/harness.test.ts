@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeCtx, fakeCommand, mulberry32 } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, mulberry32, replyText } from './harness.js';
 
 describe('harness', () => {
   it('ctx time is controllable and rng deterministic', () => {
@@ -12,5 +12,57 @@ describe('harness', () => {
     const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
     await i.asChatInput().reply({ content: 'hi' });
     expect(i.replies).toEqual([{ content: 'hi' }]);
+  });
+  it('reply after reply throws InteractionAlreadyReplied', async () => {
+    const i = fakeCommand({ name: 'zzz-test', user: 'u1' }).asChatInput();
+    await i.reply({ content: 'one' });
+    await expect(i.reply({ content: 'two' })).rejects.toMatchObject({ code: 'InteractionAlreadyReplied' });
+  });
+  it('reply after deferReply throws InteractionAlreadyReplied', async () => {
+    const i = fakeCommand({ name: 'zzz-test', user: 'u1' }).asChatInput();
+    await i.deferReply();
+    await expect(i.reply({ content: 'x' })).rejects.toMatchObject({ code: 'InteractionAlreadyReplied' });
+  });
+  it('editReply and followUp before any ack throw InteractionNotReplied', async () => {
+    const i = fakeCommand({ name: 'zzz-test', user: 'u1' }).asChatInput();
+    await expect(i.editReply({ content: 'x' })).rejects.toMatchObject({ code: 'InteractionNotReplied' });
+    await expect(i.followUp({ content: 'x' })).rejects.toMatchObject({ code: 'InteractionNotReplied' });
+  });
+  it('defer then editReply works and records defer options', async () => {
+    const fi = fakeCommand({ name: 'zzz-test', user: 'u1' });
+    const i = fi.asChatInput();
+    await i.deferReply();
+    await i.editReply({ content: 'later' });
+    expect(fi.replies).toEqual([{ content: 'later' }]);
+    expect(fi.deferOpts).toHaveLength(1);
+    expect(i.deferred).toBe(true);
+    expect(i.replied).toBe(true);
+  });
+  it('double deferReply throws', async () => {
+    const i = fakeCommand({ name: 'zzz-test', user: 'u1' }).asChatInput();
+    await i.deferReply();
+    await expect(i.deferReply()).rejects.toMatchObject({ code: 'InteractionAlreadyReplied' });
+  });
+  it('button update enforces the same lifecycle and exposes message', async () => {
+    const fb = fakeButton({ customId: 'x:y:1', user: 'u1' });
+    const b = fb.asInteraction() as unknown as {
+      update(p: unknown): Promise<void>; deferUpdate(): Promise<void>; message: { id: string };
+    };
+    expect(b.message.id).toBeTruthy();
+    await b.update({ content: 'edited' });
+    await expect(b.update({ content: 'again' })).rejects.toMatchObject({ code: 'InteractionAlreadyReplied' });
+    const fb2 = fakeButton({ customId: 'x:y:2', user: 'u1' });
+    const b2 = fb2.asInteraction() as unknown as { deferUpdate(): Promise<void>; update(p: unknown): Promise<void> };
+    await b2.deferUpdate();
+    await expect(b2.update({ content: 'x' })).rejects.toMatchObject({ code: 'InteractionAlreadyReplied' });
+  });
+  it('recorded payloads are validated against Discord limits', async () => {
+    const i = fakeCommand({ name: 'zzz-test', user: 'u1' }).asChatInput();
+    await expect(i.reply({ content: 'x'.repeat(2001) })).rejects.toThrow(/content/);
+  });
+  it('replyText extracts content from both payload forms', () => {
+    expect(replyText('plain')).toBe('plain');
+    expect(replyText({ content: 'obj' })).toBe('obj');
+    expect(replyText({ embeds: [] })).toBe('');
   });
 });

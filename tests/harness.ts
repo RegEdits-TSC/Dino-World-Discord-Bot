@@ -4,6 +4,7 @@ import { Scheduler } from '../src/core/scheduler.js';
 import { mulberry32 } from '../src/core/rolls.js';
 import type { Ctx } from '../src/core/context.js';
 import type { ChatInputCommandInteraction, Interaction, AutocompleteInteraction } from 'discord.js';
+import { validateMessagePayload } from './lib/discord-limits.js';
 
 export { mulberry32 } from '../src/core/rolls.js';
 
@@ -24,8 +25,23 @@ export function makeCtx(overrides: Partial<Ctx> & { nowMs?: number } = {}): Ctx 
   };
 }
 
+function djsError(code: 'InteractionAlreadyReplied' | 'InteractionNotReplied'): Error {
+  const e = new Error(code === 'InteractionAlreadyReplied'
+    ? 'The reply to this interaction has already been sent or deferred.'
+    : 'The reply to this interaction has not been sent or deferred.');
+  (e as Error & { code: string }).code = code;
+  return e;
+}
+
+/** Extract the text content from a reply payload (string or options object). */
+export function replyText(r: unknown): string {
+  if (typeof r === 'string') return r;
+  return (r as { content?: string })?.content ?? '';
+}
+
 export interface FakeInteraction {
   replies: unknown[];
+  deferOpts: unknown[];
   asChatInput(): ChatInputCommandInteraction;
   asInteraction(): Interaction;
 }
@@ -35,7 +51,8 @@ export function fakeCommand(opts: {
   options?: Record<string, string | number>;
 }): FakeInteraction {
   const replies: unknown[] = [];
-  const record = async (payload: unknown) => { replies.push(payload); };
+  const deferOpts: unknown[] = [];
+  const label = `/${opts.name}${opts.sub ? ` ${opts.sub}` : ''}`;
   const raw = {
     commandName: opts.name,
     user: { id: opts.user, displayName: opts.user },
@@ -51,11 +68,28 @@ export function fakeCommand(opts: {
         return id != null ? { id: String(id), displayName: String(id), bot: false } : null;
       },
     },
-    reply: record, editReply: record, followUp: record,
-    deferReply: async () => { (raw as { deferred: boolean }).deferred = true; },
+    reply: async (payload: unknown) => {
+      if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
+      validateMessagePayload(payload, `${label} reply`);
+      raw.replied = true; replies.push(payload);
+    },
+    editReply: async (payload: unknown) => {
+      if (!raw.deferred && !raw.replied) throw djsError('InteractionNotReplied');
+      validateMessagePayload(payload, `${label} editReply`);
+      raw.replied = true; replies.push(payload);
+    },
+    followUp: async (payload: unknown) => {
+      if (!raw.deferred && !raw.replied) throw djsError('InteractionNotReplied');
+      validateMessagePayload(payload, `${label} followUp`);
+      replies.push(payload);
+    },
+    deferReply: async (o?: unknown) => {
+      if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
+      raw.deferred = true; deferOpts.push(o ?? {});
+    },
   };
   return {
-    replies,
+    replies, deferOpts,
     asChatInput: () => raw as unknown as ChatInputCommandInteraction,
     asInteraction: () => raw as unknown as Interaction,
   };
@@ -80,7 +114,7 @@ export function fakeAutocomplete(opts: {
     respond: async (choices: unknown) => { replies.push(choices); },
   };
   return {
-    replies,
+    replies, deferOpts: [] as unknown[],
     asChatInput: () => raw as unknown as ChatInputCommandInteraction,
     asInteraction: () => raw as unknown as Interaction,
     asAutocomplete: () => raw as unknown as AutocompleteInteraction,
@@ -89,18 +123,46 @@ export function fakeAutocomplete(opts: {
 
 export function fakeButton(opts: { customId: string; user: string; guild?: string }): FakeInteraction {
   const replies: unknown[] = [];
-  const record = async (payload: unknown) => { replies.push(payload); };
+  const deferOpts: unknown[] = [];
+  const label = `button ${opts.customId}`;
   const raw = {
     customId: opts.customId,
     user: { id: opts.user, displayName: opts.user },
     guildId: opts.guild ?? null,
+    message: { id: 'fake-message' },
     deferred: false, replied: false,
     isChatInputCommand: () => false, isButton: () => true, isAutocomplete: () => false,
-    reply: record, editReply: record, followUp: record, update: record,
-    deferReply: async () => { (raw as { deferred: boolean }).deferred = true; },
+    reply: async (payload: unknown) => {
+      if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
+      validateMessagePayload(payload, `${label} reply`);
+      raw.replied = true; replies.push(payload);
+    },
+    editReply: async (payload: unknown) => {
+      if (!raw.deferred && !raw.replied) throw djsError('InteractionNotReplied');
+      validateMessagePayload(payload, `${label} editReply`);
+      raw.replied = true; replies.push(payload);
+    },
+    followUp: async (payload: unknown) => {
+      if (!raw.deferred && !raw.replied) throw djsError('InteractionNotReplied');
+      validateMessagePayload(payload, `${label} followUp`);
+      replies.push(payload);
+    },
+    update: async (payload: unknown) => {
+      if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
+      validateMessagePayload(payload, `${label} update`);
+      raw.replied = true; replies.push(payload);
+    },
+    deferUpdate: async (o?: unknown) => {
+      if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
+      raw.deferred = true; deferOpts.push(o ?? {});
+    },
+    deferReply: async (o?: unknown) => {
+      if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
+      raw.deferred = true; deferOpts.push(o ?? {});
+    },
   };
   return {
-    replies,
+    replies, deferOpts,
     asChatInput: () => raw as unknown as ChatInputCommandInteraction,
     asInteraction: () => raw as unknown as Interaction,
   };
