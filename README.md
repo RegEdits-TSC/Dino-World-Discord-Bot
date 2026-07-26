@@ -121,7 +121,7 @@ instance's session. Requires `DISCORD_TOKEN`, `DEV_GUILD_ID`, and
 The `/verify` repo command runs typecheck, both test tiers (skipping the live
 sweep if its env vars aren't set), and reports a pass/fail summary.
 
-CI runs typecheck and the offline suite on every push and pull request.
+CI runs typecheck and the offline suite on every pull request and on pushes to main.
 
 ## Deployment & Operations
 

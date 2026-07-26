@@ -198,9 +198,11 @@ describe('/hatch execute', () => {
     const notMine = fakeCommand({ name: 'hatch', user: 'u1', options: { egg: 9999 } });
     await cmd.execute(ctx, notMine.asChatInput());
     expect(replyText(notMine.replies[0])).toContain('do not own');
+    expect((notMine.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
     const notReady = fakeCommand({ name: 'hatch', user: 'u1', options: { egg: egg.id } });
     await cmd.execute(ctx, notReady.asChatInput());
     expect(replyText(notReady.replies[0])).toContain('not ready to hatch');
+    expect((notReady.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
   it('ready egg gets the pre-hatch embed with a crack button', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');

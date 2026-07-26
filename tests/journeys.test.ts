@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { ButtonInteraction } from 'discord.js';
 import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
-import { getOrCreateUser, buildLot, capHours, facilityBonusPct } from '../src/modules/park/service.js';
+import { getOrCreateUser, capHours, facilityBonusPct } from '../src/modules/park/service.js';
 import { parkModule } from '../src/modules/park/index.js';
 import { hatcheryModule } from '../src/modules/hatchery/index.js';
 import { careModule } from '../src/modules/care/index.js';
@@ -137,10 +137,11 @@ describe('journeys', () => {
     // reaches the knee (knee = lastFedAt(30h) + (150-100)/100*48h = 54h), so the
     // guard uses a DIRECT window [52h, 60h] that brackets 54h — no command dispatch
     // needed, it pins accruedIncome's piecewise property against the same dino row.
-    const piecewise = accruedIncome([clockDino], 0, 48, 52 * H, 60 * H);
+    const windowStartH = 52; const windowEndH = 60;
+    const piecewise = accruedIncome([clockDino], 0, 48, windowStartH * H, windowEndH * H);
     const naive = Math.floor(
-      ((comfortAt(clockDino, 52 * H) + comfortAt(clockDino, 60 * H)) / 2)
-      * 8 * RARITY[getSpecies(row.speciesId).rarity].incomePerHr);
+      ((comfortAt(clockDino, windowStartH * H) + comfortAt(clockDino, windowEndH * H)) / 2)
+      * (windowEndH - windowStartH) * RARITY[getSpecies(row.speciesId).rarity].incomePerHr);
     expect(naive).not.toBe(piecewise);
   });
 
