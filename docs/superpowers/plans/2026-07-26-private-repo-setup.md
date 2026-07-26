@@ -8,6 +8,8 @@
 
 **Tech Stack:** gh CLI 2.92.0, GitHub REST API, git, bash (Git Bash on Windows).
 
+> **Amendment (2026-07-26, during execution):** The repo was created private per Task 6, then switched to **public** because branch rulesets (Task 10) are a paid feature on private repos under GitHub Free — creating one returned HTTP 403. The secret sweep (Task 3) had already passed clean. Task 6's verify and Task 11's assertion below are shown with their **public** expected values (edited post-switch); the Task 6 create command still shows `--private` as originally run. See the spec's amendment note.
+
 ## Global Constraints
 
 - Every action — repo creation, pushes, PR/merge activity, settings changes — is performed as **RegEdits-TSC**. The gh CLI is currently authenticated as a different account; Task 1 fixes that and nothing else runs until it has.
@@ -213,7 +215,7 @@ Expected: `✓ Created repository RegEdits-TSC/Dino-World-Discord-Bot on GitHub`
 gh repo view RegEdits-TSC/Dino-World-Discord-Bot --json name,visibility,owner,defaultBranchRef --jq '{name: .name, visibility: .visibility, owner: .owner.login, default: .defaultBranchRef.name}'
 ```
 
-Expected: `{"default":"main","name":"Dino-World-Discord-Bot","owner":"RegEdits-TSC","visibility":"PRIVATE"}`
+Expected (post-switch): `{"default":"main","name":"Dino-World-Discord-Bot","owner":"RegEdits-TSC","visibility":"PUBLIC"}` — the create command makes it PRIVATE; Task 10 switches it to PUBLIC to unlock rulesets.
 
 - [ ] **Step 3: Verify remote**
 
@@ -327,6 +329,17 @@ Expected: `alerts: on` (the GET returns 204 when enabled) and `{"enabled":true}`
 - Consumes: repo from Task 6; CI workflow already on main (required check context is the job id `test`; `integration_id` 15368 is the GitHub Actions app, verified live).
 - Produces: active ruleset — PR + green `test` required to merge, force-push and deletion blocked, repository-admin bypass (actor_id 5) for direct pushes.
 
+- [ ] **Step 0: Make the repo public (required on GitHub Free)**
+
+Rulesets are a paid feature on private repos; on Free they require a public repo. The Task 3 secret sweep must have passed clean before this runs — public git history is permanent.
+
+```bash
+gh repo edit RegEdits-TSC/Dino-World-Discord-Bot --visibility public --accept-visibility-change-consequences
+gh repo view RegEdits-TSC/Dino-World-Discord-Bot --json visibility --jq .visibility
+```
+
+Expected: `PUBLIC`. (Skip this step if the repo is already public or the account has GitHub Pro/Team.)
+
 - [ ] **Step 1: Create the ruleset**
 
 ```bash
@@ -395,7 +408,7 @@ fail=0
 check() {
   if [ "$2" = "$3" ]; then echo "PASS: $1"; else echo "FAIL: $1 (got '$2', want '$3')"; fail=1; fi
 }
-check "visibility PRIVATE"    "$(gh repo view $REPO --json visibility --jq .visibility)" "PRIVATE"
+check "visibility PUBLIC"     "$(gh repo view $REPO --json visibility --jq .visibility)" "PUBLIC"
 check "owner RegEdits-TSC"    "$(gh repo view $REPO --json owner --jq .owner.login)" "RegEdits-TSC"
 check "squash on"             "$(gh api repos/$REPO --jq .allow_squash_merge)" "true"
 check "merge commits off"     "$(gh api repos/$REPO --jq .allow_merge_commit)" "false"
@@ -430,7 +443,8 @@ Append to the end of `docs/ops.md`:
 ## GitHub Repository
 
 The repository lives at
-`https://github.com/RegEdits-TSC/Dino-World-Discord-Bot` (private).
+`https://github.com/RegEdits-TSC/Dino-World-Discord-Bot` (public — see
+note below).
 
 Configuration enforced server-side:
 
@@ -446,6 +460,12 @@ Configuration enforced server-side:
   actions, and the default `GITHUB_TOKEN` is read-only.
 - Dependabot vulnerability alerts, security-update PRs, and weekly
   version-update PRs (npm and github-actions ecosystems) are enabled.
+
+The repo is public because branch rulesets are unavailable on private
+repos under GitHub Free. To keep it private, upgrade to GitHub Pro/Team,
+then flip visibility back with
+`gh repo edit RegEdits-TSC/Dino-World-Discord-Bot --visibility private`;
+the ruleset survives the switch.
 
 To re-check all of this, run the assertion script in the final task of
 `docs/superpowers/plans/2026-07-26-private-repo-setup.md`.

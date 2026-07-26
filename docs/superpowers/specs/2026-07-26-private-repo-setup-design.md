@@ -1,7 +1,21 @@
 # Private repo creation and configuration — design
 
 Date: 2026-07-26
-Status: approved
+Status: implemented (see amendment below)
+
+## Amendment (2026-07-26, during implementation)
+
+The repository was made **public**, not private. Branch rulesets and
+classic branch protection are unavailable on private repositories under
+a GitHub Free plan (`gh api` returns HTTP 403 "Upgrade to GitHub Pro or
+make this repository public"). Server-side enforcement of the PR +
+green-CI workflow — the core of this design's protection — was judged
+more valuable than privacy for a pre-release project, so visibility was
+switched to public to unlock rulesets at no cost. The full-history
+secret sweep (§2) had already run clean, so no committed credentials
+were exposed. Everywhere below that says "private", read "public"; the
+protection, merge, Actions, Dependabot, and authorship decisions are
+unchanged.
 
 ## Goal
 

@@ -417,3 +417,33 @@ If any step fails, check the bot's logs for the error and debug before merging /
 - **Dino collection income**: The `/park view` Collect button yields 0 cash until a dino has been hatched (or won from an expedition) and assigned to a paddock via `/dino assign`. This is expected on a brand-new park. Income logic is covered by automated unit tests in `tests/`.
 - **Shard cap**: `/sell` stops awarding shards once the 40-shard daily cap is hit; cash payout continues regardless. This is expected, not a bug.
 - **Slash command registration**: If commands don't appear in your Discord server, ensure the bot has the `applications.commands` scope and `chat_input` permission in your OAuth application settings.
+
+## GitHub Repository
+
+The repository lives at
+`https://github.com/RegEdits-TSC/Dino-World-Discord-Bot` (public — see
+note below).
+
+Configuration enforced server-side:
+
+- A ruleset on `main` requires a pull request with a passing CI `test`
+  check before merging, and blocks force pushes and branch deletion.
+  The repository admin role bypasses the PR requirement — that is how
+  small doc/code changes land directly on main. CI still runs on every
+  push to main.
+- Pull requests merge by squash only; the squash commit title comes
+  from the PR title and the body from the PR description. Head
+  branches are deleted automatically after merge.
+- GitHub Actions may only run GitHub-owned and verified-creator
+  actions, and the default `GITHUB_TOKEN` is read-only.
+- Dependabot vulnerability alerts, security-update PRs, and weekly
+  version-update PRs (npm and github-actions ecosystems) are enabled.
+
+The repo is public because branch rulesets are unavailable on private
+repos under GitHub Free. To keep it private, upgrade to GitHub Pro/Team,
+then flip visibility back with
+`gh repo edit RegEdits-TSC/Dino-World-Discord-Bot --visibility private`;
+the ruleset survives the switch.
+
+To re-check all of this, run the assertion script in the final task of
+`docs/superpowers/plans/2026-07-26-private-repo-setup.md`.
