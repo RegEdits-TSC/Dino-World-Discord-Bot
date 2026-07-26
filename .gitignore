@@ -15,5 +15,8 @@ dist/
 # Logs
 *.log
 
+# IDE
+.idea/
+
 # Brainstorming session artifacts
 .superpowers/
