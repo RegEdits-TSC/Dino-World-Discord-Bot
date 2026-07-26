@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
+import type { Interaction } from 'discord.js';
 import { routeInteraction } from '../src/core/router.js';
 import { ModuleRegistry } from '../src/core/modules.js';
-import { makeCtx, fakeCommand, fakeButton, fakeAutocomplete } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, fakeAutocomplete, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 
@@ -65,6 +66,7 @@ describe('routeInteraction', () => {
 
     const rows = ctx.db.select().from(schema.userGuilds).all();
     expect(rows).toMatchObject([{ userId: 'u1', guildId: 'g1', lastSeenAt: 2000 }]);
+    expect(ctx.db.select().from(schema.users).all()[0].displayName).toBe('u1');
   });
 
   it('throws on duplicate command names across enabled modules', () => {
@@ -83,6 +85,92 @@ describe('routeInteraction', () => {
     });
     expect(() => new ModuleRegistry([mk('a', 'cmda'), mk('b', 'cmdb')], { a: true, b: true }))
       .toThrow(/Duplicate component prefix/);
+  });
+
+  it('falls back to followUp when the handler deferred before throwing', async () => {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    const reg = new ModuleRegistry([{
+      name: 'm', components: [],
+      commands: [{
+        data: new SlashCommandBuilder().setName('boom').setDescription('x'),
+        async execute(_c, i) { await i.deferReply(); throw new Error('boom'); },
+      }],
+    }], { m: true });
+    const fi = fakeCommand({ name: 'boom', user: 'u1' });
+    await routeInteraction(ctx, reg, fi.asInteraction());
+    // deferReply recorded nothing; the followUp fallback is the only reply.
+    expect(fi.replies).toHaveLength(1);
+    expect(replyText(fi.replies[0])).toContain('Something went wrong');
+  });
+  it('falls back to followUp when the handler replied before throwing', async () => {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    const reg = new ModuleRegistry([{
+      name: 'm', components: [],
+      commands: [{
+        data: new SlashCommandBuilder().setName('boom2').setDescription('x'),
+        async execute(_c, i) { await i.reply({ content: 'partial' }); throw new Error('late'); },
+      }],
+    }], { m: true });
+    const fi = fakeCommand({ name: 'boom2', user: 'u1' });
+    await routeInteraction(ctx, reg, fi.asInteraction());
+    expect(fi.replies).toHaveLength(2);
+    expect(replyText(fi.replies[1])).toContain('Something went wrong');
+  });
+  it('unknown command is a silent no-op but presence still writes', async () => {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    const reg = new ModuleRegistry([], {});
+    const fi = fakeCommand({ name: 'ghost', user: 'u1', guild: 'g1' });
+    await routeInteraction(ctx, reg, fi.asInteraction());
+    expect(fi.replies).toHaveLength(0);
+    expect(ctx.db.select().from(schema.userGuilds).all()).toHaveLength(1);
+  });
+  it('first-ever user (no users row) routes without crashing; displayName update no-ops', async () => {
+    const ctx = makeCtx();
+    const reg = new ModuleRegistry([], {});
+    const fi = fakeCommand({ name: 'ghost', user: 'new-user', guild: 'g1' });
+    await routeInteraction(ctx, reg, fi.asInteraction());
+    expect(ctx.db.select().from(schema.users).all()).toHaveLength(0);
+    expect(ctx.db.select().from(schema.userGuilds).all()).toHaveLength(1);
+  });
+  it('unmatched button customId is a silent no-op', async () => {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    const reg = new ModuleRegistry([], {});
+    const fb = fakeButton({ customId: 'nowhere:at:all', user: 'u1' });
+    await routeInteraction(ctx, reg, fb.asInteraction());
+    expect(fb.replies).toHaveLength(0);
+  });
+  it('non-command, non-button, non-autocomplete interactions return quietly with no presence write', async () => {
+    const ctx = makeCtx();
+    const reg = new ModuleRegistry([], {});
+    const modalish = {
+      isAutocomplete: () => false, isChatInputCommand: () => false, isButton: () => false,
+      user: { id: 'u1', displayName: 'u1' }, guildId: 'g1',
+    };
+    await routeInteraction(ctx, reg, modalish as unknown as Interaction);
+    expect(ctx.db.select().from(schema.userGuilds).all()).toHaveLength(0);
+  });
+  it('autocomplete double-fault (provider throws, recovery respond throws too) never rejects', async () => {
+    const ctx = makeCtx();
+    const reg = new ModuleRegistry([{
+      name: 'm', components: [],
+      commands: [{
+        data: new SlashCommandBuilder().setName('ac').setDescription('x')
+          .addStringOption((o) => o.setName('q').setDescription('q').setAutocomplete(true)),
+        async execute() { /* unused */ },
+        async autocomplete() { throw new Error('provider boom'); },
+      }],
+    }], { m: true });
+    const hostile = {
+      commandName: 'ac',
+      isAutocomplete: () => true, isChatInputCommand: () => false, isButton: () => false,
+      user: { id: 'u1', displayName: 'u1' }, guildId: null,
+      respond: async () => { throw new Error('respond boom'); },
+    };
+    await expect(routeInteraction(ctx, reg, hostile as unknown as Interaction)).resolves.toBeUndefined();
   });
 });
 
