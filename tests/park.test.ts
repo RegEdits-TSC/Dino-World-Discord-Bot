@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { makeCtx, fakeCommand } from './harness.js';
-import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, BASE_LOT_SLOTS } from '../src/modules/park/service.js';
+import { makeCtx, fakeCommand, replyText } from './harness.js';
+import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, upgradeLot, BASE_LOT_SLOTS } from '../src/modules/park/service.js';
+import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
 import { dashboardPayload } from '../src/modules/park/embeds.js';
+import { PADDOCKS } from '../src/data/paddocks.js';
+import { DECOR } from '../src/data/decor.js';
 
 const H = 3_600_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -205,5 +208,70 @@ describe('dashboard food line', () => {
     const food = fields.find((f) => f.name.includes('Food'))!;
     expect(food.value).toContain('🌿 Ferns ×10');               // starter pantry
     expect(food.value).toContain('🐟 Fish ×10');
+  });
+});
+
+describe('upgradeLot service', () => {
+  it('charges and bumps the level', () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
+    const lot = buildLot(ctx, 'u1', Object.keys(PADDOCKS)[0]);
+    const before = ctx.db.select().from(schema.users).all()[0].cash;
+    const upgraded = upgradeLot(ctx, 'u1', lot.id);
+    expect(upgraded.level).toBe(2);
+    expect(ctx.db.select().from(schema.users).all()[0].cash).toBeLessThan(before);
+  });
+  it('throws LotLimitError at max level and UnknownKindError for missing/foreign lots', () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 10_000_000 }).run();
+    const lot = buildLot(ctx, 'u1', Object.keys(PADDOCKS)[0]);
+    ctx.db.update(schema.lots).set({ level: 4 }).run();   // paddock max level
+    expect(() => upgradeLot(ctx, 'u1', lot.id)).toThrow(LotLimitError);
+    expect(() => upgradeLot(ctx, 'u1', 9999)).toThrow(UnknownKindError);
+  });
+  it('throws InsufficientFundsError when broke', () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
+    const lot = buildLot(ctx, 'u1', Object.keys(PADDOCKS)[0]);
+    ctx.db.update(schema.users).set({ cash: 0 }).run();
+    expect(() => upgradeLot(ctx, 'u1', lot.id)).toThrow(InsufficientFundsError);
+  });
+});
+
+describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () => {
+  it('/upgrade execute success and each error reply', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
+    const lot = buildLot(ctx, 'u1', Object.keys(PADDOCKS)[0]);
+    const cmd = parkModule.commands.find((c) => c.data.name === 'upgrade')!;
+    const okI = fakeCommand({ name: 'upgrade', user: 'u1', options: { lot: lot.id } });
+    await cmd.execute(ctx, okI.asChatInput());
+    expect(replyText(okI.replies[0])).toContain('level 2');
+    const noneI = fakeCommand({ name: 'upgrade', user: 'u1', options: { lot: 9999 } });
+    await cmd.execute(ctx, noneI.asChatInput());
+    expect(replyText(noneI.replies[0])).toContain('No such lot');
+    ctx.db.update(schema.lots).set({ level: 4 }).run();
+    const maxI = fakeCommand({ name: 'upgrade', user: 'u1', options: { lot: lot.id } });
+    await cmd.execute(ctx, maxI.asChatInput());
+    expect(replyText(maxI.replies[0])).toContain('max level');
+  });
+  it('/decorate execute adds decor', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
+    const lot = buildLot(ctx, 'u1', Object.keys(PADDOCKS)[0]);
+    const item = Object.keys(DECOR)[0];
+    const cmd = parkModule.commands.find((c) => c.data.name === 'decorate')!;
+    const i = fakeCommand({ name: 'decorate', user: 'u1', options: { lot: lot.id, item } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('Decoration added');
+    expect(ctx.db.select().from(schema.lots).all()[0].decor).toContain(DECOR[item].kind ?? item);
+  });
+  it('/park rename updates parkName', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    const cmd = parkModule.commands.find((c) => c.data.name === 'park')!;
+    const i = fakeCommand({ name: 'park', sub: 'rename', user: 'u1', options: { name: 'Raptor Ranch' } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('Raptor Ranch');
+    expect(ctx.db.select().from(schema.users).all()[0].parkName).toBe('Raptor Ranch');
   });
 });

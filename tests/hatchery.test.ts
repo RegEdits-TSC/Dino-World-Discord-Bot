@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { ButtonInteraction } from 'discord.js';
-import { makeCtx, fakeCommand, fakeButton } from './harness.js';
+import { MessageFlags } from 'discord.js';
+import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { incubateEgg, hatchEgg, incubatorSlots, HatcheryError } from '../src/modules/hatchery/service.js';
 import { hatcheryModule } from '../src/modules/hatchery/index.js';
@@ -9,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import { preHatchPayload, eggListPayload, revealPayload } from '../src/modules/hatchery/embeds.js';
 import { getSpecies } from '../src/data/species/index.js';
 import { mythicSpeciesChoices } from '../src/modules/shop/shards.js';
+import { RARITY } from '../src/data/rarity.js';
 
 const M = 60_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -160,5 +162,56 @@ describe('/mythic confirm flow', () => {
     await mythicComponent.execute(ctx, b.asInteraction() as never);
     const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'u1')).all();
     expect(eggs.some((e) => e.rarity === 'mythic')).toBe(true);
+  });
+});
+
+describe('/incubate execute', () => {
+  it('incubates and replies with a ready timestamp, enqueues egg_hatch timer', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
+    const cmd = hatcheryModule.commands.find((c) => c.data.name === 'incubate')!;
+    const i = fakeCommand({ name: 'incubate', user: 'u1', guild: 'g1', options: { egg: egg.id } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('Incubating your common egg');
+    const timer = ctx.db.select().from(schema.timers).all().find((t) => t.kind === 'egg_hatch');
+    expect(timer?.refId).toBe(egg.id);
+  });
+  it('rejects an egg you do not own, ephemeral', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u2', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
+    const cmd = hatcheryModule.commands.find((c) => c.data.name === 'incubate')!;
+    const i = fakeCommand({ name: 'incubate', user: 'u1', options: { egg: egg.id } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('do not own');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+});
+
+describe('/hatch execute', () => {
+  it('not-yours and not-ready are ephemeral rejections', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
+    const cmd = hatcheryModule.commands.find((c) => c.data.name === 'hatch')!;
+    const notMine = fakeCommand({ name: 'hatch', user: 'u1', options: { egg: 9999 } });
+    await cmd.execute(ctx, notMine.asChatInput());
+    expect(replyText(notMine.replies[0])).toContain('do not own');
+    const notReady = fakeCommand({ name: 'hatch', user: 'u1', options: { egg: egg.id } });
+    await cmd.execute(ctx, notReady.asChatInput());
+    expect(replyText(notReady.replies[0])).toContain('not ready to hatch');
+  });
+  it('ready egg gets the pre-hatch embed with a crack button', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
+    incubateEgg(ctx, 'u1', egg.id, null);
+    ctx.setNow(RARITY.common.incubationMs + 1);
+    const cmd = hatcheryModule.commands.find((c) => c.data.name === 'hatch')!;
+    const i = fakeCommand({ name: 'hatch', user: 'u1', options: { egg: egg.id } });
+    await cmd.execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as { components?: unknown[] };
+    expect(JSON.stringify(payload.components ?? [])).toContain(`hatch:crack:${egg.id}`);
   });
 });

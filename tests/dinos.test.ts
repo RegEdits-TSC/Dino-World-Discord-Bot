@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeCtx, fakeCommand, fakeButton } from './harness.js';
+import type { ButtonInteraction } from 'discord.js';
+import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { assignDino, unassignDino, decorateLot, paddockCapacity, listDinos, AssignError, DietMismatchError } from '../src/modules/park/dinos.js';
 import { parkModule } from '../src/modules/park/index.js';
@@ -160,5 +161,39 @@ describe('diet mismatch confirm', () => {
     await parkModule.components[0].execute(ctx, b.asInteraction() as never);
     expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.lotId).toBeNull();
     expect((b.replies[0] as { content: string }).content).toContain('cancelled');
+  });
+});
+
+describe('/dino unassign and park:collect execute', () => {
+  it('/dino unassign execute unassigns through the command layer', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0, lotId: lot.id,
+    }).run();
+    const dino = ctx.db.select().from(schema.dinos).all()[0];
+    const cmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const i = fakeCommand({ name: 'dino', sub: 'unassign', user: 'u1', options: { dino: dino.id } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('Unassigned');
+    expect(ctx.db.select().from(schema.dinos).all()[0].lotId).toBeNull();
+  });
+  it('park:collect button collects for the clicker, then reports nothing left', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0, lotId: lot.id,
+    }).run();
+    ctx.db.update(schema.users).set({ lastCollectAt: 0 }).run();
+    ctx.setNow(2 * 3_600_000);
+    const comp = parkModule.components.find((c) => c.prefix === 'park')!;
+    const b1 = fakeButton({ customId: 'park:collect', user: 'u1' });
+    await comp.execute(ctx, b1.asInteraction() as unknown as ButtonInteraction);
+    expect(replyText(b1.replies[0])).toContain('Collected');
+    const b2 = fakeButton({ customId: 'park:collect', user: 'u1' });
+    await comp.execute(ctx, b2.asInteraction() as unknown as ButtonInteraction);
+    expect(replyText(b2.replies[0])).toContain('Nothing to collect');
   });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { EmbedBuilder } from 'discord.js';
-import { makeCtx, fakeCommand } from './harness.js';
+import { MessageFlags } from 'discord.js';
+import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { feedDino, feedAll, rescueDino, CareError } from '../src/modules/care/service.js';
 import { careModule } from '../src/modules/care/index.js';
@@ -179,5 +180,42 @@ describe('care module', () => {
     const reply = i.replies[0] as { content?: string; flags?: unknown };
     expect(reply.content).toBe("Triceratops is a herbivore — it won't eat Fish.");
     expect(reply.flags).toBeDefined();
+  });
+});
+
+describe('/rescue execute', () => {
+  const rescueCmd = careModule.commands.find((c) => c.data.name === 'rescue')!;
+  it('recaptures an escaped dino for the fee', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0, escapedAt: 100,
+    }).run();
+    const dino = ctx.db.select().from(schema.dinos).all()[0];
+    const i = fakeCommand({ name: 'rescue', user: 'u1', options: { dino: dino.id } });
+    await rescueCmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('Recaptured');
+    expect(ctx.db.select().from(schema.dinos).all()[0].escapedAt).toBeNull();
+  });
+  it('rejects a dino that has not escaped, ephemeral', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }).run();
+    const dino = ctx.db.select().from(schema.dinos).all()[0];
+    const i = fakeCommand({ name: 'rescue', user: 'u1', options: { dino: dino.id } });
+    await rescueCmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('not escaped');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+  it('maps InsufficientFundsError to the recapture-fee message', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 0 }).run();
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0, escapedAt: 100,
+    }).run();
+    const dino = ctx.db.select().from(schema.dinos).all()[0];
+    const i = fakeCommand({ name: 'rescue', user: 'u1', options: { dino: dino.id } });
+    await rescueCmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('recapture fee');
   });
 });
