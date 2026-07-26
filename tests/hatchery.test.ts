@@ -215,3 +215,26 @@ describe('/hatch execute', () => {
     expect(JSON.stringify(payload.components ?? [])).toContain(`hatch:crack:${egg.id}`);
   });
 });
+
+describe('mythic:confirm and hatch:crack error branches', () => {
+  it('mythic:confirm blocks below 4-star rating and on empty wallet', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    const comp = hatcheryModule.components.find((c) => c.prefix === 'mythic')!;
+    const gated = fakeButton({ customId: 'mythic:confirm:indominus', user: 'u1' });
+    await comp.execute(ctx, gated.asInteraction() as unknown as ButtonInteraction);
+    expect(replyText(gated.replies[0])).toContain('4★');
+    ctx.db.update(schema.users).set({ ratingHighWater: 400, shards: 0 }).run();
+    const broke = fakeButton({ customId: 'mythic:confirm:indominus', user: 'u1' });
+    await comp.execute(ctx, broke.asInteraction() as unknown as ButtonInteraction);
+    expect(replyText(broke.replies[0])).toContain('Not enough shards');
+  });
+  it('hatch:crack on a non-incubating egg is an ephemeral error', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
+    const comp = hatcheryModule.components.find((c) => c.prefix === 'hatch')!;
+    const b = fakeButton({ customId: `hatch:crack:${egg.id}`, user: 'u1' });
+    await comp.execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
+    expect(replyText(b.replies[0])).toContain('not incubating');
+  });
+});

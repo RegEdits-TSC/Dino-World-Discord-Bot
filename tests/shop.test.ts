@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeCtx, fakeCommand, fakeButton } from './harness.js';
+import type { ButtonInteraction } from 'discord.js';
+import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { dailyEggOffers, buyEgg, buyFood, ShopError } from '../src/modules/shop/service.js';
 import { shopModule } from '../src/modules/shop/index.js';
@@ -102,5 +103,31 @@ describe('shop visuals', () => {
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { image?: { url: string } } }>; files?: Array<{ name?: string | null }> };
     expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://shop_food_market.png');
     expect(payload.files!.some((f) => f.name === 'shop_food_market.png')).toBe(true);
+  });
+});
+
+describe('shop food and sell error branches', () => {
+  it('/shop food execute buys units and replies with the total', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    const cmd = shopModule.commands.find((c) => c.data.name === 'shop')!;
+    const i = fakeCommand({ name: 'shop', sub: 'food', user: 'u1', options: { item: 'ferns', units: 10 } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('Bought 10× Ferns for 100 cash');
+    expect(ctx.economy.getFoodInventory('u1').ferns).toBe(20);   // 10 starter + 10 bought
+  });
+  it('/sell rejects an unsellable (locked) dino ephemeral, and sell:confirm re-checks', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0, locked: true,
+    }).run();
+    const dino = ctx.db.select().from(schema.dinos).all()[0];
+    const sell = shopModule.commands.find((c) => c.data.name === 'sell')!;
+    const i = fakeCommand({ name: 'sell', user: 'u1', options: { dino: dino.id } });
+    await sell.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('cannot be sold');
+    const comp = shopModule.components.find((c) => c.prefix === 'sell')!;
+    const b = fakeButton({ customId: `sell:confirm:${dino.id}`, user: 'u1' });
+    await comp.execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
+    expect(replyText(b.replies[0])).toContain('locked');
   });
 });

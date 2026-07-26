@@ -219,3 +219,18 @@ describe('/rescue execute', () => {
     expect(replyText(i.replies[0])).toContain('recapture fee');
   });
 });
+
+describe('/feed one ownership check', () => {
+  it('/feed one rejects a dino you do not own', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u2', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }).run();
+    const dino = ctx.db.select().from(schema.dinos).all()[0];
+    const cmd = careModule.commands.find((c) => c.data.name === 'feed')!;
+    const i = fakeCommand({ name: 'feed', sub: 'one', user: 'u1', options: { dino: dino.id } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect(replyText(i.replies[0])).toContain('own');
+  });
+});

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { makeCtx, fakeAutocomplete } from './harness.js';
 import { tradingModule } from '../src/modules/trading/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
+import { createTrade } from '../src/modules/trading/service.js';
 import { schema } from '../src/core/db/index.js';
 
 const cmd = () => tradingModule.commands[0];
@@ -14,6 +15,21 @@ function seedTrade(ctx: ReturnType<typeof makeCtx>, over: Partial<typeof schema.
     request: { dinoIds: [], eggIds: [], cash: 0, foods: { ferns: 5 } },
     createdAt: ctx.now(), ...over,
   }).returning().get();
+}
+
+// Local copy of the seed idiom in tests/trading.test.ts (two users at 2★, a
+// tradeable dino owned by 'a', locked into a pending a->b trade) — not a
+// shared import, per the task-6 brief.
+function seedPendingTrade(ctx: ReturnType<typeof makeCtx>): { tradeId: number; dinoId: number } {
+  getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+  ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+  const d = ctx.db.insert(schema.dinos).values({
+    userId: 'a', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
+  }).returning().get();
+  const t = createTrade(ctx, 'a', 'b',
+    { dinoIds: [d.id], eggIds: [], cash: 0, foods: {} },
+    { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+  return { tradeId: t.id, dinoId: d.id };
 }
 
 describe('/trade accept|decline|cancel id autocomplete', () => {
@@ -140,5 +156,24 @@ describe('/trade offer food autocomplete', () => {
     const want = fakeAutocomplete({ name: 'trade', sub: 'offer', user: 'a', focused: { name: 'want-food', value: '' } });
     await tradingModule.commands[0].autocomplete!(ctx, want.asAutocomplete());
     expect(want.replies[0]).toEqual([{ name: 'Pick the user option first', value: '-' }]);
+  });
+  it('decline id autocomplete lists incoming trades by name', async () => {
+    const ctx = makeCtx();
+    const { tradeId } = seedPendingTrade(ctx);   // same helper idiom as trading.test.ts
+    const fa = fakeAutocomplete({ name: 'trade', sub: 'decline', user: 'b', focused: { name: 'id', value: '' } });
+    await tradingModule.commands.find((c) => c.data.name === 'trade')!.autocomplete!(ctx, fa.asAutocomplete());
+    const choices = fa.replies[0] as Array<{ value: unknown }>;
+    expect(choices.map((c) => c.value)).toContain(tradeId);
+  });
+  it('want-food with the user option set lists the counterparty inventory', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'a', 'a'); getOrCreateUser(ctx, 'b', 'b');
+    const fa = fakeAutocomplete({
+      name: 'trade', sub: 'offer', user: 'a',
+      focused: { name: 'want-food', value: '' }, options: { user: 'b' },
+    });
+    await tradingModule.commands.find((c) => c.data.name === 'trade')!.autocomplete!(ctx, fa.asAutocomplete());
+    const names = (fa.replies[0] as Array<{ name: string }>).map((c) => c.name);
+    expect(names.some((n) => n.includes('they hold'))).toBe(true);
   });
 });

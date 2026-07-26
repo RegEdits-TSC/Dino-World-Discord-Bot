@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MessageFlags } from 'discord.js';
 import { eq } from 'drizzle-orm';
-import { makeCtx, fakeCommand } from './harness.js';
+import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, pendingIncome } from '../src/modules/park/service.js';
 import { requireOwner } from '../src/modules/admin/guard.js';
@@ -144,5 +144,20 @@ describe('admin module', () => {
   it('reset on a player with no park aborts cleanly', async () => {
     const cmd = await run('owner', 'reset', { user: 'ghost', confirm: 'ghost' });
     expect((cmd.replies[0] as { content: string }).content).toContain('no park to reset');
+  });
+  it('/admin fast-forward shifts time through the command layer', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'target', 'target');
+    const cmd = adminModule.commands[0];
+    const i = fakeCommand({ name: 'admin', sub: 'fast-forward', user: 'owner', options: { user: 'target', hours: 24 } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('Fast-forwarded');
+  });
+  it('/admin give rejects half-set food pairing', async () => {
+    const ctx = makeCtx();
+    const cmd = adminModule.commands[0];
+    const i = fakeCommand({ name: 'admin', sub: 'give', user: 'owner', options: { user: 'target', 'food-item': 'ferns' } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('Set both food-item and food-qty');
   });
 });

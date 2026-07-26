@@ -8,6 +8,7 @@ import { parkModule } from '../src/modules/park/index.js';
 import { dashboardPayload } from '../src/modules/park/embeds.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
 import { DECOR } from '../src/data/decor.js';
+import { lotSlots } from '../src/data/progression.js';
 
 const H = 3_600_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -273,5 +274,22 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     await cmd.execute(ctx, i.asChatInput());
     expect(replyText(i.replies[0])).toContain('Raptor Ranch');
     expect(ctx.db.select().from(schema.users).all()[0].parkName).toBe('Raptor Ranch');
+  });
+  it('/build maps LotLimitError and InsufficientFundsError to ephemeral replies', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 10_000_000 }).run();
+    const kind = Object.keys(PADDOCKS)[0];
+    for (let n = 0; n < 3; n++) buildLot(ctx, 'u1', kind);   // base slots = 3
+    // Guard: recomputeRating after 3 builds must not have raised the slot cap.
+    expect(lotSlots(ctx.db.select().from(schema.users).all()[0].ratingHighWater)).toBe(3);
+    const cmd = parkModule.commands.find((c) => c.data.name === 'build')!;
+    const full = fakeCommand({ name: 'build', user: 'u1', options: { kind } });
+    await cmd.execute(ctx, full.asChatInput());
+    expect(replyText(full.replies[0])).toContain('All lots full');
+    ctx.db.delete(schema.lots).run();
+    ctx.db.update(schema.users).set({ cash: 0 }).run();
+    const broke = fakeCommand({ name: 'build', user: 'u1', options: { kind } });
+    await cmd.execute(ctx, broke.asChatInput());
+    expect(replyText(broke.replies[0])).toContain('Not enough cash');
   });
 });

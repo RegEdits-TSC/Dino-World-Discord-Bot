@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeCtx } from './harness.js';
+import { MessageFlags } from 'discord.js';
+import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { startExpedition, activeExpedition, claimExpedition, listSites, ExpeditionError } from '../src/modules/expeditions/service.js';
 import { schema } from '../src/core/db/index.js';
@@ -40,7 +41,6 @@ describe('expeditions', () => {
 });
 
 import { expeditionsModule } from '../src/modules/expeditions/index.js';
-import { fakeCommand } from './harness.js';
 
 describe('expeditions module', () => {
   it('/expedition start dispatches and enqueues a return timer', async () => {
@@ -72,5 +72,23 @@ describe('expedition visuals', () => {
     await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { title?: string } }> };
     expect(payload.embeds[0].toJSON().title).toBe('🧭 🐚 Coastal Dig — returned!');
+  });
+  it('/expedition status with none active is an ephemeral hint', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    const cmd = expeditionsModule.commands.find((c) => c.data.name === 'expedition')!;
+    const i = fakeCommand({ name: 'expedition', sub: 'status', user: 'u1' });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('No active expedition');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+  it('/expedition status while digging shows the countdown embed', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    startExpedition(ctx, 'u1', 'coastal_dig', null);
+    const cmd = expeditionsModule.commands.find((c) => c.data.name === 'expedition')!;
+    const i = fakeCommand({ name: 'expedition', sub: 'status', user: 'u1' });
+    await cmd.execute(ctx, i.asChatInput());
+    const embeds = (i.replies[0] as { embeds?: Array<{ toJSON?: () => unknown }> }).embeds ?? [];
+    expect(embeds.length).toBe(1);
+    expect(JSON.stringify(embeds.map((e) => (e.toJSON ? e.toJSON() : e)))).toContain('Digging');
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeCtx, fakeButton } from './harness.js';
+import { makeCtx, fakeButton, replyText } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { createTrade, acceptTrade, TradeError } from '../src/modules/trading/service.js';
 import { declineTrade, cancelTrade, expireStale, listTrades } from '../src/modules/trading/service.js';
@@ -16,6 +16,19 @@ beforeEach(() => { ctx = makeCtx();
 const empty = { dinoIds: [] as number[], eggIds: [] as number[], cash: 0, foods: {} as Record<string, number> };
 const addDino = (user: string, speciesId = 'triceratops', over: Record<string, unknown> = {}) =>
   ctx.db.insert(schema.dinos).values({ userId: user, speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0, ...over }).returning().get();
+
+// Local seed idiom, reused (as its own copy — not a shared import) by
+// tests/autocomplete-trading.test.ts: two users at 2★ so createTrade's rating
+// gate passes, a tradeable dino owned by 'a', locked into a pending a->b trade.
+function seedPendingTrade(c: ReturnType<typeof makeCtx>): { tradeId: number; dinoId: number } {
+  getOrCreateUser(c, 'a', 'A'); getOrCreateUser(c, 'b', 'B');
+  c.db.update(schema.users).set({ parkRating: 200 }).run();
+  const d = c.db.insert(schema.dinos).values({
+    userId: 'a', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
+  }).returning().get();
+  const t = createTrade(c, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty);
+  return { tradeId: t.id, dinoId: d.id };
+}
 
 describe('createTrade', () => {
   it('locks the offered dinos and creates a pending trade', () => {
@@ -189,6 +202,18 @@ describe('trading module', () => {
     const i = fakeCommand({ name: 'trade', sub: 'offer', user: 'a', options: { user: 'b', 'give-food': 'fish' } });
     await tradingModule.commands[0].execute(ctx, i.asChatInput());
     expect((i.replies[0] as { flags?: unknown }).flags).toBeDefined();
+  });
+  it('/trade cancel execute cancels a pending trade and unlocks the offer', async () => {
+    const ctx = makeCtx();
+    const { tradeId, dinoId } = seedPendingTrade(ctx);
+    const cmd = tradingModule.commands.find((c) => c.data.name === 'trade')!;
+    const i = fakeCommand({ name: 'trade', sub: 'cancel', user: 'a', options: { id: tradeId } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(i.replies).toHaveLength(1);
+    // '🚫 Trade cancelled.' — src/modules/trading/index.ts:136
+    expect(replyText(i.replies[0])).toContain('cancelled');
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('cancelled');
+    expect(ctx.db.select().from(schema.dinos).all().find((d) => d.id === dinoId)?.locked).toBe(false);
   });
 });
 
