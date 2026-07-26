@@ -4,6 +4,9 @@ import { resolve } from 'node:path';
 import { createCanvas, Image } from '@napi-rs/canvas';
 import { renderSvg } from '../src/core/render-svg.js';
 import { EMOJI_FALLBACK } from '../src/core/emojis.js';
+import { FOODS } from '../src/data/foods.js';
+import { RARITY } from '../src/data/rarity.js';
+import { EXPEDITION_SITES } from '../src/data/sites.js';
 
 const SVG_DIR = resolve(process.cwd(), 'assets/emojis/svg');
 const PNG_DIR = resolve(process.cwd(), 'assets/emojis/png');
@@ -98,5 +101,26 @@ describe('svg set parity', () => {
   it('svg files exactly match the 21 fallback-table names', () => {
     const names = readdirSync(SVG_DIR).filter((f) => f.endsWith('.svg')).map((f) => f.replace('.svg', '')).sort();
     expect(names).toEqual(Object.keys(EMOJI_FALLBACK).sort());
+  });
+});
+
+describe('emoji name parity with data tables', () => {
+  const svgNames = readdirSync(SVG_DIR).filter((f) => f.endsWith('.svg')).map((f) => f.replace('.svg', '')).sort();
+
+  it('every FOODS emoji name has a committed SVG and a unicode fallback', () => {
+    for (const f of Object.values(FOODS)) {
+      expect(svgNames, `missing SVG for FOODS.${f.id}.emoji=${f.emoji}`).toContain(f.emoji);
+      expect(Object.hasOwn(EMOJI_FALLBACK, f.emoji), `missing EMOJI_FALLBACK for ${f.emoji}`).toBe(true);
+    }
+  });
+  it('every rarity has a dw_rarity_* SVG', () => {
+    for (const r of Object.keys(RARITY)) {
+      expect(svgNames, `missing SVG dw_rarity_${r}`).toContain(`dw_rarity_${r}`);
+    }
+  });
+  it('every expedition site has a dw_site_* SVG', () => {
+    for (const s of Object.keys(EXPEDITION_SITES)) {
+      expect(svgNames, `missing SVG dw_site_${s}`).toContain(`dw_site_${s}`);
+    }
   });
 });
