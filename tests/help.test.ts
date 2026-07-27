@@ -21,4 +21,14 @@ describe('/help', () => {
       expect(embed.title).toBe(HELP_TOPICS[topic].title);
     }
   });
+  it('battles topic exists and explains energy, squads, stars, and bosses', () => {
+    const t = HELP_TOPICS.battles;
+    expect(t).toBeTruthy();
+    expect(t.body).toContain('/battle chapters');
+    expect(t.body).toContain('/battle fight');
+    expect(t.body).toMatch(/energy/i);
+    expect(t.body).toMatch(/star/i);
+    expect(t.body).toMatch(/boss/i);
+    expect(t.body).toMatch(/escaped/i);
+  });
 });
