@@ -382,6 +382,19 @@ describe('journeys', () => {
     expect(bossProgAfter.attempts).toBe(bossProgBefore.attempts + 1);
     expect(ctx.db.select().from(schema.eggs).all().filter((e) => e.source === 'battle')).toHaveLength(1);
 
+    // Repeat a WIN on the same already-cleared boss (maxed squad — a
+    // certain win). The loss above only proves the coarse mutation
+    // `if (stage.boss && firstClear)` -> `if (stage.boss)`, which fires on
+    // ANY fight, win or lose. It can't catch the narrower, more realistic
+    // regression where the win-requirement survives but "not already
+    // cleared" is dropped (e.g. `if (stage.boss && won)`, or
+    // `firstClear = won`) — that only shows up on a repeat WIN, which
+    // nothing before this point in the journey exercises.
+    ctx.setNow(ctx.now() + fullRegenMs);   // boss costs 3; the losing replay above spent some of the pool
+    const repeatWin = runFight(ctx, 'p1', 'coastal_dig_boss', ids);
+    expect(repeatWin.won).toBe(true);
+    expect(ctx.db.select().from(schema.eggs).all().filter((e) => e.source === 'battle')).toHaveLength(1);
+
     // Coverage gap: every existing /battle chapters + stage-autocomplete test
     // starts from a brand-new user (empty progress map, frontier chapter 1).
     // Re-drive the real command/button surface now that chapter 1 is actually
