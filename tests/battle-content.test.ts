@@ -50,7 +50,8 @@ describe('battle campaign content', () => {
         const boss = s.boss;
         if (boss) {
           expect(() => getSpecies(boss.speciesId)).not.toThrow();
-          if (boss.eggSpeciesId !== null) expect(() => getSpecies(boss.eggSpeciesId)).not.toThrow();
+          const eggSpeciesId = boss.eggSpeciesId;
+          if (eggSpeciesId !== null) expect(() => getSpecies(eggSpeciesId)).not.toThrow();
         }
       }
     }
