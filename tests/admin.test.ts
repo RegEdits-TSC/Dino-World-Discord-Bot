@@ -8,6 +8,8 @@ import { requireOwner } from '../src/modules/admin/guard.js';
 import { adminGive, adminReset, adminFastForward, AdminError } from '../src/modules/admin/service.js';
 import { adminModule } from '../src/modules/admin/index.js';
 import { createTrade } from '../src/modules/trading/service.js';
+import { ENERGY_CAP } from '../src/data/battle/constants.js';
+import { settleEnergy } from '../src/data/battle/energy.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });   // config.ownerId === 'owner'
@@ -159,5 +161,35 @@ describe('admin module', () => {
     const i = fakeCommand({ name: 'admin', sub: 'give', user: 'owner', options: { user: 'target', 'food-item': 'ferns' } });
     await cmd.execute(ctx, i.asChatInput());
     expect(replyText(i.replies[0])).toContain('Set both food-item and food-qty');
+  });
+});
+
+describe('adminFastForward + energy', () => {
+  it('shifts energyUpdatedAt back so regeneration becomes visible', () => {
+    getOrCreateUser(ctx, 'p', 'P');
+    ctx.db.update(schema.users).set({ energy: 2, energyUpdatedAt: ctx.now() })
+      .where(eq(schema.users.discordId, 'p')).run();
+    adminFastForward(ctx, 'p', 1);   // 1 h back = 6 regen ticks at 10 min each
+    const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'p')).get()!;
+    expect(u.energyUpdatedAt).toBe(-3_600_000);
+    expect(settleEnergy(u.energy, u.energyUpdatedAt, ctx.now()).energy).toBe(8);   // 2 + 6
+  });
+});
+
+describe('adminReset + battles', () => {
+  it('restores full energy and deletes battle progress', () => {
+    getOrCreateUser(ctx, 'p', 'P');
+    ctx.setNow(50_000);
+    ctx.db.update(schema.users).set({ energy: 1, energyUpdatedAt: 7 })
+      .where(eq(schema.users.discordId, 'p')).run();
+    ctx.db.insert(schema.battleProgress).values({
+      userId: 'p', stageId: 'coastal_dig_1', stars: 2, firstClearedAt: 5, attempts: 4,
+    }).run();
+    adminReset(ctx, 'p');
+    const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'p')).get()!;
+    expect(u.energy).toBe(ENERGY_CAP);
+    expect(u.energyUpdatedAt).toBe(50_000);
+    expect(ctx.db.select().from(schema.battleProgress)
+      .where(eq(schema.battleProgress.userId, 'p')).all()).toHaveLength(0);
   });
 });
