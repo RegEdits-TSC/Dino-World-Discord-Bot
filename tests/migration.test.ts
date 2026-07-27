@@ -100,3 +100,78 @@ describe('0001 via the real drizzle migrator (production path)', () => {
     }
   });
 });
+
+describe('0002 battle columns via the real drizzle migrator (production path)', () => {
+  it('applies 0002 to a populated 0001 database and enforces the new constraints', () => {
+    // Reach the 0001 schema via a scratch folder holding only migrations 0000-0001,
+    // seed a parent user + child dino (FK on, as production createDb runs), then let
+    // the real migrateDb apply 0002 exactly as the bot does at startup.
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig2-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^000[01].*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 1);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');                   // production createDb sets this
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });           // apply 0000 + 0001 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, cash, park_name, rating_high_water, shards, last_collect_at_ms, created_at_ms)
+                    VALUES ('u1', 1234, 'Jurassic Pocket', 210, 7, 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO dinos (user_id, species_id, hunger, last_fed_at_ms, hatched_at_ms) VALUES ('u1', 'triceratops', 100, 0, 0)`).run();
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+
+      // The users rebuild (table-recreate, per the energy_nonneg CHECK) must preserve
+      // pre-existing data, not just apply new-column defaults. Same recreate shape as
+      // 0001 (proven safe by the '0001 ... production path' test above); this asserts
+      // the copy-through of columns unrelated to 0002 as well.
+      const preserved = sqlite.prepare(
+        `SELECT cash, park_name, rating_high_water, shards FROM users WHERE discord_id='u1'`
+      ).get() as { cash: number; park_name: string; rating_high_water: number; shards: number };
+      expect(preserved.cash).toBe(1234);
+      expect(preserved.park_name).toBe('Jurassic Pocket');
+      expect(preserved.rating_high_water).toBe(210);
+      expect(preserved.shards).toBe(7);
+
+      // Existing user rows pick up the new NOT NULL defaults.
+      const u = sqlite.prepare(`SELECT energy, energy_updated_at_ms FROM users WHERE discord_id='u1'`).get() as
+        { energy: number; energy_updated_at_ms: number };
+      expect(u.energy).toBe(10);
+      expect(u.energy_updated_at_ms).toBe(0);
+      expect(() => sqlite.prepare(`UPDATE users SET energy = -1 WHERE discord_id='u1'`).run()).toThrow(); // energy_nonneg
+
+      // The child dino row must still resolve against the rebuilt (renamed) users table.
+      const joined = sqlite.prepare(
+        `SELECT d.id FROM dinos d JOIN users u ON u.discord_id = d.user_id WHERE u.discord_id = 'u1'`
+      ).all();
+      expect(joined).toHaveLength(1);
+
+      // Existing dino rows pick up battle_xp default 0.
+      const d = sqlite.prepare(`SELECT battle_xp FROM dinos WHERE user_id='u1'`).get() as { battle_xp: number };
+      expect(d.battle_xp).toBe(0);
+
+      // battle_progress: insert a child row post-migration, then check PK + stars CHECK + FK.
+      sqlite.prepare(`INSERT INTO battle_progress (user_id, stage_id, stars, first_cleared_at_ms, attempts)
+                      VALUES ('u1', 'coastal_dig_1', 2, NULL, 1)`).run();
+      expect(() => sqlite.prepare(`INSERT INTO battle_progress (user_id, stage_id) VALUES ('u1', 'coastal_dig_1')`).run())
+        .toThrow();                                       // PK (user_id, stage_id)
+      expect(() => sqlite.prepare(`UPDATE battle_progress SET stars = 4`).run()).toThrow();   // stars_range
+      expect(() => sqlite.prepare(`INSERT INTO battle_progress (user_id, stage_id) VALUES ('ghost', 'coastal_dig_1')`).run())
+        .toThrow();                                       // FK -> users.discord_id
+
+      // eggs.source widening is TypeScript-only: 'battle' must insert with no DDL change.
+      sqlite.prepare(`INSERT INTO eggs (user_id, rarity, source, obtained_at_ms) VALUES ('u1', 'rare', 'battle', 0)`).run();
+
+      // migrateDb must leave FK enforcement ON — runtime integrity depends on it.
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});
