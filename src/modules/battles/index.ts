@@ -119,8 +119,53 @@ export const battlesModule: ModuleManifest = {
         await i.deferReply();
         await presentFight(ctx, i, i.user.id, outcome);
       },
-      // Real providers land with the chapters step (Task 12).
-      async autocomplete(_ctx, i) { await i.respond([]); },
+      async autocomplete(ctx, i) {
+        if (i.options.getSubcommand() !== 'fight') { await i.respond([]); return; }
+        // Guard the row via direct select — never getOrCreateUser here, and
+        // settleEscapes below is only safe once the row is known to exist.
+        const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, i.user.id)).get();
+        if (!user) { await i.respond([]); return; }
+        const focused = i.options.getFocused(true);
+        const q = String(focused.value);
+        if (focused.name === 'stage') {
+          const rows = ctx.db.select().from(schema.battleProgress).where(eq(schema.battleProgress.userId, i.user.id)).all();
+          const progress: ProgressMap = new Map(rows.map((r) => [r.stageId, { stars: r.stars, firstClearedAt: r.firstClearedAt }]));
+          const entries: AcEntry[] = [];
+          for (const ch of CAMPAIGN) {
+            if (!chapterUnlocked(ch.id, progress, user.ratingHighWater)) continue;
+            ch.stages.forEach((s, k) => {
+              if (!matches(q, s.id, s.name, ch.name)) return;
+              const open = stageUnlocked(s.id, progress);
+              const stars = progress.get(s.id)?.stars ?? 0;
+              const pos = s.boss ? 'Boss' : String(k + 1);
+              // Unicode only — custom emoji tags render as literal text here.
+              const glyphs = stars > 0 ? `${'⭐'.repeat(stars)} ` : '';
+              entries.push({
+                value: s.id, valid: open,
+                label: open
+                  ? `${glyphs}${ch.name} ${pos} — ${s.name} (⚡${s.energyCost})`
+                  : `🔒 ${ch.name} ${pos} — ${s.name} (⚡${s.energyCost})`,
+              });
+            });
+          }
+          await respondRanked(i, entries);
+          return;
+        }
+        settleEscapes(ctx, i.user.id);   // row guaranteed above
+        const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all()
+          .filter((d) => d.escapedAt === null);   // escaped dinos can't fight — excluded outright
+        if (!dinos.length) { await respondRanked(i, [emptyRow('No battle-ready dinos — hatch or /rescue first', 0)]); return; }
+        const others = ['dino1', 'dino2', 'dino3'].filter((n) => n !== focused.name);
+        const taken = new Set(others.map((n) => Number(i.options.get(n)?.value)).filter((v) => Number.isFinite(v)));
+        await respondRanked(i, dinos
+          .filter((d) => !taken.has(d.id))
+          .map((d) => ({ d, species: getSpecies(d.speciesId) }))
+          .filter(({ d, species }) => matches(q, d.id, d.nickname, species.name))
+          .map(({ d, species }) => ({
+            value: d.id, valid: true,
+            label: `Lv.${battleLevel(d.battleXp)} ${d.nickname ?? species.name} (${species.archetype})`,
+          })));
+      },
     },
   ],
   components: [
