@@ -19,6 +19,12 @@ describe('roster', () => {
       expect(['herbivore', 'carnivore']).toContain(s.diet);
     }
   });
+  it('every species declares a valid archetype; commons span at least 3 archetypes', () => {
+    const VALID = ['bruiser', 'tank', 'swift', 'support'];
+    for (const s of allSpecies()) expect(VALID).toContain(s.archetype);
+    const commonArchetypes = new Set(speciesByRarity('common').map((s) => s.archetype));
+    expect(commonArchetypes.size).toBeGreaterThanOrEqual(3);
+  });
   it('getSpecies round-trips the seed species', () => {
     expect(getSpecies('tyrannosaurus').rarity).toBe('legendary');
     expect(getSpecies('indominus').rarity).toBe('mythic');
