@@ -107,6 +107,25 @@ describe('battle campaign content', () => {
     for (const b of bosses) expect(b.eggRarity).not.toBe('mythic');
   });
 
+  it('boss is authored as the third enemy (enemies[2]) on every boss stage', () => {
+    // rosterFor's small-squad branch (src/data/battle/chapters/index.ts) always
+    // returns stage.enemies[2] as the boss for squadSize < 3, with no runtime
+    // check. This is the invariant that assumption depends on: violate it in a
+    // future chapter and rosterFor silently fields a non-boss enemy for any
+    // squad smaller than 3 — the exact "embed lies about who fought" bug
+    // rosterFor exists to prevent.
+    for (const c of CAMPAIGN) {
+      const bossStage = c.stages[4];
+      const boss = bossStage.boss!;
+      expect(
+        bossStage.enemies[2].speciesId,
+        `${bossStage.id}: the boss (${boss.speciesId}) must be authored as ` +
+          `enemies[2] (the third enemy), not '${bossStage.enemies[2].speciesId}' — ` +
+          `rosterFor's small-squad branch reads stage.enemies[2] as the boss unconditionally.`,
+      ).toBe(boss.speciesId);
+    }
+  });
+
   it('every bossId has a matching entry in docs/assets/prompts.md', () => {
     const prompts = readFileSync(new URL('../docs/assets/prompts.md', import.meta.url), 'utf8');
     for (const c of CAMPAIGN) expect(prompts).toContain(c.stages[4].boss!.bossId);
