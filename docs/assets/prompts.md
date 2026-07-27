@@ -335,6 +335,73 @@ to 1536×1024 like the other banners).
 
 ---
 
+## Battle bosses
+
+Four boss portraits for the PvE campaign (`/battle`), used as `setThumbnail`
+on frames F3/F4 of boss stages. Null-degrade everywhere: the campaign ships
+fully playable with zero battle art.
+
+| File | Size | Use |
+|---|---|---|
+| `assets/images/battles/boss-coastal_dig-portrait.png` | 1024×1024, transparent | Old Riptooth (Baryonyx), Coastal Dig boss frames |
+| `assets/images/battles/boss-amber_ridge-portrait.png` | 1024×1024, transparent | Ridgeback Alpha (Allosaurus), Amber Ridge boss frames |
+| `assets/images/battles/boss-frozen_cliffs-portrait.png` | 1024×1024, transparent | Stormwing (Quetzalcoatlus), Frozen Cliffs boss frames |
+| `assets/images/battles/boss-volcano_core-portrait.png` | 1024×1024, transparent | The Tyrant King (Tyrannosaurus), Volcano Core boss frames |
+
+**Hard no-glow rule:** no glow, rays, embers, sparkles, or light effects may
+extend beyond the dinosaur silhouette — off-silhouette glow survives
+background removal as floating islands or a light halo on transparency.
+Emissive detail is allowed only ON surfaces (lava cracks, frost sheen, wet
+scales). Every prompt carries this rule verbatim.
+
+**Workflow (reference chain):** generate the coastal portrait first on a
+plain flat light-gray studio background, head-and-shoulders three-quarter
+framing filling the square with a small even margin. Generate the other three
+as image-edits of the approved coastal portrait (Nano Banana Pro, `medias`
+role `image`) so pose, framing, and rendering read as a set — all three edit
+from the coastal portrait directly, never from each other. Post-process each
+with `remove_background` plus the defringe + fit pass described in the Egg
+rarities section.
+
+**boss-coastal_dig — Old Riptooth (reference portrait):**
+
+> A fierce cartoon Baryonyx boss portrait, head and shoulders in three-quarter
+> view, long crocodile-like snout with a jagged toothy snarl, teal-and-sand
+> scales with a wet glossy sea-spray sheen and a ragged old scar across the
+> snout. The dinosaur fills almost the entire square frame with a small even
+> margin. Plain flat light-gray studio background, no scenery, no ground
+> shadow. No glow, rays, embers, sparkles, or light effects extending beyond
+> the dinosaur silhouette; glowing details may appear only on the surfaces
+> themselves. Glossy cartoon mobile-game art style, bold dark outlines,
+> vibrant saturated colors, strong glossy highlights, clean cel shading with
+> smooth gradients, polished game-asset look. No text, no human characters,
+> no UI elements.
+
+**Portrait edits** (each generated with the coastal portrait attached as the
+`image` reference). Prompt frame:
+
+> Keep the exact same head-and-shoulders boss portrait: same pose, same
+> framing, same plain flat light-gray studio background. Change the dinosaur
+> to {BOSS}. No glow, rays, embers, sparkles, or light effects extending
+> beyond the dinosaur silhouette; glowing details may appear only on the
+> surfaces themselves. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no human
+> characters, no UI elements.
+
+`{BOSS}` per portrait:
+
+- **boss-amber_ridge — Ridgeback Alpha:** a battle-scarred cartoon
+  Allosaurus with honey-orange and sandstone-brown scales, twin brow horns,
+  an amber-gold eye, and warm sunset-toned glossy highlights.
+- **boss-frozen_cliffs — Stormwing:** a towering cartoon Quetzalcoatlus with
+  pale ice-blue and white plumage, a long crested head, frost sheen gleaming
+  on the beak surface, and one folded wing shoulder visible.
+- **boss-volcano_core — The Tyrant King:** a colossal cartoon Tyrannosaurus
+  with jet-black obsidian-dark scales veined by glowing orange lava-crack
+  markings on the scale surfaces only, an ember-orange eye, and a roaring
+  open jaw.
+
 ## Emoji icons
 
 The 21 application emojis in `assets/emojis/` are **not** generated — they are
