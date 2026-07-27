@@ -1,12 +1,21 @@
 import { SlashCommandBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   type ChatInputCommandInteraction, type ButtonInteraction } from 'discord.js';
+import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import type { Ctx } from '../../core/context.js';
+import { schema } from '../../core/db/index.js';
+import { getOrCreateUser } from '../park/service.js';
+import { settleEscapes } from '../park/escapes.js';
+import { getSpecies } from '../../data/species/index.js';
+import { battleLevel } from '../../data/battle/stats.js';
+import { settleEnergy } from '../../data/battle/energy.js';
+import { CAMPAIGN, stageUnlocked, chapterUnlocked, type ProgressMap } from '../../data/battle/chapters/index.js';
 import { runFight, BattleError, type FightOutcome } from './service.js';
-import { fightFrames, type FramePayload } from './embeds.js';
+import { fightFrames, chaptersPayload, type FramePayload, type ChaptersView } from './embeds.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { FIGHT_FRAME_DELAY_MS } from '../../data/battle/constants.js';
 import { logger } from '../../core/logger.js';
+import { matches, respondRanked, emptyRow, type AcEntry } from '../../core/autocomplete.js';
 
 // In-process cinematic state (standing single-bot-instance-per-token rule).
 // A restart mid-broadcast costs animation frames only: all game state commits
@@ -62,6 +71,22 @@ async function presentFight(ctx: Ctx, i: ChatInputCommandInteraction | ButtonInt
   }
 }
 
+// Read-only settle for display (previewSell precedent): nothing persisted here.
+function chaptersView(ctx: Ctx, userId: string): { view: ChaptersView; frontier: number } | null {
+  const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get();
+  if (!user) return null;
+  const rows = ctx.db.select().from(schema.battleProgress).where(eq(schema.battleProgress.userId, userId)).all();
+  const progress: ProgressMap = new Map(rows.map((r) => [r.stageId, { stars: r.stars, firstClearedAt: r.firstClearedAt }]));
+  const settled = settleEnergy(user.energy, user.energyUpdatedAt, ctx.now());
+  const view: ChaptersView = {
+    progress, ratingHighWater: user.ratingHighWater,
+    energy: settled.energy, energyUpdatedAtMs: settled.updatedAtMs,
+  };
+  // Frontier = highest unlocked chapter (chapter 1 is always unlocked).
+  const frontier = CAMPAIGN.reduce((acc, ch, k) => (chapterUnlocked(ch.id, progress, user.ratingHighWater) ? k : acc), 0);
+  return { view, frontier };
+}
+
 export const battlesModule: ModuleManifest = {
   name: 'battles',
   commands: [
@@ -74,8 +99,9 @@ export const battlesModule: ModuleManifest = {
           .addIntegerOption((o) => o.setName('dino3').setDescription('Squad slot 3').setAutocomplete(true))),
       async execute(ctx, i) {
         if (i.options.getSubcommand() === 'chapters') {
-          // Replaced by the chapters step (Task 12).
-          await i.reply({ content: 'Chapter view is on its way.', flags: MessageFlags.Ephemeral });
+          getOrCreateUser(ctx, i.user.id, i.user.displayName);
+          const { view, frontier } = chaptersView(ctx, i.user.id)!;   // row exists: just created
+          await i.reply(chaptersPayload(i.user.id, frontier, view));
           return;
         }
         const stageId = i.options.getString('stage', true);
@@ -123,6 +149,16 @@ export const battlesModule: ModuleManifest = {
           }
           await i.deferUpdate();
           await presentFight(ctx, i, i.user.id, outcome);
+        } else if (action === 'chapter') {
+          const cv = chaptersView(ctx, i.user.id);
+          if (!cv) { await i.reply({ content: 'Run /battle chapters first.', flags: MessageFlags.Ephemeral }); return; }
+          const idx = Math.min(Math.max(0, Number(arg) || 0), CAMPAIGN.length - 1);
+          // attachments: [] clears the previous page's banner before the new one attaches.
+          await i.update({ ...chaptersPayload(i.user.id, idx, cv.view), attachments: [] });
+        } else {
+          // Unknown battle:* action — acknowledge so Discord doesn't surface
+          // "This interaction failed" for a stale or forged customId.
+          await i.deferUpdate();
         }
       } },
   ],

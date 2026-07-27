@@ -182,3 +182,29 @@ describe('battle buttons', () => {
     expect(progress!.attempts).toBe(1);
   });
 });
+
+describe('/battle chapters', () => {
+  it('replies with the frontier chapter page including stages and energy', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const fake = fakeCommand({ name: 'battle', sub: 'chapters', user: 'u1' });
+    await battleCmd.execute(ctx, fake.asChatInput());
+    expect(fake.replies).toHaveLength(1);
+    const embed = (fake.replies[0] as { embeds: Array<{ toJSON(): { title?: string; fields?: Array<{ name: string; value: string }> } }> })
+      .embeds[0].toJSON();
+    expect(embed.title).toContain('Chapter 1');
+    expect(embed.fields!.find((f) => f.name === 'Energy')!.value).toContain('⚡ 10/10');
+  });
+  it('nav is owner-locked and updates to the requested chapter in place', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const intruder = fakeButton({ customId: 'battle:chapter:u1:1', user: 'u2' });
+    await battleButtons.execute(ctx, intruder.asInteraction() as unknown as ButtonInteraction);
+    expect((intruder.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    const owner = fakeButton({ customId: 'battle:chapter:u1:1', user: 'u1' });
+    await battleButtons.execute(ctx, owner.asInteraction() as unknown as ButtonInteraction);
+    expect(owner.replies).toHaveLength(1);   // i.update
+    const embed = (owner.replies[0] as { embeds: Array<{ toJSON(): { title?: string } }> }).embeds[0].toJSON();
+    expect(embed.title).toContain('Chapter 2');
+  });
+});
