@@ -16,6 +16,10 @@ import { accruedIncome, comfortAt, type ClockDino } from '../src/core/clock.js';
 import { RARITY } from '../src/data/rarity.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
 import { getSpecies } from '../src/data/species/index.js';
+import { battlesModule } from '../src/modules/battles/index.js';
+import { runFight, BattleError } from '../src/modules/battles/service.js';
+import { chapterUnlocked, STAGES, type ProgressMap } from '../src/data/battle/chapters/index.js';
+import { ENERGY_CAP } from '../src/data/battle/constants.js';
 
 // This file is the regression net over six risky time/state couplings that
 // per-command unit tests miss because they only ever exercise one command at
@@ -284,5 +288,114 @@ describe('journeys', () => {
       name: 'expedition', sub: 'start', user: 'p1', options: { site: 'volcano_core' },
     });
     expect(replyText(gated.replies[0])).toContain('not unlocked');
+  });
+
+  it('battles: grant squad → ch.2 locked → clear ch.1 → boss egg → gates → energy drain/regen', async () => {
+    const ctx = makeCtx(); ctx.setNow(1000);
+    // Squad through the admin command layer; max battle level so chapter-1 wins are certain.
+    for (const species of ['tyrannosaurus', 'triceratops', 'velociraptor']) {
+      await dispatch(ctx, adminModule, 'admin', {
+        name: 'admin', sub: 'give', user: 'owner',
+        options: { user: 'p1', 'dino-species': species, cash: 1000 },
+      });
+    }
+    const ids = ctx.db.select().from(schema.dinos).all().map((d) => d.id);
+    expect(ids).toHaveLength(3);
+    ctx.db.update(schema.dinos).set({ battleXp: 10_000 }).run();
+    // Rating high-water clears amber_ridge's site gate (150) but not frozen_cliffs' (250).
+    ctx.db.update(schema.users).set({ ratingHighWater: 150 }).where(eq(schema.users.discordId, 'p1')).run();
+
+    // Chapters overview renders; page 2 (amber_ridge) reads locked — its boss precondition is unmet.
+    const overview = await dispatch(ctx, battlesModule, 'battle', { name: 'battle', sub: 'chapters', user: 'p1' });
+    expect(overview.replies.length).toBeGreaterThan(0);
+    const page2 = await click(ctx, battlesModule, 'battle:chapter:p1:1', 'p1');
+    expect(JSON.stringify(page2.replies[0])).toMatch(/🔒|[Ll]ocked/);
+
+    // First fight through the command layer: exactly 4 cinematic frames (deferReply + 4 editReply).
+    const before = ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!;
+    const fight = await dispatch(ctx, battlesModule, 'battle', {
+      name: 'battle', sub: 'fight', user: 'p1',
+      options: { stage: 'coastal_dig_1', dino1: ids[0], dino2: ids[1], dino3: ids[2] },
+    });
+    expect(fight.replies).toHaveLength(4);
+    const prog1 = ctx.db.select().from(schema.battleProgress).all().find((r) => r.stageId === 'coastal_dig_1')!;
+    expect(prog1.stars).toBeGreaterThanOrEqual(1);
+    expect(prog1.firstClearedAt).not.toBeNull();
+    expect(prog1.attempts).toBe(1);
+    const afterWin = ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!;
+    expect(afterWin.cash).toBeGreaterThan(before.cash);                       // star-scaled reward paid
+    expect(afterWin.shards).toBeGreaterThan(before.shards);                   // first-clear shards paid
+    for (const d of ctx.db.select().from(schema.dinos).all()) expect(d.battleXp).toBeGreaterThan(10_000);
+
+    // Replay: attempts increment, stars only move up, first-clear stamp and shards never repeat.
+    ctx.setNow(ctx.now() + 100 * 60_000);   // full energy again
+    await dispatch(ctx, battlesModule, 'battle', {
+      name: 'battle', sub: 'fight', user: 'p1',
+      options: { stage: 'coastal_dig_1', dino1: ids[0], dino2: ids[1], dino3: ids[2] },
+    });
+    const prog2 = ctx.db.select().from(schema.battleProgress).all().find((r) => r.stageId === 'coastal_dig_1')!;
+    expect(prog2.attempts).toBe(2);
+    expect(prog2.stars).toBeGreaterThanOrEqual(prog1.stars);
+    expect(prog2.firstClearedAt).toBe(prog1.firstClearedAt);
+    expect(ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!.shards).toBe(afterWin.shards);
+
+    // Grind to the boss through the service layer (same pipeline the command wraps).
+    for (const stageId of ['coastal_dig_2', 'coastal_dig_3', 'coastal_dig_4', 'coastal_dig_boss']) {
+      ctx.setNow(ctx.now() + 100 * 60_000);   // regen to cap between fights
+      const out = runFight(ctx, 'p1', stageId, ids);
+      expect(out.won).toBe(true);
+    }
+    // Boss first clear inserted exactly one battle-sourced egg — not zero, and
+    // never duplicated by the earlier coastal_dig_1 replay.
+    const bossEggs = ctx.db.select().from(schema.eggs).all().filter((e) => e.source === 'battle');
+    expect(bossEggs).toHaveLength(1);
+
+    // Coverage gap: every existing /battle chapters + stage-autocomplete test
+    // starts from a brand-new user (empty progress map, frontier chapter 1).
+    // Re-drive the real command/button surface now that chapter 1 is actually
+    // cleared and confirm the VIEW reflects it — not just the pure gate
+    // function exercised below.
+    const embedJson = (r: unknown) => (r as {
+      embeds?: Array<{ toJSON(): { title?: string; description?: string; fields?: Array<{ name: string; value: string }> } }>;
+    }).embeds?.[0]?.toJSON() ?? {};
+
+    // Same page-2 (amber_ridge) request that read locked before chapter 1 was
+    // cleared now reads unlocked: no chapter-lock title suffix, no locked blurb.
+    const ch2 = embedJson((await click(ctx, battlesModule, 'battle:chapter:p1:1', 'p1')).replies[0]);
+    expect(ch2.title).not.toMatch(/🔒/);
+    expect(ch2.description).not.toMatch(/Locked — beat/);
+
+    // Chapter 1's own page shows earned stars for every stage (all 5 cleared),
+    // not the pre-clear '🔒' markers.
+    const ch1 = embedJson((await click(ctx, battlesModule, 'battle:chapter:p1:0', 'p1')).replies[0]);
+    const ch1Stages = ch1.fields?.find((f) => f.name === 'Stages')?.value ?? '';
+    expect(ch1Stages).toContain('⭐');
+    expect(ch1Stages).not.toContain('🔒');
+
+    // Chapter 3 (frozen_cliffs) still reads locked through the real command
+    // path — its own rating gate (250) is untouched at ratingHighWater 150.
+    const ch3 = embedJson((await click(ctx, battlesModule, 'battle:chapter:p1:2', 'p1')).replies[0]);
+    expect(ch3.title).toMatch(/🔒/);
+    expect(ch3.description).toMatch(/Locked — beat/);
+
+    // Gates: ch.2 unlocked; ch.3 locked by the RATING co-gate even with its boss precondition force-met.
+    const progress: ProgressMap = new Map(ctx.db.select().from(schema.battleProgress).all()
+      .map((r) => [r.stageId, { stars: r.stars, firstClearedAt: r.firstClearedAt }]));
+    expect(chapterUnlocked('amber_ridge', progress, 150)).toBe(true);
+    progress.set('amber_ridge_boss', { stars: 3, firstClearedAt: ctx.now() });
+    expect(chapterUnlocked('frozen_cliffs', progress, 150)).toBe(false);      // 150 < unlockRating 250
+
+    // Drain: refight coastal_dig_1 (cost 1) until the pool refuses.
+    let threw: unknown = null;
+    for (let n = 0; n < 20 && threw === null; n += 1) {
+      try { runFight(ctx, 'p1', 'coastal_dig_1', [ids[0]]); } catch (e) { threw = e; }
+    }
+    expect(threw).toBeInstanceOf(BattleError);
+    expect(ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!.energy).toBe(0);
+
+    // +100 min = full regen: the next fight goes straight through from a full pool.
+    ctx.setNow(ctx.now() + 100 * 60_000);
+    const refilled = runFight(ctx, 'p1', 'coastal_dig_1', [ids[0]]);
+    expect(refilled.energyAfter).toBe(ENERGY_CAP - STAGES.get('coastal_dig_1')!.energyCost);
   });
 });
