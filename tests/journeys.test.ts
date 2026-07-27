@@ -19,7 +19,7 @@ import { getSpecies } from '../src/data/species/index.js';
 import { battlesModule } from '../src/modules/battles/index.js';
 import { runFight, BattleError } from '../src/modules/battles/service.js';
 import { chapterUnlocked, STAGES, type ProgressMap } from '../src/data/battle/chapters/index.js';
-import { ENERGY_CAP } from '../src/data/battle/constants.js';
+import { ENERGY_CAP, ENERGY_REGEN_MS } from '../src/data/battle/constants.js';
 
 // This file is the regression net over six risky time/state couplings that
 // per-command unit tests miss because they only ever exercise one command at
@@ -292,6 +292,10 @@ describe('journeys', () => {
 
   it('battles: grant squad → ch.2 locked → clear ch.1 → boss egg → gates → energy drain/regen', async () => {
     const ctx = makeCtx(); ctx.setNow(1000);
+    // Derived, not a hand-picked literal: ENERGY_CAP ticks of ENERGY_REGEN_MS
+    // always reaches a full pool regardless of the starting level, so a
+    // future regen rebalance can't silently invalidate a hardcoded "100min".
+    const fullRegenMs = ENERGY_CAP * ENERGY_REGEN_MS;
     // Squad through the admin command layer; max battle level so chapter-1 wins are certain.
     for (const species of ['tyrannosaurus', 'triceratops', 'velociraptor']) {
       await dispatch(ctx, adminModule, 'admin', {
@@ -328,7 +332,7 @@ describe('journeys', () => {
     for (const d of ctx.db.select().from(schema.dinos).all()) expect(d.battleXp).toBeGreaterThan(10_000);
 
     // Replay: attempts increment, stars only move up, first-clear stamp and shards never repeat.
-    ctx.setNow(ctx.now() + 100 * 60_000);   // full energy again
+    ctx.setNow(ctx.now() + fullRegenMs);   // full energy again
     await dispatch(ctx, battlesModule, 'battle', {
       name: 'battle', sub: 'fight', user: 'p1',
       options: { stage: 'coastal_dig_1', dino1: ids[0], dino2: ids[1], dino3: ids[2] },
@@ -341,14 +345,42 @@ describe('journeys', () => {
 
     // Grind to the boss through the service layer (same pipeline the command wraps).
     for (const stageId of ['coastal_dig_2', 'coastal_dig_3', 'coastal_dig_4', 'coastal_dig_boss']) {
-      ctx.setNow(ctx.now() + 100 * 60_000);   // regen to cap between fights
+      ctx.setNow(ctx.now() + fullRegenMs);   // regen to cap between fights
       const out = runFight(ctx, 'p1', stageId, ids);
       expect(out.won).toBe(true);
     }
-    // Boss first clear inserted exactly one battle-sourced egg — not zero, and
-    // never duplicated by the earlier coastal_dig_1 replay.
+    // Boss first clear inserted exactly one battle-sourced egg — not zero.
+    // (Existence only: the boss has been fought exactly once so far, so this
+    // alone can't distinguish a correct firstClear gate from one that would
+    // drop an egg on every win. The replay right below is what proves that.)
     const bossEggs = ctx.db.select().from(schema.eggs).all().filter((e) => e.source === 'battle');
     expect(bossEggs).toHaveLength(1);
+
+    // Refight coastal_dig_boss — already cleared — with a single fresh,
+    // unleveled dino it cannot beat (lvl.1 common vs. the boss's lvl.4,
+    // 2.5x-HP/1.2x-ATK rare): a genuine loss, a raw score STRICTLY LOWER
+    // (0 stars) than the stored value (3, from the maxed-squad clear above).
+    // One fight proves two things the maxed-squad replay on coastal_dig_1
+    // above could not (that replay tied at 3 stars both times, and only hit
+    // coastal_dig_1, never the boss stage):
+    //   1. stars: Math.max(row.stars, stars) — the stored star count must
+    //      hold at its earlier high, not get overwritten down to this run's
+    //      lower score.
+    //   2. the boss-egg insert is gated on firstClear, not "stage has a
+    //      boss and I won (or even just fought) it" — a second clear of the
+    //      SAME boss stage must never add a second egg.
+    await dispatch(ctx, adminModule, 'admin', {
+      name: 'admin', sub: 'give', user: 'owner',
+      options: { user: 'p1', 'dino-species': 'compsognathus' },
+    });
+    const weakDinoId = ctx.db.select().from(schema.dinos).all().find((d) => d.speciesId === 'compsognathus')!.id;
+    const bossProgBefore = ctx.db.select().from(schema.battleProgress).all().find((r) => r.stageId === 'coastal_dig_boss')!;
+    const weakOutcome = runFight(ctx, 'p1', 'coastal_dig_boss', [weakDinoId]);
+    expect(weakOutcome.won).toBe(false);                              // confirms this run really did score lower
+    const bossProgAfter = ctx.db.select().from(schema.battleProgress).all().find((r) => r.stageId === 'coastal_dig_boss')!;
+    expect(bossProgAfter.stars).toBe(bossProgBefore.stars);           // capped at the earlier max, not overwritten to 0
+    expect(bossProgAfter.attempts).toBe(bossProgBefore.attempts + 1);
+    expect(ctx.db.select().from(schema.eggs).all().filter((e) => e.source === 'battle')).toHaveLength(1);
 
     // Coverage gap: every existing /battle chapters + stage-autocomplete test
     // starts from a brand-new user (empty progress map, frontier chapter 1).
@@ -393,8 +425,8 @@ describe('journeys', () => {
     expect(threw).toBeInstanceOf(BattleError);
     expect(ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!.energy).toBe(0);
 
-    // +100 min = full regen: the next fight goes straight through from a full pool.
-    ctx.setNow(ctx.now() + 100 * 60_000);
+    // Full regen: the next fight goes straight through from a full pool.
+    ctx.setNow(ctx.now() + fullRegenMs);
     const refilled = runFight(ctx, 'p1', 'coastal_dig_1', [ids[0]]);
     expect(refilled.energyAfter).toBe(ENERGY_CAP - STAGES.get('coastal_dig_1')!.energyCost);
   });
