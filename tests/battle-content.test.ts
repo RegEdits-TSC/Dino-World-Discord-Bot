@@ -177,27 +177,42 @@ describe('rosterFor', () => {
   const bossStage = STAGES.get('coastal_dig_boss')!;
   const normalStage = STAGES.get('coastal_dig_1')!;
 
-  it('boss stage, squadSize 3: all three authored enemies in authored order', () => {
+  // Boss identification (the `boss` flag) is asserted alongside selection in
+  // every boss-stage case below: rosterFor is the single source of truth for
+  // BOTH "who fought" and "which one was the boss" (Task 9's service and
+  // Task 10's embeds both read the flag rather than re-deriving it).
+  it('boss stage, squadSize 3: all three authored enemies in authored order, boss flagged on exactly one', () => {
     const roster = rosterFor(bossStage, 3);
     expect(roster).toHaveLength(3);
-    expect(roster).toEqual(bossStage.enemies);
+    expect(roster.map((e) => e.speciesId)).toEqual(bossStage.enemies.map((e) => e.speciesId));
+    expect(roster.filter((e) => e.boss !== undefined)).toHaveLength(1);
+    expect(roster[2].boss).toEqual(bossStage.boss);
+    expect(roster[0].boss).toBeUndefined();
+    expect(roster[1].boss).toBeUndefined();
   });
 
-  it('boss stage, squadSize 2: first authored enemy + boss entry', () => {
+  it('boss stage, squadSize 2: first authored enemy + boss entry, boss flagged on exactly one', () => {
     const roster = rosterFor(bossStage, 2);
     expect(roster).toHaveLength(2);
-    expect(roster).toEqual([bossStage.enemies[0], bossStage.enemies[2]]);
+    expect(roster.map((e) => e.speciesId)).toEqual([bossStage.enemies[0].speciesId, bossStage.enemies[2].speciesId]);
+    expect(roster.filter((e) => e.boss !== undefined)).toHaveLength(1);
+    expect(roster[1].boss).toEqual(bossStage.boss);
+    expect(roster[0].boss).toBeUndefined();
   });
 
-  it('boss stage, squadSize 1: just the boss entry', () => {
+  it('boss stage, squadSize 1: just the boss entry, flagged', () => {
     const roster = rosterFor(bossStage, 1);
     expect(roster).toHaveLength(1);
-    expect(roster).toEqual([bossStage.enemies[2]]);
+    expect(roster[0].speciesId).toBe(bossStage.enemies[2].speciesId);
+    expect(roster[0].boss).toEqual(bossStage.boss);
   });
 
-  it('normal stage: plain first-N slice for squad sizes 1, 2, and 3', () => {
-    expect(rosterFor(normalStage, 1)).toEqual([normalStage.enemies[0]]);
-    expect(rosterFor(normalStage, 2)).toEqual(normalStage.enemies.slice(0, 2));
-    expect(rosterFor(normalStage, 3)).toEqual(normalStage.enemies.slice(0, 3));
+  it('normal stage: plain first-N slice for squad sizes 1, 2, and 3, boss flag never set', () => {
+    expect(rosterFor(normalStage, 1).map((e) => e.speciesId)).toEqual([normalStage.enemies[0].speciesId]);
+    expect(rosterFor(normalStage, 2).map((e) => e.speciesId)).toEqual(normalStage.enemies.slice(0, 2).map((e) => e.speciesId));
+    expect(rosterFor(normalStage, 3).map((e) => e.speciesId)).toEqual(normalStage.enemies.slice(0, 3).map((e) => e.speciesId));
+    for (const size of [1, 2, 3]) {
+      expect(rosterFor(normalStage, size).every((e) => e.boss === undefined)).toBe(true);
+    }
   });
 });

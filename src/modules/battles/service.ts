@@ -73,14 +73,15 @@ export function runFight(ctx: Ctx, userId: string, stageId: string, dinoIds: num
       maxHp: s.hp, hp: s.hp, atk: s.atk, def: s.def, spd: s.spd, side: 0,
     };
   });
-  // NPC side: single source of truth for roster selection is rosterFor
-  // (shared with Task 10's embeds) — never reimplemented here, so the
-  // embed and the fight always agree on who actually fought.
+  // NPC side: single source of truth for roster selection AND boss
+  // identification is rosterFor (shared with Task 10's embeds) — neither is
+  // reimplemented here, so the embed and the fight always agree on who
+  // actually fought and which entry is the boss.
   const n = squadRows.length;
   const roster = rosterFor(stage, n);
   const npcs: Combatant[] = roster.map((e, i) => {
     const sp = getSpecies(e.speciesId);
-    const boss = stage.boss && stage.boss.speciesId === e.speciesId ? stage.boss : undefined;
+    const boss = e.boss;
     const s = statsFor(e.speciesId, stage.npcLevel + (boss?.levelBonus ?? 0));
     const hp = Math.round(s.hp * (boss?.hpMult ?? 1));
     return {

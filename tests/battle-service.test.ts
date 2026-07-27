@@ -23,6 +23,8 @@ const user = () => ctx.db.select().from(schema.users).where(eq(schema.users.disc
 const dinoRow = (id: number) => ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, id)).get()!;
 const progressRow = (stageId: string) => ctx.db.select().from(schema.battleProgress)
   .where(and(eq(schema.battleProgress.userId, 'p'), eq(schema.battleProgress.stageId, stageId))).get();
+const foodQty = (foodId: string) => ctx.db.select().from(schema.foodInventory)
+  .where(and(eq(schema.foodInventory.userId, 'p'), eq(schema.foodInventory.foodId, foodId))).get()?.qty ?? 0;
 function clearThrough(stageIds: string[]): void {
   for (const stageId of stageIds) ctx.db.insert(schema.battleProgress).values({
     userId: 'p', stageId, stars: 3, firstClearedAt: 1, attempts: 1,
@@ -62,6 +64,7 @@ describe('runFight — happy path', () => {
     clearThrough(['coastal_dig_1']);
     const squad = heavies();
     const stage = STAGES.get('coastal_dig_2')!;
+    const foodBefore = foodQty(stage.rewards.food!.foodId);
     const out = runFight(ctx, 'p', 'coastal_dig_2', squad);
     expect(out.won).toBe(true);
     const totalXp = Math.round(stage.rewards.xp * STAR_XP_MULT[out.stars]);
@@ -69,6 +72,12 @@ describe('runFight — happy path', () => {
     expect(totalXp % 3).toBe(2);              // 35 xp: every star tier leaves remainder 2 across 3 dinos
     expect(out.rewards.xpPerDino).toEqual([baseXp + 2, baseXp, baseXp]);
     squad.forEach((id, k) => expect(dinoRow(id).battleXp).toBe(XP_MAX + out.rewards.xpPerDino[k]));
+    // Food reward channel: star-scaled qty, actually credited via economy.apply's
+    // `foods:` key — dropping either the key or the STAR_REWARD_MULT scaling on
+    // qty would pass every other assertion in this file.
+    const expectedFoodQty = Math.round(stage.rewards.food!.qty * STAR_REWARD_MULT[out.stars]);
+    expect(out.rewards.food).toEqual({ foodId: stage.rewards.food!.foodId, qty: expectedFoodQty });
+    expect(foodQty(stage.rewards.food!.foodId)).toBe(foodBefore + expectedFoodQty);
   });
 });
 
@@ -183,5 +192,65 @@ describe('runFight — rejects', () => {
     const d = addDino('p', 'tyrannosaurus', XP_MAX);
     expect(() => runFight(ctx, 'p', 'amber_ridge_1', [d])).toThrow(BattleError);
     expect(progressRow('amber_ridge_1')).toBeUndefined();
+  });
+
+  it('a squad larger than 3 is rejected', () => {
+    const ids = [
+      addDino('p', 'tyrannosaurus', XP_MAX), addDino('p', 'giganotosaurus', XP_MAX),
+      addDino('p', 'spinosaurus', XP_MAX), addDino('p', 'compsognathus', XP_MAX),
+    ];
+    expect(() => runFight(ctx, 'p', 'coastal_dig_1', ids)).toThrow(BattleError);
+    expect(progressRow('coastal_dig_1')).toBeUndefined();
+  });
+
+  it('a duplicate dino id in the squad is rejected, not last-write-wins XP', () => {
+    // The XP write is `d.battleXp + xpPerDino[k]` from a pre-transaction
+    // snapshot — an unrejected duplicate would silently drop one slot's XP
+    // instead of accumulating it. Rejecting outright, and proving battleXp
+    // is untouched, is the correct behavior either way.
+    const d = addDino('p', 'tyrannosaurus', XP_MAX);
+    expect(() => runFight(ctx, 'p', 'coastal_dig_1', [d, d])).toThrow(BattleError);
+    expect(progressRow('coastal_dig_1')).toBeUndefined();
+    expect(dinoRow(d).battleXp).toBe(XP_MAX);
+  });
+});
+
+describe('runFight — transaction atomicity', () => {
+  it('a failure after economy.apply rolls back the entire fight: energy, wallet, progress, XP, and food', () => {
+    clearThrough(CH1);
+    const squad = heavies();                     // guaranteed 3-star boss first clear
+    const before = user();
+    const beforeXp = squad.map((id) => dinoRow(id).battleXp);
+    const stage = STAGES.get('coastal_dig_boss')!;
+    const beforeFood = foodQty(stage.rewards.food!.foodId);
+
+    // raw better-sqlite3 handle; drizzle exposes it as db.$client (same pattern
+    // as the rollback tests in tests/economy.test.ts / tests/park.test.ts).
+    // The eggs insert is the LAST write in runFight's transaction — after the
+    // energy spend, economy.apply's cash/shards/food credit, the
+    // battle_progress upsert, and every squad dino's battleXp write — so
+    // aborting it is the strongest proof available that the whole fight is
+    // one atomic unit, not just that the pre-transaction reject gates work
+    // (every other "writes nothing" test in this file only exercises those).
+    const raw = ctx.db.$client;
+    raw.exec(`CREATE TRIGGER block_battle_egg BEFORE INSERT ON eggs
+              WHEN NEW.source = 'battle'
+              BEGIN SELECT RAISE(ABORT, 'forced'); END;`);
+    try {
+      expect(() => runFight(ctx, 'p', 'coastal_dig_boss', squad)).toThrow();
+    } finally {
+      raw.exec('DROP TRIGGER block_battle_egg');   // never leak the trigger into other tests
+    }
+
+    const after = user();
+    expect(after.cash).toBe(before.cash);
+    expect(after.shards).toBe(before.shards);
+    expect(after.energy).toBe(before.energy);
+    expect(after.energyUpdatedAt).toBe(before.energyUpdatedAt);
+    squad.forEach((id, k) => expect(dinoRow(id).battleXp).toBe(beforeXp[k]));
+    expect(progressRow('coastal_dig_boss')).toBeUndefined();
+    expect(foodQty(stage.rewards.food!.foodId)).toBe(beforeFood);
+    expect(ctx.db.select().from(schema.txLog).all()).toHaveLength(0);
+    expect(ctx.db.select().from(schema.eggs).all()).toHaveLength(0);
   });
 });

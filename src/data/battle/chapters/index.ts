@@ -66,10 +66,19 @@ export function chapterUnlocked(chapterId: string, progress: ProgressMap, rating
 // service and Task 10's embeds so both always agree on who actually fought.
 // Boss stages always field the boss (authored last, index 2); normal stages
 // take the first N of the weakest-first roster.
-export function rosterFor(stage: StageDef, squadSize: number): { speciesId: string }[] {
-  if (stage.boss) {
-    if (squadSize >= 3) return [...stage.enemies];
-    return [...stage.enemies.slice(0, squadSize - 1), stage.enemies[2]];
-  }
-  return stage.enemies.slice(0, squadSize);
+//
+// Boss identification also lives here, not in the caller: the boss entry is
+// always the LAST element of a boss stage's roster (authored as enemies[2],
+// pinned by tests/battle-content.test.ts's "boss is authored as the third
+// enemy" test, and never sliced out because the small-squad branch above
+// always keeps enemies[2]). A caller re-deriving "is this the boss" by
+// matching speciesId would silently double-boss any future roster that
+// reuses the boss's species as ordinary filler elsewhere in enemies[0..1].
+export function rosterFor(stage: StageDef, squadSize: number): { speciesId: string; boss?: BossDef }[] {
+  if (!stage.boss) return stage.enemies.slice(0, squadSize).map((e) => ({ ...e }));
+  const entries = squadSize >= 3
+    ? [...stage.enemies]
+    : [...stage.enemies.slice(0, squadSize - 1), stage.enemies[2]];
+  const boss = stage.boss;
+  return entries.map((e, i) => (i === entries.length - 1 ? { ...e, boss } : { ...e }));
 }
