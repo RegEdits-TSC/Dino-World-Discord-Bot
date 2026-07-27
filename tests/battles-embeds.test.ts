@@ -76,8 +76,25 @@ describe('fightFrames', () => {
     expect(boss[0].files?.map((f) => f.name)).toContain(`${bossId}-portrait.png`);
     expect(boss[1].files).toBeUndefined();
     expect(JSON.stringify(boss[3].embeds[0].toJSON().fields)).toContain('egg');
+    // The rendered enemy line, not just the thumbnail/files wiring, names the boss.
+    const enemiesField = boss[0].embeds[0].toJSON().fields!.find((f) => f.name === 'Enemies')!.value;
+    expect(enemiesField).toContain('👑 Old Riptooth');
     const normal = fightFrames(makeOutcome(), skipStub);
     for (const f of normal) expect(f.embeds[0].toJSON().thumbnail).toBeUndefined();
+  });
+  it('boss stage with no portrait art degrades cleanly: no thumbnail anywhere, no portrait file, banner still ships', () => {
+    // amber_ridge_boss's portrait is never stubbed on disk in this file (unlike
+    // coastal_dig_boss above) — assetImage's per-path existence cache never sees
+    // it as present, so this exercises the real un-stubbed production path: no
+    // committed boss art anywhere under assets/images/battles/ today.
+    const noPortraitBossId = STAGES.get('amber_ridge_boss')!.boss!.bossId;
+    const frames = fightFrames(
+      makeOutcome({ stageId: 'amber_ridge_boss', bossEgg: { rarity: 'epic' } }), skipStub);
+    expect(frames).toHaveLength(4);
+    for (const f of frames) validateMessagePayload(f, 'frame-no-portrait');
+    for (const f of frames) expect(f.embeds[0].toJSON().thumbnail).toBeUndefined();
+    expect(frames[0].files?.map((f) => f.name)).not.toContain(`${noPortraitBossId}-portrait.png`);
+    expect(frames[0].files?.map((f) => f.name)).toContain('amber_ridge-banner.png');   // chapter banner still ships
   });
   it('calls the skip callback for frames 0-2 and attaches returned rows; F4 has no row', () => {
     const seen: number[] = [];
