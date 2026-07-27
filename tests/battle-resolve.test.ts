@@ -75,6 +75,25 @@ describe('resolveBattle', () => {
     expect(Object.keys(one.finalHp).sort()).toEqual(['a', 'x']);
     expect(Object.keys(three.finalHp).sort()).toEqual(['d1', 'd2', 'd3', 'n1', 'n2', 'n3']);
   });
+  it('targets the lowest-hp living enemy, not the first one in initiative order', () => {
+    // n1 is full-hp but higher-spd, so it sorts before the pre-damaged n2 in
+    // the fixed initiative order -- a mutant that targets enemies[0] instead
+    // of the lowest-hp enemy would hit n1 first. All four draws are scripted
+    // to variance=1.0 (0.5 -> 0.85+0.30*0.5) with no crit (0.5 >= 0.10):
+    // [0]=a's variance, [1]=a's crit, [2]=n1's variance, [3]=n1's crit.
+    const a = fighter('a', 0, { atk: 50, def: 0, spd: 30, hp: 100, maxHp: 100 });
+    const n1 = fighter('n1', 1, { atk: 150, def: 0, spd: 20, hp: 100, maxHp: 100 });
+    const n2 = fighter('n2', 1, { atk: 0, def: 0, spd: 1, hp: 10, maxHp: 50 });
+    const r = resolveBattle([a], [n1, n2], scripted([0.5, 0.5, 0.5, 0.5]));
+    // a hits the lowest-hp enemy (n2, 10 hp) for round(50*1.0) = 50 -> KO.
+    // n1 then counters a for round(150*1.0) = 150 -> KO. n2 is already dead
+    // and never gets a turn; n1 is never touched by a's attack.
+    expect(r.rounds).toBe(1);
+    expect(r.won).toBe(false);
+    expect(r.finalHp.a).toBe(0);
+    expect(r.finalHp.n1).toBe(100);
+    expect(r.finalHp.n2).toBe(0);
+  });
   it('support heals the lowest-hp living ally for round(0.25*dmg), capped at maxHp', () => {
     const npc = () => fighter('npc', 1, { hp: 35, maxHp: 35, def: 10, atk: 5, spd: 1 });
     // variance 1.0, no crit: dmg = round(40 - 5) = 35 -> KO; heal = round(8.75) = 9 to self
@@ -117,6 +136,20 @@ describe('resolveBattle', () => {
     }
     expect(oneShots).toBeGreaterThan(50);      // P=0.10, n=1000: mean 100, sd ~9.5
     expect(oneShots).toBeLessThan(160);
+  });
+  it('keeps the beats invariant when no events are generated (degenerate input)', () => {
+    // An empty npcs array means the squad's lone fighter never finds a
+    // target and no attack ever happens, so the fight loop produces zero
+    // FightEvents. buildBeats must still satisfy "always exactly two
+    // beats, each with >=1 non-empty line" -- Task 10 renders `lines`
+    // straight into Discord embed fields, which reject an empty value.
+    const r = resolveBattle([fighter('a', 0)], [], mulberry32(5));
+    expect(r.beats).toHaveLength(2);
+    for (const beat of r.beats) {
+      expect(beat.title.length).toBeGreaterThan(0);
+      expect(beat.lines.length).toBeGreaterThanOrEqual(1);
+      for (const line of beat.lines) expect(line.length).toBeGreaterThan(0);
+    }
   });
   it('MAX_ROUNDS exhaustion is a loss', () => {
     // atk 1 vs def 50: base dmg = max(1, round(1*var - 25)) = 1, but the crit

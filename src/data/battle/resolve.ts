@@ -77,6 +77,17 @@ export function resolveBattle(squad: Combatant[], npcs: Combatant[], rng: () => 
 }
 
 function buildBeats(events: FightEvent[], totalRounds: number): [BeatSummary, BeatSummary] {
+  if (events.length === 0) {
+    // Degenerate input (empty side, or a side that entered fully KO'd) means
+    // the fight loop never produced an attack. Task 10 renders `lines`
+    // directly as Discord embed field values, which reject an empty string,
+    // so the "always exactly two beats, each with >=1 non-empty line"
+    // contract must hold even here.
+    return [
+      { title: 'Opening clash', lines: ['No blows were exchanged.'] },
+      { title: 'The climax', lines: ['No blows were exchanged.'] },
+    ];
+  }
   const mid = Math.ceil(totalRounds / 2);
   const first = events.filter((e) => e.round <= mid);
   let second = events.filter((e) => e.round > mid);
