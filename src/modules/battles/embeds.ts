@@ -109,3 +109,33 @@ export function fightFrames(
   return [withSkip(f1, 0), withSkip(beatFrame(outcome.result.beats[0]), 1),
     withSkip(beatFrame(outcome.result.beats[1]), 2), f4];
 }
+
+export function chaptersPayload(userId: string, chapterIndex: number, view: ChaptersView): FramePayload {
+  const idx = Math.min(Math.max(0, chapterIndex), CAMPAIGN.length - 1);
+  const ch = CAMPAIGN[idx];
+  const unlocked = chapterUnlocked(ch.id, view.progress, view.ratingHighWater);
+  const stageLines = ch.stages.map((s) => {
+    const open = unlocked && stageUnlocked(s.id, view.progress);
+    const marker = open ? starGlyphs(view.progress.get(s.id)?.stars ?? 0) : '🔒';
+    return `${marker} ${s.boss ? '👑 ' : ''}${s.name} (⚡${s.energyCost})`;
+  }).join('\n');
+  const embed = new EmbedBuilder().setColor(unlocked ? 0xd35400 : 0x95a5a6)
+    .setTitle(`📖 Chapter ${idx + 1}/${CAMPAIGN.length} — ${ch.name}${unlocked ? '' : ' 🔒'}`)
+    .setDescription(unlocked ? ch.tagline
+      : `${ch.tagline}\n\n🔒 Locked — beat the previous chapter's boss and raise your park rating.`)
+    .addFields(
+      { name: 'Stages', value: stageLines },
+      { name: 'Energy', value: energyLine(view.energy, view.energyUpdatedAtMs) },
+    );
+  const nav = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(`battle:chapter:${userId}:${idx - 1}`).setLabel('◀ Prev')
+      .setStyle(ButtonStyle.Secondary).setDisabled(idx <= 0),
+    new ButtonBuilder().setCustomId(`battle:chapter:${userId}:${idx + 1}`).setLabel('Next ▶')
+      .setStyle(ButtonStyle.Secondary).setDisabled(idx >= CAMPAIGN.length - 1),
+  );
+  const payload: FramePayload = { embeds: [embed], components: [nav] };
+  // chapterId === siteId invariant (content test) makes the site banner legal here.
+  const banner = assetImage('sites', `${ch.id}-banner`);
+  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+  return payload;
+}

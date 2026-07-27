@@ -91,3 +91,42 @@ describe('fightFrames', () => {
     expect(frames[3].components).toHaveLength(0);   // the module appends the again row (it owns userId)
   });
 });
+
+function progressWith(entries: Array<[string, number]>): ProgressMap {
+  return new Map(entries.map(([id, stars]) => [id, { stars, firstClearedAt: 1 }]));
+}
+const baseView = (over: Partial<ChaptersView> = {}): ChaptersView => ({
+  progress: new Map(), ratingHighWater: 0, energy: 10, energyUpdatedAtMs: 0, ...over,
+});
+
+describe('chaptersPayload', () => {
+  it('page 0: stage 1 open with empty stars, later stages locked, nav row wired', () => {
+    const p = chaptersPayload('u1', 0, baseView());
+    validateMessagePayload(p, 'chapters');
+    const embed = p.embeds[0].toJSON();
+    expect(embed.title).toContain('Chapter 1');
+    const stages = embed.fields!.find((f) => f.name === 'Stages')!.value.split('\n');
+    expect(stages[0].startsWith('☆☆☆')).toBe(true);
+    expect(stages[1].startsWith('🔒')).toBe(true);
+    const nav = p.components[0].toJSON().components as Array<{ custom_id: string; disabled?: boolean }>;
+    expect(nav[0].custom_id).toBe('battle:chapter:u1:-1');
+    expect(nav[0].disabled).toBe(true);
+    expect(nav[1].custom_id).toBe('battle:chapter:u1:1');
+    expect(nav[1].disabled).toBeFalsy();
+  });
+  it('locked chapter renders locked', () => {
+    const embed = chaptersPayload('u1', 1, baseView()).embeds[0].toJSON();
+    expect(embed.title).toContain('🔒');
+  });
+  it('cleared stages show earned stars and unlock the next stage', () => {
+    const view = baseView({ progress: progressWith([['coastal_dig_1', 2]]) });
+    const stages = chaptersPayload('u1', 0, view).embeds[0].toJSON()
+      .fields!.find((f) => f.name === 'Stages')!.value.split('\n');
+    expect(stages[0].startsWith('⭐⭐☆')).toBe(true);
+    expect(stages[1].startsWith('☆☆☆')).toBe(true);
+  });
+  it('energy line: countdown below cap, full at cap', () => {
+    expect(energyLine(10, 0)).toBe('⚡ 10/10 · full');
+    expect(energyLine(7, 600_000)).toBe(`⚡ 7/10 · +1 <t:${(600_000 + ENERGY_REGEN_MS) / 1000}:R>`);
+  });
+});
