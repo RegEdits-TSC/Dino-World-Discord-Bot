@@ -19,6 +19,7 @@ const scheduler = new Scheduler(db);
 const ctx: Ctx = {
   db, economy: new EconomyService(db), config, scheduler,
   now: () => Date.now(), rng: Math.random,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   notify: (userId, originGuildId, message) => deliverNotification(sender, ctx, userId, originGuildId, message),
 };
 const registry = new ModuleRegistry(ALL_MODULES, config.modules);
