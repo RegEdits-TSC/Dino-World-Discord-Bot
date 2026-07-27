@@ -5,12 +5,19 @@ import type { Ctx } from '../../core/context.js';
 import { runFight, BattleError, type FightOutcome } from './service.js';
 import { fightFrames, type FramePayload } from './embeds.js';
 import { InsufficientFundsError } from '../../core/economy.js';
+import { FIGHT_FRAME_DELAY_MS } from '../../data/battle/constants.js';
+import { logger } from '../../core/logger.js';
 
 // In-process cinematic state (standing single-bot-instance-per-token rule).
 // A restart mid-broadcast costs animation frames only: all game state commits
 // inside runFight before the first Discord edit.
 let presentationSeq = 0;
-const presentations = new Map<string, { final: FramePayload; skipped: boolean }>();
+// userId is stored on the record, not just baked into the clicked button's
+// customId: the pid counter resets on a restart, so a stale button from a
+// frozen pre-restart message can carry a live-looking pid that now belongs
+// to a different user's fresh fight. Trusting the customId's owner segment
+// alone would let that stale click hijack (and leak) someone else's outcome.
+const presentations = new Map<string, { userId: string; final: FramePayload; skipped: boolean }>();
 // The again button's customId carries only the stageId; the squad is remembered
 // here. Empty after a restart -> the button degrades to an ephemeral nudge.
 const lastSquads = new Map<string, number[]>();
@@ -29,19 +36,30 @@ function againRow(userId: string, stageId: string) {
 async function presentFight(ctx: Ctx, i: ChatInputCommandInteraction | ButtonInteraction,
     userId: string, outcome: FightOutcome): Promise<void> {
   const pid = String(++presentationSeq);
-  const frames = fightFrames(outcome, () => skipRow(userId, pid));
-  frames[3].components.push(againRow(userId, outcome.stageId));
-  const entry = { final: frames[3], skipped: false };
-  presentations.set(pid, entry);
   try {
+    // fightFrames can throw on a data inconsistency (unknown stage/species/food
+    // id) — by commit-before-present design runFight already committed every
+    // reward before we ever got here, so a throw anywhere in this block is a
+    // presentation-layer failure only, never a reason to imply nothing happened.
+    const frames = fightFrames(outcome, () => skipRow(userId, pid));
+    frames[3].components.push(againRow(userId, outcome.stageId));
+    const entry = { userId, final: frames[3], skipped: false };
+    presentations.set(pid, entry);
     for (const idx of [0, 1, 2] as const) {
       if (entry.skipped) return;
       await i.editReply(frames[idx]);
-      await ctx.sleep(2500);
+      await ctx.sleep(FIGHT_FRAME_DELAY_MS);
     }
     if (!entry.skipped) await i.editReply(frames[3]);
-  } catch { /* animation only — state committed before any edit */ }
-  finally { presentations.delete(pid); }
+  } catch (err) {
+    logger.debug({ err }, 'battle cinematic render failed');
+    await i.editReply({
+      content: 'The fight already resolved and your rewards were applied — the cinematic replay could not be rendered.',
+      embeds: [], components: [], files: [],
+    }).catch(() => {});
+  } finally {
+    presentations.delete(pid);
+  }
 }
 
 export const battlesModule: ModuleManifest = {
@@ -85,7 +103,11 @@ export const battlesModule: ModuleManifest = {
         if (i.user.id !== ownerId) { await i.reply({ content: 'Not your battle.', flags: MessageFlags.Ephemeral }); return; }
         if (action === 'skip') {
           const entry = presentations.get(arg);
-          if (!entry) { await i.deferUpdate(); return; }   // finished or restarted — cosmetic no-op
+          // Belt and braces: the customId owner check above only proves the
+          // clicker owns the id baked into THIS button. A stale button (pid
+          // reused after a restart) can carry someone else's live pid, so the
+          // record's own stored owner is the authority, not the customId.
+          if (!entry || entry.userId !== i.user.id) { await i.deferUpdate(); return; }
           entry.skipped = true;
           await i.update(entry.final);
         } else if (action === 'again') {
