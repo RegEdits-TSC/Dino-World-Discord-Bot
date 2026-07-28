@@ -139,6 +139,17 @@ const cases: Case[] = [
   { title: '/feed all — care banner', run: () => slash('care', 'feed', { name: 'feed', sub: 'all', user: P1 }) },
   { title: '/dino list — roster', run: () => slash('park', 'dino', { name: 'dino', sub: 'list', user: P1 }) },
   { title: '/trade list — pending trades', run: () => slash('trading', 'trade', { name: 'trade', sub: 'list', user: P1 }) },
+  { title: '/trade offer — new offer', run: () => {
+      // hatchEgg/claimExpedition above run recomputeRating, which can drop parkRating
+      // below TRADE_MIN_RATING — same restore the seed does at the top of this file.
+      ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+      return slash('trading', 'trade', { name: 'trade', sub: 'offer', user: P1, options: { user: P2, 'give-cash': 250, 'want-cash': 100 } });
+    } },
+  { title: '/trade accept — completed', run: () => {
+      const pending = ctx.db.select().from(schema.trades).all()
+        .filter((t) => t.toUser === P2 && t.status === 'pending').sort((x, y) => y.id - x.id);
+      return slash('trading', 'trade', { name: 'trade', sub: 'accept', user: P2, options: { id: pending[0].id } });
+    } },
   { title: '/top — leaderboard', run: () => slash('leaderboards', 'top', { name: 'top', user: P1, guild: devGuildId, options: { metric: 'rating' } }) },
   { title: '/admin inspect — (ephemeral in production)', run: () => slash('admin', 'admin', { name: 'admin', sub: 'inspect', user: 'owner', options: { user: P1 } }) },
   { title: '/battle chapters — campaign overview', run: () => slash('battles', 'battle', { name: 'battle', sub: 'chapters', user: P1 }) },

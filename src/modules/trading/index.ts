@@ -115,7 +115,19 @@ export const tradingModule: ModuleManifest = {
               foods: sideFoods(i.options.getString('want-food'), i.options.getInteger('want-food-qty')),
             };
             const t = createTrade(ctx, i.user.id, target.id, offer, request);
-            await i.reply({ content: `🤝 Trade **#${t.id}** sent to <@${target.id}>.\nYou give: ${summarize(offer, emojiTag)}\nYou want: ${summarize(request, emojiTag)}\nThey run \`/trade accept id:${t.id}\`.` });
+            const offerEmbed = new EmbedBuilder().setColor(0x5865F2)
+              .setTitle(`🤝 Trade #${t.id} sent`)
+              .setDescription([
+                `You give: ${summarize(offer, emojiTag)}`,
+                `You want: ${summarize(request, emojiTag)}`,
+                `They run \`/trade accept id:${t.id}\`.`,
+              ].join('\n'));
+            // The ping stays in `content`: a mention inside an embed does not notify.
+            const offerPayload: { content: string; embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } =
+              { content: `<@${target.id}>`, embeds: [offerEmbed] };
+            const offerBanner = assetImage('banners', 'trading');
+            if (offerBanner) { offerEmbed.setImage(offerBanner.url); offerPayload.files = [offerBanner.file]; }
+            await i.reply(offerPayload);
             // originGuildId is the acting user's guild, so delivery falls back to DM when the counterparty isn't in that guild's notify channel.
             await ctx.notify(target.id, i.guildId,
               `📨 Trade #${t.id} from **${i.user.displayName}** — they give ${summarize(offer, emojiTag)}, they want ${summarize(request, emojiTag)}. Run \`/trade accept id:${t.id}\`.`);
@@ -123,7 +135,13 @@ export const tradingModule: ModuleManifest = {
             await i.reply(tradeListPayload(ctx, i.user.id, 1));
           } else if (sub === 'accept') {
             const t = acceptTrade(ctx, i.user.id, i.options.getInteger('id', true));
-            await i.reply({ content: `✅ Trade #${t.id} completed!` });
+            const acceptEmbed = new EmbedBuilder().setColor(0x2ecc71)
+              .setTitle(`✅ Trade #${t.id} completed!`)
+              .setDescription('Everything has changed hands — check `/dino list`, `/eggs`, or `/park view`.');
+            const acceptPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [acceptEmbed] };
+            const acceptBanner = assetImage('banners', 'trading');
+            if (acceptBanner) { acceptEmbed.setImage(acceptBanner.url); acceptPayload.files = [acceptBanner.file]; }
+            await i.reply(acceptPayload);
             await ctx.notify(t.fromUser, i.guildId, `✅ **${i.user.displayName}** accepted your trade #${t.id}!`);
           } else if (sub === 'decline') {
             const declineId = i.options.getInteger('id', true);

@@ -199,7 +199,8 @@ describe('journeys', () => {
     const offer = await dispatch(ctx, tradingModule, 'trade', {
       name: 'trade', sub: 'offer', user: 'a', options: { user: 'b', 'give-dinos': String(dino.id) },
     });
-    expect(replyText(offer.replies[0])).toContain('Trade');
+    const offerEmbed = (offer.replies[0] as { embeds: Array<{ toJSON(): { title?: string } }> }).embeds[0].toJSON();
+    expect(offerEmbed.title).toContain('Trade');
     expect(ctx.db.select().from(schema.dinos).all()[0].locked).toBe(true);
     const trade = ctx.db.select().from(schema.trades).all()[0];
     ctx.setNow(25 * H);
