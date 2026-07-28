@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createCanvas, Image } from '@napi-rs/canvas';
 import { gridDims, renderParkPng, dinoStatText } from '../src/core/render/draw.js';
 import type { ParkSnapshot } from '../src/modules/park/snapshot.js';
+import { EMPTY_ART, type ParkArt } from '../src/core/render/art.js';
 
 describe('gridDims', () => {
   it('rows scale with cell count at 3 columns; width is constant', () => {
@@ -121,5 +122,57 @@ describe('renderParkPng', () => {
       }
     }
     expect(sawCoinBorder).toBe(true);
+  });
+
+  // Stub art is built from tiny SVG buffers, not PNGs: SVG decodes synchronously in @napi-rs/canvas,
+  // so a stub can feed the synchronous renderer with no await, while a PNG stub would draw blank and
+  // this test would "pass" for the wrong reason. Each slot gets a pure unmistakable hue so a sampled
+  // pixel names exactly which art slot drew it — the same reasoning as the coin test above: a loose
+  // color threshold cannot distinguish drawn art from the emoji glyph it is supposed to have replaced.
+  function svgStub(color: string, w: number, h: number): Image {
+    const img = new Image();
+    img.src = Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
+      `<rect width="${w}" height="${h}" fill="${color}"/></svg>`,
+    );
+    return img;
+  }
+
+  const stubArt: ParkArt = {
+    ground: svgStub('#0000ff', 120, 80),
+    platePaddock: svgStub('#ff00ff', 270, 150),
+    plateFacility: svgStub('#ff8800', 270, 150),
+    lotIcons: { carnivore_paddock: svgStub('#00ffff', 64, 64), hatchery_lab: svgStub('#00ffff', 64, 64) },
+    dinoChips: { common: null, uncommon: null, rare: null, epic: null, legendary: svgStub('#ffff00', 64, 64), mythic: null },
+  };
+
+  async function sampler(png: Buffer): Promise<(x: number, y: number) => number[]> {
+    const img = new Image();
+    img.src = png;
+    await img.decode();          // PNG decode is async — skipping this yields a blank canvas
+    const canvas = createCanvas(img.width, img.height);
+    const c = canvas.getContext('2d');
+    c.drawImage(img, 0, 0);
+    return (x, y) => Array.from(c.getImageData(x, y, 1, 1).data).slice(0, 3);
+  }
+
+  // The fallback pin. Asserted in-process rather than against a committed golden hash: the output is
+  // byte-deterministic within and across processes, but a hash would break on any @napi-rs/canvas or
+  // Noto font bump that has nothing to do with this change.
+  it('an all-null ParkArt renders byte-for-byte what the no-art call renders', () => {
+    expect(renderParkPng(sample, EMPTY_ART).equals(renderParkPng(sample))).toBe(true);
+  });
+
+  it('draws ground, both plates, the lot icon and the dino chip in place of the flat fills and glyphs', async () => {
+    // Coordinates derive from draw.ts's own constants: tile 0 sits at (PAD, HEADER_H + PAD) = (20, 84),
+    // TILE_W/TILE_H = 270×150, GAP = 16 so tile 1 starts at x = 306. The lot icon box is
+    // (x+14, y+42-30+3) 30², and the first dino chip box is (x+16, y+100-28+3) 28².
+    const at = await sampler(renderParkPng(sample, stubArt));
+    expect(at(10, 240)).toEqual([0, 0, 255]);      // ground, in the left margin below the header
+    expect(at(10, 10)).toEqual([35, 74, 30]);      // header bar (#234a1e) still painted over the ground
+    expect(at(260, 210)).toEqual([255, 0, 255]);   // paddock plate, clear of icon, text, dinos and decor
+    expect(at(546, 210)).toEqual([255, 136, 0]);   // facility plate on tile 1
+    expect(at(49, 114)).toEqual([0, 255, 255]);    // lot icon replaced the 🦖 glyph run
+    expect(at(50, 173)).toEqual([255, 255, 0]);    // legendary dino chip replaced the 🦖 glyph run
   });
 });

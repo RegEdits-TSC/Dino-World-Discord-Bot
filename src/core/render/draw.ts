@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import type { ParkSnapshot, SnapshotLot } from '../../modules/park/snapshot.js';
 import { lotIcon, tilePalette, dinoGlyph, RARITY_COLOR } from '../../data/render-icons.js';
+import { EMPTY_ART, type ParkArt } from './art.js';
 
 const COLS = 3;
 const TILE_W = 270, TILE_H = 150, GAP = 16, PAD = 20, HEADER_H = 64;
@@ -75,19 +76,47 @@ export function dinoStatText(dinoCount: number, escapedCount: number): string {
   return escapedCount > 0 ? `${dinoCount} (${escapedCount} escaped)` : String(dinoCount);
 }
 
-function drawTile(c: SKRSContext2D, lot: SnapshotLot, x: number, y: number): void {
-  const pal = tilePalette(lot.type);
-  rrect(c, x, y, TILE_W, TILE_H, 12); c.fillStyle = pal.fill; c.fill();
-  c.lineWidth = 3; c.strokeStyle = pal.border; rrect(c, x, y, TILE_W, TILE_H, 12); c.stroke();
+// Cover-scale, never tile: the canvas height grows with the row count, so the backdrop is scaled to
+// cover and center-cropped on every render. A null ground keeps the original flat grass fill.
+function drawGround(c: SKRSContext2D, img: Image | null, w: number, h: number): void {
+  if (!img) { c.fillStyle = '#356b2c'; c.fillRect(0, 0, w, h); return; }
+  const scale = Math.max(w / img.width, h / img.height);
+  const dw = img.width * scale, dh = img.height * scale;
+  c.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+}
 
-  c.font = `30px "${EMOJI}"`; c.fillText(lotIcon(lot.type, lot.kind), x + 14, y + 42);
+function drawTile(c: SKRSContext2D, lot: SnapshotLot, x: number, y: number, art: ParkArt): void {
+  const pal = tilePalette(lot.type);
+  const plate = lot.type === 'facility' ? art.plateFacility : art.platePaddock;
+  if (plate) {
+    // Plates are authored at exactly TILE_W×TILE_H, so they draw 1:1 — clipped to the same rounded
+    // rect the flat fill uses, because an opaque rectangular raster would otherwise square off the
+    // corners. save/restore is mandatory: clip() mutates canvas state for every later draw.
+    c.save();
+    rrect(c, x, y, TILE_W, TILE_H, 12); c.clip();
+    c.drawImage(plate, x, y, TILE_W, TILE_H);
+    c.restore();
+  } else {
+    rrect(c, x, y, TILE_W, TILE_H, 12); c.fillStyle = pal.fill; c.fill();
+    c.lineWidth = 3; c.strokeStyle = pal.border; rrect(c, x, y, TILE_W, TILE_H, 12); c.stroke();
+  }
+
+  // Icons draw on the same baseline convention as iconImageValue (`y - size + 3`), so swapping art in
+  // does not shift the text beside it. Never call drawImage with a null Image — it throws, and a throw
+  // here becomes { ok: false } from handleRenderRequest, costing the user the whole park image.
+  const icon = art.lotIcons[lot.kind];
+  if (icon) c.drawImage(icon, x + 14, y + 42 - 30 + 3, 30, 30);
+  else { c.font = `30px "${EMOJI}"`; c.fillText(lotIcon(lot.type, lot.kind), x + 14, y + 42); }
+
   c.fillStyle = pal.text;
   c.font = `18px "${SANS}"`; c.fillText(trunc(c, lot.name, TILE_W - 72), x + 54, y + 34);
   c.font = `13px "${SANS}"`; c.fillText(`Lv ${lot.level}`, x + 54, y + 54);
 
   let dx = x + 16; const dy = y + 100;
   for (const d of lot.dinos.slice(0, 6)) {
-    c.font = `28px "${EMOJI}"`; c.fillText(dinoGlyph(d.rarity), dx, dy);
+    const chip = art.dinoChips[d.rarity];
+    if (chip) c.drawImage(chip, dx, dy - 28 + 3, 28, 28);
+    else { c.font = `28px "${EMOJI}"`; c.fillText(dinoGlyph(d.rarity), dx, dy); }
     c.fillStyle = RARITY_COLOR[d.rarity];
     c.beginPath(); c.arc(dx + 14, dy + 10, 4, 0, Math.PI * 2); c.fill();
     dx += 34;
@@ -110,7 +139,7 @@ function drawBuildSlot(c: SKRSContext2D, x: number, y: number): void {
   c.fillText('+  /build', x + TILE_W / 2, y + TILE_H / 2 + 5); c.textAlign = 'left';
 }
 
-export function renderParkPng(snap: ParkSnapshot): Buffer {
+export function renderParkPng(snap: ParkSnapshot, art: ParkArt = EMPTY_ART): Buffer {
   ensureFonts();
   const hasBuild = snap.lots.length < snap.lotCap;
   const cellCount = snap.lots.length + (hasBuild ? 1 : 0);
@@ -118,8 +147,8 @@ export function renderParkPng(snap: ParkSnapshot): Buffer {
   const canvas = createCanvas(dims.width, dims.height);
   const c = canvas.getContext('2d');
 
-  c.fillStyle = '#356b2c'; c.fillRect(0, 0, dims.width, dims.height);          // grass
-  c.fillStyle = '#234a1e'; c.fillRect(0, 0, dims.width, HEADER_H);             // header bar
+  drawGround(c, art.ground, dims.width, dims.height);                          // grass or ground art
+  c.fillStyle = '#234a1e'; c.fillRect(0, 0, dims.width, HEADER_H);             // header bar, always over the ground
 
   c.fillStyle = '#ffffff';
   c.font = `24px "${SANS}"`; c.fillText(trunc(c, snap.parkName, dims.width * 0.42), PAD, 40);
@@ -133,7 +162,7 @@ export function renderParkPng(snap: ParkSnapshot): Buffer {
 
   for (let idx = 0; idx < snap.lots.length; idx++) {
     const col = idx % COLS, row = Math.floor(idx / COLS);
-    drawTile(c, snap.lots[idx], PAD + col * (TILE_W + GAP), HEADER_H + PAD + row * (TILE_H + GAP));
+    drawTile(c, snap.lots[idx], PAD + col * (TILE_W + GAP), HEADER_H + PAD + row * (TILE_H + GAP), art);
   }
   if (hasBuild) {
     const idx = snap.lots.length, col = idx % COLS, row = Math.floor(idx / COLS);
