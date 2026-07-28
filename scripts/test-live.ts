@@ -97,7 +97,14 @@ ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'spinosaurus', hunge
 ctx.db.update(schema.dinos).set({ battleXp: 10_000 }).where(eq(schema.dinos.userId, P1)).run();
 const squad = ctx.db.select().from(schema.dinos).all().filter((d) => d.userId === P1 && !d.locked);
 const [b1, b2, b3] = [squad[0], squad[squad.length - 2], squad[squad.length - 1]];
-for (const stageId of ['coastal_dig_1', 'coastal_dig_2', 'coastal_dig_3', 'coastal_dig_4']) {
+// amber_ridge_1..4 are seeded so the amber boss case has a stage gate to pass;
+// its CHAPTER gate (coastal_dig_boss first-cleared) is left to the coastal boss
+// case that runs earlier in `cases` — that keeps /battle chapters posting the
+// chapter-1 page with later chapters locked, which is what the overview should
+// show in the gallery. coastal_dig_boss is deliberately NOT seeded: the case
+// above it is a FIRST clear and needs the egg line on F4.
+for (const stageId of ['coastal_dig_1', 'coastal_dig_2', 'coastal_dig_3', 'coastal_dig_4',
+  'amber_ridge_1', 'amber_ridge_2', 'amber_ridge_3', 'amber_ridge_4']) {
   ctx.db.insert(schema.battleProgress).values({ userId: P1, stageId, stars: 3, firstClearedAt: ctx.now(), attempts: 1 }).run();
 }
 
@@ -158,6 +165,7 @@ const cases: Case[] = [
   { title: '/battle chapters — campaign overview', run: () => slash('battles', 'battle', { name: 'battle', sub: 'chapters', user: P1 }) },
   { title: '/battle fight — all 4 cinematic frames (coastal_dig_1 win)', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_1', dino1: b1.id, dino2: b2.id } }) },
   { title: '/battle fight — boss FIRST clear: portrait thumb + egg line on F4', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } }) },
+  { title: '/battle fight — amber_ridge boss: second portrait (edit off the coastal reference)', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'amber_ridge_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } }) },
 ];
 
 type RawFilePayload = { data: Buffer; name: string };
