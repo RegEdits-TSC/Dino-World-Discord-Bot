@@ -34,9 +34,11 @@ describe('emojiTag', () => {
     expect(emojiTag('constructor')).toBe('');
     expect(emojiTag('toString')).toBe('');
   });
-  it('fallback table covers exactly the 27 spec names', () => {
+  it('fallback table covers exactly the 33 spec names', () => {
     expect(Object.keys(EMOJI_FALLBACK).sort()).toEqual([
-      'dw_alert', 'dw_cash', 'dw_ferns', 'dw_fish', 'dw_food', 'dw_fruit_basket', 'dw_goat', 'dw_hunger',
+      'dw_alert', 'dw_cash',
+      'dw_dino_common', 'dw_dino_epic', 'dw_dino_legendary', 'dw_dino_mythic', 'dw_dino_rare', 'dw_dino_uncommon',
+      'dw_ferns', 'dw_fish', 'dw_food', 'dw_fruit_basket', 'dw_goat', 'dw_hunger',
       'dw_lot_carnivore', 'dw_lot_food_court', 'dw_lot_hatchery', 'dw_lot_herbivore', 'dw_lot_visitor',
       'dw_prime_steak',
       'dw_rarity_common', 'dw_rarity_epic', 'dw_rarity_legendary', 'dw_rarity_mythic', 'dw_rarity_rare', 'dw_rarity_uncommon',
