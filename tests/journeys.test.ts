@@ -11,7 +11,7 @@ import { tradingModule } from '../src/modules/trading/index.js';
 import { expeditionsModule } from '../src/modules/expeditions/index.js';
 import { adminModule } from '../src/modules/admin/index.js';
 import { settingsModule } from '../src/modules/settings/index.js';
-import { eggHatchHandler, type Sender } from '../src/core/notify.js';
+import { eggHatchHandler, type Sender, type NotifyPayload } from '../src/core/notify.js';
 import { accruedIncome, comfortAt, type ClockDino } from '../src/core/clock.js';
 import { RARITY } from '../src/data/rarity.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
@@ -51,6 +51,9 @@ function embedText(r: unknown): string {
   const payload = r as { embeds?: Array<{ toJSON(): { description?: string } }> };
   return payload.embeds?.[0]?.toJSON().description ?? '';
 }
+// Notifications are NotifyPayloads since the Sender widening: the merged <@id>
+// ping lives on `content`, the message body may live in an embed.
+const notifyContent = (p: NotifyPayload): string => (typeof p === 'string' ? p : p.content ?? '');
 
 describe('journeys', () => {
   it('spine: /incubate → time → /hatch → crack → /dino assign → time → park:collect', async () => {
@@ -218,9 +221,9 @@ describe('journeys', () => {
     // and the skip-guard that a timer whose referent (the egg) is already gone by
     // the time it fires must not notify (hatchEgg deletes the egg row on crack).
     const ctx = makeCtx(); ctx.setNow(0);
-    const sent: Array<{ channelId: string; content: string }> = [];
+    const sent: Array<{ channelId: string; payload: NotifyPayload }> = [];
     const sender: Sender = {
-      channelSend: async (channelId, content) => { sent.push({ channelId, content }); },
+      channelSend: async (channelId, payload) => { sent.push({ channelId, payload }); },
       dmSend: async () => { throw new Error('DM should not be used when the channel works'); },
     };
     ctx.scheduler.register('egg_hatch', eggHatchHandler(sender, ctx));
@@ -239,8 +242,8 @@ describe('journeys', () => {
     expect(fired).toBe(1);
     expect(sent).toHaveLength(1);
     expect(sent[0].channelId).toBe('notify-chan');
-    expect(sent[0].content).toContain('<@p1>');
-    expect(sent[0].content).toContain('ready to hatch');
+    expect(notifyContent(sent[0].payload)).toContain('<@p1>');
+    expect(JSON.stringify(sent[0].payload)).toContain('ready to hatch');
     // Skip-guard: an egg hatched before its timer fires must not ping.
     sent.length = 0;
     await dispatch(ctx, adminModule, 'admin', {

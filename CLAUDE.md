@@ -40,6 +40,15 @@
 - Embed art ships from `assets/images/` via `assetImage` (`src/core/images.ts`);
   a missing file means the embed renders without the image — absent art is
   never an error. Generation prompts live in `docs/assets/prompts.md`.
+- Passive notifications carry a `NotifyPayload` (`src/core/notify.ts`):
+  `string | { content?, embeds?, files? }`. `Ctx.notify`'s third argument stays
+  `message: string` on purpose — a string is a valid payload, so every call site
+  keeps working and the `ctx.notifications` fake in `tests/harness.ts` is
+  untouched. `deliverNotification` merges the `<@id>` ping through `withMention`
+  on the CHANNEL path only; DMs go out unmentioned. `Sender` fakes are
+  hand-rolled per test file (`tests/notify.test.ts`,
+  `tests/notify-handlers.test.ts`, `tests/journeys.test.ts`), not in the harness
+  — and only `npm run typecheck` catches a stale one.
 - Custom app emojis are hand-authored SVG in `assets/emojis/svg/`, rendered to
   committed 128×128 transparent PNGs in `assets/emojis/png/` by
   `npm run build-emojis` (`src/build-emojis.ts` + the `renderSvg` helper in

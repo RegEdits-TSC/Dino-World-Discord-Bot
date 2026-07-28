@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
-import { eggHatchHandler, expeditionReturnHandler, clientSender, type Sender } from '../src/core/notify.js';
+import { eggHatchHandler, expeditionReturnHandler, clientSender, type Sender, type NotifyPayload } from '../src/core/notify.js';
 
 function capture() {
-  const dms: string[] = [];
+  const dms: NotifyPayload[] = [];
   const sender: Sender = {
     channelSend: async () => { throw new Error('no channel configured in these tests'); },
-    dmSend: async (_userId, content) => { dms.push(content); },
+    dmSend: async (_userId, payload) => { dms.push(payload); },
   };
   return { dms, sender };
 }
