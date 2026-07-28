@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MessageFlags } from 'discord.js';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
@@ -6,6 +6,16 @@ import { startExpedition, activeExpedition, claimExpedition, listSites, Expediti
 import { schema } from '../src/core/db/index.js';
 import { STARTER_FOOD } from '../src/data/foods.js';
 import { eq } from 'drizzle-orm';
+import { assetImage } from '../src/core/images.js';
+
+// assetImage is a pass-through spy by default (calls the real implementation),
+// so every test in this file except the two degrade-path tests below is
+// unaffected. Those two override exactly one queued call via
+// mockImplementationOnce to force a miss without touching real asset files.
+vi.mock('../src/core/images.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/core/images.js')>();
+  return { ...actual, assetImage: vi.fn(actual.assetImage) };
+});
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); ctx.economy.apply('u1', { cash: 50_000 }, 'seed', 0); });
@@ -84,6 +94,49 @@ describe('expedition visuals', () => {
     const names = payload.files!.map((f) => f.name);
     expect(names).toContain('coastal_dig-banner.png');
     expect(names).toContain('coastal_dig-thumb.png');
+  });
+  it('/expedition claim still attaches the thumb when the banner is missing', async () => {
+    // Degrade path 1/2: the two assetImage lookups are independent `if`
+    // blocks — a miss on the banner call must not suppress the thumb.
+    vi.mocked(assetImage).mockImplementationOnce(() => null);   // banner call (1st) -> missing
+    ctx.economy.apply('u1', { cash: 1_000 }, 'seed', 0);
+    startExpedition(ctx, 'u1', 'coastal_dig', 'g1');
+    ctx.setNow(ctx.now() + 16 * 60_000);
+    const i = fakeCommand({ name: 'expedition', sub: 'claim', user: 'u1', guild: 'g1' });
+    await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
+    expect(i.replies).toHaveLength(1);   // embed still sends
+    const payload = i.replies[0] as {
+      embeds: Array<{ toJSON(): { title?: string; image?: { url: string }; thumbnail?: { url: string } } }>;
+      files?: Array<{ name?: string | null }>;
+    };
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.title).toBe('🧭 🐚 Coastal Dig — returned!');
+    expect(embed.image).toBeUndefined();
+    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.png');
+    expect(payload.files!.map((f) => f.name)).toEqual(['coastal_dig-thumb.png']);
+  });
+  it('/expedition claim still attaches the banner when the thumb is missing', async () => {
+    // Degrade path 2/2: the mirror case — a miss on the thumb call must not
+    // suppress the banner that was already appended to payload.files.
+    const { assetImage: realAssetImage } = await vi.importActual<typeof import('../src/core/images.js')>('../src/core/images.js');
+    vi.mocked(assetImage)
+      .mockImplementationOnce((kind, name) => realAssetImage(kind, name))   // banner call (1st) -> real
+      .mockImplementationOnce(() => null);                                 // thumb call (2nd) -> missing
+    ctx.economy.apply('u1', { cash: 1_000 }, 'seed', 0);
+    startExpedition(ctx, 'u1', 'coastal_dig', 'g1');
+    ctx.setNow(ctx.now() + 16 * 60_000);
+    const i = fakeCommand({ name: 'expedition', sub: 'claim', user: 'u1', guild: 'g1' });
+    await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
+    expect(i.replies).toHaveLength(1);   // embed still sends
+    const payload = i.replies[0] as {
+      embeds: Array<{ toJSON(): { title?: string; image?: { url: string }; thumbnail?: { url: string } } }>;
+      files?: Array<{ name?: string | null }>;
+    };
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.title).toBe('🧭 🐚 Coastal Dig — returned!');
+    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.png');
+    expect(embed.thumbnail).toBeUndefined();
+    expect(payload.files!.map((f) => f.name)).toEqual(['coastal_dig-banner.png']);
   });
   it('/expedition status with none active is an ephemeral hint', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
