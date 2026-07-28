@@ -90,8 +90,21 @@
   from PNG bytes and drawing in the same tick silently yields a blank canvas,
   with no error. Always `await img.decode()` before drawing a PNG. **SVG**
   buffers decode synchronously, which is why `renderSvg` needs no await and why
-  the park renderer draws its HUD cash icon straight from `dw_cash.svg` rather
-  than a PNG (`renderParkPng` is synchronous).
+  every icon the park renderer draws (HUD coin, lot icons, rarity dino chips) is
+  read from `assets/emojis/svg/*.svg` rather than a PNG. That asymmetry is what
+  splits `src/core/render/art.ts` in two: `loadSvgImage` is synchronous, the
+  three `assets/images/park/*.png` rasters are `await img.decode()`d inside
+  `loadParkArt`, and `renderParkPng(snap, art = EMPTY_ART)` **stays
+  synchronous** — never move a PNG decode into it. `worker.ts` top-level-awaits
+  `loadParkArt().catch(() => EMPTY_ART)`: `loadParkArt` must never reject and
+  the `.catch` is belt-and-braces, because a rejected worker module boot fires
+  `client.ts`'s `error` handler, which terminates and nulls the worker — every
+  later `/park view` then silently loses its image and respawns another doomed
+  worker. Art never crosses `postMessage` (a canvas `Image` is not
+  structured-cloneable), `drawImage(null)` throws so every art site needs its
+  own non-null guard, and each `null` falls back to the flat fill / emoji glyph
+  in `src/data/render-icons.ts` — that file is the live fallback path, not dead
+  code.
 - Food is typed (`src/data/foods.ts`, 3 tiers × 2 diets) and lives in the
   `food_inventory` table — `users.food` no longer exists. Feeding sets
   `hunger = fillTo` (up to 150): `comfortAt` clamps the hunger term at 100, and

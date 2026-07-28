@@ -569,6 +569,8 @@ measurement, against the offsets and floor described above) before shipping.
 
 ## Emoji icons
 
-The 21 application emojis in `assets/emojis/` are **not** generated — they are
-hand-authored SVG rendered by `npm run build-emojis`. See the emoji bullets in
-the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.
+The 33 application emojis in `assets/emojis/` are **not** generated — they are
+hand-authored SVG rendered by `npm run build-emojis`. That set includes the six
+`dw_dino_<rarity>` chips and the five `dw_lot_*` icons the park renderer reads
+as SVG at draw time. See the emoji bullets in the repo `CLAUDE.md` for the
+pipeline and its two rendering gotchas.
