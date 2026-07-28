@@ -1,9 +1,11 @@
 import { eq } from 'drizzle-orm';
-import type { Client, EmbedBuilder, AttachmentBuilder } from 'discord.js';
+import { EmbedBuilder } from 'discord.js';
+import type { Client, AttachmentBuilder } from 'discord.js';
 import { schema } from './db/index.js';
 import type { Ctx } from './context.js';
 import { logger } from './logger.js';
 import { EXPEDITION_SITES } from '../data/sites.js';
+import { assetImage } from './images.js';
 
 // What a passive notification can carry. A bare string stays legal, so
 // Ctx.notify's `message: string` and every one of its call sites are unaffected.
@@ -54,7 +56,13 @@ export function eggHatchHandler(sender: Sender, ctx: Ctx) {
     try {
       const egg = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, t.refId)).get();
       if (!egg) return;   // already hatched/removed
-      await deliverNotification(sender, ctx, t.userId, t.originGuildId, `🥚 Your ${egg.rarity} egg is ready to hatch! Use /hatch ${egg.id}.`);
+      const embed = new EmbedBuilder().setColor(0xf1c40f)
+        .setTitle('🥚 Egg ready')
+        .setDescription(`Your ${egg.rarity} egg is ready to hatch! Use \`/hatch egg:${egg.id}\`.`);
+      const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+      const img = assetImage('eggs', egg.rarity);
+      if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }
+      await deliverNotification(sender, ctx, t.userId, t.originGuildId, payload);
     } catch (e) { logger.warn({ err: e }, 'notify handler failed'); }
   };
 }
@@ -63,7 +71,14 @@ export function expeditionReturnHandler(sender: Sender, ctx: Ctx) {
     try {
       const exp = ctx.db.select().from(schema.expeditions).where(eq(schema.expeditions.id, t.refId)).get();
       if (!exp || exp.claimedAt) return;
-      await deliverNotification(sender, ctx, t.userId, t.originGuildId, `🧭 Your expedition to ${EXPEDITION_SITES[exp.siteId].name} has returned! Use /expedition claim.`);
+      const site = EXPEDITION_SITES[exp.siteId];
+      const embed = new EmbedBuilder().setColor(0xe8590c)
+        .setTitle(`🧭 ${site.name} — your expedition has returned!`)
+        .setDescription('Use `/expedition claim` to collect the egg, cash, and food.');
+      const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+      const banner = assetImage('sites', `${exp.siteId}-banner`);
+      if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+      await deliverNotification(sender, ctx, t.userId, t.originGuildId, payload);
     } catch (e) { logger.warn({ err: e }, 'notify handler failed'); }
   };
 }

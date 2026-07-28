@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { EmbedBuilder } from 'discord.js';
 import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { eggHatchHandler, expeditionReturnHandler, clientSender, type Sender, type NotifyPayload } from '../src/core/notify.js';
@@ -12,6 +13,12 @@ function capture() {
   return { dms, sender };
 }
 
+const embedJson = (p: NotifyPayload | undefined) =>
+  (p as { embeds?: Array<{ toJSON(): { title?: string; description?: string; image?: { url: string }; thumbnail?: { url: string } } }> })
+    ?.embeds?.[0].toJSON() ?? {};
+const fileNames = (p: NotifyPayload | undefined) =>
+  ((p as { files?: Array<{ name?: string | null }> })?.files ?? []).map((f) => f.name);
+
 describe('scheduler notification handlers', () => {
   it('eggHatchHandler notifies for a live egg and skips a deleted one', async () => {
     const ctx = makeCtx();
@@ -22,10 +29,29 @@ describe('scheduler notification handlers', () => {
     const handler = eggHatchHandler(sender, ctx);
     await handler({ userId: 'u1', refId: egg.id, originGuildId: null });
     expect(dms).toHaveLength(1);
-    expect(dms[0]).toContain('rare egg is ready to hatch');
+    expect(embedJson(dms[0]).description).toContain('rare egg is ready to hatch');
+    // Attach-all-or-nothing: the thumbnail URL and its file ride the same payload.
+    expect(embedJson(dms[0]).thumbnail?.url).toBe('attachment://rare.png');
+    expect(fileNames(dms[0])).toContain('rare.png');
     ctx.db.delete(schema.eggs).run();
     await handler({ userId: 'u1', refId: egg.id, originGuildId: null });
     expect(dms).toHaveLength(1);   // skip-guard: no ping for a consumed egg
+  });
+  it('eggHatchHandler still notifies as plain text when the rarity has no art on disk', async () => {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    // No 'no-such-rarity.png' ships (or ever will) — this exercises assetImage's
+    // null-degrade path the way tests/images.test.ts does at the function level,
+    // but here through the handler that actually wires it into a payload.
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'no-such-rarity' as never, source: 'shop', obtainedAt: 0 }).returning().get();
+    const { dms, sender } = capture();
+    const handler = eggHatchHandler(sender, ctx);
+    await handler({ userId: 'u1', refId: egg.id, originGuildId: null });
+    expect(dms).toHaveLength(1);
+    expect(embedJson(dms[0]).description).toContain('no-such-rarity egg is ready to hatch');
+    expect(embedJson(dms[0]).thumbnail).toBeUndefined();
+    expect((dms[0] as { files?: unknown }).files).toBeUndefined();
   });
   it('expeditionReturnHandler notifies unclaimed and skips claimed', async () => {
     const ctx = makeCtx();
@@ -36,7 +62,9 @@ describe('scheduler notification handlers', () => {
     const handler = expeditionReturnHandler(sender, ctx);
     await handler({ userId: 'u1', refId: exp.id, originGuildId: null });
     expect(dms).toHaveLength(1);
-    expect(dms[0]).toContain('has returned');
+    expect(embedJson(dms[0]).title).toContain('has returned');
+    expect(embedJson(dms[0]).image?.url).toBe('attachment://coastal_dig-banner.png');
+    expect(fileNames(dms[0])).toContain('coastal_dig-banner.png');
     ctx.db.update(schema.expeditions).set({ claimedAt: 2 }).run();
     await handler({ userId: 'u1', refId: exp.id, originGuildId: null });
     expect(dms).toHaveLength(1);
@@ -57,10 +85,10 @@ describe('scheduler notification handlers', () => {
 
 describe('clientSender', () => {
   it('sends to a text channel and rejects non-sendable channels', async () => {
-    const sent: string[] = [];
+    const sent: unknown[] = [];
     const fakeClient = {
-      channels: { fetch: async () => ({ isTextBased: () => true, send: async (c: string) => { sent.push(c); } }) },
-      users: { fetch: async () => ({ send: async (c: string) => { sent.push(`dm:${c}`); } }) },
+      channels: { fetch: async () => ({ isTextBased: () => true, send: async (p: unknown) => { sent.push(p); } }) },
+      users: { fetch: async () => ({ send: async (p: unknown) => { sent.push(`dm:${String(p)}`); } }) },
     };
     const s = clientSender(fakeClient as never);
     await s.channelSend('c1', 'hello');
@@ -69,5 +97,17 @@ describe('clientSender', () => {
     expect(sent).toEqual(['hello', 'dm:direct']);
     const badClient = { channels: { fetch: async () => ({ isTextBased: () => false }) } };
     await expect(clientSender(badClient as never).channelSend('c1', 'x')).rejects.toThrow('not sendable');
+  });
+  it('passes an object payload straight through to channel.send and user.send', async () => {
+    const sent: unknown[] = [];
+    const fakeClient = {
+      channels: { fetch: async () => ({ isTextBased: () => true, send: async (p: unknown) => { sent.push(p); } }) },
+      users: { fetch: async () => ({ send: async (p: unknown) => { sent.push(p); } }) },
+    };
+    const s = clientSender(fakeClient as never);
+    const embed = new EmbedBuilder().setTitle('t');
+    await s.channelSend('c1', { content: '<@u1>', embeds: [embed] });
+    await s.dmSend('u1', { embeds: [embed] });
+    expect(sent).toEqual([{ content: '<@u1>', embeds: [embed] }, { embeds: [embed] }]);
   });
 });
