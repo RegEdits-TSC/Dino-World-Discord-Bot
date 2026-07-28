@@ -92,3 +92,36 @@
   (`db.exec` per statement) passes even when the real migrator would fail — a
   migration test must seed a parent **and** a child row and run the real
   `migrateDb` (see the "production path" block in `tests/migration.test.ts`).
+- Battles: `Ctx` carries `sleep(ms)` for the fight cinematic — real
+  `setTimeout` in `src/index.ts`, instant stub in `tests/harness.ts` `makeCtx`
+  and `scripts/test-live.ts`; every future Ctx construction site must provide
+  it. The fight pipeline is **commit-before-present**: `runFight` commits every
+  write (energy, rewards, progress, XP, boss egg) in ONE transaction before the
+  first Discord edit, so a crash or Skip mid-cinematic loses animation frames
+  only, never state — never move a write into the frame loop. Chapter ids in
+  `src/data/battle/chapters/` MUST equal `EXPEDITION_SITES` keys: that single
+  invariant derives the chapter banner asset (`sites/<chapterId>-banner`), the
+  `unlockRating` co-gate, and the theme. `tests/battle-content.test.ts` is the
+  machine gate for all campaign data — including that every `bossId` appears in
+  `docs/assets/prompts.md` — so future chapters ship as data-only PRs (new
+  chapter file + index import + PNGs + prompt rows) with zero engine changes.
+  `rosterFor(stage, squadSize)` (`src/data/battle/chapters/index.ts`) is the
+  single source of truth for which enemies are fielded and which entry is the
+  boss — `runFight` and `fightFrames` both call it rather than re-deriving the
+  boss by matching `speciesId`, so the fight and its embed always agree on who
+  actually fought; the content test pins the boss as the third authored enemy,
+  which the small-squad slicing branch relies on. `fightFrames`
+  (`src/modules/battles/embeds.ts`) attaches files on frame 1 only — frames
+  2-4 reference the same `attachment://` URLs — so any edit that passes
+  `files: []` or `attachments: []` clears the originals and breaks every image
+  mid-cinematic, and no offline test catches it. `assets/images/battles/`
+  ships empty (`.gitkeep` only) by design: boss portraits are generated
+  post-merge, and `assetImage`'s null-degrade means the campaign is fully
+  playable without them.
+- `npm run build` does not typecheck tests: `build` is `tsc` against
+  `tsconfig.json`, which only `include`s `src`, and `npm test` (vitest)
+  transpiles without typechecking. The test-inclusive gate is
+  `npm run typecheck` (`tsc --noEmit -p tsconfig.test.json`, which extends
+  `tsconfig.json` and adds `tests` and `scripts` to `include`) — a type error
+  in a test file passes both `build` and `test` clean; run `typecheck` before
+  every commit that touches `tests/` or `scripts/`.

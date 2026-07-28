@@ -31,6 +31,9 @@ describe('assetImage', () => {
       expect(img!.url).toBe(`attachment://${name}.png`);
     }
   });
+  it('accepts the battles kind and null-degrades when absent', () => {
+    expect(assetImage('battles', 'no-such-portrait')).toBeNull();
+  });
 });
 
 describe('banner art', () => {

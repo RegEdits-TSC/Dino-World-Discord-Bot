@@ -7,6 +7,7 @@ import { getSpecies } from '../../data/species/index.js';
 import { getOrCreateUser } from '../park/service.js';
 import { recomputeRating } from '../park/rating.js';
 import { settleEscapes } from '../park/escapes.js';
+import { ENERGY_CAP } from '../../data/battle/constants.js';
 
 export class AdminError extends Error {}
 
@@ -57,9 +58,11 @@ export function adminReset(ctx: Ctx, targetId: string): void {
     ctx.db.delete(schema.timers).where(eq(schema.timers.userId, targetId)).run();
     ctx.db.delete(schema.trades)
       .where(or(eq(schema.trades.fromUser, targetId), eq(schema.trades.toUser, targetId))).run();
+    ctx.db.delete(schema.battleProgress).where(eq(schema.battleProgress.userId, targetId)).run();
     ctx.db.update(schema.users).set({
       cash: 500, shards: 0, parkRating: 0, ratingHighWater: 0, parkName: 'New Park',
       shardsWindowStart: 0, shardsWindowEarned: 0, lastCollectAt: ctx.now(),
+      energy: ENERGY_CAP, energyUpdatedAt: ctx.now(),
     }).where(eq(schema.users.discordId, targetId)).run();
     ctx.db.delete(schema.foodInventory).where(eq(schema.foodInventory.userId, targetId)).run();
     for (const [foodId, qty] of Object.entries(STARTER_FOOD)) {
@@ -80,6 +83,7 @@ export function adminFastForward(ctx: Ctx, targetId: string, hours: number): num
     ctx.db.update(schema.users).set({
       lastCollectAt: sql`${schema.users.lastCollectAt} - ${shift}`,
       shardsWindowStart: sql`${schema.users.shardsWindowStart} - ${shift}`,
+      energyUpdatedAt: sql`${schema.users.energyUpdatedAt} - ${shift}`,
     }).where(eq(schema.users.discordId, targetId)).run();
     ctx.db.update(schema.dinos).set({ lastFedAt: sql`${schema.dinos.lastFedAt} - ${shift}` })
       .where(eq(schema.dinos.userId, targetId)).run();

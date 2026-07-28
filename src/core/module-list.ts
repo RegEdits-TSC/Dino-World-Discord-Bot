@@ -9,6 +9,7 @@ import { tradingModule } from '../modules/trading/index.js';
 import { leaderboardsModule } from '../modules/leaderboards/index.js';
 import { adminModule } from '../modules/admin/index.js';
 import { helpModule } from '../modules/help/index.js';
+import { battlesModule } from '../modules/battles/index.js';
 
 // The one and only module array. index.ts, deploy-commands.ts, and the test
 // suite all consume this list, so registered handlers and deployed builders
@@ -16,4 +17,5 @@ import { helpModule } from '../modules/help/index.js';
 export const ALL_MODULES: ModuleManifest[] = [
   parkModule, hatcheryModule, expeditionsModule, shopModule, settingsModule,
   careModule, tradingModule, leaderboardsModule, adminModule, helpModule,
+  battlesModule,
 ];

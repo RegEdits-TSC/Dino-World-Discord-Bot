@@ -11,11 +11,14 @@ export const users = sqliteTable('users', {
   shards: integer('shards').notNull().default(0),
   shardsWindowStart: integer('shards_window_start_ms').notNull().default(0),
   shardsWindowEarned: integer('shards_window_earned').notNull().default(0),
+  energy: integer('energy').notNull().default(10),
+  energyUpdatedAt: integer('energy_updated_at_ms').notNull().default(0),
   lastCollectAt: integer('last_collect_at_ms').notNull(),
   createdAt: integer('created_at_ms').notNull(),
 }, (t) => [
   check('cash_nonneg', sql`${t.cash} >= 0`),
   check('shards_nonneg', sql`${t.shards} >= 0`),
+  check('energy_nonneg', sql`${t.energy} >= 0`),
 ]);
 
 export const foodInventory = sqliteTable('food_inventory', {
@@ -48,6 +51,7 @@ export const dinos = sqliteTable('dinos', {
   escapedAt: integer('escaped_at_ms'),
   viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
   locked: integer('locked', { mode: 'boolean' }).notNull().default(false),
+  battleXp: integer('battle_xp').notNull().default(0),
   hatchedAt: integer('hatched_at_ms').notNull(),
 });
 
@@ -56,13 +60,24 @@ export const eggs = sqliteTable('eggs', {
   userId: text('user_id').notNull().references(() => users.discordId),
   rarity: text('rarity', { enum: ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] }).notNull(),
   speciesId: text('species_id'),
-  source: text('source', { enum: ['expedition', 'shop', 'trade', 'admin'] }).notNull(),
+  source: text('source', { enum: ['expedition', 'shop', 'trade', 'admin', 'battle'] }).notNull(),
   viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
   locked: integer('locked', { mode: 'boolean' }).notNull().default(false),
   obtainedAt: integer('obtained_at_ms').notNull(),
   incubationStartedAt: integer('incubation_started_at_ms'),
   hatchesAt: integer('hatches_at_ms'),
 });
+
+export const battleProgress = sqliteTable('battle_progress', {
+  userId: text('user_id').notNull().references(() => users.discordId),
+  stageId: text('stage_id').notNull(),
+  stars: integer('stars').notNull().default(0),
+  firstClearedAt: integer('first_cleared_at_ms'),
+  attempts: integer('attempts').notNull().default(0),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.stageId] }),
+  check('stars_range', sql`${t.stars} >= 0 AND ${t.stars} <= 3`),
+]);
 
 export const expeditions = sqliteTable('expeditions', {
   id: integer('id').primaryKey({ autoIncrement: true }),

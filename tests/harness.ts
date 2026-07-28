@@ -22,6 +22,7 @@ export function makeCtx(overrides: Partial<Ctx> & { nowMs?: number } = {}): Ctx 
     scheduler: new Scheduler(db),
     now: () => nowMs,
     rng: mulberry32(42),
+    sleep: async () => {},
     setNow: (ms: number) => { nowMs = ms; },
     notify: async (userId: string, originGuildId: string | null, message: string) => { notifications.push({ userId, originGuildId, message }); },
     notifications,

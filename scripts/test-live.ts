@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { REST, Routes, MessageFlags } from 'discord.js';
+import { eq } from 'drizzle-orm';
 import { readFileSync } from 'node:fs';
 import { loadConfig } from '../src/core/config.js';
 import { ALL_MODULES } from '../src/core/module-list.js';
@@ -83,6 +84,20 @@ ctx.db.update(schema.users).set({ parkRating: 200 }).run();
 createTrade(ctx, P1, P2, { dinoIds: [spareDino.id], eggIds: [], cash: 0, foods: {} }, { dinoIds: [], eggIds: [], cash: 1000, foods: {} });
 startExpedition(ctx, P1, 'coastal_dig', devGuildId);
 
+// Battles seed: max-level squad + chapter 1 cleared to (not including) the boss,
+// so one sweep shows the chapters overview, a normal 4-frame win, and a boss
+// FIRST clear whose F4 carries the egg line. ratingHighWater 400 (set above)
+// clears every site co-gate. ctx.sleep is makeCtx's instant stub, so the four
+// editReply frames land immediately — the gallery posts them as four messages.
+ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'tyrannosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
+ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'spinosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
+ctx.db.update(schema.dinos).set({ battleXp: 10_000 }).where(eq(schema.dinos.userId, P1)).run();
+const squad = ctx.db.select().from(schema.dinos).all().filter((d) => d.userId === P1 && !d.locked);
+const [b1, b2, b3] = [squad[0], squad[squad.length - 2], squad[squad.length - 1]];
+for (const stageId of ['coastal_dig_1', 'coastal_dig_2', 'coastal_dig_3', 'coastal_dig_4']) {
+  ctx.db.insert(schema.battleProgress).values({ userId: P1, stageId, stars: 3, firstClearedAt: ctx.now(), attempts: 1 }).run();
+}
+
 // If any service signature above disagrees with the source, match the source —
 // tests/*.test.ts show every call shape.
 
@@ -118,6 +133,9 @@ const cases: Case[] = [
   { title: '/trade list — pending trades', run: () => slash('trading', 'trade', { name: 'trade', sub: 'list', user: P1 }) },
   { title: '/top — leaderboard', run: () => slash('leaderboards', 'top', { name: 'top', user: P1, guild: devGuildId, options: { metric: 'rating' } }) },
   { title: '/admin inspect — (ephemeral in production)', run: () => slash('admin', 'admin', { name: 'admin', sub: 'inspect', user: 'owner', options: { user: P1 } }) },
+  { title: '/battle chapters — campaign overview', run: () => slash('battles', 'battle', { name: 'battle', sub: 'chapters', user: P1 }) },
+  { title: '/battle fight — all 4 cinematic frames (coastal_dig_1 win)', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_1', dino1: b1.id, dino2: b2.id } }) },
+  { title: '/battle fight — boss FIRST clear: portrait thumb + egg line on F4', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } }) },
 ];
 
 type RawFilePayload = { data: Buffer; name: string };

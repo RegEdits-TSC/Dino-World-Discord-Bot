@@ -1,7 +1,8 @@
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
 export type Diet = 'herbivore' | 'carnivore';
+export type Archetype = 'bruiser' | 'tank' | 'swift' | 'support';
 export interface Species {
-  id: string; name: string; rarity: Rarity; diet: Diet;
+  id: string; name: string; rarity: Rarity; diet: Diet; archetype: Archetype;
   biomeTags: string[]; flavor: string; spriteRef: string;
 }
 export interface RarityStats {

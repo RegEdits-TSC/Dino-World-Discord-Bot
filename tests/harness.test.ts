@@ -8,6 +8,12 @@ describe('harness', () => {
     const a = mulberry32(7)(); const b = mulberry32(7)();
     expect(a).toBe(b);
   });
+  it('ctx.sleep is an instant stub in tests', async () => {
+    const ctx = makeCtx();
+    const start = Date.now();
+    await ctx.sleep(60_000);
+    expect(Date.now() - start).toBeLessThan(1_000);   // resolves immediately, never waits a minute
+  });
   it('fake interaction records replies', async () => {
     const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
     await i.asChatInput().reply({ content: 'hi' });

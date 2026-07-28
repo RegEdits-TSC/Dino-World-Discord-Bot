@@ -55,6 +55,14 @@ export const HELP_TOPICS: Record<string, { title: string; body: string }> = {
     '`/top metric:<rating|cash|collection> [scope]` — server or global leaderboards.',
     'Rating grows with dinos, lots, and comfort; it gates expeditions, shop tiers, and Mythics.',
   ].join('\n') },
+  battles: { title: '⚔️ Battles', body: [
+    '`/battle chapters` — the campaign map: 4 chapters themed to the expedition sites, 5 stages each, the 5th a boss.',
+    '`/battle fight stage:<stage> dino1:<id> [dino2] [dino3]` — send a squad of 1–3 dinos; the fight auto-resolves and plays back as a short cinematic (press Skip to jump to the result).',
+    'Energy: every attempt costs ⚡ 1–3 by stage, win or lose. You hold up to 10 and regain 1 every 10 minutes.',
+    'Squads: escaped dinos can\'t fight — rescue them first. Power comes from rarity, archetype (bruiser / tank / swift / support), and battle level: every fight pays battle XP, up to Lv.10.',
+    'Stars: ★★★ win with no knockouts · ★★ win with ≤1 knockout or a fast finish · ★ any other win. Higher stars scale the cash/food payout; beating a stage for the first time also pays shards, once.',
+    'Bosses: clear a chapter\'s boss for the first time to earn a high-rarity egg and open the next chapter — its expedition site\'s rating gate applies too.',
+  ].join('\n') },
 };
 
 const topicChoices = Object.keys(HELP_TOPICS).map((t) => ({ name: t, value: t }));
