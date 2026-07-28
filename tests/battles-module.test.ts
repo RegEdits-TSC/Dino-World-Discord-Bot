@@ -107,6 +107,59 @@ describe('battle buttons', () => {
     await playing;
     expect(fake.replies).toHaveLength(1);            // no F2-F4 edits after skip
   });
+  it('skip landing mid-F4-send gets its own attachments array, never entry.final\'s shared one', async () => {
+    // presentFight's closing editReply(F4) and, if a Skip lands while that
+    // call is still in flight, the skip handler's i.update(F4) are two
+    // independent send sites for the SAME frame. discord.js's MessagePayload
+    // mutates options.attachments IN PLACE on every send (it pushes that
+    // send's file descriptors onto whatever array it finds there) — this
+    // harness never runs MessagePayload, so it can't reproduce that mutation
+    // directly, but it CAN prove the two sends never receive the same array
+    // object, which is what makes the mutation harmless regardless of send
+    // order. Reproduced by pausing the interaction's 4th editReply call
+    // (F4's) mid-flight — mirroring the real REST round trip — and clicking
+    // Skip while it's parked there, exactly the race window described in
+    // review.
+    const ctx = makeCtx();
+    const dino = seedFighter(ctx);
+    const fake = fakeCommand({ name: 'battle', sub: 'fight', user: 'u1',
+      options: { stage: 'coastal_dig_1', dino1: dino } });
+    const interaction = fake.asChatInput();
+    const patchable = interaction as unknown as { editReply: (payload: unknown) => Promise<unknown> };
+    const realEditReply = patchable.editReply.bind(patchable);
+    let editCount = 0;
+    let releaseF4!: () => void;
+    const f4Gate = new Promise<void>((r) => { releaseF4 = r; });
+    let f4Payload: { attachments?: unknown[] } | undefined;
+    patchable.editReply = async (payload: unknown) => {
+      editCount++;
+      if (editCount === 4) {
+        f4Payload = payload as { attachments?: unknown[] };
+        await f4Gate;   // park F4 "in flight" so a Skip click can race in
+      }
+      return realEditReply(payload);
+    };
+
+    const playing = battleCmd.execute(ctx, interaction);
+    await flush();
+    expect(editCount).toBe(4);                       // parked on F4, not yet resolved
+
+    // presentations still holds the entry — delete only runs in presentFight's
+    // finally, which can't run until this awaited editReply settles.
+    const skipId = firstButtonId(fake.replies[0]);
+    const skip = fakeButton({ customId: skipId, user: 'u1' });
+    await battleButtons.execute(ctx, skip.asInteraction() as unknown as ButtonInteraction);
+
+    releaseF4();
+    await playing;
+
+    const skipPayload = skip.replies[0] as { attachments?: unknown[] };
+    expect(f4Payload?.attachments).toEqual([]);
+    expect(skipPayload.attachments).toEqual([]);
+    expect(f4Payload?.attachments).not.toBe(skipPayload.attachments);   // never the same array object
+    (f4Payload!.attachments as unknown[]).push({ id: '0' });
+    expect(skipPayload.attachments).toEqual([]);      // mutating one never reaches the other
+  });
   it('again: re-runs the full fight on the same message via deferUpdate', async () => {
     const ctx = makeCtx();
     const dino = seedFighter(ctx);

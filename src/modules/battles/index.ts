@@ -31,6 +31,20 @@ const presentations = new Map<string, { userId: string; final: FramePayload; ski
 // here. Empty after a restart -> the button degrades to an ephemeral nudge.
 const lastSquads = new Map<string, number[]>();
 
+// entry.final (the F4 payload) has two possible send sites: presentFight's own
+// closing editReply below, and — if a Skip lands in the narrow window while
+// that editReply is already in flight — the skip button handler's i.update,
+// racing it. discord.js's MessagePayload mutates options.attachments IN PLACE
+// on every send (it pushes that send's file descriptors onto whatever array it
+// finds there), so if both sites forwarded the same entry.final object, the
+// second send to resolve would push onto an array the first send already
+// populated, corrupting it with duplicate/stale ids. Never pass entry.final
+// straight through — always route it through here, which hands out a fresh,
+// unshared attachments array per call so two racing sends can never collide.
+function finalPayload(entry: { final: FramePayload }): FramePayload {
+  return { ...entry.final, attachments: [] };
+}
+
 function skipRow(userId: string, presentationId: string) {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(`battle:skip:${userId}:${presentationId}`)
@@ -59,7 +73,7 @@ async function presentFight(ctx: Ctx, i: ChatInputCommandInteraction | ButtonInt
       await i.editReply(frames[idx]);
       await ctx.sleep(FIGHT_FRAME_DELAY_MS);
     }
-    if (!entry.skipped) await i.editReply(frames[3]);
+    if (!entry.skipped) await i.editReply(finalPayload(entry));
   } catch (err) {
     logger.debug({ err }, 'battle cinematic render failed');
     await i.editReply({
@@ -178,7 +192,7 @@ export const battlesModule: ModuleManifest = {
           // record's own stored owner is the authority, not the customId.
           if (!entry || entry.userId !== i.user.id) { await i.deferUpdate(); return; }
           entry.skipped = true;
-          await i.update(entry.final);
+          await i.update(finalPayload(entry));
         } else if (action === 'again') {
           const squad = lastSquads.get(`${i.user.id}:${arg}`);
           if (!squad) { await i.reply({ content: 'That battle expired — start a new one with /battle fight.', flags: MessageFlags.Ephemeral }); return; }
