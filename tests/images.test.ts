@@ -6,7 +6,7 @@ import { assetImage } from '../src/core/images.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 
 const BANNERS = ['trading', 'leaderboards', 'help', 'care', 'care_neglect', 'shop_food_market',
-  'battle_victory', 'battle_defeat'];
+  'battle_victory', 'battle_defeat', 'collect', 'rescue'];
 
 describe('assetImage', () => {
   it('returns an attachment ref for a present file', () => {

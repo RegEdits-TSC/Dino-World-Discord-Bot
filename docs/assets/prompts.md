@@ -231,7 +231,7 @@ shell with glowing orange cracks).
 
 ## Embed banners
 
-Eight wide banners for the surfaces that have no site or egg art of their own.
+Ten wide banners for the surfaces that have no site or egg art of their own.
 All generated with Higgsfield Nano Banana Pro at 3:2, then scaled to 1536×1024
 (the generator emits 1264×848; scaling to full width leaves ~6px of vertical
 excess, which is center-cropped).
@@ -246,6 +246,8 @@ excess, which is center-cropped).
 | `assets/images/banners/shop_food_market.png` | 1536×1024 | `/shop view` food market embed image |
 | `assets/images/banners/battle_victory.png` | 1536×1024 | `/battle fight` F4 image, win |
 | `assets/images/banners/battle_defeat.png` | 1536×1024 | `/battle fight` F4 image, loss |
+| `assets/images/banners/collect.png` | 1536×1024 | `park:collect` reply embed image |
+| `assets/images/banners/rescue.png` | 1536×1024 | `/rescue` success embed image |
 
 These are the only prompts in this file whose subject is dinosaurs rather than
 scenery, so they drop the shared block's "no characters" clause and forbid only
@@ -363,6 +365,27 @@ stop reading as one arena.
 > sun. Glossy cartoon mobile-game art style, bold dark outlines, clean cel
 > shading with smooth gradients, polished game-asset look. No text, no human
 > characters, no UI elements.
+
+**Collect (`collect.png`):**
+
+> A wide cartoon scene of a dinosaur park ticket booth at closing time: an
+> open cash box on a wooden counter overflowing with gold coins and banknotes,
+> stacks of coins beside it, a small chalkboard sign and a coil of ticket
+> stubs, lush ferns and a park path behind, warm cheerful afternoon daylight.
+> Glossy cartoon mobile-game art style, bold dark outlines, vibrant saturated
+> colors, strong glossy highlights, clean cel shading with smooth gradients,
+> polished game-asset look. No text, no human characters, no UI elements.
+
+**Rescue (`rescue.png`):**
+
+> A wide cartoon scene of a dinosaur recapture in a park at dusk: a broken
+> section of tall wire perimeter fence with the gap being closed by a wooden
+> barricade, a small worried green cartoon dinosaur being coaxed back toward
+> the enclosure along a rope-marked path, a parked park jeep with its headlamp
+> on and a net beside it, jungle treeline and deep blue evening sky behind.
+> Glossy cartoon mobile-game art style, bold dark outlines, vibrant saturated
+> colors, strong glossy highlights, clean cel shading with smooth gradients,
+> polished game-asset look. No text, no human characters, no UI elements.
 
 ---
 
