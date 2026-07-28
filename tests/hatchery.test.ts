@@ -166,14 +166,23 @@ describe('/mythic confirm flow', () => {
 });
 
 describe('/incubate execute', () => {
-  it('incubates and replies with a ready timestamp, enqueues egg_hatch timer', async () => {
+  it('incubates and replies with an illustrated ready-timestamp embed, enqueues egg_hatch timer', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
     const egg = ctx.db.insert(schema.eggs)
       .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
     const cmd = hatcheryModule.commands.find((c) => c.data.name === 'incubate')!;
     const i = fakeCommand({ name: 'incubate', user: 'u1', guild: 'g1', options: { egg: egg.id } });
     await cmd.execute(ctx, i.asChatInput());
-    expect(replyText(i.replies[0])).toContain('Incubating your common egg');
+    const payload = i.replies[0] as {
+      embeds: Array<{ toJSON(): { title?: string; description?: string; thumbnail?: { url: string } } }>;
+      files?: Array<{ name?: string | null }>;
+    };
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.title).toContain('Incubating your common egg');
+    expect(embed.description).toContain('<t:');   // relative ready stamp survives the promotion
+    // Attach-all-or-nothing: a thumbnail URL with no matching file renders broken.
+    expect(embed.thumbnail?.url).toBe('attachment://common.png');
+    expect(payload.files!.map((f) => f.name)).toContain('common.png');
     const timer = ctx.db.select().from(schema.timers).all().find((t) => t.kind === 'egg_hatch');
     expect(timer?.refId).toBe(egg.id);
   });
