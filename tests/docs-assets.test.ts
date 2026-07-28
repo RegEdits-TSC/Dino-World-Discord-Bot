@@ -7,7 +7,7 @@ const ops = readFileSync(resolve(process.cwd(), 'docs/ops.md'), 'utf8');
 const prompts = readFileSync(resolve(process.cwd(), 'docs/assets/prompts.md'), 'utf8');
 
 describe('docs track the committed assets', () => {
-  // The operator docs quoted "21 emojis" while 27 were committed, because nothing checked. The count
+  // The operator docs quoted "21 emojis" while 33 were committed, because nothing checked. The count
   // matters operationally: deploy-emojis is the only irreversible live write in the deploy, and the
   // runbook uses this number to tell the operator what a lost manifest.json would recreate.
   it('every emoji count quoted in the docs equals the number of committed SVGs', () => {
