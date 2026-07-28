@@ -83,9 +83,13 @@ describe('hatchery visuals', () => {
     expect(p.embeds[0].toJSON().image).toBeUndefined();
     expect(p.files).toBeUndefined();
   });
-  it('revealPayload clears attachments so the egg image disappears on crack', () => {
-    const p = revealPayload(getSpecies('velociraptor'));
-    expect(p.files).toEqual([]);
+  it('revealPayload swaps the intact egg for the rarity crack and keeps attachments cleared', () => {
+    // attachments: [] is load-bearing — discord.js pushes the new descriptors into
+    // the array we pass, so the pre-hatch egg upload is dropped and only the crack
+    // survives on the edited message.
+    const p = revealPayload(getSpecies('velociraptor'));   // rare
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare-crack.png');
+    expect(p.files.map((f) => f.name)).toEqual(['rare-crack.png']);
     expect(p.attachments).toEqual([]);
   });
   it('reveal embed points at /dino assign', () => {

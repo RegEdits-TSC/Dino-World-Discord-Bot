@@ -38,7 +38,17 @@ export function revealPayload(species: Species) {
       { name: 'Income/hr', value: String(stats.incomePerHr), inline: true },
     );
   embed.setFooter({ text: 'Next: /dino assign — unassigned dinos earn nothing.' });
-  return { embeds: [embed], components: [], files: [], attachments: [] };
+  // attachments is always empty: discord.js's InteractionUpdateOptions#attachments takes
+  // existing-attachment descriptors to keep (Attachment | MessageEditAttachmentData), not
+  // AttachmentBuilder — an empty tuple both satisfies that type and, passed to i.update(),
+  // drops the pre-hatch egg upload so only the crack (via `files`) survives on the message.
+  const payload: {
+    embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[];
+    files: AttachmentBuilder[]; attachments: never[];
+  } = { embeds: [embed], components: [], files: [], attachments: [] };
+  const crack = assetImage('hatch', `${species.rarity}-crack`);
+  if (crack) { embed.setImage(crack.url); payload.files = [crack.file]; }
+  return payload;
 }
 
 // The egg the player most likely acts on next: ready-to-hatch, else incubating, else newest.
