@@ -77,6 +77,10 @@ export const expeditionsModule: ModuleManifest = {
             const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
             const banner = assetImage('sites', `${site.id}-banner`);
             if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+            // APPEND, never re-assign: a second `payload.files = [...]` would drop
+            // the banner and leave a dangling attachment:// URL in the embed.
+            const thumb = assetImage('sites', `${site.id}-thumb`);
+            if (thumb) { embed.setThumbnail(thumb.url); payload.files = [...(payload.files ?? []), thumb.file]; }
             await i.reply(payload);
           }
         } catch (e) {

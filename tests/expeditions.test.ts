@@ -64,14 +64,26 @@ describe('expedition visuals', () => {
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { title?: string } }> };
     expect(payload.embeds[0].toJSON().title).toBe('🧭 🐚 Coastal Dig');
   });
-  it('/expedition claim embed still renders when banner art is absent', async () => {
+  it('/expedition claim ships the site banner AND thumb together', async () => {
+    // Two assets in one payload: the second assetImage must APPEND. A plain
+    // `payload.files = [thumb.file]` drops the banner and leaves the embed's
+    // image pointing at an attachment:// URL that was never uploaded.
     ctx.economy.apply('u1', { cash: 1_000 }, 'seed', 0);
     startExpedition(ctx, 'u1', 'coastal_dig', 'g1');
     ctx.setNow(ctx.now() + 16 * 60_000);
     const i = fakeCommand({ name: 'expedition', sub: 'claim', user: 'u1', guild: 'g1' });
     await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
-    const payload = i.replies[0] as { embeds: Array<{ toJSON(): { title?: string } }> };
-    expect(payload.embeds[0].toJSON().title).toBe('🧭 🐚 Coastal Dig — returned!');
+    const payload = i.replies[0] as {
+      embeds: Array<{ toJSON(): { title?: string; image?: { url: string }; thumbnail?: { url: string } } }>;
+      files?: Array<{ name?: string | null }>;
+    };
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.title).toBe('🧭 🐚 Coastal Dig — returned!');
+    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.png');
+    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.png');
+    const names = payload.files!.map((f) => f.name);
+    expect(names).toContain('coastal_dig-banner.png');
+    expect(names).toContain('coastal_dig-thumb.png');
   });
   it('/expedition status with none active is an ephemeral hint', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');

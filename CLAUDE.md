@@ -49,6 +49,13 @@
   hand-rolled per test file (`tests/notify.test.ts`,
   `tests/notify-handlers.test.ts`, `tests/journeys.test.ts`), not in the harness
   — and only `npm run typecheck` catches a stale one.
+- Two assets in one payload: the SECOND `assetImage` must APPEND
+  (`payload.files = [...(payload.files ?? []), img.file]`), never re-assign — a
+  plain assignment drops the first file and leaves a dangling `attachment://`
+  URL that Discord renders as a broken image. Attachment names are basenames
+  only (`src/core/images.ts:20-23`), so the two assets need distinct file names
+  (`<site>-banner.png` vs `<site>-thumb.png` is safe). Live call sites:
+  `/shop view`, `/expedition claim`, `/battle chapters`.
 - Custom app emojis are hand-authored SVG in `assets/emojis/svg/`, rendered to
   committed 128×128 transparent PNGs in `assets/emojis/png/` by
   `npm run build-emojis` (`src/build-emojis.ts` + the `renderSvg` helper in
