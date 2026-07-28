@@ -35,6 +35,9 @@ describe('assetImage', () => {
   it('accepts the battles kind and null-degrades when absent', () => {
     expect(assetImage('battles', 'no-such-portrait')).toBeNull();
   });
+  it('accepts the hatch kind and null-degrades when absent', () => {
+    expect(assetImage('hatch', 'no-such-crack')).toBeNull();
+  });
 });
 
 describe('banner art', () => {
