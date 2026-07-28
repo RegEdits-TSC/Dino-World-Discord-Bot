@@ -3,6 +3,7 @@ import { createCanvas, Image } from '@napi-rs/canvas';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { assetImage } from '../src/core/images.js';
+import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 
 const BANNERS = ['trading', 'leaderboards', 'help', 'care', 'care_neglect'];
 
@@ -68,6 +69,8 @@ async function expectTransparentPortrait(bossId: string): Promise<void> {
   }
 }
 
+const PORTRAIT_BOSS_IDS = CAMPAIGN.map((c) => c.stages[4].boss!.bossId);
+
 describe('boss portrait art', () => {
-  it('boss-coastal_dig is a 1024×1024 transparent cutout', () => expectTransparentPortrait('boss-coastal_dig'));
+  it.each(PORTRAIT_BOSS_IDS)('%s is a 1024×1024 transparent cutout', (bossId) => expectTransparentPortrait(bossId));
 });
