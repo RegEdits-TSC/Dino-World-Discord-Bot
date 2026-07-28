@@ -567,6 +567,42 @@ earlier prompt is not guaranteed to avoid its respective failure again — use
 the version above, and re-verify both busyness (by eye) and contrast (by
 measurement, against the offsets and floor described above) before shipping.
 
+## Hatch cracks
+
+Six mid-burst variants of the egg icons, shown on the `hatch:crack` reveal so
+the player sees the same egg they were shown a second earlier, now open.
+
+| File | Size | Use |
+|---|---|---|
+| `assets/images/hatch/<rarity>-crack.png` | 1024×1024, transparent | `hatch:crack` reveal embed image |
+
+`<rarity>` is one of `common`, `uncommon`, `rare`, `epic`, `legendary`,
+`mythic`.
+
+**Hard no-glow rule:** no glow, rays, embers, sparkles, or light effects may
+extend beyond the egg/nest silhouette — off-silhouette glow survives background
+removal as floating islands or a light halo on transparency. Emissive detail is
+allowed only ON surfaces. Every prompt carries this rule verbatim.
+
+**Workflow (reference chain):** each crack is generated with its OWN
+`assets/images/eggs/<rarity>.png` attached as the `image` reference (Nano Banana
+Pro, `medias` role `image`) — never from another crack — so the shell design and
+nest match the egg the player was just shown. Post-process each with
+`remove_background`, then `node scripts/fit-art.mjs cutout <src> <dest>`.
+
+**Prompt (identical for all six; only the attached reference changes):**
+
+> Keep the exact same cartoon dinosaur egg and the exact same woven twig nest:
+> same shell design, same colors, same size, same position, same framing, same
+> plain flat light-gray studio background. Change only the state: the shell is
+> now split wide open across the upper half, jagged shell fragments falling
+> away and resting in the nest, the interior dark and empty. No glow, rays,
+> embers, sparkles, or light effects extending beyond the egg or the nest;
+> glowing details may appear only on the surfaces themselves. Glossy cartoon
+> mobile-game art style, bold dark outlines, vibrant saturated colors, strong
+> glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no characters, no UI elements.
+
 ## Emoji icons
 
 The 33 application emojis in `assets/emojis/` are **not** generated — they are

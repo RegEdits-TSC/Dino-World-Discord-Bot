@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createCanvas, Image } from '@napi-rs/canvas';
+import { Image, createCanvas } from '@napi-rs/canvas';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { assetImage } from '../src/core/images.js';
@@ -76,4 +76,28 @@ const PORTRAIT_BOSS_IDS = CAMPAIGN.map((c) => c.stages[4].boss!.bossId);
 
 describe('boss portrait art', () => {
   it.each(PORTRAIT_BOSS_IDS)('%s is a 1024×1024 transparent cutout', (bossId) => expectTransparentPortrait(bossId));
+});
+
+const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] as const;
+
+describe('hatch crack art', () => {
+  // 1024×1024 transparent, same square as the eggs they are edited from — NOT
+  // banner-sized, so they never belong in the BANNERS size loop above.
+  it.each(RARITIES)('%s-crack ships at 1024x1024 with transparent corners', async (rarity) => {
+    const ref = assetImage('hatch', `${rarity}-crack`);
+    expect(ref, rarity).not.toBeNull();
+    expect(ref!.url).toBe(`attachment://${rarity}-crack.png`);
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${rarity}-crack.png`));
+    await img.decode();
+    expect(img.width).toBe(1024);
+    expect(img.height).toBe(1024);
+    const canvas = createCanvas(img.width, img.height);
+    const c2d = canvas.getContext('2d');
+    c2d.drawImage(img, 0, 0);
+    const px = c2d.getImageData(0, 0, img.width, img.height).data;
+    for (const [x, y] of [[0, 0], [1023, 0], [0, 1023], [1023, 1023]] as const) {
+      expect(px[(y * img.width + x) * 4 + 3], `corner ${x},${y}`).toBe(0);
+    }
+  });
 });
