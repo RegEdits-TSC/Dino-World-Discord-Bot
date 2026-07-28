@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { REST, Routes, MessageFlags } from 'discord.js';
+import { eq } from 'drizzle-orm';
 import { readFileSync } from 'node:fs';
 import { loadConfig } from '../src/core/config.js';
 import { ALL_MODULES } from '../src/core/module-list.js';
@@ -90,7 +91,7 @@ startExpedition(ctx, P1, 'coastal_dig', devGuildId);
 // editReply frames land immediately — the gallery posts them as four messages.
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'tyrannosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'spinosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
-ctx.db.update(schema.dinos).set({ battleXp: 10_000 }).run();
+ctx.db.update(schema.dinos).set({ battleXp: 10_000 }).where(eq(schema.dinos.userId, P1)).run();
 const squad = ctx.db.select().from(schema.dinos).all().filter((d) => d.userId === P1 && !d.locked);
 const [b1, b2, b3] = [squad[0], squad[squad.length - 2], squad[squad.length - 1]];
 for (const stageId of ['coastal_dig_1', 'coastal_dig_2', 'coastal_dig_3', 'coastal_dig_4']) {

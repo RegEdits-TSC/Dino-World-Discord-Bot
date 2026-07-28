@@ -85,7 +85,8 @@ npm run dev
 
 ## Building & type checking
 
-Type checking is run as part of the test suite, but you can also check types independently:
+Type checking is separate from the test suite (`npm test` runs vitest only and does not
+typecheck) — run it explicitly:
 
 ```
 npm run typecheck
