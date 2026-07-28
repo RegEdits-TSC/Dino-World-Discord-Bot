@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Image } from '@napi-rs/canvas';
+import { createCanvas, Image } from '@napi-rs/canvas';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { assetImage } from '../src/core/images.js';
@@ -46,4 +46,28 @@ describe('banner art', () => {
     expect(img.width).toBe(1536);
     expect(img.height).toBe(1024);
   });
+});
+
+// A re-export that bakes the flat light-gray studio background back in passes
+// any size-only check and then reads as a gray card in dark mode, so corners
+// are asserted transparent, not just the dimensions. These are the only
+// committed images used as an embed thumbnail over the viewer's theme.
+async function expectTransparentPortrait(bossId: string): Promise<void> {
+  expect(assetImage('battles', `${bossId}-portrait`), bossId).not.toBeNull();
+  const img = new Image();
+  img.src = readFileSync(resolve(process.cwd(), 'assets/images/battles', `${bossId}-portrait.png`));
+  await img.decode();   // PNG decode is async — drawing without it silently yields a blank canvas
+  expect(img.width, bossId).toBe(1024);
+  expect(img.height, bossId).toBe(1024);
+  const canvas = createCanvas(1024, 1024);
+  const c = canvas.getContext('2d');
+  c.drawImage(img, 0, 0);
+  const corners: Array<[number, number]> = [[0, 0], [1023, 0], [0, 1023], [1023, 1023]];
+  for (const [x, y] of corners) {
+    expect(c.getImageData(x, y, 1, 1).data[3], `${bossId} corner ${x},${y}`).toBe(0);
+  }
+}
+
+describe('boss portrait art', () => {
+  it('boss-coastal_dig is a 1024×1024 transparent cutout', () => expectTransparentPortrait('boss-coastal_dig'));
 });

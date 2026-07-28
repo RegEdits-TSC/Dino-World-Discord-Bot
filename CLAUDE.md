@@ -131,9 +131,13 @@
   2-4 reference the same `attachment://` URLs — so any edit that passes
   `files: []` or `attachments: []` clears the originals and breaks every image
   mid-cinematic, and no offline test catches it. `assets/images/battles/`
-  ships empty (`.gitkeep` only) by design: boss portraits are generated
-  post-merge, and `assetImage`'s null-degrade means the campaign is fully
-  playable without them.
+  ships committed boss portraits (`boss-<siteId>-portrait.png`, 1024×1024
+  transparent cutouts pinned by `tests/images.test.ts`); `assetImage`'s
+  null-degrade still holds, so the campaign stays fully playable if any of them
+  is removed. Never stage a test fixture inside `assets/images/` — vitest runs
+  test files in parallel forks, so a `writeFileSync`/`rmSync` on a committed
+  asset path can be observed (or deleted) by another file mid-run;
+  `tests/battles-embeds.test.ts` mocks `assetImage` instead.
 - `npm run build` does not typecheck tests: `build` is `tsc` against
   `tsconfig.json`, which only `include`s `src`, and `npm test` (vitest)
   transpiles without typechecking. The test-inclusive gate is

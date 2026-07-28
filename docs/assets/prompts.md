@@ -361,7 +361,9 @@ as image-edits of the approved coastal portrait (Nano Banana Pro, `medias`
 role `image`) so pose, framing, and rendering read as a set — all three edit
 from the coastal portrait directly, never from each other. Post-process each
 with `remove_background` plus the defringe + fit pass described in the Egg
-rarities section.
+rarities section, with one difference: portraits fit and center on the **whole
+silhouette bbox** (there is no egg axis to bias toward), 24px margin on a
+1024×1024 transparent canvas.
 
 **boss-coastal_dig — Old Riptooth (reference portrait):**
 
