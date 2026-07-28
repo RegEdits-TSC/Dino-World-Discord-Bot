@@ -30,6 +30,9 @@ icons in `assets/images/eggs/` (glossy cartoon game style):
 |---|---|---|
 | `assets/images/sites/<id>-banner.png` | 1536×1024 | `/expedition claim` full-width embed image |
 | `assets/images/sites/<id>-thumb.png` | 1024×1024 | `/expedition start` + `status` embed thumbnail |
+| `assets/images/park/ground.png` | 1200×800 (3:2) | `/park view` canvas backdrop, cover-scaled |
+| `assets/images/park/plate-paddock.png` | 270×150 | `/park view` paddock tile plate |
+| `assets/images/park/plate-facility.png` | 270×150 | `/park view` facility tile plate |
 
 Banner = wide establishing shot of the site. Thumb = square icon-style
 composition with one central landmark and a simple background (readable at
@@ -429,6 +432,88 @@ silhouette bbox** (there is no egg axis to bias toward), 24px margin on a
   with jet-black obsidian-dark scales veined by glowing orange lava-crack
   markings on the scale surfaces only, an ember-orange eye, and a roaring
   open jaw.
+
+## Park map
+
+Three opaque rasters drawn by the park renderer (`src/core/render/draw.ts`)
+through `loadParkArt` (`src/core/render/art.ts`) — never through `assetImage`,
+which returns Discord attachments; these are decoded into canvas `Image`s and
+never leave the renderer. All three are optional: a missing or undecodable file
+degrades that one element back to the flat fill it replaced.
+
+**Workflow (reference chain):** generate the ground first at 3:2. Generate the
+paddock plate as an image-edit of the approved ground so the two materials share
+a light direction, then the facility plate as an image-edit of the approved
+paddock plate so the two plates match shape for shape. No background removal —
+these are opaque. Post-process each with a cover-crop fit to the size in the
+File targets table.
+
+Both plate generations came back as a plate *object* centered on a plain
+light-gray studio backdrop with a visible margin on all four sides (not
+filling the 16:9 frame edge to edge, unlike the ground). Because the raw
+generation's aspect ratio (16:9) is already close to the tile's (270:150 =
+1.8:1), a cover-crop fit alone barely trims anything and that studio-gray
+margin survives almost unchanged into the shipped tile as a stray border
+outside the plate's own frame. Crop tight to the plate object's own bounding
+box first, then cover-fit that crop to 270×150 — do not cover-fit the raw
+generation directly.
+
+**park/ground** — deliberately not a seamless tile: diffusion models do not
+reliably close tile edges, and a single cover-scaled backdrop has no seams to
+close.
+
+> A top-down view of lush jungle-park ground filling the whole frame: mown
+> green grass with subtle mowing bands, a few scattered fern fronds and small
+> pebbles, faint dirt patches worn into the turf, no single focal point and
+> nothing large enough to dominate the frame. Even flat lighting, no strong
+> cast shadows. Glossy cartoon mobile-game art style, bold dark outlines,
+> vibrant saturated colors, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no characters, no UI elements.
+
+**park/plate-paddock** (generated with the ground attached as the `image`
+reference):
+
+> A single rectangular game-UI plate for a dinosaur paddock: a warm sandy-tan
+> dirt enclosure floor framed by a rough-hewn wooden fence border on all four
+> sides, corner posts, a calm untextured center area with no detail so text
+> can sit on it legibly. Even flat lighting, no cast shadows. Glossy cartoon
+> mobile-game art style, bold dark outlines, vibrant saturated colors, clean
+> cel shading with smooth gradients, polished game-asset look. No text, no
+> characters, no UI elements.
+
+**park/plate-facility** (generated with the paddock plate attached as the
+`image` reference):
+
+> Keep the exact same rectangular plate shape, same size, same border
+> thickness, same calm untextured center area, same flat lighting. Change the
+> material to a cool blue-gray steel and glass facility floor with riveted
+> metal edging instead of wood. Glossy cartoon mobile-game art style, bold
+> dark outlines, vibrant saturated colors, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no characters, no UI elements.
+
+The first generation attempt from this prompt rendered diagonal glare streaks
+and grid panel-divider lines across the glass center — plausible as "glass",
+but they crossed straight through where the lot name and `Lv N` are drawn and
+visibly hurt legibility next to the paddock plate's clean center. The
+committed asset came from a stronger second pass off the same paddock
+reference, forbidding the specific busy elements the model kept adding:
+
+> Keep the exact same rectangular plate shape, same size, same border
+> thickness, same flat lighting. Change the material to a cool blue-gray
+> steel and glass facility floor with riveted metal edging instead of wood.
+> The center glass floor area must be completely flat, plain, and untextured,
+> one single smooth blue-gray tone with no diagonal glare streaks, no
+> reflections, no shine lines, no grid or panel divider lines, no vents, no
+> hatches, no consoles, no rivets in the center, nothing but flat smooth
+> color so text can sit on it legibly, exactly as calm and empty as the
+> center of the wooden paddock reference plate. Glossy cartoon mobile-game
+> art style, bold dark outlines, vibrant saturated colors, clean cel shading
+> with smooth gradients, polished game-asset look. No text, no characters,
+> no UI elements.
+
+A future regeneration from the first (shorter) prompt is not guaranteed to
+avoid the glare/grid again — use the second prompt, or re-verify center
+legibility against real tile text before shipping.
 
 ## Emoji icons
 
