@@ -449,14 +449,44 @@ these are opaque. Post-process each with a cover-crop fit to the size in the
 File targets table.
 
 Both plate generations came back as a plate *object* centered on a plain
-light-gray studio backdrop with a visible margin on all four sides (not
-filling the 16:9 frame edge to edge, unlike the ground). Because the raw
+light studio backdrop with a visible margin on all four sides (not filling
+the 16:9 frame edge to edge, unlike the ground). Because the raw
 generation's aspect ratio (16:9) is already close to the tile's (270:150 =
-1.8:1), a cover-crop fit alone barely trims anything and that studio-gray
+1.8:1), a cover-crop fit alone barely trims anything and that studio
 margin survives almost unchanged into the shipped tile as a stray border
 outside the plate's own frame. Crop tight to the plate object's own bounding
 box first, then cover-fit that crop to 270×150 — do not cover-fit the raw
 generation directly.
+
+**Contrast requirement (hard gate, not a style preference):** `drawTile`
+(`draw.ts`) paints the lot name and `Lv N` in the tile's fixed palette text
+color (`PADDOCK_PALETTE.text` / `FACILITY_PALETTE.text`,
+`src/data/render-icons.ts`) directly on top of the plate — the plate never
+gets a scrim or an outline behind the text. That means the plate's *center*
+luminance is the only lever for legibility, and it must independently clear
+WCAG AA (4.5:1) against the fixed text color, at both the lot-name band
+(`fillText(name, x+54, y+34)`, 18px) and the `Lv N` band
+(`fillText(`Lv ${level}`, x+54, y+54)`, 13px) — sample the actual committed
+PNG at those exact tile-local offsets, not the raw generation, and not by
+eye. Treat ~6:1 as the target, matching the flat-fill baseline it replaces
+(`PADDOCK_PALETTE.fill` / `FACILITY_PALETTE.fill`) — 4.5:1 is a floor, not a
+goal, because the plate's own gradient means different bands (and different
+real lot names) sample slightly different pixels.
+
+A first pass at both plates (kept the sandy-tan / blue-gray descriptions but
+without an explicit lightness call-out) shipped with center tones close to
+the flat-fill's *hue* but darker and more saturated than its *luminance* —
+plausible as materials, but the paddock only cleared 4.79:1–6.29:1 (down
+from the 6.30:1 flat-fill baseline) and the facility failed outright at
+3.10:1–3.64:1 (against a 5.49:1 baseline and the 4.5:1 floor). Text colors
+were never the problem; the surface under them was measurably darker than
+the flat fill it replaced. The fix is a prompt that explicitly separates
+border richness from center lightness — keep the frame saturated and dark
+enough to read as its material, but call out the center as *pale and
+desaturated*, lighter in value than the border, in similar terms to how
+"calm and untextured" was used to fix center busyness. The versions below
+are the ones that hit target (paddock 9.91:1 both bands; facility
+9.56:1–9.59:1 both bands).
 
 **park/ground** — deliberately not a seamless tile: diffusion models do not
 reliably close tile edges, and a single cover-scaled backdrop has no seams to
@@ -473,47 +503,69 @@ close.
 **park/plate-paddock** (generated with the ground attached as the `image`
 reference):
 
-> A single rectangular game-UI plate for a dinosaur paddock: a warm sandy-tan
-> dirt enclosure floor framed by a rough-hewn wooden fence border on all four
-> sides, corner posts, a calm untextured center area with no detail so text
+> A single rectangular game-UI plate for a dinosaur paddock: a pale, light,
+> desaturated sandy-beige enclosure floor — a soft warm khaki sand tone,
+> much lighter and less saturated than raw dirt, similar in lightness to
+> pale straw or light sand, not deep tan or brown soil — framed by a rich,
+> saturated, rough-hewn wooden fence border on all four sides with visible
+> wood grain and warm brown tones, corner posts. The center floor area must
+> be noticeably lighter in value than the wooden border, a calm flat
+> untextured pale tone with no shadow gradient and no detail so dark text
 > can sit on it legibly. Even flat lighting, no cast shadows. Glossy cartoon
-> mobile-game art style, bold dark outlines, vibrant saturated colors, clean
-> cel shading with smooth gradients, polished game-asset look. No text, no
-> characters, no UI elements.
+> mobile-game art style, bold dark outlines, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no characters, no UI
+> elements.
+
+An earlier version of this prompt (a warm sandy-tan floor with no explicit
+lightness call-out against the border) rendered a calm, untextured center
+that still measured only 4.79:1–6.29:1 against `PADDOCK_PALETTE.text` — below
+the ~6:1 target and, at the name band, only barely above the 4.5:1 floor. The
+version above, which explicitly asks for a pale/desaturated center distinct
+from a richer border, measured 9.91:1 at both text bands.
 
 **park/plate-facility** (generated with the paddock plate attached as the
 `image` reference):
 
 > Keep the exact same rectangular plate shape, same size, same border
-> thickness, same calm untextured center area, same flat lighting. Change the
-> material to a cool blue-gray steel and glass facility floor with riveted
-> metal edging instead of wood. Glossy cartoon mobile-game art style, bold
-> dark outlines, vibrant saturated colors, clean cel shading with smooth
-> gradients, polished game-asset look. No text, no characters, no UI elements.
+> thickness, same flat lighting. Change the material to a cool steel and
+> glass facility floor with riveted metal edging instead of wood — the
+> border/frame is a richly-colored, saturated medium steel-blue-gray with
+> clear rivet and panel detail, kept dark and rich like real brushed metal.
+> The center floor area must be pale, light, and desaturated — a soft very
+> light sky-blue-gray, noticeably lighter in value than the metal border,
+> similar in lightness to a pale overcast sky, not a deep or saturated blue.
+> The center is completely flat and untextured, one single smooth pale tone
+> with no diagonal glare streaks, no reflections, no shine lines, no grid or
+> panel divider lines, no vents, no hatches, no consoles, no rivets in the
+> center, nothing but flat pale color so dark text can sit on it legibly.
+> Glossy cartoon mobile-game art style, bold dark outlines, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no
+> characters, no UI elements.
 
-The first generation attempt from this prompt rendered diagonal glare streaks
-and grid panel-divider lines across the glass center — plausible as "glass",
-but they crossed straight through where the lot name and `Lv N` are drawn and
-visibly hurt legibility next to the paddock plate's clean center. The
-committed asset came from a stronger second pass off the same paddock
-reference, forbidding the specific busy elements the model kept adding:
+Two earlier versions of this prompt failed for two different reasons, both
+caught by rendering real tile text over the plate rather than judging the
+raw generation alone:
 
-> Keep the exact same rectangular plate shape, same size, same border
-> thickness, same flat lighting. Change the material to a cool blue-gray
-> steel and glass facility floor with riveted metal edging instead of wood.
-> The center glass floor area must be completely flat, plain, and untextured,
-> one single smooth blue-gray tone with no diagonal glare streaks, no
-> reflections, no shine lines, no grid or panel divider lines, no vents, no
-> hatches, no consoles, no rivets in the center, nothing but flat smooth
-> color so text can sit on it legibly, exactly as calm and empty as the
-> center of the wooden paddock reference plate. Glossy cartoon mobile-game
-> art style, bold dark outlines, vibrant saturated colors, clean cel shading
-> with smooth gradients, polished game-asset look. No text, no characters,
-> no UI elements.
+- A first pass ("cool blue-gray steel and glass … calm untextured center")
+  rendered diagonal glare streaks and grid panel-divider lines across the
+  center — plausible as "glass", but they crossed straight through the lot
+  name and visibly hurt legibility next to the paddock plate's clean center.
+- A second pass that explicitly forbade the glare/grid ("center glass floor
+  area must be completely flat, plain, and untextured … no diagonal glare
+  streaks, no reflections … exactly as calm and empty as the center of the
+  wooden paddock reference plate") fixed the busyness — the center was
+  genuinely flat — but was still too dark and saturated: it measured only
+  3.10:1–3.64:1 against `FACILITY_PALETTE.text`, well under the 4.5:1 floor,
+  against a 5.49:1 flat-fill baseline. Calm is necessary but not sufficient;
+  the center also has to be *pale*.
 
-A future regeneration from the first (shorter) prompt is not guaranteed to
-avoid the glare/grid again — use the second prompt, or re-verify center
-legibility against real tile text before shipping.
+The version above, which keeps the border rich but asks for a center
+"noticeably lighter in value than the metal border … similar in lightness to
+a pale overcast sky", measured 9.56:1–9.59:1 at both text bands while keeping
+the border dark and rivet-detailed. A future regeneration from either
+earlier prompt is not guaranteed to avoid its respective failure again — use
+the version above, and re-verify both busyness (by eye) and contrast (by
+measurement, against the offsets and floor described above) before shipping.
 
 ## Emoji icons
 
