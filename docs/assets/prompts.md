@@ -398,7 +398,20 @@ silhouette bbox** (there is no egg axis to bias toward), 24px margin on a
   an amber-gold eye, and warm sunset-toned glossy highlights.
 - **boss-frozen_cliffs — Stormwing:** a towering cartoon Quetzalcoatlus with
   pale ice-blue and white plumage, a long crested head, frost sheen gleaming
-  on the beak surface, and one folded wing shoulder visible.
+  on the beak surface, and one folded wing shoulder visible. The first
+  generation attempt drifted off-model against the other three bosses — thin
+  light blue-grey outlines and washed-out fills instead of matching bold
+  near-black linework and saturated color — so the icy palette is not enough
+  on its own; insert this before the no-glow sentence: "Every outline on the
+  dinosaur — crest, beak, feather edges, wing, neck — must be drawn in bold,
+  thick, near-black ink, the same weight and darkness as a classic
+  comic-book cel-shaded character; do not lighten, thin, or recolor the
+  outlines to blue-grey just because the subject is icy — the linework stays
+  bold and near-black regardless of the pale color underneath, exactly like
+  the outline weight on the reference portrait. The color fills stay vibrant
+  and richly saturated, not washed out, pastel, or desaturated by the cold
+  palette — deep ice-blue and clean white, with strong glossy highlights and
+  clean cel-shaded gradients, not a flat muted look."
 - **boss-volcano_core — The Tyrant King:** a colossal cartoon Tyrannosaurus
   with jet-black obsidian-dark scales veined by glowing orange lava-crack
   markings on the scale surfaces only, an ember-orange eye, and a roaring
