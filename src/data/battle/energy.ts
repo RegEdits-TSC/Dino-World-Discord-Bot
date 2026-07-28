@@ -10,7 +10,9 @@ export function settleEnergy(
   nowMs: number,
 ): { energy: number; updatedAtMs: number } {
   const ticks = Math.floor((nowMs - updatedAtMs) / ENERGY_REGEN_MS);
-  const settled = Math.min(ENERGY_CAP, energy + ticks);
+  // Clamped at 0: purely defensive against a backward clock jump (ticks negative) —
+  // the spend gate in runFight already rules out any free-energy exploit from this.
+  const settled = Math.max(0, Math.min(ENERGY_CAP, energy + ticks));
   const at = settled >= ENERGY_CAP ? nowMs : updatedAtMs + ticks * ENERGY_REGEN_MS;
   return { energy: settled, updatedAtMs: at };
 }

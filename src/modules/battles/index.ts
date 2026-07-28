@@ -9,8 +9,8 @@ import { settleEscapes } from '../park/escapes.js';
 import { getSpecies } from '../../data/species/index.js';
 import { battleLevel } from '../../data/battle/stats.js';
 import { settleEnergy } from '../../data/battle/energy.js';
-import { CAMPAIGN, stageUnlocked, chapterUnlocked, type ProgressMap } from '../../data/battle/chapters/index.js';
-import { runFight, BattleError, type FightOutcome } from './service.js';
+import { CAMPAIGN, stageUnlocked, chapterUnlocked } from '../../data/battle/chapters/index.js';
+import { runFight, loadProgress, BattleError, type FightOutcome } from './service.js';
 import { fightFrames, chaptersPayload, type FramePayload, type ChaptersView } from './embeds.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { FIGHT_FRAME_DELAY_MS } from '../../data/battle/constants.js';
@@ -75,8 +75,7 @@ async function presentFight(ctx: Ctx, i: ChatInputCommandInteraction | ButtonInt
 function chaptersView(ctx: Ctx, userId: string): { view: ChaptersView; frontier: number } | null {
   const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get();
   if (!user) return null;
-  const rows = ctx.db.select().from(schema.battleProgress).where(eq(schema.battleProgress.userId, userId)).all();
-  const progress: ProgressMap = new Map(rows.map((r) => [r.stageId, { stars: r.stars, firstClearedAt: r.firstClearedAt }]));
+  const progress = loadProgress(ctx, userId);
   const settled = settleEnergy(user.energy, user.energyUpdatedAt, ctx.now());
   const view: ChaptersView = {
     progress, ratingHighWater: user.ratingHighWater,
@@ -128,8 +127,7 @@ export const battlesModule: ModuleManifest = {
         const focused = i.options.getFocused(true);
         const q = String(focused.value);
         if (focused.name === 'stage') {
-          const rows = ctx.db.select().from(schema.battleProgress).where(eq(schema.battleProgress.userId, i.user.id)).all();
-          const progress: ProgressMap = new Map(rows.map((r) => [r.stageId, { stars: r.stars, firstClearedAt: r.firstClearedAt }]));
+          const progress = loadProgress(ctx, i.user.id);
           const entries: AcEntry[] = [];
           for (const ch of CAMPAIGN) {
             if (!chapterUnlocked(ch.id, progress, user.ratingHighWater)) continue;

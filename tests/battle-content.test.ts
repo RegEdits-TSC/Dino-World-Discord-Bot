@@ -51,7 +51,12 @@ describe('battle campaign content', () => {
         if (boss) {
           expect(() => getSpecies(boss.speciesId)).not.toThrow();
           const eggSpeciesId = boss.eggSpeciesId;
-          if (eggSpeciesId !== null) expect(() => getSpecies(eggSpeciesId)).not.toThrow();
+          if (eggSpeciesId !== null) {
+            expect(() => getSpecies(eggSpeciesId)).not.toThrow();
+            // hatchEgg pins this species directly, so its rarity IS the egg's real rarity —
+            // a mismatch would mint value the displayed rarity never promised.
+            expect(getSpecies(eggSpeciesId).rarity).toBe(boss.eggRarity);
+          }
         }
       }
     }
