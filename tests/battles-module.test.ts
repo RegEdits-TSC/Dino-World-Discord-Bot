@@ -37,16 +37,24 @@ describe('/battle fight cinematic', () => {
     expect(fake.deferOpts).toHaveLength(1);
     expect(fake.replies).toHaveLength(4);   // every payload auto-validated by the harness
   });
-  it('frames 2-4 never carry a files/attachments key (would clear F1\'s uploads on edit)', async () => {
+  it('files attach on F1 and F4 only; F4 uploads exactly what its embed references', async () => {
     const ctx = makeCtx();
     const dino = seedFighter(ctx);
     const fake = fakeCommand({ name: 'battle', sub: 'fight', user: 'u1',
       options: { stage: 'coastal_dig_1', dino1: dino } });
     await battleCmd.execute(ctx, fake.asChatInput());
-    for (const frame of fake.replies.slice(1)) {
-      expect(frame).not.toHaveProperty('files');
+    for (const frame of fake.replies.slice(1, 3)) {
+      expect(frame).not.toHaveProperty('files');       // would clear F1's uploads on edit
       expect(frame).not.toHaveProperty('attachments');
     }
+    const f4 = fake.replies[3] as {
+      files?: Array<{ name: string | null }>; attachments?: unknown[];
+      embeds: Array<{ toJSON(): { image?: { url: string } } }>;
+    };
+    expect(f4.attachments).toEqual([]);                // drops F1's chapter banner
+    expect(f4.files).toHaveLength(1);
+    expect(f4.files![0].name).toMatch(/^battle_(victory|defeat)\.png$/);
+    expect(f4.embeds[0].toJSON().image?.url).toBe(`attachment://${f4.files![0].name}`);
   });
   it('rejects ephemerally with no defer when energy is empty', async () => {
     const ctx = makeCtx({ nowMs: 1_000_000 });

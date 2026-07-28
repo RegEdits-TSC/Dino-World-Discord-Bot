@@ -52,14 +52,16 @@ function makeOutcome(over: Partial<FightOutcome> = {}): FightOutcome {
 const skipStub = () => null;
 
 describe('fightFrames', () => {
-  it('returns 4 valid frames with attachments only on F1', () => {
+  it('returns 4 valid frames; files attach on F1 and F4 only', () => {
     const frames = fightFrames(makeOutcome(), skipStub);
     expect(frames).toHaveLength(4);
     for (const f of frames) validateMessagePayload(f, 'frame');
     expect(frames[0].files?.length).toBeGreaterThan(0);   // coastal_dig banner ships
     expect(frames[1].files).toBeUndefined();
     expect(frames[2].files).toBeUndefined();
-    expect(frames[3].files).toBeUndefined();
+    expect(frames[3].files?.map((f) => f.name)).toEqual(['battle_victory.png']);
+    expect(frames[3].attachments).toEqual([]);
+    expect(frames[3].embeds[0].toJSON().image?.url).toBe('attachment://battle_victory.png');
   });
   it('F2/F3 come straight from the result beats', () => {
     const frames = fightFrames(makeOutcome(), skipStub);
@@ -87,11 +89,12 @@ describe('fightFrames', () => {
     expect(JSON.stringify(f4.fields)).not.toContain('cash');
     expect(JSON.stringify(f4.fields)).toContain('+10 battle XP');
   });
-  it('boss stages thumbnail the portrait; normal stages never do; files still F1-only', () => {
+  it('boss stages thumbnail the portrait on F3 and F4; normal stages never do', () => {
     const boss = fightFrames(makeOutcome({ stageId: 'coastal_dig_boss', bossEgg: { rarity: 'rare' } }), skipStub);
     expect(boss[2].embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${bossId}-portrait.png`);
     expect(boss[3].embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${bossId}-portrait.png`);
     expect(boss[0].files?.map((f) => f.name)).toContain(`${bossId}-portrait.png`);
+    expect(boss[3].files?.map((f) => f.name)).toContain(`${bossId}-portrait.png`);   // re-uploaded, not re-referenced
     expect(boss[1].files).toBeUndefined();
     expect(JSON.stringify(boss[3].embeds[0].toJSON().fields)).toContain('egg');
     // The rendered enemy line, not just the thumbnail/files wiring, names the boss.
@@ -128,6 +131,25 @@ describe('fightFrames', () => {
     expect(seen).toEqual([0, 1, 2]);
     expect(frames[0].components).toHaveLength(1);
     expect(frames[3].components).toHaveLength(0);   // the module appends the again row (it owns userId)
+  });
+  it('frame contract: every referenced attachment is live on that frame, and no frame uploads what it never references', () => {
+    const frames = fightFrames(makeOutcome({ stageId: 'coastal_dig_boss', bossEgg: { rarity: 'rare' } }), skipStub);
+    // Mirrors discord.js MessagePayload: a payload carrying `files` (or an explicit
+    // `attachments` array) REPLACES the message's whole attachment set; a payload
+    // carrying neither leaves the previous uploads in place.
+    let live: string[] = [];
+    frames.forEach((frame, idx) => {
+      const own = (frame.files ?? []).map((f) => f.name!);
+      live = frame.files || frame.attachments ? own : [...live, ...own];
+      const json = frame.embeds[0].toJSON();
+      const referenced = [json.image?.url, json.thumbnail?.url]
+        .filter((u): u is string => typeof u === 'string')
+        .map((u) => u.replace('attachment://', ''));
+      for (const r of referenced) expect(live, `frame ${idx + 1} references ${r}`).toContain(r);
+      for (const n of own) expect(referenced, `frame ${idx + 1} uploads ${n}`).toContain(n);
+    });
+    // F4 dropped the chapter banner it no longer references.
+    expect(live).toEqual(['battle_victory.png', `${bossId}-portrait.png`]);
   });
 });
 
