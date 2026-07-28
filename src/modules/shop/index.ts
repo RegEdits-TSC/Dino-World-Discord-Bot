@@ -69,8 +69,15 @@ export const shopModule: ModuleManifest = {
             if (eggImg) { eggEmbed.setThumbnail(eggImg.url); eggPayload.files = [eggImg.file]; }
             await i.reply(eggPayload);
           } else {
-            const { food, total } = buyFood(ctx, i.user.id, i.options.getString('item', true), i.options.getInteger('units', true));
-            await i.reply({ content: `${emojiTag(food.emoji)} Bought ${i.options.getInteger('units', true)}× ${food.name} for ${total.toLocaleString()} cash.` });
+            const units = i.options.getInteger('units', true);
+            const { food, total } = buyFood(ctx, i.user.id, i.options.getString('item', true), units);
+            const foodEmbed = new EmbedBuilder().setColor(0x3ba55c)
+              .setTitle(`${emojiTag(food.emoji)} Bought ${units}× ${food.name}`)
+              .setDescription(`Paid ${total.toLocaleString()} cash — fills hunger to ${food.fillTo}. Serve it with \`/feed all\`.`);
+            const foodPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [foodEmbed] };
+            const foodShopBanner = assetImage('banners', 'shop_food_market');
+            if (foodShopBanner) { foodEmbed.setImage(foodShopBanner.url); foodPayload.files = [foodShopBanner.file]; }
+            await i.reply(foodPayload);
           }
         } catch (e) {
           if (e instanceof ShopError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
