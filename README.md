@@ -15,7 +15,8 @@ rarities, admin species — offer autocomplete suggestions as you type, with
 currently-valid picks listed first and everything else tagged with its state.
 `/help [topic]` is how to play — run it with no topic for a first-ten-minutes
 walkthrough plus a topic index, or pass a topic (getting-started, park, eggs,
-expeditions, shop, care, trading, ranks) for a focused guide on that system.
+expeditions, shop, care, trading, ranks, battles) for a focused guide on that
+system.
 Embeds carry generated art — egg icons per rarity, expedition site art — living
 under `assets/images/`; every embed degrades gracefully and still renders,
 just without the image, when a file is absent.
@@ -25,6 +26,16 @@ quantity via `/shop food item:<food> units:<n>`, with carnivore food costing
 about 20% more than the matching herbivore tier. Higher tiers overfill hunger
 (up to 150) so dinos stay fed longer between feedings, and `/feed` only
 accepts food matching a dino's diet.
+Battles are a PvE campaign fought with your collection: `/battle chapters`
+shows four chapters themed to the expedition sites (five stages each, the
+fifth a boss), and `/battle fight stage:<stage> dino1:<id> [dino2] [dino3]`
+sends a squad of one to three dinos into an auto-resolved fight that plays
+back as a four-frame cinematic with a Skip button. Attempts spend energy
+(10 max, one back every 10 minutes), wins pay cash and food scaled by a 0–3
+star rating plus one-time first-clear shards, every fight pays per-dino
+battle XP up to level 10, and each chapter's boss first-clear awards a
+high-rarity egg and unlocks the next chapter alongside that site's rating
+gate.
 
 ## Setup
 
