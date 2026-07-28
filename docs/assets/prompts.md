@@ -412,6 +412,19 @@ silhouette bbox** (there is no egg axis to bias toward), 24px margin on a
   and richly saturated, not washed out, pastel, or desaturated by the cold
   palette — deep ice-blue and clean white, with strong glossy highlights and
   clean cel-shaded gradients, not a flat muted look."
+
+  The regeneration above (correct on outline weight and saturation) still
+  came back facing left, mirrored against the other three bosses, which all
+  face right — snout/beak pointing right — matching the coastal_dig
+  reference. Rather than risk losing the now-approved outline/saturation fix
+  on a third generation, the committed `boss-frozen_cliffs-portrait.png` is
+  that same approved asset horizontally flipped in post (alpha-preserving,
+  1024×1024 dimensions unchanged) to restore right-facing orientation. A
+  future regeneration from this prompt is not guaranteed to land right-facing
+  either — check orientation against the other three bosses before shipping,
+  and either add an explicit "facing right, mirroring the reference
+  portrait's profile direction" clause to the prompt or re-apply the same
+  horizontal-flip post-process.
 - **boss-volcano_core — The Tyrant King:** a colossal cartoon Tyrannosaurus
   with jet-black obsidian-dark scales veined by glowing orange lava-crack
   markings on the scale surfaces only, an ember-orange eye, and a roaring
