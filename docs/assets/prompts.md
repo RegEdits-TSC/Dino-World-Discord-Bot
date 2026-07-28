@@ -231,7 +231,7 @@ shell with glowing orange cracks).
 
 ## Embed banners
 
-Six wide banners for the surfaces that have no site or egg art of their own.
+Eight wide banners for the surfaces that have no site or egg art of their own.
 All generated with Higgsfield Nano Banana Pro at 3:2, then scaled to 1536×1024
 (the generator emits 1264×848; scaling to full width leaves ~6px of vertical
 excess, which is center-cropped).
@@ -244,6 +244,8 @@ excess, which is center-cropped).
 | `assets/images/banners/care.png` | 1536×1024 | care embed, dinos fed |
 | `assets/images/banners/care_neglect.png` | 1536×1024 | care embed, a dino is very hungry |
 | `assets/images/banners/shop_food_market.png` | 1536×1024 | `/shop view` food market embed image |
+| `assets/images/banners/battle_victory.png` | 1536×1024 | `/battle fight` F4 image, win |
+| `assets/images/banners/battle_defeat.png` | 1536×1024 | `/battle fight` F4 image, loss |
 
 These are the only prompts in this file whose subject is dinosaurs rather than
 scenery, so they drop the shared block's "no characters" clause and forbid only
@@ -335,6 +337,32 @@ premium lettuce; right side butcher/fishmonger — fresh fish on ice, hanging me
 leg, marbled steak. Warm tropical daylight, painted-illustration style matching
 the existing site banners, no text, no people, 3:2 (scaled and center-cropped
 to 1536×1024 like the other banners).
+
+**Battle victory (`battle_victory.png`):**
+
+> A wide cartoon scene of a dinosaur park arena after a won battle: a proud
+> victorious green cartoon dinosaur standing tall on a rocky outcrop with its
+> head raised, banners and pennants flying on tall poles behind it, scattered
+> broken wooden barricades on the sand floor, warm golden late-afternoon light
+> breaking through dust in the air, triumphant and bright. Glossy cartoon
+> mobile-game art style, bold dark outlines, vibrant saturated colors, strong
+> glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no human characters, no UI elements.
+
+**Battle defeat (`battle_defeat.png`):**
+
+Generated with `battle_victory.png` attached as the `image` reference, the same
+`care` / `care_neglect` pairing — regenerate it the same way or the two moods
+stop reading as one arena.
+
+> Keep the exact same cartoon arena scene: same rocky outcrop, same banner
+> poles, same barricades, same camera framing and composition. Change only the
+> mood to defeat: the dinosaur now stands with its head lowered and shoulders
+> dropped, the banners are torn and drooping, dust hangs heavy. Overcast grey
+> light with muted desaturated colors and long dull shadows instead of golden
+> sun. Glossy cartoon mobile-game art style, bold dark outlines, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no human
+> characters, no UI elements.
 
 ---
 

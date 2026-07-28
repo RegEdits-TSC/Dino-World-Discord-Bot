@@ -5,7 +5,8 @@ import { resolve } from 'node:path';
 import { assetImage } from '../src/core/images.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 
-const BANNERS = ['trading', 'leaderboards', 'help', 'care', 'care_neglect'];
+const BANNERS = ['trading', 'leaderboards', 'help', 'care', 'care_neglect', 'shop_food_market',
+  'battle_victory', 'battle_defeat'];
 
 describe('assetImage', () => {
   it('returns an attachment ref for a present file', () => {
@@ -25,7 +26,7 @@ describe('assetImage', () => {
   it('accepts the banners kind and null-degrades when absent', () => {
     expect(assetImage('banners', 'no-such-banner')).toBeNull();
   });
-  it('ships all five banner images', () => {
+  it('ships every banner image listed in BANNERS', () => {
     for (const name of BANNERS) {
       const img = assetImage('banners', name);
       expect(img, name).not.toBeNull();
