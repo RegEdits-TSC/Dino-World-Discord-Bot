@@ -1,7 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { writeFileSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { describe, it, expect, vi } from 'vitest';
+import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { fightFrames, chaptersPayload, energyLine, type ChaptersView } from '../src/modules/battles/embeds.js';
 import type { FightOutcome } from '../src/modules/battles/service.js';
 import type { BeatSummary } from '../src/data/battle/resolve.js';
@@ -10,21 +8,31 @@ import { ENERGY_REGEN_MS } from '../src/data/battle/constants.js';
 import { validateMessagePayload } from './lib/discord-limits.js';
 import { assetImage } from '../src/core/images.js';
 
-// assetImage is a pass-through spy by default (calls the real implementation),
-// so every test in this file except the two chaptersPayload degrade-path
-// tests below is unaffected. Those two override exactly one queued call via
+// Portrait presence is mocked, never staged on disk. vitest runs test FILES in
+// parallel forks, so a writeFileSync/rmSync fixture on a committed asset path
+// (this file used to stub the coastal portrait) can be observed — or deleted —
+// by another file mid-run. `portraits: false` is also the only fixture left for
+// the null-degrade branch: every boss stage ships a portrait now.
+//
+// For every other kind, assetImage stays a pass-through spy (calls the real
+// implementation) wrapped in vi.fn, so the two chaptersPayload degrade-path
+// tests below can still override exactly one queued call via
 // mockImplementationOnce to force a miss without touching real asset files.
+const art = vi.hoisted(() => ({ portraits: true }));
 vi.mock('../src/core/images.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/core/images.js')>();
-  return { ...actual, assetImage: vi.fn(actual.assetImage) };
+  return {
+    ...actual,
+    assetImage: vi.fn((kind: Parameters<typeof actual.assetImage>[0], name: string) => {
+      if (kind !== 'battles') return actual.assetImage(kind, name);   // chapter banners/thumbs stay real
+      if (!art.portraits) return null;
+      const fileName = `${name}.png`;
+      return { file: new AttachmentBuilder(Buffer.from('portrait'), { name: fileName }), url: `attachment://${fileName}` };
+    }),
+  };
 });
 
-// Stub portrait so the thumbnail wiring is testable: assetImage only checks
-// existence, and this beforeAll runs before any assetImage call on the path.
 const bossId = STAGES.get('coastal_dig_boss')!.boss!.bossId;
-const portraitPath = resolve(process.cwd(), 'assets/images/battles', `${bossId}-portrait.png`);
-beforeAll(() => { writeFileSync(portraitPath, 'stub'); });
-afterAll(() => { rmSync(portraitPath, { force: true }); });
 
 const beats: [BeatSummary, BeatSummary] = [
   { title: '⚔️ Clash!', lines: ['Rexy bites Compy for 24 (crit!)'] },
@@ -93,18 +101,22 @@ describe('fightFrames', () => {
     for (const f of normal) expect(f.embeds[0].toJSON().thumbnail).toBeUndefined();
   });
   it('boss stage with no portrait art degrades cleanly: no thumbnail anywhere, no portrait file, banner still ships', () => {
-    // amber_ridge_boss's portrait is never stubbed on disk in this file (unlike
-    // coastal_dig_boss above) — assetImage's per-path existence cache never sees
-    // it as present, so this exercises the real un-stubbed production path: no
-    // committed boss art anywhere under assets/images/battles/ today.
+    // No boss stage lacks committed art any more, so the absent-art branch is
+    // pinned by forcing assetImage('battles', …) to null — the project rule is
+    // that missing art degrades, never throws.
     const noPortraitBossId = STAGES.get('amber_ridge_boss')!.boss!.bossId;
-    const frames = fightFrames(
-      makeOutcome({ stageId: 'amber_ridge_boss', bossEgg: { rarity: 'epic' } }), skipStub);
-    expect(frames).toHaveLength(4);
-    for (const f of frames) validateMessagePayload(f, 'frame-no-portrait');
-    for (const f of frames) expect(f.embeds[0].toJSON().thumbnail).toBeUndefined();
-    expect(frames[0].files?.map((f) => f.name)).not.toContain(`${noPortraitBossId}-portrait.png`);
-    expect(frames[0].files?.map((f) => f.name)).toContain('amber_ridge-banner.png');   // chapter banner still ships
+    art.portraits = false;
+    try {
+      const frames = fightFrames(
+        makeOutcome({ stageId: 'amber_ridge_boss', bossEgg: { rarity: 'epic' } }), skipStub);
+      expect(frames).toHaveLength(4);
+      for (const f of frames) validateMessagePayload(f, 'frame-no-portrait');
+      for (const f of frames) expect(f.embeds[0].toJSON().thumbnail).toBeUndefined();
+      expect(frames[0].files?.map((f) => f.name)).not.toContain(`${noPortraitBossId}-portrait.png`);
+      expect(frames[0].files?.map((f) => f.name)).toContain('amber_ridge-banner.png');   // chapter banner still ships
+    } finally {
+      art.portraits = true;
+    }
   });
   it('calls the skip callback for frames 0-2 and attaches returned rows; F4 has no row', () => {
     const seen: number[] = [];
