@@ -134,8 +134,11 @@ export function chaptersPayload(userId: string, chapterIndex: number, view: Chap
       .setStyle(ButtonStyle.Secondary).setDisabled(idx >= CAMPAIGN.length - 1),
   );
   const payload: FramePayload = { embeds: [embed], components: [nav] };
-  // chapterId === siteId invariant (content test) makes the site banner legal here.
+  // chapterId === siteId invariant (content test) makes the site art legal here.
   const banner = assetImage('sites', `${ch.id}-banner`);
   if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+  // APPEND — a second assignment would drop the banner file.
+  const thumb = assetImage('sites', `${ch.id}-thumb`);
+  if (thumb) { embed.setThumbnail(thumb.url); payload.files = [...(payload.files ?? []), thumb.file]; }
   return payload;
 }

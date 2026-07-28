@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { writeFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
@@ -8,6 +8,16 @@ import type { BeatSummary } from '../src/data/battle/resolve.js';
 import { STAGES, type ProgressMap } from '../src/data/battle/chapters/index.js';
 import { ENERGY_REGEN_MS } from '../src/data/battle/constants.js';
 import { validateMessagePayload } from './lib/discord-limits.js';
+import { assetImage } from '../src/core/images.js';
+
+// assetImage is a pass-through spy by default (calls the real implementation),
+// so every test in this file except the two chaptersPayload degrade-path
+// tests below is unaffected. Those two override exactly one queued call via
+// mockImplementationOnce to force a miss without touching real asset files.
+vi.mock('../src/core/images.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/core/images.js')>();
+  return { ...actual, assetImage: vi.fn(actual.assetImage) };
+});
 
 // Stub portrait so the thumbnail wiring is testable: assetImage only checks
 // existence, and this beforeAll runs before any assetImage call on the path.
@@ -130,6 +140,42 @@ describe('chaptersPayload', () => {
     expect(nav[0].disabled).toBe(true);
     expect(nav[1].custom_id).toBe('battle:chapter:u1:1');
     expect(nav[1].disabled).toBeFalsy();
+  });
+  it('carries the chapter banner AND thumb — both referenced, both uploaded', () => {
+    // chapterId === siteId, so both site assets are legal here. This pins the
+    // append: assigning payload.files twice would drop the banner file while the
+    // embed still points at attachment://coastal_dig-banner.png.
+    const p = chaptersPayload('u1', 0, baseView());
+    const embed = p.embeds[0].toJSON();
+    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.png');
+    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.png');
+    const names = p.files!.map((f) => f.name);
+    expect(names).toContain('coastal_dig-banner.png');
+    expect(names).toContain('coastal_dig-thumb.png');
+    expect(names).toHaveLength(2);   // nothing uploaded that the embed does not reference
+  });
+  it('chaptersPayload still ships the thumb when the banner is missing', () => {
+    // Degrade path 1/2: the two assetImage lookups are independent `if`
+    // blocks — a miss on the banner call must not suppress the thumb.
+    vi.mocked(assetImage).mockImplementationOnce(() => null);   // banner call (1st) -> missing
+    const p = chaptersPayload('u1', 0, baseView());
+    const embed = p.embeds[0].toJSON();
+    expect(embed.image).toBeUndefined();
+    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.png');
+    expect(p.files!.map((f) => f.name)).toEqual(['coastal_dig-thumb.png']);
+  });
+  it('chaptersPayload still ships the banner when the thumb is missing', async () => {
+    // Degrade path 2/2: the mirror case — a miss on the thumb call must not
+    // suppress the banner that was already appended to payload.files.
+    const { assetImage: realAssetImage } = await vi.importActual<typeof import('../src/core/images.js')>('../src/core/images.js');
+    vi.mocked(assetImage)
+      .mockImplementationOnce((kind, name) => realAssetImage(kind, name))   // banner call (1st) -> real
+      .mockImplementationOnce(() => null);                                 // thumb call (2nd) -> missing
+    const p = chaptersPayload('u1', 0, baseView());
+    const embed = p.embeds[0].toJSON();
+    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.png');
+    expect(embed.thumbnail).toBeUndefined();
+    expect(p.files!.map((f) => f.name)).toEqual(['coastal_dig-banner.png']);
   });
   it('locked chapter renders locked', () => {
     const embed = chaptersPayload('u1', 1, baseView()).embeds[0].toJSON();
