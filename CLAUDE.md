@@ -141,3 +141,11 @@
   `tsconfig.json` and adds `tests` and `scripts` to `include`) — a type error
   in a test file passes both `build` and `test` clean; run `typecheck` before
   every commit that touches `tests/` or `scripts/`.
+- `HELP_TOPICS` (`src/modules/help/index.ts`) stores a LAZY art descriptor
+  (`art?: { kind, name }`), never a built `ImageRef` — `assetImage` returns a
+  fresh `AttachmentBuilder` per call and the map is module-level (same class of
+  mistake as calling `emojiTag` in a module constant). The `park` topic has no
+  descriptor: it defers and renders the reader's own map, degrading to a
+  text-only embed when `buildParkSnapshot`/`renderPark` throws. Adding or
+  removing a topic KEY changes the `/help` builder choices and forces
+  `npm run deploy-commands`; adding a field to the value type does not.

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeCtx, fakeCommand } from './harness.js';
 import { helpModule, HELP_TOPICS } from '../src/modules/help/index.js';
+import { schema } from '../src/core/db/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
@@ -30,5 +31,29 @@ describe('/help', () => {
     expect(t.body).toMatch(/star/i);
     expect(t.body).toMatch(/boss/i);
     expect(t.body).toMatch(/escaped/i);
+  });
+  it('every topic that declares art ships the image and its file together', async () => {
+    for (const [topic, t] of Object.entries(HELP_TOPICS)) {
+      if (!t.art) continue;
+      const i = fakeCommand({ name: 'help', user: 'u1', options: { topic } });
+      await helpModule.commands[0].execute(ctx, i.asChatInput());
+      const payload = i.replies[0] as {
+        embeds: Array<{ toJSON(): { image?: { url: string } } }>;
+        files?: Array<{ name?: string | null }>;
+      };
+      expect(payload.embeds[0].toJSON().image?.url, topic).toBe(`attachment://${t.art.name}.png`);
+      expect(payload.files!.map((f) => f.name), topic).toContain(`${t.art.name}.png`);
+    }
+  });
+  it('the park topic defers and still renders one embed when the map render fails', async () => {
+    // 'no-park' has no user row, so buildParkSnapshot throws inside the try —
+    // /help must never create rows, and must never die on a render failure.
+    const i = fakeCommand({ name: 'help', user: 'no-park', options: { topic: 'park' } });
+    await helpModule.commands[0].execute(ctx, i.asChatInput());
+    expect(i.deferOpts).toHaveLength(1);
+    const reply = i.replies[0] as { embeds: Array<{ toJSON(): { title?: string } }> };
+    expect(reply.embeds).toHaveLength(1);
+    expect(reply.embeds[0].toJSON().title).toBe(HELP_TOPICS.park.title);
+    expect(ctx.db.select().from(schema.users).all()).toHaveLength(0);
   });
 });
