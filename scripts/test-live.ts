@@ -108,6 +108,14 @@ for (const stageId of ['coastal_dig_1', 'coastal_dig_2', 'coastal_dig_3', 'coast
   ctx.db.insert(schema.battleProgress).values({ userId: P1, stageId, stars: 3, firstClearedAt: ctx.now(), attempts: 1 }).run();
 }
 
+// Two extra dinos seeded AFTER the squad picks above so b1/b2/b3 keep their
+// identities: one already escaped (for /rescue), one Lv.1 weakling that loses
+// to the coastal boss (for the defeat banner).
+ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'stegosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(), escapedAt: ctx.now() - 3_600_000 }).run();
+const escapedDino = ctx.db.select().from(schema.dinos).all().at(-1)!;
+ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'compsognathus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
+const weakDino = ctx.db.select().from(schema.dinos).all().at(-1)!;
+
 // If any service signature above disagrees with the source, match the source —
 // tests/*.test.ts show every call shape.
 
@@ -166,6 +174,9 @@ const cases: Case[] = [
   { title: '/battle fight — all 4 cinematic frames (coastal_dig_1 win)', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_1', dino1: b1.id, dino2: b2.id } }) },
   { title: '/battle fight — boss FIRST clear: portrait thumb + egg line on F4', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } }) },
   { title: '/battle fight — amber_ridge boss: second portrait (edit off the coastal reference)', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'amber_ridge_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } }) },
+  { title: 'park:collect — income embed (ephemeral in production)', run: () => button('park', 'park:collect', P1) },
+  { title: '/rescue — recapture embed', run: () => slash('care', 'rescue', { name: 'rescue', user: P1, options: { dino: escapedDino.id } }) },
+  { title: '/battle fight — DEFEAT: lone Lv.1 squad vs the coastal boss', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_boss', dino1: weakDino.id } }) },
 ];
 
 type RawFilePayload = { data: Buffer; name: string };
