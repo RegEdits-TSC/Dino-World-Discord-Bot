@@ -74,5 +74,9 @@ export function eggListPayload(eggs: Egg[], now: number, userId: string, page = 
   const featured = featuredEgg(eggs, now);
   const img = featured ? assetImage('eggs', featured.rarity) : null;
   if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }
+  // Banner attaches on every branch, including the no-eggs one — mirrors the
+  // two-file thumbnail+image pattern in src/modules/shop/index.ts.
+  const banner = assetImage('banners', 'eggs_incubator');
+  if (banner) { embed.setImage(banner.url); payload.files = [...(payload.files ?? []), banner.file]; }
   return payload;
 }
