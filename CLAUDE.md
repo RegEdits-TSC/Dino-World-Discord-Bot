@@ -151,7 +151,17 @@
   avoids stranding F1's upload as a bare attachment card. Never dress F4 with
   the chapter banner again. `tests/battles-embeds.test.ts`'s frame-contract test
   is the machine gate; the skip button replays the same F4 payload via
-  `i.update`, so both paths must stay identical.
+  `i.update`, so both paths must stay identical. That replay is why F4's
+  payload can reach two send sites — `presentFight`'s closing `editReply` and,
+  if a Skip races it, the button handler's `i.update`
+  (`src/modules/battles/index.ts:34-46`): discord.js's `MessagePayload` pushes
+  into `options.attachments` and `create()` only shallow-copies it, so one
+  payload object forwarded to both sends accumulates duplicate attachment ids
+  on whichever resolves second. Invisible to `tests/battles-embeds.test.ts`,
+  which builds `FramePayload`s directly and never constructs a
+  `MessagePayload`. `finalPayload()` there is the fix and the pattern to copy
+  for any future payload reused across two send sites: hand each call its own
+  fresh `attachments: []`, never forward the same object twice.
   Embed art kinds are `eggs | sites | banners | battles | hatch` (`assetImage`,
   `src/core/images.ts`); `hatch/<rarity>-crack.png` is the hatch-reveal image and
   its attachment name never collides with `eggs/<rarity>.png`. Generated art is
