@@ -370,11 +370,19 @@ stop reading as one arena.
 
 > A wide cartoon scene of a dinosaur park ticket booth at closing time: an
 > open cash box on a wooden counter overflowing with gold coins and banknotes,
-> stacks of coins beside it, a small chalkboard sign and a coil of ticket
-> stubs, lush ferns and a park path behind, warm cheerful afternoon daylight.
-> Glossy cartoon mobile-game art style, bold dark outlines, vibrant saturated
-> colors, strong glossy highlights, clean cel shading with smooth gradients,
-> polished game-asset look. No text, no human characters, no UI elements.
+> stacks of coins beside it, a small blank chalkboard sign and a coil of
+> ticket stubs, lush ferns and a park path behind, warm cheerful afternoon
+> daylight. Glossy cartoon mobile-game art style, bold dark outlines, vibrant
+> saturated colors, strong glossy highlights, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no lettering, no words, no
+> numbers, no signage writing anywhere in the scene, no human characters, no
+> UI elements.
+
+A first attempt with a plain "small chalkboard sign" and a bare "No text"
+clause rendered a carved "PARK ENTRANCE" sign and a hanging "CLOSED" sign in
+legible lettering. The "blank" chalkboard and the expanded no-text clause
+above are load-bearing — regenerating from a shorter version risks
+reproducing the signage text.
 
 **Rescue (`rescue.png`):**
 
