@@ -185,7 +185,7 @@ describe('care module', () => {
 
 describe('/rescue execute', () => {
   const rescueCmd = careModule.commands.find((c) => c.data.name === 'rescue')!;
-  it('recaptures an escaped dino for the fee', async () => {
+  it('recaptures an escaped dino for the fee, replying with the rescue banner embed', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
     ctx.db.insert(schema.dinos).values({
       userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0, escapedAt: 100,
@@ -193,7 +193,10 @@ describe('/rescue execute', () => {
     const dino = ctx.db.select().from(schema.dinos).all()[0];
     const i = fakeCommand({ name: 'rescue', user: 'u1', options: { dino: dino.id } });
     await rescueCmd.execute(ctx, i.asChatInput());
-    expect(replyText(i.replies[0])).toContain('Recaptured');
+    const payload = i.replies[0] as CarePayload;
+    expect(payload.embeds[0].toJSON().description).toContain('Recaptured');
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://rescue.png');
+    expect(payload.files!.map((f) => f.name)).toEqual(['rescue.png']);
     expect(ctx.db.select().from(schema.dinos).all()[0].escapedAt).toBeNull();
   });
   it('rejects a dino that has not escaped, ephemeral', async () => {

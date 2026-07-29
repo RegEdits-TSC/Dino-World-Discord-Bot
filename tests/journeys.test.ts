@@ -174,7 +174,7 @@ describe('journeys', () => {
     const rescue = await dispatch(ctx, careModule, 'rescue', {
       name: 'rescue', user: 'p1', options: { dino: dino.id },
     });
-    expect(replyText(rescue.replies[0])).toContain('Recaptured');
+    expect(embedText(rescue.replies[0])).toContain('Recaptured');
     const feedOk = await dispatch(ctx, careModule, 'feed', {
       name: 'feed', sub: 'one', user: 'p1', options: { dino: dino.id },
     });
