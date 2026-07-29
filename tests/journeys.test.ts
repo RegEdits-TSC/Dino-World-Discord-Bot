@@ -85,7 +85,7 @@ describe('journeys', () => {
     const collectFrom = ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!.cash;
     ctx.setNow(ctx.now() + 2 * H);
     const collect = await click(ctx, parkModule, 'park:collect', 'p1');
-    expect(replyText(collect.replies[0])).toContain('Collected');
+    expect(embedText(collect.replies[0])).toContain('Collected');
     expect(ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!.cash)
       .toBeGreaterThan(collectFrom);
   });
@@ -133,7 +133,7 @@ describe('journeys', () => {
     const expected = accruedIncome([clockDino], facilityBonusPct(lots), capHours(lots), user.lastCollectAt, ctx.now());
     const before = user.cash;
     const collect = await click(ctx, parkModule, 'park:collect', 'p1');
-    expect(replyText(collect.replies[0])).toContain('Collected');
+    expect(embedText(collect.replies[0])).toContain('Collected');
     const after = ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!.cash;
     expect(after - before).toBe(expected);
 
@@ -182,7 +182,7 @@ describe('journeys', () => {
     ctx.db.update(schema.users).set({ lastCollectAt: ctx.now() }).where(eq(schema.users.discordId, 'p1')).run();
     ctx.setNow(62 * H);
     const collect = await click(ctx, parkModule, 'park:collect', 'p1');
-    expect(replyText(collect.replies[0])).toContain('Collected');
+    expect(embedText(collect.replies[0])).toContain('Collected');
   });
 
   it('trade expiry: /trade offer → +25h → /trade accept fails expired and the dino unlocks', async () => {

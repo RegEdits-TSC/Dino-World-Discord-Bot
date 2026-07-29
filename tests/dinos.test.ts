@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { ButtonInteraction } from 'discord.js';
+import { MessageFlags, type ButtonInteraction } from 'discord.js';
 import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { assignDino, unassignDino, decorateLot, paddockCapacity, listDinos, AssignError, DietMismatchError } from '../src/modules/park/dinos.js';
@@ -10,6 +10,12 @@ import { eq } from 'drizzle-orm';
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); ctx.economy.apply('u1', { cash: 50_000 }, 'seed', 0); });
 const addDino = () => ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
+
+type CollectPayload = {
+  embeds: Array<{ toJSON(): { description?: string; image?: { url: string } } }>;
+  files?: Array<{ name: string | null }>;
+  flags?: number;
+};
 
 describe('dino assignment', () => {
   it('assigns a dino to a paddock and blocks past capacity (2×level)', () => {
@@ -179,7 +185,7 @@ describe('/dino unassign and park:collect execute', () => {
     expect(replyText(i.replies[0])).toContain('Unassigned');
     expect(ctx.db.select().from(schema.dinos).all()[0].lotId).toBeNull();
   });
-  it('park:collect button collects for the clicker, then reports nothing left', async () => {
+  it('park:collect button replies with the collect banner embed, then the empty branch', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
     ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
     const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
@@ -191,9 +197,15 @@ describe('/dino unassign and park:collect execute', () => {
     const comp = parkModule.components.find((c) => c.prefix === 'park')!;
     const b1 = fakeButton({ customId: 'park:collect', user: 'u1' });
     await comp.execute(ctx, b1.asInteraction() as unknown as ButtonInteraction);
-    expect(replyText(b1.replies[0])).toContain('Collected');
+    const first = b1.replies[0] as CollectPayload;
+    expect(first.embeds[0].toJSON().description).toContain('Collected');
+    expect(first.embeds[0].toJSON().image?.url).toBe('attachment://collect.png');
+    expect(first.files!.map((f) => f.name)).toEqual(['collect.png']);
+    expect(first.flags).toBe(MessageFlags.Ephemeral);   // stays private
     const b2 = fakeButton({ customId: 'park:collect', user: 'u1' });
     await comp.execute(ctx, b2.asInteraction() as unknown as ButtonInteraction);
-    expect(replyText(b2.replies[0])).toContain('Nothing to collect');
+    const second = b2.replies[0] as CollectPayload;
+    expect(second.embeds[0].toJSON().description).toContain('Nothing to collect');
+    expect(second.files!.map((f) => f.name)).toEqual(['collect.png']);
   });
 });
