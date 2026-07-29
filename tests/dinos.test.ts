@@ -92,6 +92,18 @@ describe('park dino commands', () => {
     const payload = i.replies[0] as { embeds: Array<{ data: { description?: string } }> };
     expect(payload.embeds[0].data.description).toContain('ESCAPED');
   });
+
+  it('/dino list sets the roster banner as the embed image and attaches it', async () => {
+    ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    const dinoCmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const i = fakeCommand({ name: 'dino', sub: 'list', user: 'u1' });
+    await dinoCmd.execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as {
+      embeds: Array<{ toJSON(): { image?: { url: string } } }>; files?: Array<{ name: string | null }>;
+    };
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://dino_roster.png');
+    expect(payload.files!.map((f) => f.name)).toEqual(['dino_roster.png']);
+  });
 });
 
 describe('dino list pagination', () => {
@@ -103,6 +115,9 @@ describe('dino list pagination', () => {
     await parkModule.components[0].execute(ctx, b.asInteraction() as never);
     const payload = b.replies[0] as { embeds: Array<{ toJSON(): { footer?: { text: string } } }> };
     expect(payload.embeds[0].toJSON().footer?.text).toBe('Page 2/2');
+    // Matches the hatch:eggs precedent: the page flip re-uploads the banner, so the
+    // previous page's copy must be cleared or the message keeps both.
+    expect((b.replies[0] as { attachments?: unknown[] }).attachments).toEqual([]);
   });
   it('rejects another user\'s click', async () => {
     const b = fakeButton({ customId: 'park:dinos:u1:2', user: 'u2', guild: 'g1' });

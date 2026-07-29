@@ -56,7 +56,11 @@ function dinoListPayload(ctx: Ctx, userId: string, page: number) {
     : 'No dinos yet. Hatch one!';
   const embed = new EmbedBuilder().setTitle('🦕 Your dinos').setDescription(lines).setColor(0x3ba55c)
     .setFooter({ text: `Page ${p}/${pages}` });
-  return { embeds: [embed], components: pages > 1 ? [pageRow('park', 'dinos', userId, p, pages)] : [] };
+  const payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof pageRow>[]; files?: AttachmentBuilder[] } =
+    { embeds: [embed], components: pages > 1 ? [pageRow('park', 'dinos', userId, p, pages)] : [] };
+  const banner = assetImage('banners', 'dino_roster');
+  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+  return payload;
 }
 
 export const parkModule: ModuleManifest = {
@@ -289,7 +293,7 @@ export const parkModule: ModuleManifest = {
         if (action === 'dinos') {
           if (i.user.id !== uid) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
           settleEscapes(ctx, i.user.id);
-          await i.update(dinoListPayload(ctx, i.user.id, Number(pageStr)));
+          await i.update({ ...dinoListPayload(ctx, i.user.id, Number(pageStr)), attachments: [] });
         }
       },
     },
