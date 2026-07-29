@@ -140,17 +140,31 @@
   boss by matching `speciesId`, so the fight and its embed always agree on who
   actually fought; the content test pins the boss as the third authored enemy,
   which the small-squad slicing branch relies on. `fightFrames`
-  (`src/modules/battles/embeds.ts`) attaches files on frame 1 only — frames
-  2-4 reference the same `attachment://` URLs — so any edit that passes
-  `files: []` or `attachments: []` clears the originals and breaks every image
-  mid-cinematic, and no offline test catches it. `assets/images/battles/`
-  ships committed boss portraits (`boss-<siteId>-portrait.png`, 1024×1024
-  transparent cutouts pinned by `tests/images.test.ts`); `assetImage`'s
-  null-degrade still holds, so the campaign stays fully playable if any of them
-  is removed. Never stage a test fixture inside `assets/images/` — vitest runs
-  test files in parallel forks, so a `writeFileSync`/`rmSync` on a committed
-  asset path can be observed (or deleted) by another file mid-run;
-  `tests/battles-embeds.test.ts` mocks `assetImage` instead.
+  (`src/modules/battles/embeds.ts`) attaches files on **frame 1 and frame 4
+  only**, and each attaching frame uploads exactly the files its embed
+  references. F2/F3 must carry no `files`/`attachments` key at all — F1's
+  uploads survive and their `attachment://` URLs keep resolving. F4 is the
+  opposite: it always sends `attachments: []` plus its own `files`, because a
+  payload carrying `files` (or an explicit `attachments` array) replaces the
+  message's whole attachment set (discord.js `MessagePayload`), which is how F4
+  sheds the chapter banner it no longer references and how the no-art case
+  avoids stranding F1's upload as a bare attachment card. Never dress F4 with
+  the chapter banner again. `tests/battles-embeds.test.ts`'s frame-contract test
+  is the machine gate; the skip button replays the same F4 payload via
+  `i.update`, so both paths must stay identical.
+  Embed art kinds are `eggs | sites | banners | battles | hatch` (`assetImage`,
+  `src/core/images.ts`); `hatch/<rarity>-crack.png` is the hatch-reveal image and
+  its attachment name never collides with `eggs/<rarity>.png`. Generated art is
+  fitted by `node scripts/fit-art.mjs banner|cutout <src> <dest>` — banners are
+  1536×1024 (asserted in `tests/images.test.ts`), transparent cutouts 1024×1024.
+  `assets/images/battles/` ships committed boss portraits
+  (`boss-<siteId>-portrait.png`, 1024×1024 transparent cutouts pinned by
+  `tests/images.test.ts`); `assetImage`'s null-degrade still holds, so the
+  campaign stays fully playable if any of them is removed. Never stage a test
+  fixture inside `assets/images/` — vitest runs test files in parallel forks,
+  so a `writeFileSync`/`rmSync` on a committed asset path can be observed (or
+  deleted) by another file mid-run; `tests/battles-embeds.test.ts` mocks
+  `assetImage` instead.
 - `npm run build` does not typecheck tests: `build` is `tsc` against
   `tsconfig.json`, which only `include`s `src`, and `npm test` (vitest)
   transpiles without typechecking. The test-inclusive gate is
