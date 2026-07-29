@@ -248,6 +248,9 @@ excess, which is center-cropped).
 | `assets/images/banners/battle_defeat.png` | 1536×1024 | `/battle fight` F4 image, loss |
 | `assets/images/banners/collect.png` | 1536×1024 | `park:collect` reply embed image |
 | `assets/images/banners/rescue.png` | 1536×1024 | `/rescue` success embed image |
+| `assets/images/banners/dino_roster.png` | 1536×1024 | `/dino list` embed image |
+| `assets/images/banners/eggs_incubator.png` | 1536×1024 | `/eggs` embed image |
+| `assets/images/banners/sell.png` | 1536×1024 | `/sell` confirmation prompt embed image |
 
 These are the only prompts in this file whose subject is dinosaurs rather than
 scenery, so they drop the shared block's "no characters" clause and forbid only
@@ -394,6 +397,50 @@ reproducing the signage text.
 > Glossy cartoon mobile-game art style, bold dark outlines, vibrant saturated
 > colors, strong glossy highlights, clean cel shading with smooth gradients,
 > polished game-asset look. No text, no human characters, no UI elements.
+
+**Dino roster (`dino_roster.png`):**
+
+> A wide cartoon scene of a dinosaur park roster board area: a row of five
+> different friendly cartoon dinosaurs of assorted colors and sizes standing
+> side by side along a wooden fence line as if lined up for a headcount, a
+> long-necked sauropod, a horned ceratopsian, a plated stegosaur, a small
+> theropod and a crested hadrosaur, lush ferns and palms behind, bright
+> cheerful morning daylight. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no
+> lettering, no words, no numbers, no signage writing anywhere in the scene,
+> no human characters, no UI elements.
+
+**Eggs incubator (`eggs_incubator.png`):**
+
+> A wide cartoon scene of a dinosaur park hatchery incubation room: a curved
+> bank of warm glass incubator domes on a steel bench, each holding a single
+> speckled egg nested in straw, soft amber heat lamps overhead, coiled hoses
+> and a temperature dial on the wall, dark room lit warmly from the domes
+> themselves. Glossy cartoon mobile-game art style, bold dark outlines,
+> vibrant saturated colors, strong glossy highlights, clean cel shading with
+> smooth gradients, polished game-asset look. No text, no lettering, no
+> words, no numbers, no signage writing anywhere in the scene, no human
+> characters, no UI elements.
+
+**Sell (`sell.png`):**
+
+> A wide cartoon scene of a prehistoric park buyer's stall: a heavy wooden
+> counter with a brass weighing scale, an open ledger, a leather coin pouch
+> spilling gold, and an empty transport crate with its lid propped open and
+> straw inside, a dirt path and jungle ferns behind, warm late-afternoon
+> daylight. Glossy cartoon mobile-game art style, bold dark outlines, vibrant
+> saturated colors, strong glossy highlights, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no lettering, no words, no
+> numbers, no signage writing anywhere in the scene, no human characters, no
+> UI elements.
+
+These three prompts started from the shared block's plain "No text" clause
+(matching the rest of this section), but carried the `collect.png` fix
+proactively — a roster board, an incubation room with a dial, and a buyer's
+stall with a ledger are exactly the kind of scene a model will happily letter.
+All three generated clean on the first attempt with the strengthened clause,
+so no regeneration was needed.
 
 ---
 
