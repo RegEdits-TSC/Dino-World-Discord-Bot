@@ -124,7 +124,16 @@ export const shopModule: ModuleManifest = {
           const shardText = p.capReached ? '0 shards (daily cap reached)' : `${p.minShards}–${p.maxShards} shards`;
           const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
             new ButtonBuilder().setCustomId(`sell:confirm:${dinoId}`).setEmoji(emojiTag('dw_cash')).setLabel('Confirm sale').setStyle(ButtonStyle.Danger));
-          await i.reply({ content: `Sell dino #${dinoId} for ${p.cashValue.toLocaleString()} cash + ${shardText}?`, components: [row], flags: MessageFlags.Ephemeral });
+          const sellEmbed = new EmbedBuilder().setColor(0xe67e22)
+            .setTitle(`${emojiTag('dw_cash')} Confirm sale`)
+            .setDescription(`Sell dino #${dinoId} for ${p.cashValue.toLocaleString()} cash + ${shardText}?`);
+          const sellPayload: {
+            embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[];
+            files?: AttachmentBuilder[]; flags: MessageFlags.Ephemeral;
+          } = { embeds: [sellEmbed], components: [row], flags: MessageFlags.Ephemeral };
+          const sellBanner = assetImage('banners', 'sell');
+          if (sellBanner) { sellEmbed.setImage(sellBanner.url); sellPayload.files = [sellBanner.file]; }
+          await i.reply(sellPayload);
         } catch (e) { if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
       },
       async autocomplete(ctx, i) {
@@ -150,7 +159,8 @@ export const shopModule: ModuleManifest = {
         try {
           const res = sellDino(ctx, i.user.id, Number(idStr));
           const cap = res.capped ? ' (shard cap reached)' : '';
-          await i.update({ content: `${emojiTag('dw_cash')} Sold for **${res.cash.toLocaleString()}** cash and **${res.shards}** shards${cap}.`, components: [] });
+          await i.update({ content: `${emojiTag('dw_cash')} Sold for **${res.cash.toLocaleString()}** cash and **${res.shards}** shards${cap}.`,
+            embeds: [], components: [], attachments: [] });
         } catch (e) { if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
       } },
   ],
