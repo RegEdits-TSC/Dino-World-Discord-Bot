@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { Image, createCanvas } from '@napi-rs/canvas';
+import { EmbedBuilder, type AttachmentBuilder } from 'discord.js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { assetImage } from '../src/core/images.js';
+import { assetImage, attach } from '../src/core/images.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 
 const BANNERS = ['trading', 'leaderboards', 'help', 'care', 'care_neglect', 'shop_food_market',
@@ -38,6 +39,63 @@ describe('assetImage', () => {
   });
   it('accepts the hatch kind and null-degrades when absent', () => {
     expect(assetImage('hatch', 'no-such-crack')).toBeNull();
+  });
+});
+
+describe('attach', () => {
+  const blank = () => ({ embed: new EmbedBuilder().setTitle('t'), payload: {} as { files?: AttachmentBuilder[] } });
+
+  it('is a total no-op for a null ref — no slot set, no files key created', () => {
+    const { embed, payload } = blank();
+    attach(embed, payload, 'image', null);
+    attach(embed, payload, 'thumbnail', null);
+    expect(embed.toJSON().image).toBeUndefined();
+    expect(embed.toJSON().thumbnail).toBeUndefined();
+    // Absent, NOT []. preHatchPayload and the notify handlers assert files is undefined.
+    expect('files' in payload).toBe(false);
+    expect(payload.files).toBeUndefined();
+  });
+
+  it('sets the image slot and attaches its file together', () => {
+    const { embed, payload } = blank();
+    attach(embed, payload, 'image', assetImage('eggs', 'common'));
+    expect(embed.toJSON().image?.url).toBe('attachment://common.png');
+    expect(embed.toJSON().thumbnail).toBeUndefined();
+    expect(payload.files!.map((f) => f.name)).toEqual(['common.png']);
+  });
+
+  it('sets the thumbnail slot and attaches its file together', () => {
+    const { embed, payload } = blank();
+    attach(embed, payload, 'thumbnail', assetImage('eggs', 'common'));
+    expect(embed.toJSON().thumbnail?.url).toBe('attachment://common.png');
+    expect(embed.toJSON().image).toBeUndefined();
+    expect(payload.files!.map((f) => f.name)).toEqual(['common.png']);
+  });
+
+  it('appends rather than assigns, so two calls both survive in call order', () => {
+    const { embed, payload } = blank();
+    attach(embed, payload, 'thumbnail', assetImage('eggs', 'epic'));
+    attach(embed, payload, 'image', assetImage('banners', 'eggs_incubator'));
+    expect(embed.toJSON().thumbnail?.url).toBe('attachment://epic.png');
+    expect(embed.toJSON().image?.url).toBe('attachment://eggs_incubator.png');
+    expect(payload.files!.map((f) => f.name)).toEqual(['epic.png', 'eggs_incubator.png']);
+  });
+
+  it("appends onto a pre-initialised files array (revealPayload's shape)", () => {
+    const embed = new EmbedBuilder().setTitle('t');
+    const payload: { files: AttachmentBuilder[]; attachments: never[] } = { files: [], attachments: [] };
+    attach(embed, payload, 'image', assetImage('hatch', 'rare-crack'));
+    expect(payload.files.map((f) => f.name)).toEqual(['rare-crack.png']);
+    expect(payload.attachments).toEqual([]);
+  });
+
+  it('a missing asset between two present ones leaves the others untouched', () => {
+    const { embed, payload } = blank();
+    attach(embed, payload, 'thumbnail', assetImage('eggs', 'epic'));
+    attach(embed, payload, 'image', assetImage('banners', 'no-such-banner'));
+    expect(embed.toJSON().thumbnail?.url).toBe('attachment://epic.png');
+    expect(embed.toJSON().image).toBeUndefined();
+    expect(payload.files!.map((f) => f.name)).toEqual(['epic.png']);
   });
 });
 
