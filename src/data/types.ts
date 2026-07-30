@@ -3,7 +3,7 @@ export type Diet = 'herbivore' | 'carnivore';
 export type Archetype = 'bruiser' | 'tank' | 'swift' | 'support';
 export interface Species {
   id: string; name: string; rarity: Rarity; diet: Diet; archetype: Archetype;
-  biomeTags: string[]; flavor: string; spriteRef: string;
+  biomeTags: string[]; flavor: string;
 }
 export interface RarityStats {
   incomePerHr: number; sellShards: [number, number]; incubationMs: number; feedCost: number;
