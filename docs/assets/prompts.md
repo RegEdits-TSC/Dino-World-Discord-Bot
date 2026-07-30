@@ -113,6 +113,7 @@ That is deliberate, and the two are not interchangeable:
 | `assets/images/eggs/` (this one-off pass) | 24px | egg axis — L/R margins are asymmetric on purpose (e.g. `common.webp` L74/R53) | 1 |
 | `assets/images/battles/` (same pass, whole-bbox variant) | 24px | whole bbox | 1 |
 | `assets/images/hatch/` (`fit-art.mjs cutout`) | 31px | whole bbox | all (see Hatch cracks) |
+| `assets/images/dinos/` (`fit-art.mjs cutout`) | 31px | whole bbox | all (a clean portrait cutout lands at 1) |
 
 Consequences when reusing either pass on a new or regenerated asset:
 
@@ -580,6 +581,109 @@ margin the four committed portraits measure at.
   with jet-black obsidian-dark scales veined by glowing orange lava-crack
   markings on the scale surfaces only, an ember-orange eye, and a roaring
   open jaw.
+
+## Dino archetypes
+
+Eight generic dinosaur portraits keyed on `archetype × diet`, used as
+`setThumbnail` on the `hatch:crack` reveal and on every frame of a **non-boss**
+battle stage (the lead enemy `rosterFor` fields). Keying on the pair rather than
+on the species fixes the art cost at eight files forever: a new species picks up
+existing art by declaring fields it already has to declare. Null-degrade
+everywhere, like every other family here.
+
+| File | Size | Use |
+|---|---|---|
+| `assets/images/dinos/bruiser-herbivore.webp` | 1024×1024, transparent | hatch reveal + non-boss battle thumbnail |
+| `assets/images/dinos/bruiser-carnivore.webp` | 1024×1024, transparent | hatch reveal + non-boss battle thumbnail |
+| `assets/images/dinos/tank-herbivore.webp` | 1024×1024, transparent | hatch reveal + non-boss battle thumbnail |
+| `assets/images/dinos/tank-carnivore.webp` | 1024×1024, transparent | hatch reveal + non-boss battle thumbnail |
+| `assets/images/dinos/swift-herbivore.webp` | 1024×1024, transparent | hatch reveal + non-boss battle thumbnail |
+| `assets/images/dinos/swift-carnivore.webp` | 1024×1024, transparent | hatch reveal + non-boss battle thumbnail |
+| `assets/images/dinos/support-herbivore.webp` | 1024×1024, transparent | hatch reveal + non-boss battle thumbnail |
+| `assets/images/dinos/support-carnivore.webp` | 1024×1024, transparent | hatch reveal + non-boss battle thumbnail |
+
+`<archetype>` is one of `bruiser`, `tank`, `swift`, `support`; `<diet>` is
+`herbivore` or `carnivore`. `support-carnivore` has no species today and is
+generated anyway — the guarantee is that adding a species never needs new art.
+
+**Style: deliberately simpler than the four boss portraits.** Same house
+glossy-cartoon treatment and the same head-and-shoulders three-quarter framing,
+but flatter: clean archetype silhouettes, no scarring, no individuating damage,
+no character detail. These land in the same thumbnail slot as the boss portraits
+and sometimes in the same command — a boss must read as a named individual,
+these must read as a *kind*.
+
+**Hard no-glow rule:** no glow, rays, embers, sparkles, or light effects may
+extend beyond the dinosaur silhouette — off-silhouette glow survives background
+removal as floating islands or a light halo on transparency. Emissive detail is
+allowed only ON surfaces. Every prompt carries this rule verbatim.
+
+**Facing right:** all four committed boss portraits face right, snout pointing
+right, and one boss generation came back mirrored and had to be flipped in post
+(see Battle bosses). The prompt frame below states the direction up front —
+still check every generation against the reference before shipping it.
+
+**Workflow (reference chain):** all eight are generated as image-edits of the
+committed `assets/images/battles/boss-coastal_dig-portrait.webp` (Nano Banana
+Pro, `medias` role `image`) — every one edits from that portrait directly, never
+from another dino, so the set matches the bosses' pose, framing, and rendering.
+That portrait is already background-removed, which is why the prompt frame
+re-states the plain flat light-gray studio background. Post-process each with
+`remove_background`, then
+`node scripts/fit-art.mjs cutout <src> assets/images/dinos/<archetype>-<diet>.webp`.
+
+**Margin divergence, accepted deliberately:** `fit-art.mjs cutout` fits at 31px
+(0.94); the boss portraits sit at 24px from the one-off pass described in Egg
+rarities. The two families never appear in the same embed — a boss stage
+suppresses the archetype art and shows the portrait instead — so the difference
+is only ever visible across successive frames of one fight. That is not worth a
+second one-off pass or a `--fit` flag; it is recorded in the divergence table in
+Egg rarities so it is a choice, not a third undocumented margin.
+
+**Prompt frame** (each generated with `boss-coastal_dig-portrait` attached as the
+`image` reference):
+
+> Keep the exact same head-and-shoulders three-quarter portrait framing as the
+> reference image: same camera angle, same scale in frame, same small even
+> margin, facing right with the snout pointing right, on a plain flat light-gray
+> studio background with no scenery and no ground shadow. Change the dinosaur to
+> {DINO}. Render it as a generic species type rather than a named individual:
+> clean unblemished hide, no scars, no chipped teeth, no torn frills, no battle
+> damage, no distinguishing marks, and flatter, calmer detail than a boss
+> portrait — a simple readable silhouette. No glow, rays, embers, sparkles, or
+> light effects extending beyond the dinosaur silhouette; glowing details may
+> appear only on the surfaces themselves. Glossy cartoon mobile-game art style,
+> bold dark outlines, vibrant saturated colors, strong glossy highlights, clean
+> cel shading with smooth gradients, polished game-asset look. No text, no
+> lettering, no words, no numbers, no signage writing anywhere in the scene, no
+> human characters, no UI elements.
+
+`{DINO}` per file:
+
+- **`bruiser-carnivore.webp`:** a heavy-jawed cartoon theropod predator with a
+  deep boxy skull, thick muscular neck, short powerful arms, blunt brow ridge,
+  and crimson-and-charcoal scales.
+- **`bruiser-herbivore.webp`:** a stocky cartoon ornithopod with a thick domed
+  skull, broad shoulders, blunt beak, heavy jaw, and olive-green scales with a
+  sandy underside.
+- **`tank-carnivore.webp`:** a heavily built cartoon aquatic predator with a
+  broad blunt snout, thick armored jawline, deep-blue and slate scales, a pale
+  underside, and a wet glossy sheen.
+- **`tank-herbivore.webp`:** a broad-frilled cartoon ceratopsian with a thick
+  bony frill, blunt nose horn, heavy plated shoulders, and earthy brown and
+  moss-green plating.
+- **`swift-carnivore.webp`:** a lean cartoon raptor with a narrow tapered snout,
+  alert forward-set eye, slim feather-tufted crest, and teal-and-amber striped
+  scales.
+- **`swift-herbivore.webp`:** a slender cartoon ornithomimid with a long slim
+  neck, a small beaked head, a large alert eye, and pale tan plumage with a warm
+  cream underside.
+- **`support-herbivore.webp`:** a gentle cartoon hadrosaur with a long tubular
+  head crest, a soft duck-like beak, calm eyes, and warm honey-yellow and
+  turquoise scales.
+- **`support-carnivore.webp`:** a compact crested cartoon carnivore with a slim
+  head, tall paired head crests, wide watchful eyes, and violet-and-teal scales
+  that read as a clever pack helper rather than a brute.
 
 ## Park map
 

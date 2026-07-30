@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { assetImage, attach } from '../src/core/images.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
+import type { Archetype, Diet } from '../src/data/types.js';
 
 const BANNERS = ['trading', 'leaderboards', 'help', 'care', 'care_neglect', 'shop_food_market',
   'battle_victory', 'battle_defeat', 'collect', 'rescue', 'dino_roster', 'eggs_incubator', 'sell'];
@@ -255,5 +256,26 @@ describe('the committed asset set', () => {
       expect(assetImage('sites', `${c.id}-banner`), `sites/${c.id}-banner`).not.toBeNull();
       expect(assetImage('sites', `${c.id}-thumb`), `sites/${c.id}-thumb`).not.toBeNull();
     }
+  });
+});
+
+// Exhaustive in BOTH directions: `satisfies Record<Archetype, 0>` rejects a
+// missing key and an unknown one, so adding an archetype or a diet fails
+// typecheck here before it can ship without art.
+const ARCHETYPES = Object.keys(
+  { bruiser: 0, tank: 0, swift: 0, support: 0 } satisfies Record<Archetype, 0>) as Archetype[];
+const DIETS = Object.keys({ herbivore: 0, carnivore: 0 } satisfies Record<Diet, 0>) as Diet[];
+const DINO_ART_KEYS = ARCHETYPES.flatMap((a) => DIETS.map((d) => `${a}-${d}`));
+
+describe('dino archetype prompts', () => {
+  // Same precedent as tests/battle-content.test.ts's bossId cross-check:
+  // prompts.md is the regeneration source of truth, so a shipped asset with no
+  // prompt is unreproducible.
+  it('documents all 8 archetype-diet targets in docs/assets/prompts.md', () => {
+    const prompts = readFileSync(new URL('../docs/assets/prompts.md', import.meta.url), 'utf8');
+    expect(DINO_ART_KEYS).toHaveLength(8);
+    expect(prompts).toContain('## Dino archetypes');
+    expect(prompts).toContain('assets/images/dinos/');
+    for (const key of DINO_ART_KEYS) expect(prompts, key).toContain(`${key}.webp`);
   });
 });
