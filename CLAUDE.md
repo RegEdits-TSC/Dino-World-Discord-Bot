@@ -59,8 +59,16 @@
   (`src/modules/battles/embeds.ts`), which dress one ref onto several embeds and
   split the files across two payloads via the F1/F4 contract — do not convert
   them. Separately, `withParkImage` (`src/modules/park/embeds.ts`) *assigns*
-  `files`, so it drops anything `attach` added to the payload it wraps; only
-  `/help topic:park` pipes a payload through it, and that topic has no art.
+  `files`, so it drops anything `attach` added to the payload it wraps. It has
+  three call sites, harmless today for two different reasons: both `/park view`
+  branches (own park, and the read-only other-user view) in
+  `src/modules/park/index.ts` wrap `dashboardPayload`'s output, and
+  `dashboardPayload` (`src/modules/park/embeds.ts`) never calls `attach()` at
+  all, so there is nothing to drop; `/help topic:park`
+  (`src/modules/help/index.ts`) wraps the shared help-topic payload, which
+  *does* call `attach()`, but only when `HELP_TOPICS[topic].art` is set, and
+  `HELP_TOPICS.park` declares no `art` — give that topic art and the banner
+  vanishes silently under `withParkImage`.
 - Passive notifications carry a `NotifyPayload` (`src/core/notify.ts`):
   `string | { content?, embeds?, files? }`. `Ctx.notify`'s third argument stays
   `message: string` on purpose — a string is a valid payload, so every call site
