@@ -85,13 +85,14 @@ export const helpModule: ModuleManifest = {
           const t = HELP_TOPICS[topic];
           const embed = new EmbedBuilder().setTitle(t.title).setDescription(t.body).setColor(0x5865F2);
           const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-          if (t.art) {
-            attach(embed, payload, 'image', assetImage(t.art.kind, t.art.name));
-          }
+          if (t.art) attach(embed, payload, 'image', assetImage(t.art.kind, t.art.name));
           if (topic === 'park') {
             // The park topic illustrates itself with the reader's own map: a worker
             // render, so defer first and degrade to the text-only embed on any
             // failure (including "this reader has no park row yet").
+            // withParkImage ASSIGNS files: [park.png], so it would drop anything
+            // attach() put on this payload. Safe only because HELP_TOPICS.park
+            // declares no `art` — give it art and the banner vanishes silently.
             await i.deferReply();
             let png: Buffer | undefined;
             try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }

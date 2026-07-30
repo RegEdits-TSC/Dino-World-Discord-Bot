@@ -43,6 +43,10 @@ export function fightFrames(
 ): [FramePayload, FramePayload, FramePayload, FramePayload] {
   const stage = STAGES.get(outcome.stageId);
   if (!stage) throw new Error(`Unknown stage: ${outcome.stageId}`);
+  // These three refs deliberately do NOT use attach(): each is dressed onto up to
+  // three different embeds and the files are then distributed across two payloads
+  // by the F1/F4 contract below, which attach's one-embed-one-payload shape cannot
+  // express. Everywhere else in the repo, attach() is mandatory.
   const banner = assetImage('sites', `${stage.chapterId}-banner`);
   const portrait = stage.boss ? assetImage('battles', `${stage.boss.bossId}-portrait`) : null;
   const outcomeBanner = assetImage('banners', outcome.won ? 'battle_victory' : 'battle_defeat');
