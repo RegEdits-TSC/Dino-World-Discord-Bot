@@ -19,7 +19,7 @@ import { paginate, pageRow } from '../../core/paginate.js';
 import { emojiTag, foodEmoji } from '../../core/emojis.js';
 import { FOODS, type FoodId } from '../../data/foods.js';
 import type { Ctx } from '../../core/context.js';
-import { assetImage } from '../../core/images.js';
+import { assetImage, attach } from '../../core/images.js';
 import type { AttachmentBuilder } from 'discord.js';
 
 const kindChoices = [...Object.keys(PADDOCKS), ...Object.keys(FACILITIES)]
@@ -35,8 +35,7 @@ function collectPayload(amount: number) {
       : 'Nothing to collect yet — give your dinos time to earn.');
   const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[]; flags: MessageFlags.Ephemeral } =
     { embeds: [embed], flags: MessageFlags.Ephemeral };
-  const banner = assetImage('banners', 'collect');
-  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+  attach(embed, payload, 'image', assetImage('banners', 'collect'));
   return payload;
 }
 
@@ -58,8 +57,7 @@ function dinoListPayload(ctx: Ctx, userId: string, page: number) {
     .setFooter({ text: `Page ${p}/${pages}` });
   const payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof pageRow>[]; files?: AttachmentBuilder[] } =
     { embeds: [embed], components: pages > 1 ? [pageRow('park', 'dinos', userId, p, pages)] : [] };
-  const banner = assetImage('banners', 'dino_roster');
-  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+  attach(embed, payload, 'image', assetImage('banners', 'dino_roster'));
   return payload;
 }
 

@@ -40,6 +40,35 @@
 - Embed art ships from `assets/images/` via `assetImage` (`src/core/images.ts`);
   a missing file means the embed renders without the image — absent art is
   never an error. Generation prompts live in `docs/assets/prompts.md`.
+  **Always wire art with `attach(embed, payload, slot, assetImage(...))`** — it
+  sets the embed slot and appends the file together, so the two can never drift
+  apart (that drift shipped three attachment defects in round 2). A null ref is
+  a total no-op: `payload.files` is not even created, so an art-free payload
+  never ships an empty attachment array — `tests/hatchery.test.ts` and
+  `tests/notify-handlers.test.ts` both assert `files` is `undefined`, not `[]`.
+  `attach` APPENDS, so two calls on one payload both survive and **call order is
+  upload order**: several tests pin `files.map((f) => f.name)` with `toEqual`,
+  and three mock `assetImage` as a `mockImplementationOnce` queue keyed on
+  1st-call/2nd-call identity, so never reorder the calls, never hoist the
+  lookups above them, and never collect refs into an array first. A ternary that
+  guards on *domain data* (`best ? assetImage(...) : null` in shop,
+  `featured ? … : null` in hatchery) stays outside `attach` — it is not an
+  asset miss. `tests/images.test.ts`'s "no source file hand-assigns an embed
+  payload files array" guard bans the old `payload.files = [...]` idiom outright.
+  `fightFrames` (`src/modules/battles/embeds.ts`) is the one exception: every ref
+  it builds is dressed onto several embeds and the files are then split across two
+  payloads by the F1/F4 contract — do not convert any of them, however many there
+  are. Separately, `withParkImage` (`src/modules/park/embeds.ts`) *assigns*
+  `files`, so it drops anything `attach` added to the payload it wraps. It has
+  three call sites, harmless today for two different reasons: both `/park view`
+  branches (own park, and the read-only other-user view) in
+  `src/modules/park/index.ts` wrap `dashboardPayload`'s output, and
+  `dashboardPayload` (`src/modules/park/embeds.ts`) never calls `attach()` at
+  all, so there is nothing to drop; `/help topic:park`
+  (`src/modules/help/index.ts`) wraps the shared help-topic payload, which
+  *does* call `attach()`, but only when `HELP_TOPICS[topic].art` is set, and
+  `HELP_TOPICS.park` declares no `art` — give that topic art and the banner
+  vanishes silently under `withParkImage`.
 - Passive notifications carry a `NotifyPayload` (`src/core/notify.ts`):
   `string | { content?, embeds?, files? }`. `Ctx.notify`'s third argument stays
   `message: string` on purpose — a string is a valid payload, so every call site
@@ -49,13 +78,28 @@
   hand-rolled per test file (`tests/notify.test.ts`,
   `tests/notify-handlers.test.ts`, `tests/journeys.test.ts`), not in the harness
   — and only `npm run typecheck` catches a stale one.
-- Two assets in one payload: the SECOND `assetImage` must APPEND
-  (`payload.files = [...(payload.files ?? []), img.file]`), never re-assign — a
-  plain assignment drops the first file and leaves a dangling `attachment://`
-  URL that Discord renders as a broken image. Attachment names are basenames
-  only (`src/core/images.ts:20-23`), so the two assets need distinct file names
-  (`<site>-banner.png` vs `<site>-thumb.png` is safe). Live call sites:
-  `/shop view`, `/expedition claim`, `/battle chapters`.
+- Two assets in one payload: call `attach()` for both and the second can never
+  clobber the first — appending is exactly what `attach` does, and hand-assigning
+  `payload.files` (the idiom that shipped those defects) is banned outright by
+  `tests/images.test.ts`. What `attach` cannot do for you is DEDUPE, and that
+  hazard is still live: attachment names are basenames only — `assetImage`
+  (`src/core/images.ts`) names the file `${name}.webp` with no `kind` prefix — so
+  two refs on one payload must resolve to distinct names. Same-named uploads make
+  `attachment://<name>.webp` ambiguous and one of the two embed slots renders the
+  wrong picture. `<site>-banner.webp` vs `<site>-thumb.webp` is safe; naming the
+  hatch cracks `hatch/<rarity>.webp` would NOT have been, against
+  `eggs/<rarity>.webp` — hence `<rarity>-crack`. Two-asset payloads are routine
+  now (shop, expeditions, hatchery, battles), so check the names, not the count.
+- `fightFrames` picks its thumbnail once, up front: the boss portrait on a boss
+  stage, else the archetype art of `rosterFor(stage, squad.length)[0]` — the same
+  lead enemy the Enemies field opens with, so the frame can never disagree with
+  the fight. A boss stage whose portrait is missing degrades to **no** thumbnail;
+  it must never fall back to archetype art, because `rosterFor`'s lead entry on a
+  1-dino squad IS the boss. One merged `thumb` ref feeds `dress()` (F1-F3), F4's
+  `setThumbnail`, and both `files` arrays, so the F1/F4 upload contract holds
+  without a second code path. `revealPayload` is the other archetype surface: it
+  ships the rarity crack as `image` and the archetype as `thumbnail`, two files on
+  one `i.update` payload, each degrading independently.
 - Custom app emojis are hand-authored SVG in `assets/emojis/svg/`, rendered to
   committed 128×128 transparent PNGs in `assets/emojis/png/` by
   `npm run build-emojis` (`src/build-emojis.ts` + the `renderSvg` helper in
@@ -86,16 +130,17 @@
   than 2% pure `#000000` (`MAX_BLACK_SHARE`), calibrated against the currency trio, none of which
   use pure black — if a future SVG legitimately needs pure black across more of the canvas than
   that, raise the threshold deliberately rather than fighting the guard.
-- `@napi-rs/canvas` decodes **PNG** buffers asynchronously — setting `Image.src`
-  from PNG bytes and drawing in the same tick silently yields a blank canvas,
-  with no error. Always `await img.decode()` before drawing a PNG. **SVG**
-  buffers decode synchronously, which is why `renderSvg` needs no await and why
-  every icon the park renderer draws (HUD coin, lot icons, rarity dino chips) is
-  read from `assets/emojis/svg/*.svg` rather than a PNG. That asymmetry is what
-  splits `src/core/render/art.ts` in two: `loadSvgImage` is synchronous, the
-  three `assets/images/park/*.png` rasters are `await img.decode()`d inside
-  `loadParkArt`, and `renderParkPng(snap, art = EMPTY_ART)` **stays
-  synchronous** — never move a PNG decode into it. `worker.ts` top-level-awaits
+- `@napi-rs/canvas` decodes **raster** buffers asynchronously — PNG and WebP
+  alike. Setting `Image.src` from raster bytes and drawing in the same tick
+  silently yields a blank canvas, with no error. Always `await img.decode()`
+  before drawing one. **SVG** buffers decode synchronously, which is why
+  `renderSvg` needs no await and why every icon the park renderer draws (HUD
+  coin, lot icons, rarity dino chips) is read from `assets/emojis/svg/*.svg`
+  rather than a raster. That asymmetry is what splits `src/core/render/art.ts`
+  in two: `loadSvgImage` is synchronous, the three `assets/images/park/*.webp`
+  rasters are `await img.decode()`d inside `loadParkArt`, and
+  `renderParkPng(snap, art = EMPTY_ART)` **stays synchronous** — never move a
+  raster decode into it. `worker.ts` top-level-awaits
   `loadParkArt().catch(() => EMPTY_ART)`: `loadParkArt` must never reject and
   the `.catch` is belt-and-braces, because a rejected worker module boot fires
   `client.ts`'s `error` handler, which terminates and nulls the worker — every
@@ -105,6 +150,17 @@
   own non-null guard, and each `null` falls back to the flat fill / emoji glyph
   in `src/data/render-icons.ts` — that file is the live fallback path, not dead
   code.
+- Every file under `assets/images/` is **WebP q95** — `assetImage`
+  (`src/core/images.ts`) is the only path builder for them and appends `.webp`,
+  so flipping the format there propagates to every `attachment://` URL and every
+  `files[].name`. `scripts/fit-art.mjs` emits the same format. Three things are
+  deliberately NOT WebP: `assets/emojis/png/` (Discord's app-emoji upload expects
+  PNG and `manifest.json` hashes those exact bytes), `assets/emojis/svg/` (the
+  park renderer needs synchronous decode), and `park.png` — the `/park view`
+  render OUTPUT buffer from `renderParkPng`, an in-memory PNG (`canvas.toBuffer
+  ('image/png')`), not a committed asset. `tests/images.test.ts`'s "ships every
+  file under assets/images as .webp" test guards that nothing under
+  `assets/images/` regresses to another format.
 - Food is typed (`src/data/foods.ts`, 3 tiers × 2 diets) and lives in the
   `food_inventory` table — `users.food` no longer exists. Feeding sets
   `hunger = fillTo` (up to 150): `comfortAt` clamps the hunger term at 100, and
@@ -133,7 +189,7 @@
   `unlockRating` co-gate, and the theme. `tests/battle-content.test.ts` is the
   machine gate for all campaign data — including that every `bossId` appears in
   `docs/assets/prompts.md` — so future chapters ship as data-only PRs (new
-  chapter file + index import + PNGs + prompt rows) with zero engine changes.
+  chapter file + index import + WebPs + prompt rows) with zero engine changes.
   `rosterFor(stage, squadSize)` (`src/data/battle/chapters/index.ts`) is the
   single source of truth for which enemies are fielded and which entry is the
   boss — `runFight` and `fightFrames` both call it rather than re-deriving the
@@ -176,9 +232,22 @@
   PATCH in either interleaving; the lock is free during `ctx.sleep`, so a Skip
   clicked between frames still answers instantly. Any future third writer to a
   presented message must go through the same queue.
-  Embed art kinds are `eggs | sites | banners | battles | hatch` (`assetImage`,
-  `src/core/images.ts`); `hatch/<rarity>-crack.png` is the hatch-reveal image and
-  its attachment name never collides with `eggs/<rarity>.png`. Banners are
+  Embed art kinds are `eggs | sites | banners | battles | hatch | dinos`
+  (`assetImage`, `src/core/images.ts`); `hatch/<rarity>-crack.webp` is the
+  hatch-reveal image and its attachment name never collides with
+  `eggs/<rarity>.webp`. `assets/images/dinos/<archetype>-<diet>.webp` is a fixed
+  set of 8 (1024×1024 transparent cutouts, `fit-art.mjs cutout`, so a 31px
+  margin against the boss portraits' 24px — deliberate, recorded in
+  `docs/assets/prompts.md`): **art is keyed on archetype×diet, never on species**,
+  which is what keeps adding a species a data-only change. `support-carnivore`
+  ships with zero species using it for exactly that reason. That fixed cost has
+  a fidelity price: `archetype` is a combat concept, not a body-plan one, so
+  outliers share art loosely — `swift-carnivore` covers both `velociraptor` and
+  `quetzalcoatlus` (a beaked pterosaur), rendered as a scaled toothy theropod.
+  Accepted deliberately: a per-species `silhouette` field was considered and
+  declined, since it would have traded 8 images for roughly 12 plus a migration
+  across all 30 species files, to fix fidelity for a handful of outliers.
+  Banners are
   1536×1024 (asserted in `tests/images.test.ts`) and transparent cutouts
   1024×1024; `node scripts/fit-art.mjs banner|cutout <src> <dest>` produces the
   banners and the hatch cracks, but NOT the eggs or the boss portraits — those
@@ -188,7 +257,7 @@
   disconnected alpha regions on purpose (falling shell fragments), so the egg
   pass's "largest connected region" step must never be applied to them.
   `assets/images/battles/` ships committed boss portraits
-  (`boss-<siteId>-portrait.png`, 1024×1024 transparent cutouts pinned by
+  (`boss-<siteId>-portrait.webp`, 1024×1024 transparent cutouts pinned by
   `tests/images.test.ts`); `assetImage`'s null-degrade still holds, so the
   campaign stays fully playable if any of them is removed. Never stage a test
   fixture inside `assets/images/` — vitest runs test files in parallel forks,

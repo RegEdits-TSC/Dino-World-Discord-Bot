@@ -1,5 +1,5 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type AttachmentBuilder } from 'discord.js';
-import { assetImage } from '../../core/images.js';
+import { assetImage, attach } from '../../core/images.js';
 import { getSpecies } from '../../data/species/index.js';
 import { FOODS } from '../../data/foods.js';
 import { CAMPAIGN, STAGES, stageUnlocked, chapterUnlocked, rosterFor, type ProgressMap } from '../../data/battle/chapters/index.js';
@@ -43,9 +43,24 @@ export function fightFrames(
 ): [FramePayload, FramePayload, FramePayload, FramePayload] {
   const stage = STAGES.get(outcome.stageId);
   if (!stage) throw new Error(`Unknown stage: ${outcome.stageId}`);
+  // Every ref built in this function deliberately does NOT use attach(): each is
+  // dressed onto several different embeds and the files are then distributed across
+  // two payloads by the F1/F4 contract below, which attach's one-embed-one-payload
+  // shape cannot express. fightFrames is the only such site in the repo —
+  // everywhere else attach() is mandatory.
   const banner = assetImage('sites', `${stage.chapterId}-banner`);
   const portrait = stage.boss ? assetImage('battles', `${stage.boss.bossId}-portrait`) : null;
   const outcomeBanner = assetImage('banners', outcome.won ? 'battle_victory' : 'battle_defeat');
+  // Single source of truth for who actually fought AND which entry is the
+  // boss is rosterFor (shared with runFight) — never re-derived here. Hoisted
+  // above dress() because the thumbnail is now derived from it.
+  const roster = rosterFor(stage, outcome.squad.length);
+  // A boss stage shows its named individual and nothing else: if the portrait is
+  // missing it degrades to no thumbnail, never to archetype art standing in for a
+  // boss. Non-boss stages have no individual, so they show the archetype of the
+  // lead enemy rosterFor fields — the same entry the enemy list opens with.
+  const lead = stage.boss ? null : getSpecies(roster[0].speciesId);
+  const thumb = portrait ?? (lead ? assetImage('dinos', `${lead.archetype}-${lead.diet}`) : null);
 
   // Files attach on F1 and F4 only, and each attaching frame uploads exactly the
   // files its embed references. F1 and F4 both replace the message's whole
@@ -55,15 +70,12 @@ export function fightFrames(
   // references — it renders as a bare attachment card under the message.
   const dress = (embed: EmbedBuilder) => {
     if (banner) embed.setImage(banner.url);
-    if (portrait) embed.setThumbnail(portrait.url);
+    if (thumb) embed.setThumbnail(thumb.url);
     return embed;
   };
 
   const squadLines = outcome.squad
     .map((m) => `Lv.${m.level} ${m.name} — ${getSpecies(m.speciesId).name}`).join('\n');
-  // Single source of truth for who actually fought AND which entry is the
-  // boss is rosterFor (shared with runFight) — never re-derived here.
-  const roster = rosterFor(stage, outcome.squad.length);
   const enemyLines = roster.map((e) =>
     e.boss
       ? `👑 ${e.boss.title} — Lv.${stage.npcLevel + e.boss.levelBonus} ${getSpecies(e.speciesId).name}`
@@ -84,7 +96,7 @@ export function fightFrames(
     // banner alive under F1-F3, whose embeds reference nothing.
     attachments: [],
   };
-  const files = [banner?.file, portrait?.file].filter((f): f is AttachmentBuilder => f != null);
+  const files = [banner?.file, thumb?.file].filter((f): f is AttachmentBuilder => f != null);
   if (files.length) f1.files = files;   // uploads on F1; F2/F3 ride on them
 
   const beatFrame = (beat: BeatSummary): FramePayload => ({
@@ -113,13 +125,13 @@ export function fightFrames(
     );
   // Deliberately NOT dress()ed: F4 shows the outcome banner, not the chapter one.
   if (outcomeBanner) f4Embed.setImage(outcomeBanner.url);
-  if (portrait) f4Embed.setThumbnail(portrait.url);
+  if (thumb) f4Embed.setThumbnail(thumb.url);
   // attachments: [] is unconditional. discord.js pushes F4's own descriptors into
   // it, so the chapter banner is dropped from the message either way — including
   // the no-art case, where F4 has no files and would otherwise strand F1's upload
   // as a bare attachment card. Same payload is replayed by the skip button.
   const f4: FramePayload = { embeds: [f4Embed], components: [], attachments: [] };
-  const f4Files = [outcomeBanner?.file, portrait?.file].filter((f): f is AttachmentBuilder => f != null);
+  const f4Files = [outcomeBanner?.file, thumb?.file].filter((f): f is AttachmentBuilder => f != null);
   if (f4Files.length) f4.files = f4Files;
 
   const withSkip = (p: FramePayload, idx: 0 | 1 | 2): FramePayload => {
@@ -156,10 +168,7 @@ export function chaptersPayload(userId: string, chapterIndex: number, view: Chap
   );
   const payload: FramePayload = { embeds: [embed], components: [nav] };
   // chapterId === siteId invariant (content test) makes the site art legal here.
-  const banner = assetImage('sites', `${ch.id}-banner`);
-  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
-  // APPEND — a second assignment would drop the banner file.
-  const thumb = assetImage('sites', `${ch.id}-thumb`);
-  if (thumb) { embed.setThumbnail(thumb.url); payload.files = [...(payload.files ?? []), thumb.file]; }
+  attach(embed, payload, 'image', assetImage('sites', `${ch.id}-banner`));
+  attach(embed, payload, 'thumbnail', assetImage('sites', `${ch.id}-thumb`));
   return payload;
 }

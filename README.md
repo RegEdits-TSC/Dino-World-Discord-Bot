@@ -17,9 +17,10 @@ currently-valid picks listed first and everything else tagged with its state.
 walkthrough plus a topic index, or pass a topic (getting-started, park, eggs,
 expeditions, shop, care, trading, ranks, battles) for a focused guide on that
 system.
-Embeds carry generated art — egg icons per rarity, expedition site art — living
-under `assets/images/`; every embed degrades gracefully and still renders,
-just without the image, when a file is absent.
+Embeds carry generated art — egg icons per rarity, expedition site art, and a
+dinosaur portrait per archetype and diet — living under `assets/images/`; every
+embed degrades gracefully and still renders, just without the image, when a file
+is absent.
 Food comes in six diet-typed items — Ferns, Fruit Basket, and Royal Greens for
 herbivores; Fish, Goat, and Prime Steak for carnivores — bought by item and
 quantity via `/shop food item:<food> units:<n>`, with carnivore food costing

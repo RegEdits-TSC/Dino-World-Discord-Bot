@@ -12,7 +12,7 @@ import { SELL_CASH } from '../../data/sell.js';
 import { DECOR } from '../../data/decor.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, capitalize } from '../../core/autocomplete.js';
-import { assetImage } from '../../core/images.js';
+import { assetImage, attach } from '../../core/images.js';
 import { RARITY_COLOR } from '../hatchery/embeds.js';
 import { RARITY } from '../../data/rarity.js';
 import type { AttachmentBuilder } from 'discord.js';
@@ -51,10 +51,8 @@ export const shopModule: ModuleManifest = {
             const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
             const order = Object.keys(RARITY);
             const best = offers.length ? offers.reduce((a, b) => (order.indexOf(b) > order.indexOf(a) ? b : a)) : null;
-            const img = best ? assetImage('eggs', best) : null;
-            if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }
-            const foodBanner = assetImage('banners', 'shop_food_market');
-            if (foodBanner) { embed.setImage(foodBanner.url); payload.files = [...(payload.files ?? []), foodBanner.file]; }
+            attach(embed, payload, 'thumbnail', best ? assetImage('eggs', best) : null);
+            attach(embed, payload, 'image', assetImage('banners', 'shop_food_market'));
             await i.reply(payload);
           } else if (sub === 'egg') {
             const rarity = i.options.getString('rarity', true) as Rarity;
@@ -65,8 +63,7 @@ export const shopModule: ModuleManifest = {
               .setTitle(`🥚 Bought a ${rarityEmoji(egg.rarity)}${egg.rarity} egg (#${egg.id})`)
               .setDescription(`Incubate it with /incubate ${egg.id}.`);
             const eggPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [eggEmbed] };
-            const eggImg = assetImage('eggs', egg.rarity);
-            if (eggImg) { eggEmbed.setThumbnail(eggImg.url); eggPayload.files = [eggImg.file]; }
+            attach(eggEmbed, eggPayload, 'thumbnail', assetImage('eggs', egg.rarity));
             await i.reply(eggPayload);
           } else {
             const units = i.options.getInteger('units', true);
@@ -75,8 +72,7 @@ export const shopModule: ModuleManifest = {
               .setTitle(`${emojiTag(food.emoji)} Bought ${units}× ${food.name}`)
               .setDescription(`Paid ${total.toLocaleString()} cash — fills hunger to ${food.fillTo}. Serve it with \`/feed all\`.`);
             const foodPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [foodEmbed] };
-            const foodShopBanner = assetImage('banners', 'shop_food_market');
-            if (foodShopBanner) { foodEmbed.setImage(foodShopBanner.url); foodPayload.files = [foodShopBanner.file]; }
+            attach(foodEmbed, foodPayload, 'image', assetImage('banners', 'shop_food_market'));
             await i.reply(foodPayload);
           }
         } catch (e) {
@@ -131,8 +127,7 @@ export const shopModule: ModuleManifest = {
             embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[];
             files?: AttachmentBuilder[]; flags: MessageFlags.Ephemeral;
           } = { embeds: [sellEmbed], components: [row], flags: MessageFlags.Ephemeral };
-          const sellBanner = assetImage('banners', 'sell');
-          if (sellBanner) { sellEmbed.setImage(sellBanner.url); sellPayload.files = [sellBanner.file]; }
+          attach(sellEmbed, sellPayload, 'image', assetImage('banners', 'sell'));
           await i.reply(sellPayload);
         } catch (e) { if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
       },

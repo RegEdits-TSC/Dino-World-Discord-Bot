@@ -40,7 +40,7 @@ const presentations = new Map<string, Presentation>();
 // beat frame's editReply is already in flight sets the flag too late to stop that
 // PATCH, and the two requests then race. Losing that race is not cosmetic — F4
 // replaces the message's whole attachment set, so a beat frame landing after it
-// restores an embed pointing at attachment://<chapter>-banner.png that no longer
+// restores an embed pointing at attachment://<chapter>-banner.webp that no longer
 // exists, i.e. a permanently broken image on the final message.
 // Every edit therefore queues behind the previous one and only fires if its guard
 // still holds, which makes F4 the last PATCH sent in either interleaving: a Skip

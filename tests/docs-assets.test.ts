@@ -18,7 +18,7 @@ describe('docs track the committed assets', () => {
   });
 
   it('prompts.md carries a regeneration target for every generated park raster', () => {
-    for (const f of ['park/ground.png', 'park/plate-paddock.png', 'park/plate-facility.png']) {
+    for (const f of ['park/ground.webp', 'park/plate-paddock.webp', 'park/plate-facility.webp']) {
       expect(prompts, `prompts.md is missing the regeneration target ${f}`).toContain(f);
     }
   });

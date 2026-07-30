@@ -42,7 +42,7 @@
 
 <h2>Global Constraints</h2>
 <ul>
-<li>Commits authored by <b>RegEdits-TSC</b> — no other identity, no <code>Co-Authored-By</code>, no AI/Claude/assistant/"generated with" in any durable artifact.</li>
+<li>Commits authored by <b>RegEdits-TSC</b> — no other identity, no <code>Co-Authored-By</code> trailer, no tool or third-party attribution of any kind in any durable artifact.</li>
 <li>TypeScript <code>strict: true</code>, no explicit <code>any</code>. Run <code>npm run typecheck</code> (src+tests) and <code>npm run build</code> — both exit 0. Full <code>npx vitest run</code> green.</li>
 <li><b>Thread safety (critical):</b> the render worker <b>never</b> receives or touches the DB handle. Only a plain <code>ParkSnapshot</code> (no Drizzle rows, Dates, or functions) crosses the thread boundary.</li>
 <li><b>Never break <code>/park view</code>:</b> a render timeout or worker error must be caught and degrade to the text-only embed.</li>

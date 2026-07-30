@@ -42,7 +42,7 @@
 
 <h2>Global Constraints</h2>
 <ul>
-<li>All commits authored by <b>RegEdits-TSC</b> — never any other identity, never any <code>Co-Authored-By</code> or AI/Claude/assistant/"generated with" mention in code, docs, or commit messages.</li>
+<li>All commits authored by <b>RegEdits-TSC</b> — never any other identity, never any <code>Co-Authored-By</code> trailer, and never a tool or third-party attribution of any kind in code, docs, or commit messages.</li>
 <li>Dependencies stay at latest stable; this plan adds no new dependencies.</li>
 <li>TypeScript <code>strict: true</code>, no explicit <code>any</code>. Run <code>npm run typecheck</code> (checks <b>src and tests</b>) and <code>npm run build</code> — both must exit 0. Plain <code>tsc</code> does not check tests.</li>
 <li><b>Atomicity (hard rule from the Plan 1 final review):</b> every operation that moves currency AND mutates game items/rows must run inside ONE <code>ctx.db.transaction(() =&gt; { ... })</code>. <code>EconomyService.apply</code> opens its own transaction which nests as a SAVEPOINT, so an outer throw rolls back the charge too. Never charge in one statement and apply the effect in another.</li>

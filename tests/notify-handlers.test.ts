@@ -31,8 +31,8 @@ describe('scheduler notification handlers', () => {
     expect(dms).toHaveLength(1);
     expect(embedJson(dms[0]).description).toContain('rare egg is ready to hatch');
     // Attach-all-or-nothing: the thumbnail URL and its file ride the same payload.
-    expect(embedJson(dms[0]).thumbnail?.url).toBe('attachment://rare.png');
-    expect(fileNames(dms[0])).toContain('rare.png');
+    expect(embedJson(dms[0]).thumbnail?.url).toBe('attachment://rare.webp');
+    expect(fileNames(dms[0])).toContain('rare.webp');
     ctx.db.delete(schema.eggs).run();
     await handler({ userId: 'u1', refId: egg.id, originGuildId: null });
     expect(dms).toHaveLength(1);   // skip-guard: no ping for a consumed egg
@@ -40,7 +40,7 @@ describe('scheduler notification handlers', () => {
   it('eggHatchHandler still notifies as plain text when the rarity has no art on disk', async () => {
     const ctx = makeCtx();
     ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
-    // No 'no-such-rarity.png' ships (or ever will) — this exercises assetImage's
+    // No 'no-such-rarity.webp' ships (or ever will) — this exercises assetImage's
     // null-degrade path the way tests/images.test.ts does at the function level,
     // but here through the handler that actually wires it into a payload.
     const egg = ctx.db.insert(schema.eggs)
@@ -63,8 +63,8 @@ describe('scheduler notification handlers', () => {
     await handler({ userId: 'u1', refId: exp.id, originGuildId: null });
     expect(dms).toHaveLength(1);
     expect(embedJson(dms[0]).title).toContain('has returned');
-    expect(embedJson(dms[0]).image?.url).toBe('attachment://coastal_dig-banner.png');
-    expect(fileNames(dms[0])).toContain('coastal_dig-banner.png');
+    expect(embedJson(dms[0]).image?.url).toBe('attachment://coastal_dig-banner.webp');
+    expect(fileNames(dms[0])).toContain('coastal_dig-banner.webp');
     ctx.db.update(schema.expeditions).set({ claimedAt: 2 }).run();
     await handler({ userId: 'u1', refId: exp.id, originGuildId: null });
     expect(dms).toHaveLength(1);

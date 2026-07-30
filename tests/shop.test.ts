@@ -77,8 +77,8 @@ describe('sell confirm button', () => {
       files?: Array<{ name: string | null }>; components: unknown[]; flags?: number;
     };
     expect(prompt.embeds[0].toJSON().description).toContain(`Sell dino #${d.id}`);
-    expect(prompt.embeds[0].toJSON().image?.url).toBe('attachment://sell.png');
-    expect(prompt.files!.map((f) => f.name)).toEqual(['sell.png']);
+    expect(prompt.embeds[0].toJSON().image?.url).toBe('attachment://sell.webp');
+    expect(prompt.files!.map((f) => f.name)).toEqual(['sell.webp']);
     expect(prompt.components).toHaveLength(1);
     expect(prompt.flags).toBe(MessageFlags.Ephemeral);
     // The confirm edits that same message: without embeds:[]/attachments:[] the
@@ -98,7 +98,7 @@ describe('shop visuals', () => {
     await shopModule.commands[0].execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { thumbnail?: { url: string } } }>; files?: unknown[] };
     // dailyEggOffers always returns ≥1 rarity with egg art present for all six rarities
-    expect(payload.embeds[0].toJSON().thumbnail?.url).toMatch(/^attachment:\/\/(common|uncommon|rare|epic|legendary)\.png$/);
+    expect(payload.embeds[0].toJSON().thumbnail?.url).toMatch(/^attachment:\/\/(common|uncommon|rare|epic|legendary)\.webp$/);
     expect(payload.files!.length).toBeGreaterThanOrEqual(1);   // egg thumbnail; food-market banner may add a second
   });
   it('/shop egg purchase replies with a rarity-colored embed and egg thumbnail', async () => {
@@ -106,7 +106,7 @@ describe('shop visuals', () => {
     const i = fakeCommand({ name: 'shop', sub: 'egg', user: 'u1', options: { rarity: offers[0] } });
     await shopModule.commands[0].execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { thumbnail?: { url: string }; description?: string } }> };
-    expect(payload.embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${offers[0]}.png`);
+    expect(payload.embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${offers[0]}.webp`);
     expect(payload.embeds[0].toJSON().description).toContain('/incubate');
   });
   it('/shop view lists the food market grouped by diet', async () => {
@@ -119,12 +119,12 @@ describe('shop visuals', () => {
   });
   it('/shop view attaches the food-market banner image and file together', async () => {
     // Guards attach-all-or-nothing: setImage without the matching file renders a
-    // broken image in Discord. shop_food_market.png ships in the repo.
+    // broken image in Discord. shop_food_market.webp ships in the repo.
     const i = fakeCommand({ name: 'shop', sub: 'view', user: 'u1' });
     await shopModule.commands[0].execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { image?: { url: string } } }>; files?: Array<{ name?: string | null }> };
-    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://shop_food_market.png');
-    expect(payload.files!.some((f) => f.name === 'shop_food_market.png')).toBe(true);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://shop_food_market.webp');
+    expect(payload.files!.some((f) => f.name === 'shop_food_market.webp')).toBe(true);
   });
 });
 
@@ -141,8 +141,8 @@ describe('shop food and sell error branches', () => {
     const embed = payload.embeds[0].toJSON();
     expect(embed.title).toContain('Bought 10× Ferns');
     expect(embed.description).toContain('100 cash');
-    expect(embed.image?.url).toBe('attachment://shop_food_market.png');
-    expect(payload.files!.map((f) => f.name)).toContain('shop_food_market.png');
+    expect(embed.image?.url).toBe('attachment://shop_food_market.webp');
+    expect(payload.files!.map((f) => f.name)).toContain('shop_food_market.webp');
     expect(ctx.economy.getFoodInventory('u1').ferns).toBe(20);   // 10 starter + 10 bought
   });
   it('/sell rejects an unsellable (locked) dino ephemeral, and sell:confirm re-checks', async () => {

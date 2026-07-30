@@ -49,12 +49,18 @@ describe('/battle fight cinematic', () => {
     }
     const f4 = fake.replies[3] as {
       files?: Array<{ name: string | null }>; attachments?: unknown[];
-      embeds: Array<{ toJSON(): { image?: { url: string } } }>;
+      embeds: Array<{ toJSON(): { image?: { url: string }; thumbnail?: { url: string } } }>;
     };
     expect(f4.attachments).toEqual([]);                // drops F1's chapter banner
-    expect(f4.files).toHaveLength(1);
-    expect(f4.files![0].name).toMatch(/^battle_(victory|defeat)\.png$/);
-    expect(f4.embeds[0].toJSON().image?.url).toBe(`attachment://${f4.files![0].name}`);
+    // Two files: the outcome banner (image) and the lead enemy's archetype art
+    // (thumbnail). Asserted as a set — append order is not a contract.
+    const names = f4.files!.map((f) => f.name);
+    expect(names).toHaveLength(2);
+    expect(names).toContain('swift-carnivore.webp');   // coastal_dig_1 leads with compsognathus
+    const json = f4.embeds[0].toJSON();
+    expect(json.image!.url).toMatch(/^attachment:\/\/battle_(victory|defeat)\.webp$/);
+    expect(json.thumbnail?.url).toBe('attachment://swift-carnivore.webp');
+    expect(names).toContain(json.image!.url.replace('attachment://', ''));
   });
   it('rejects ephemerally with no defer when energy is empty', async () => {
     const ctx = makeCtx({ nowMs: 1_000_000 });
@@ -177,7 +183,7 @@ describe('battle buttons', () => {
     // beat frame's editReply is already in flight cannot stop that PATCH — the two
     // requests race. Losing that race is not cosmetic: F4 replaces the message's
     // whole attachment set, so a beat frame landing AFTER F4 restores an embed
-    // pointing at attachment://coastal_dig-banner.png that F4 already dropped —
+    // pointing at attachment://coastal_dig-banner.webp that F4 already dropped —
     // a permanently broken image on the final message. Every edit is therefore
     // serialized per presentation; this pins the resulting order.
     const ctx = makeCtx();

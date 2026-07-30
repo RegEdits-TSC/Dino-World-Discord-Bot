@@ -42,7 +42,7 @@
 
 <h2>Global Constraints</h2>
 <ul>
-<li>Commits authored by <b>RegEdits-TSC</b> — no other identity, no <code>Co-Authored-By</code>, no AI/Claude/assistant/"generated with" in any durable artifact.</li>
+<li>Commits authored by <b>RegEdits-TSC</b> — no other identity, no <code>Co-Authored-By</code> trailer, no tool or third-party attribution of any kind in any durable artifact.</li>
 <li>TypeScript <code>strict: true</code>, no explicit <code>any</code>. Run <code>npm run typecheck</code> (src+tests) and <code>npm run build</code> — both exit 0.</li>
 <li><b>Atomicity (critical for trading):</b> a trade acceptance — re-verify both inventories, move all items + cash + food both ways, flag <code>via_trade</code>, unlock, set status — MUST run in ONE <code>ctx.db.transaction</code>. Currency only via <code>ctx.economy.apply</code>. If anything fails mid-swap, the whole trade rolls back.</li>
 <li>Time via <code>ctx.now()</code>. Any comfort/collection change calls <code>recomputeRating</code>. Any read of escaped-dependent state (park view of another user, rating leaderboard) calls <code>settleEscapes</code> for that user first (Plan 3 constraint).</li>

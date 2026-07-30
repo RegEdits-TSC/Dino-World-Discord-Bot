@@ -212,8 +212,8 @@ describe('trading module', () => {
       files?: Array<{ name?: string | null }>;
     };
     expect(payload.content).toContain('<@b>');
-    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://trading.png');
-    expect(payload.files!.map((f) => f.name)).toContain('trading.png');
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://trading.webp');
+    expect(payload.files!.map((f) => f.name)).toContain('trading.webp');
   });
   it('/trade accept replies with an illustrated completion embed', async () => {
     ctx.economy.apply('a', { cash: 1_000 }, 'seed', 0);
@@ -225,8 +225,8 @@ describe('trading module', () => {
       files?: Array<{ name?: string | null }>;
     };
     expect(payload.embeds[0].toJSON().title).toContain(`Trade #${t.id} completed`);
-    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://trading.png');
-    expect(payload.files!.map((f) => f.name)).toContain('trading.png');
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://trading.webp');
+    expect(payload.files!.map((f) => f.name)).toContain('trading.webp');
   });
   it('/trade offer with a food item but no qty is an ephemeral error', async () => {
     const i = fakeCommand({ name: 'trade', sub: 'offer', user: 'a', options: { user: 'b', 'give-food': 'fish' } });
@@ -314,13 +314,13 @@ describe('trade list pagination', () => {
 
 describe('trading visuals', () => {
   it('/trade list attaches the trading banner image and file together', async () => {
-    // assets/images/banners/trading.png ships in the repo, so this exercises
+    // assets/images/banners/trading.webp ships in the repo, so this exercises
     // the real attached path — asserting the URL without the file (or vice versa)
     // is exactly the broken-image bug this test guards against.
     const i = fakeCommand({ name: 'trade', sub: 'list', user: 'a' });
     await tradingModule.commands[0].execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { image?: { url: string } } }>; files?: unknown[] };
-    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://trading.png');
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://trading.webp');
     expect(payload.files).toHaveLength(1);
   });
 });

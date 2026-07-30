@@ -1,5 +1,5 @@
 import type { Species } from '../types.js';
 export const othnielia: Species = {
   id: 'othnielia', name: 'Othnielia', rarity: 'common', diet: 'herbivore', archetype: 'swift',
-  biomeTags: ['forest'], flavor: 'A tiny grazer that keeps to the ferns.', spriteRef: 'othnielia.png',
+  biomeTags: ['forest'], flavor: 'A tiny grazer that keeps to the ferns.',
 };

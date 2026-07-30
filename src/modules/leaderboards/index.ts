@@ -3,7 +3,7 @@ import type { AttachmentBuilder } from 'discord.js';
 import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
 import { topPlayers, playerRank, type Metric, type Scope } from './service.js';
-import { assetImage } from '../../core/images.js';
+import { assetImage, attach } from '../../core/images.js';
 import { emojiTag } from '../../core/emojis.js';
 
 // Never call emojiTag at module scope — the app-emoji map loads after the
@@ -40,8 +40,7 @@ export const leaderboardsModule: ModuleManifest = {
           if (mine) embed.setFooter({ text: `Your rank: #${mine.rank} — ${formatValue(metric, mine.value)}` });
         }
         const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-        const banner = assetImage('banners', 'leaderboards');
-        if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+        attach(embed, payload, 'image', assetImage('banners', 'leaderboards'));
         await i.reply(payload);
       } },
   ],

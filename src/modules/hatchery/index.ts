@@ -7,7 +7,7 @@ import { incubateEgg, hatchEgg, HatcheryError } from './service.js';
 import { buyMythicEgg, mythicSpeciesChoices, ShardError } from '../shop/shards.js';
 import { getSpecies } from '../../data/species/index.js';
 import { preHatchPayload, revealPayload, eggListPayload, RARITY_COLOR } from './embeds.js';
-import { assetImage } from '../../core/images.js';
+import { assetImage, attach } from '../../core/images.js';
 import { rarityEmoji } from '../../core/emojis.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, eggLabel } from '../../core/autocomplete.js';
@@ -33,8 +33,7 @@ export const hatcheryModule: ModuleManifest = {
             .setTitle(`🥚 Incubating your ${rarityEmoji(egg.rarity)}${egg.rarity} egg`)
             .setDescription(`Ready <t:${Math.floor(egg.hatchesAt! / 1000)}:R> — then run \`/hatch egg:${egg.id}\`.`);
           const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-          const img = assetImage('eggs', egg.rarity);
-          if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }
+          attach(embed, payload, 'thumbnail', assetImage('eggs', egg.rarity));
           await i.reply(payload);
         } catch (e) { if (e instanceof HatcheryError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
       },

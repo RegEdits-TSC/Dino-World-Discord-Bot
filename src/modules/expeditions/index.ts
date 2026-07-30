@@ -10,7 +10,7 @@ import { schema } from '../../core/db/index.js';
 import { siteUnlocked } from '../park/rating.js';
 import { FOODS } from '../../data/foods.js';
 import { matches, respondRanked, fmtDuration } from '../../core/autocomplete.js';
-import { assetImage } from '../../core/images.js';
+import { assetImage, attach } from '../../core/images.js';
 import { emojiTag, rarityEmoji } from '../../core/emojis.js';
 
 // '🌋 ' when the site marker resolves, '' when it doesn't — keeps titles clean either way.
@@ -23,8 +23,7 @@ function sitePayload(siteId: string, description: string) {
   const embed = new EmbedBuilder().setColor(0xe8590c)
     .setTitle(`🧭 ${siteMarker(siteId)}${EXPEDITION_SITES[siteId].name}`).setDescription(description);
   const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-  const img = assetImage('sites', `${siteId}-thumb`);
-  if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }
+  attach(embed, payload, 'thumbnail', assetImage('sites', `${siteId}-thumb`));
   return payload;
 }
 
@@ -75,12 +74,8 @@ export const expeditionsModule: ModuleManifest = {
                 { name: `${emojiTag('dw_cash')} Cash`, value: `+${loot.cash}`, inline: true },
                 { name: `${emojiTag(FOODS[loot.food.foodId].emoji)} ${FOODS[loot.food.foodId].name}`, value: `+${loot.food.qty}`, inline: true });
             const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-            const banner = assetImage('sites', `${site.id}-banner`);
-            if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
-            // APPEND, never re-assign: a second `payload.files = [...]` would drop
-            // the banner and leave a dangling attachment:// URL in the embed.
-            const thumb = assetImage('sites', `${site.id}-thumb`);
-            if (thumb) { embed.setThumbnail(thumb.url); payload.files = [...(payload.files ?? []), thumb.file]; }
+            attach(embed, payload, 'image', assetImage('sites', `${site.id}-banner`));
+            attach(embed, payload, 'thumbnail', assetImage('sites', `${site.id}-thumb`));
             await i.reply(payload);
           }
         } catch (e) {

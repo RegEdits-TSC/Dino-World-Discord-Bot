@@ -2635,7 +2635,7 @@ Add/extend a Testing section (match the README's existing tone and heading style
 
 - `npm test` — offline suite: strict Discord-semantics simulation, all entry points, journeys.
 - `npm run test:live` — REST-only sweep against the dev guild: Discord validates all builders, posts every command's output to `TEST_CHANNEL_ID` for cosmetic review, verifies deployed emojis. Requires `DISCORD_TOKEN`, `DEV_GUILD_ID`, `TEST_CHANNEL_ID`. Never logs a gateway session (safe while the bot runs).
-- `/verify` (Claude command) — typecheck + both tiers + summary.
+- `/verify` (the repo's own slash command) — typecheck + both tiers + summary.
 - CI runs typecheck + offline tests on every push/PR.
 - Env var table (if present): add `TEST_CHANNEL_ID`.
 

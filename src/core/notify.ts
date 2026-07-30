@@ -5,7 +5,7 @@ import { schema } from './db/index.js';
 import type { Ctx } from './context.js';
 import { logger } from './logger.js';
 import { EXPEDITION_SITES } from '../data/sites.js';
-import { assetImage } from './images.js';
+import { assetImage, attach } from './images.js';
 
 // What a passive notification can carry. A bare string stays legal, so
 // Ctx.notify's `message: string` and every one of its call sites are unaffected.
@@ -60,8 +60,7 @@ export function eggHatchHandler(sender: Sender, ctx: Ctx) {
         .setTitle('🥚 Egg ready')
         .setDescription(`Your ${egg.rarity} egg is ready to hatch! Use \`/hatch egg:${egg.id}\`.`);
       const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-      const img = assetImage('eggs', egg.rarity);
-      if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }
+      attach(embed, payload, 'thumbnail', assetImage('eggs', egg.rarity));
       await deliverNotification(sender, ctx, t.userId, t.originGuildId, payload);
     } catch (e) { logger.warn({ err: e }, 'notify handler failed'); }
   };
@@ -76,8 +75,7 @@ export function expeditionReturnHandler(sender: Sender, ctx: Ctx) {
         .setTitle(`🧭 ${site.name} — your expedition has returned!`)
         .setDescription('Use `/expedition claim` to collect the egg, cash, and food.');
       const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-      const banner = assetImage('sites', `${exp.siteId}-banner`);
-      if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+      attach(embed, payload, 'image', assetImage('sites', `${exp.siteId}-banner`));
       await deliverNotification(sender, ctx, t.userId, t.originGuildId, payload);
     } catch (e) { logger.warn({ err: e }, 'notify handler failed'); }
   };

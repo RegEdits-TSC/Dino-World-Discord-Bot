@@ -69,7 +69,8 @@ The bot will log "Logged in as ..." when connected. It stores all state in the S
 at `assets/fonts/` (Noto Sans + Noto Color Emoji), the map backdrop and the two
 tile plates come from `assets/images/park/`, the HUD coin plus the lot and
 rarity dino icons are drawn straight from `assets/emojis/svg/*.svg`, and embed
-art (egg icons, site thumbnails, banners) lives under `assets/images/` — all
+art (egg icons, site thumbnails, banners, archetype dino portraits) lives under
+`assets/images/` — all
 four directories must ship with the deploy. They are read relative to the
 process working directory, so run the bot from the repo root (the systemd unit
 already sets `WorkingDirectory`). The render worker preloads the park art once

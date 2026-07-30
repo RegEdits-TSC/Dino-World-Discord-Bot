@@ -8,7 +8,7 @@ import { frozenCliffs } from './frozen_cliffs.js';
 import { volcanoCore } from './volcano_core.js';
 
 export interface BossDef {
-  bossId: string;        // derives assets/images/battles/<bossId>-portrait.png
+  bossId: string;        // derives assets/images/battles/<bossId>-portrait.webp
   title: string;
   speciesId: string;
   levelBonus: number;
