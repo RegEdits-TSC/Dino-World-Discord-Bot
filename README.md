@@ -9,10 +9,10 @@
 ![Dino World](assets/images/banners/help.webp)
 
 A dinosaur park tycoon game played entirely inside Discord. Build a park, hatch
-eggs into a collection of 30 species, send dinos on expeditions, fight a PvE
-campaign, and trade with other players — all through slash commands. Each park
-belongs to one Discord user and travels with them across every server the bot is
-in.
+eggs into a collection of 30 species, send dig crews out on expeditions, fight a
+PvE campaign, and trade with other players — all through slash commands. Each
+park belongs to one Discord user and travels with them across every server the
+bot is in.
 
 ## ✨ Features
 
