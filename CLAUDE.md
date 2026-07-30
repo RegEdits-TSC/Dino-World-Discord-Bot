@@ -83,7 +83,7 @@
   plain assignment drops the first file and leaves a dangling `attachment://`
   URL that Discord renders as a broken image. Attachment names are basenames
   only (`src/core/images.ts:20-23`), so the two assets need distinct file names
-  (`<site>-banner.png` vs `<site>-thumb.png` is safe). Live call sites:
+  (`<site>-banner.webp` vs `<site>-thumb.webp` is safe). Live call sites:
   `/shop view`, `/expedition claim`, `/battle chapters`.
 - Custom app emojis are hand-authored SVG in `assets/emojis/svg/`, rendered to
   committed 128×128 transparent PNGs in `assets/emojis/png/` by
@@ -115,16 +115,17 @@
   than 2% pure `#000000` (`MAX_BLACK_SHARE`), calibrated against the currency trio, none of which
   use pure black — if a future SVG legitimately needs pure black across more of the canvas than
   that, raise the threshold deliberately rather than fighting the guard.
-- `@napi-rs/canvas` decodes **PNG** buffers asynchronously — setting `Image.src`
-  from PNG bytes and drawing in the same tick silently yields a blank canvas,
-  with no error. Always `await img.decode()` before drawing a PNG. **SVG**
-  buffers decode synchronously, which is why `renderSvg` needs no await and why
-  every icon the park renderer draws (HUD coin, lot icons, rarity dino chips) is
-  read from `assets/emojis/svg/*.svg` rather than a PNG. That asymmetry is what
-  splits `src/core/render/art.ts` in two: `loadSvgImage` is synchronous, the
-  three `assets/images/park/*.png` rasters are `await img.decode()`d inside
-  `loadParkArt`, and `renderParkPng(snap, art = EMPTY_ART)` **stays
-  synchronous** — never move a PNG decode into it. `worker.ts` top-level-awaits
+- `@napi-rs/canvas` decodes **raster** buffers asynchronously — PNG and WebP
+  alike. Setting `Image.src` from raster bytes and drawing in the same tick
+  silently yields a blank canvas, with no error. Always `await img.decode()`
+  before drawing one. **SVG** buffers decode synchronously, which is why
+  `renderSvg` needs no await and why every icon the park renderer draws (HUD
+  coin, lot icons, rarity dino chips) is read from `assets/emojis/svg/*.svg`
+  rather than a raster. That asymmetry is what splits `src/core/render/art.ts`
+  in two: `loadSvgImage` is synchronous, the three `assets/images/park/*.webp`
+  rasters are `await img.decode()`d inside `loadParkArt`, and
+  `renderParkPng(snap, art = EMPTY_ART)` **stays synchronous** — never move a
+  raster decode into it. `worker.ts` top-level-awaits
   `loadParkArt().catch(() => EMPTY_ART)`: `loadParkArt` must never reject and
   the `.catch` is belt-and-braces, because a rejected worker module boot fires
   `client.ts`'s `error` handler, which terminates and nulls the worker — every
@@ -134,6 +135,17 @@
   own non-null guard, and each `null` falls back to the flat fill / emoji glyph
   in `src/data/render-icons.ts` — that file is the live fallback path, not dead
   code.
+- Every file under `assets/images/` is **WebP q95** — `assetImage`
+  (`src/core/images.ts`) is the only path builder for them and appends `.webp`,
+  so flipping the format there propagates to every `attachment://` URL and every
+  `files[].name`. `scripts/fit-art.mjs` emits the same format. Three things are
+  deliberately NOT WebP: `assets/emojis/png/` (Discord's app-emoji upload expects
+  PNG and `manifest.json` hashes those exact bytes), `assets/emojis/svg/` (the
+  park renderer needs synchronous decode), and `park.png` — the `/park view`
+  render OUTPUT buffer from `renderParkPng`, an in-memory PNG (`canvas.toBuffer
+  ('image/png')`), not a committed asset. `tests/images.test.ts`'s "ships every
+  file under assets/images as .webp" test guards that nothing under
+  `assets/images/` regresses to another format.
 - Food is typed (`src/data/foods.ts`, 3 tiers × 2 diets) and lives in the
   `food_inventory` table — `users.food` no longer exists. Feeding sets
   `hunger = fillTo` (up to 150): `comfortAt` clamps the hunger term at 100, and
@@ -162,7 +174,7 @@
   `unlockRating` co-gate, and the theme. `tests/battle-content.test.ts` is the
   machine gate for all campaign data — including that every `bossId` appears in
   `docs/assets/prompts.md` — so future chapters ship as data-only PRs (new
-  chapter file + index import + PNGs + prompt rows) with zero engine changes.
+  chapter file + index import + WebPs + prompt rows) with zero engine changes.
   `rosterFor(stage, squadSize)` (`src/data/battle/chapters/index.ts`) is the
   single source of truth for which enemies are fielded and which entry is the
   boss — `runFight` and `fightFrames` both call it rather than re-deriving the
@@ -206,8 +218,8 @@
   clicked between frames still answers instantly. Any future third writer to a
   presented message must go through the same queue.
   Embed art kinds are `eggs | sites | banners | battles | hatch` (`assetImage`,
-  `src/core/images.ts`); `hatch/<rarity>-crack.png` is the hatch-reveal image and
-  its attachment name never collides with `eggs/<rarity>.png`. Banners are
+  `src/core/images.ts`); `hatch/<rarity>-crack.webp` is the hatch-reveal image and
+  its attachment name never collides with `eggs/<rarity>.webp`. Banners are
   1536×1024 (asserted in `tests/images.test.ts`) and transparent cutouts
   1024×1024; `node scripts/fit-art.mjs banner|cutout <src> <dest>` produces the
   banners and the hatch cracks, but NOT the eggs or the boss portraits — those
@@ -217,7 +229,7 @@
   disconnected alpha regions on purpose (falling shell fragments), so the egg
   pass's "largest connected region" step must never be applied to them.
   `assets/images/battles/` ships committed boss portraits
-  (`boss-<siteId>-portrait.png`, 1024×1024 transparent cutouts pinned by
+  (`boss-<siteId>-portrait.webp`, 1024×1024 transparent cutouts pinned by
   `tests/images.test.ts`); `assetImage`'s null-degrade still holds, so the
   campaign stays fully playable if any of them is removed. Never stage a test
   fixture inside `assets/images/` — vitest runs test files in parallel forks,
