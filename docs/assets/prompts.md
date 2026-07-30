@@ -30,11 +30,28 @@ icons in `assets/images/eggs/` (glossy cartoon game style):
 
 | File | Size | Use |
 |---|---|---|
-| `assets/images/sites/<id>-banner.png` | 1536×1024 | `/expedition claim` full-width embed image |
-| `assets/images/sites/<id>-thumb.png` | 1024×1024 | `/expedition start` + `status` embed thumbnail |
-| `assets/images/park/ground.png` | 1200×800 (3:2) | `/park view` canvas backdrop, cover-scaled |
-| `assets/images/park/plate-paddock.png` | 270×150 | `/park view` paddock tile plate |
-| `assets/images/park/plate-facility.png` | 270×150 | `/park view` facility tile plate |
+| `assets/images/sites/<id>-banner.webp` | 1536×1024 | `/expedition claim` full-width embed image |
+| `assets/images/sites/<id>-thumb.webp` | 1024×1024* | `/expedition start` + `status` embed thumbnail |
+| `assets/images/park/ground.webp` | 1200×800 (3:2) | `/park view` canvas backdrop, cover-scaled |
+| `assets/images/park/plate-paddock.webp` | 270×150 | `/park view` paddock tile plate |
+| `assets/images/park/plate-facility.webp` | 270×150 | `/park view` facility tile plate |
+
+\* Except the shipped `assets/images/sites/volcano_core-thumb.webp`, which is
+**1254×1254** — a discrepancy from the original PNG's IHDR that predates the
+WebP conversion, not something that conversion introduced. Not resized as
+part of that pass; a future regeneration should target 1024×1024 to match the
+other three site thumbs.
+
+**Output format.** Every committed file under `assets/images/` is **WebP, quality 95**,
+encoded through `@napi-rs/canvas`'s `canvas.toBuffer('image/webp', 95)` — an 83-87%
+saving over PNG that is indistinguishable at the sizes Discord renders.
+`scripts/fit-art.mjs` emits it directly, so both modes write the shipped format and no
+separate conversion step is needed. Intermediates are exempt: a generator's output and
+the `remove_background` result in the walkthroughs below are whatever the tool produced
+(usually PNG), and only the final write is WebP. `assets/emojis/png/` is **not** WebP —
+Discord's application-emoji upload expects PNG and `manifest.json` hashes those exact
+bytes — and `assets/emojis/svg/` stays SVG because the park renderer decodes it
+synchronously.
 
 Banner = wide establishing shot of the site. Thumb = square icon-style
 composition with one central landmark and a simple background (readable at
@@ -54,7 +71,7 @@ is the exception: obsidian-and-lava to match the `volcano_core` site art).
 
 | File | Size | Use |
 |---|---|---|
-| `assets/images/eggs/<rarity>.png` | 1024×1024, transparent | hatch-reveal hero + shop/hatchery embed thumbnail |
+| `assets/images/eggs/<rarity>.webp` | 1024×1024, transparent | hatch-reveal hero + shop/hatchery embed thumbnail |
 
 `<rarity>` is one of `common`, `uncommon`, `rare`, `epic`, `legendary`,
 `mythic`.
@@ -93,7 +110,7 @@ That is deliberate, and the two are not interchangeable:
 
 | | margin on tight axis | centering | regions kept |
 |---|---|---|---|
-| `assets/images/eggs/` (this one-off pass) | 24px | egg axis — L/R margins are asymmetric on purpose (e.g. `common.png` L74/R53) | 1 |
+| `assets/images/eggs/` (this one-off pass) | 24px | egg axis — L/R margins are asymmetric on purpose (e.g. `common.webp` L74/R53) | 1 |
 | `assets/images/battles/` (same pass, whole-bbox variant) | 24px | whole bbox | 1 |
 | `assets/images/hatch/` (`fit-art.mjs cutout`) | 31px | whole bbox | all (see Hatch cracks) |
 
@@ -229,7 +246,7 @@ reference). Prompt frame:
 
 ## Volcano Core (`volcano_core`)
 
-Match the black-and-lava look of `assets/images/eggs/mythic.png` (obsidian
+Match the black-and-lava look of `assets/images/eggs/mythic.webp` (obsidian
 shell with glowing orange cracks).
 
 **Banner (1536×1024):**
@@ -262,28 +279,28 @@ excess, which is center-cropped).
 
 | File | Size | Use |
 |---|---|---|
-| `assets/images/banners/trading.png` | 1536×1024 | `/trade list` embed image |
-| `assets/images/banners/leaderboards.png` | 1536×1024 | `/top` embed image |
-| `assets/images/banners/help.png` | 1536×1024 | `/help` overview embed image |
-| `assets/images/banners/care.png` | 1536×1024 | care embed, dinos fed |
-| `assets/images/banners/care_neglect.png` | 1536×1024 | care embed, a dino is very hungry |
-| `assets/images/banners/shop_food_market.png` | 1536×1024 | `/shop view` food market embed image |
-| `assets/images/banners/battle_victory.png` | 1536×1024 | `/battle fight` F4 image, win |
-| `assets/images/banners/battle_defeat.png` | 1536×1024 | `/battle fight` F4 image, loss |
-| `assets/images/banners/collect.png` | 1536×1024 | `park:collect` reply embed image |
-| `assets/images/banners/rescue.png` | 1536×1024 | `/rescue` success embed image |
-| `assets/images/banners/dino_roster.png` | 1536×1024 | `/dino list` embed image |
-| `assets/images/banners/eggs_incubator.png` | 1536×1024 | `/eggs` embed image |
-| `assets/images/banners/sell.png` | 1536×1024 | `/sell` confirmation prompt embed image |
+| `assets/images/banners/trading.webp` | 1536×1024 | `/trade list` embed image |
+| `assets/images/banners/leaderboards.webp` | 1536×1024 | `/top` embed image |
+| `assets/images/banners/help.webp` | 1536×1024 | `/help` overview embed image |
+| `assets/images/banners/care.webp` | 1536×1024 | care embed, dinos fed |
+| `assets/images/banners/care_neglect.webp` | 1536×1024 | care embed, a dino is very hungry |
+| `assets/images/banners/shop_food_market.webp` | 1536×1024 | `/shop view` food market embed image |
+| `assets/images/banners/battle_victory.webp` | 1536×1024 | `/battle fight` F4 image, win |
+| `assets/images/banners/battle_defeat.webp` | 1536×1024 | `/battle fight` F4 image, loss |
+| `assets/images/banners/collect.webp` | 1536×1024 | `park:collect` reply embed image |
+| `assets/images/banners/rescue.webp` | 1536×1024 | `/rescue` success embed image |
+| `assets/images/banners/dino_roster.webp` | 1536×1024 | `/dino list` embed image |
+| `assets/images/banners/eggs_incubator.webp` | 1536×1024 | `/eggs` embed image |
+| `assets/images/banners/sell.webp` | 1536×1024 | `/sell` confirmation prompt embed image |
 
 These are the only prompts in this file whose subject is dinosaurs rather than
 scenery, so they drop the shared block's "no characters" clause and forbid only
 human ones. The rest of the shared style block applies unchanged, with one
-exception: `care_neglect.png` also drops "vibrant saturated colors, strong
+exception: `care_neglect.webp` also drops "vibrant saturated colors, strong
 glossy highlights", because the whole point of that variant is muted,
 desaturated, overcast — keeping the clause would fight the prompt.
 
-**Trading (`trading.png`):**
+**Trading (`trading.webp`):**
 
 > A wide cartoon scene of a lively prehistoric trading post in a lush dinosaur
 > park: a wooden market stall stacked with open crates of red meat and glossy
@@ -297,7 +314,7 @@ desaturated, overcast — keeping the clause would fight the prompt.
 > smooth gradients, polished game-asset look. No text, no human characters, no
 > UI elements.
 
-**Leaderboards (`leaderboards.png`):**
+**Leaderboards (`leaderboards.webp`):**
 
 > A wide cartoon scene of a dinosaur park awards ceremony: a three-tier stone
 > podium in the center marked with first, second and third place steps, a huge
@@ -314,7 +331,7 @@ The model renders "1st / 2nd / 3rd" on the podium steps despite the no-text
 clause. That is kept deliberately — the numerals are correct and reinforce what
 the embed is for. Regenerating may or may not reproduce them.
 
-**Help (`help.png`):**
+**Help (`help.webp`):**
 
 > A wide cartoon scene of the grand entrance gates to a dinosaur park at golden
 > hour: two tall carved wooden gate posts topped with a large arching timber
@@ -327,7 +344,7 @@ the embed is for. Regenerating may or may not reproduce them.
 > gradients, polished game-asset look. No text, no human characters, no UI
 > elements.
 
-**Care (`care.png`):**
+**Care (`care.webp`):**
 
 > A wide cartoon scene of a dinosaur park feeding station on a sunny morning: a
 > sturdy wooden feeding trough in the center heaped high with fresh green ferns
@@ -339,9 +356,9 @@ the embed is for. Regenerating may or may not reproduce them.
 > strong glossy highlights, clean cel shading with smooth gradients, polished
 > game-asset look. No text, no human characters, no UI elements.
 
-**Care — neglected (`care_neglect.png`):**
+**Care — neglected (`care_neglect.webp`):**
 
-Generated with `care.png` attached as the `image` reference so the two read as
+Generated with `care.webp` attached as the `image` reference so the two read as
 the same place at two different moments. Regenerate it the same way, or the
 pair stops matching and the swap looks like a scene change rather than a
 warning.
@@ -358,7 +375,7 @@ warning.
 > outlines, clean cel shading with smooth gradients, polished game-asset look.
 > No text, no human characters, no UI elements.
 
-### shop_food_market (banners/shop_food_market.png)
+### shop_food_market (banners/shop_food_market.webp)
 
 Jurassic-park gift-shop food market stall, wooden counter with two clearly split
 display sides: left side lush greens — fern bundles, fruit baskets, crowned
@@ -367,7 +384,7 @@ leg, marbled steak. Warm tropical daylight, painted-illustration style matching
 the existing site banners, no text, no people, 3:2 (scaled and center-cropped
 to 1536×1024 like the other banners).
 
-**Battle victory (`battle_victory.png`):**
+**Battle victory (`battle_victory.webp`):**
 
 > A wide cartoon scene of a dinosaur park arena after a won battle: a proud
 > victorious green cartoon dinosaur standing tall on a rocky outcrop with its
@@ -378,9 +395,9 @@ to 1536×1024 like the other banners).
 > glossy highlights, clean cel shading with smooth gradients, polished
 > game-asset look. No text, no human characters, no UI elements.
 
-**Battle defeat (`battle_defeat.png`):**
+**Battle defeat (`battle_defeat.webp`):**
 
-Generated with `battle_victory.png` attached as the `image` reference, the same
+Generated with `battle_victory.webp` attached as the `image` reference, the same
 `care` / `care_neglect` pairing — regenerate it the same way or the two moods
 stop reading as one arena.
 
@@ -393,7 +410,7 @@ stop reading as one arena.
 > shading with smooth gradients, polished game-asset look. No text, no human
 > characters, no UI elements.
 
-**Collect (`collect.png`):**
+**Collect (`collect.webp`):**
 
 > A wide cartoon scene of a dinosaur park ticket booth at closing time: an
 > open cash box on a wooden counter overflowing with gold coins and banknotes,
@@ -411,7 +428,7 @@ legible lettering. The "blank" chalkboard and the expanded no-text clause
 above are load-bearing — regenerating from a shorter version risks
 reproducing the signage text.
 
-**Rescue (`rescue.png`):**
+**Rescue (`rescue.webp`):**
 
 > A wide cartoon scene of a dinosaur recapture in a park at dusk: a broken
 > section of tall wire perimeter fence with the gap being closed by a wooden
@@ -422,7 +439,7 @@ reproducing the signage text.
 > colors, strong glossy highlights, clean cel shading with smooth gradients,
 > polished game-asset look. No text, no human characters, no UI elements.
 
-**Dino roster (`dino_roster.png`):**
+**Dino roster (`dino_roster.webp`):**
 
 > A wide cartoon scene of a dinosaur park roster board area: a row of five
 > different friendly cartoon dinosaurs of assorted colors and sizes standing
@@ -435,7 +452,7 @@ reproducing the signage text.
 > lettering, no words, no numbers, no signage writing anywhere in the scene,
 > no human characters, no UI elements.
 
-**Eggs incubator (`eggs_incubator.png`):**
+**Eggs incubator (`eggs_incubator.webp`):**
 
 > A wide cartoon scene of a dinosaur park hatchery incubation room: a curved
 > bank of warm glass incubator domes on a steel bench, each holding a single
@@ -447,7 +464,7 @@ reproducing the signage text.
 > words, no numbers, no signage writing anywhere in the scene, no human
 > characters, no UI elements.
 
-**Sell (`sell.png`):**
+**Sell (`sell.webp`):**
 
 > A wide cartoon scene of a prehistoric park buyer's stall: a heavy wooden
 > counter with a brass weighing scale, an open ledger, a leather coin pouch
@@ -460,7 +477,7 @@ reproducing the signage text.
 > UI elements.
 
 These three prompts started from the shared block's plain "No text" clause
-(matching the rest of this section), but carried the `collect.png` fix
+(matching the rest of this section), but carried the `collect.webp` fix
 proactively — a roster board, an incubation room with a dial, and a buyer's
 stall with a ledger are exactly the kind of scene a model will happily letter.
 All three generated clean on the first attempt with the strengthened clause,
@@ -476,10 +493,10 @@ fully playable with zero battle art.
 
 | File | Size | Use |
 |---|---|---|
-| `assets/images/battles/boss-coastal_dig-portrait.png` | 1024×1024, transparent | Old Riptooth (Baryonyx), Coastal Dig boss frames |
-| `assets/images/battles/boss-amber_ridge-portrait.png` | 1024×1024, transparent | Ridgeback Alpha (Allosaurus), Amber Ridge boss frames |
-| `assets/images/battles/boss-frozen_cliffs-portrait.png` | 1024×1024, transparent | Stormwing (Quetzalcoatlus), Frozen Cliffs boss frames |
-| `assets/images/battles/boss-volcano_core-portrait.png` | 1024×1024, transparent | The Tyrant King (Tyrannosaurus), Volcano Core boss frames |
+| `assets/images/battles/boss-coastal_dig-portrait.webp` | 1024×1024, transparent | Old Riptooth (Baryonyx), Coastal Dig boss frames |
+| `assets/images/battles/boss-amber_ridge-portrait.webp` | 1024×1024, transparent | Ridgeback Alpha (Allosaurus), Amber Ridge boss frames |
+| `assets/images/battles/boss-frozen_cliffs-portrait.webp` | 1024×1024, transparent | Stormwing (Quetzalcoatlus), Frozen Cliffs boss frames |
+| `assets/images/battles/boss-volcano_core-portrait.webp` | 1024×1024, transparent | The Tyrant King (Tyrannosaurus), Volcano Core boss frames |
 
 **Hard no-glow rule:** no glow, rays, embers, sparkles, or light effects may
 extend beyond the dinosaur silhouette — off-silhouette glow survives
@@ -551,7 +568,7 @@ margin the four committed portraits measure at.
   came back facing left, mirrored against the other three bosses, which all
   face right — snout/beak pointing right — matching the coastal_dig
   reference. Rather than risk losing the now-approved outline/saturation fix
-  on a third generation, the committed `boss-frozen_cliffs-portrait.png` is
+  on a third generation, the committed `boss-frozen_cliffs-portrait.webp` is
   that same approved asset horizontally flipped in post (alpha-preserving,
   1024×1024 dimensions unchanged) to restore right-facing orientation. A
   future regeneration from this prompt is not guaranteed to land right-facing
@@ -705,7 +722,7 @@ the player sees the same egg they were shown a second earlier, now open.
 
 | File | Size | Use |
 |---|---|---|
-| `assets/images/hatch/<rarity>-crack.png` | 1024×1024, transparent | `hatch:crack` reveal embed image |
+| `assets/images/hatch/<rarity>-crack.webp` | 1024×1024, transparent | `hatch:crack` reveal embed image |
 
 `<rarity>` is one of `common`, `uncommon`, `rare`, `epic`, `legendary`,
 `mythic`.
@@ -716,7 +733,7 @@ removal as floating islands or a light halo on transparency. Emissive detail is
 allowed only ON surfaces. Every prompt carries this rule verbatim.
 
 **Workflow (reference chain):** each crack is generated with its OWN
-`assets/images/eggs/<rarity>.png` attached as the `image` reference (Nano Banana
+`assets/images/eggs/<rarity>.webp` attached as the `image` reference (Nano Banana
 Pro, `medias` role `image`) — never from another crack — so the shell design and
 nest match the egg the player was just shown. Post-process each with
 `remove_background`, then `node scripts/fit-art.mjs cutout <src> <dest>` — whole
