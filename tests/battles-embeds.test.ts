@@ -18,7 +18,7 @@ import { assetImage } from '../src/core/images.js';
 // implementation) wrapped in vi.fn, so the two chaptersPayload degrade-path
 // tests below can still override exactly one queued call via
 // mockImplementationOnce to force a miss without touching real asset files.
-const art = vi.hoisted(() => ({ portraits: true, sites: true }));
+const art = vi.hoisted(() => ({ portraits: true, sites: true, dinos: true }));
 vi.mock('../src/core/images.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/core/images.js')>();
   return {
@@ -26,7 +26,11 @@ vi.mock('../src/core/images.js', async (importOriginal) => {
     assetImage: vi.fn((kind: Parameters<typeof actual.assetImage>[0], name: string) => {
       // `sites: false` models a deploy with no chapter art (docs/ops.md: every
       // asset is individually optional) — the only way F1 ends up with no files.
+      // `dinos: false` is the same fixture for the archetype thumbs — without it
+      // F1 always has a file and the replay contract below stops testing the
+      // no-art case it exists to test.
       if (kind === 'sites' && !art.sites) return null;
+      if (kind === 'dinos' && !art.dinos) return null;
       if (kind !== 'battles') return actual.assetImage(kind, name);   // chapter banners/thumbs stay real
       if (!art.portraits) return null;
       const fileName = `${name}.webp`;
@@ -75,10 +79,12 @@ describe('fightFrames', () => {
     expect(frames[0].files?.length).toBeGreaterThan(0);   // coastal_dig banner ships
     expect(frames[1].files).toBeUndefined();
     expect(frames[2].files).toBeUndefined();
-    expect(frames[3].files?.map((f) => f.name)).toEqual(['battle_victory.webp']);
+    // F4 replaces the whole attachment set, so it re-uploads the thumb it shows.
+    expect(frames[3].files?.map((f) => f.name)).toEqual(['battle_victory.webp', 'swift-carnivore.webp']);
     expect(frames[0].attachments).toEqual([]);   // F1 and F4 both replace the whole set
     expect(frames[3].attachments).toEqual([]);
     expect(frames[3].embeds[0].toJSON().image?.url).toBe('attachment://battle_victory.webp');
+    expect(frames[3].embeds[0].toJSON().thumbnail?.url).toBe('attachment://swift-carnivore.webp');
   });
   it('F2/F3 come straight from the result beats', () => {
     const frames = fightFrames(makeOutcome(), skipStub);
@@ -106,19 +112,32 @@ describe('fightFrames', () => {
     expect(JSON.stringify(f4.fields)).not.toContain('cash');
     expect(JSON.stringify(f4.fields)).toContain('+10 battle XP');
   });
-  it('boss stages thumbnail the portrait on F3 and F4; normal stages never do', () => {
+  it('boss stages thumbnail the portrait; non-boss stages thumbnail the lead enemy archetype', () => {
     const boss = fightFrames(makeOutcome({ stageId: 'coastal_dig_boss', bossEgg: { rarity: 'rare' } }), skipStub);
     expect(boss[2].embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${bossId}-portrait.webp`);
     expect(boss[3].embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${bossId}-portrait.webp`);
     expect(boss[0].files?.map((f) => f.name)).toContain(`${bossId}-portrait.webp`);
     expect(boss[3].files?.map((f) => f.name)).toContain(`${bossId}-portrait.webp`);   // re-uploaded, not re-referenced
     expect(boss[1].files).toBeUndefined();
+    // A boss stage never carries archetype art: the boss is a named individual,
+    // and rosterFor's lead entry on a 1-dino squad is the boss itself.
+    expect(boss[0].files?.map((f) => f.name)).not.toContain('swift-carnivore.webp');
     expect(JSON.stringify(boss[3].embeds[0].toJSON().fields)).toContain('egg');
     // The rendered enemy line, not just the thumbnail/files wiring, names the boss.
     const enemiesField = boss[0].embeds[0].toJSON().fields!.find((f) => f.name === 'Enemies')!.value;
     expect(enemiesField).toContain('👑 Old Riptooth');
+    // coastal_dig_1's weakest-first roster leads with compsognathus (swift/carnivore).
     const normal = fightFrames(makeOutcome(), skipStub);
-    for (const f of normal) expect(f.embeds[0].toJSON().thumbnail).toBeUndefined();
+    for (const f of normal) expect(f.embeds[0].toJSON().thumbnail?.url).toBe('attachment://swift-carnivore.webp');
+  });
+  it('the non-boss thumbnail is computed per stage from rosterFor[0], not a constant', () => {
+    // coastal_dig_2 leads with othnielia (swift/herbivore), coastal_dig_3 with
+    // microceratus (support/herbivore) — different keys down the same code path.
+    const s2 = fightFrames(makeOutcome({ stageId: 'coastal_dig_2' }), skipStub);
+    expect(s2[0].embeds[0].toJSON().thumbnail?.url).toBe('attachment://swift-herbivore.webp');
+    const s3 = fightFrames(makeOutcome({ stageId: 'coastal_dig_3' }), skipStub);
+    expect(s3[0].embeds[0].toJSON().thumbnail?.url).toBe('attachment://support-herbivore.webp');
+    expect(s3[0].files?.map((f) => f.name)).toContain('support-herbivore.webp');
   });
   it('boss stage with no portrait art degrades cleanly: no thumbnail anywhere, no portrait file, banner still ships', () => {
     // No boss stage lacks committed art any more, so the absent-art branch is
@@ -158,6 +177,7 @@ describe('fightFrames', () => {
     // nothing. F1's `attachments: []` must therefore be unconditional, not
     // `if (files.length)`.
     art.sites = false;
+    art.dinos = false;
     try {
       const first = fightFrames(makeOutcome(), skipStub);
       const replay = fightFrames(makeOutcome(), skipStub);
@@ -170,13 +190,14 @@ describe('fightFrames', () => {
       for (const f of replay.slice(0, 3)) expect(f.embeds[0].toJSON().image).toBeUndefined();
     } finally {
       art.sites = true;
+      art.dinos = true;
     }
   });
-  it('frame contract: every referenced attachment is live on that frame, and no frame uploads what it never references', () => {
-    const frames = fightFrames(makeOutcome({ stageId: 'coastal_dig_boss', bossEgg: { rarity: 'rare' } }), skipStub);
-    // Mirrors discord.js MessagePayload: a payload carrying `files` (or an explicit
-    // `attachments` array) REPLACES the message's whole attachment set; a payload
-    // carrying neither leaves the previous uploads in place (see liveAfter above).
+  // Mirrors discord.js MessagePayload: a payload carrying `files` (or an explicit
+  // `attachments` array) REPLACES the message's whole attachment set; a payload
+  // carrying neither leaves the previous uploads in place (see liveAfter above).
+  const assertFrameContract = (stageId: string, bossEgg: FightOutcome['bossEgg'], expectedLive: string[]) => {
+    const frames = fightFrames(makeOutcome({ stageId, bossEgg }), skipStub);
     let live: string[] = [];
     frames.forEach((frame, idx) => {
       const own = (frame.files ?? []).map((f) => f.name!);
@@ -185,11 +206,16 @@ describe('fightFrames', () => {
       const referenced = [json.image?.url, json.thumbnail?.url]
         .filter((u): u is string => typeof u === 'string')
         .map((u) => u.replace('attachment://', ''));
-      for (const r of referenced) expect(live, `frame ${idx + 1} references ${r}`).toContain(r);
-      for (const n of own) expect(referenced, `frame ${idx + 1} uploads ${n}`).toContain(n);
+      for (const r of referenced) expect(live, `${stageId} frame ${idx + 1} references ${r}`).toContain(r);
+      for (const n of own) expect(referenced, `${stageId} frame ${idx + 1} uploads ${n}`).toContain(n);
     });
-    // F4 dropped the chapter banner it no longer references.
-    expect(live).toEqual(['battle_victory.webp', `${bossId}-portrait.webp`]);
+    expect(live).toEqual(expectedLive);
+  };
+  it('frame contract (boss stage): every referenced attachment is live on that frame, and no frame uploads what it never references', () => {
+    assertFrameContract('coastal_dig_boss', { rarity: 'rare' }, ['battle_victory.webp', `${bossId}-portrait.webp`]);
+  });
+  it('frame contract (non-boss stage): the archetype thumb is uploaded by both attaching frames', () => {
+    assertFrameContract('coastal_dig_1', null, ['battle_victory.webp', 'swift-carnivore.webp']);
   });
 });
 
