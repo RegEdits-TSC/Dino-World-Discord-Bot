@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { assetImage, attach } from '../src/core/images.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
+import { allSpecies } from '../src/data/species/index.js';
 import type { Archetype, Diet } from '../src/data/types.js';
 
 const BANNERS = ['trading', 'leaderboards', 'help', 'care', 'care_neglect', 'shop_food_market',
@@ -40,6 +41,9 @@ describe('assetImage', () => {
   });
   it('accepts the hatch kind and null-degrades when absent', () => {
     expect(assetImage('hatch', 'no-such-crack')).toBeNull();
+  });
+  it('accepts the dinos kind and null-degrades when absent', () => {
+    expect(assetImage('dinos', 'no-such-archetype')).toBeNull();
   });
 });
 
@@ -116,26 +120,26 @@ describe('banner art', () => {
 // any size-only check and then reads as a gray card in dark mode, so corners
 // are asserted transparent, not just the dimensions. These are the only
 // committed images used as an embed thumbnail over the viewer's theme.
-async function expectTransparentPortrait(bossId: string): Promise<void> {
-  expect(assetImage('battles', `${bossId}-portrait`), bossId).not.toBeNull();
+async function expectTransparentCutout(kind: 'battles' | 'dinos', name: string): Promise<void> {
+  expect(assetImage(kind, name), name).not.toBeNull();
   const img = new Image();
-  img.src = readFileSync(resolve(process.cwd(), 'assets/images/battles', `${bossId}-portrait.webp`));
-  await img.decode();   // raster decode is async — drawing without it silently yields a blank canvas
-  expect(img.width, bossId).toBe(1024);
-  expect(img.height, bossId).toBe(1024);
+  img.src = readFileSync(resolve(process.cwd(), 'assets/images', kind, `${name}.webp`));
+  await img.decode();   // decode is async for WebP as for PNG — drawing without it yields a blank canvas
+  expect(img.width, name).toBe(1024);
+  expect(img.height, name).toBe(1024);
   const canvas = createCanvas(1024, 1024);
   const c = canvas.getContext('2d');
   c.drawImage(img, 0, 0);
-  const corners: Array<[number, number]> = [[0, 0], [1023, 0], [0, 1023], [1023, 1023]];
-  for (const [x, y] of corners) {
-    expect(c.getImageData(x, y, 1, 1).data[3], `${bossId} corner ${x},${y}`).toBe(0);
+  for (const [x, y] of [[0, 0], [1023, 0], [0, 1023], [1023, 1023]] as const) {
+    expect(c.getImageData(x, y, 1, 1).data[3], `${name} corner ${x},${y}`).toBe(0);
   }
 }
 
 const PORTRAIT_BOSS_IDS = CAMPAIGN.map((c) => c.stages[4].boss!.bossId);
 
 describe('boss portrait art', () => {
-  it.each(PORTRAIT_BOSS_IDS)('%s is a 1024×1024 transparent cutout', (bossId) => expectTransparentPortrait(bossId));
+  it.each(PORTRAIT_BOSS_IDS)('%s is a 1024×1024 transparent cutout',
+    (bossId) => expectTransparentCutout('battles', `${bossId}-portrait`));
 });
 
 const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] as const;
@@ -277,5 +281,18 @@ describe('dino archetype prompts', () => {
     expect(prompts).toContain('## Dino archetypes');
     expect(prompts).toContain('assets/images/dinos/');
     for (const key of DINO_ART_KEYS) expect(prompts, key).toContain(`${key}.webp`);
+  });
+});
+
+describe('dino archetype art', () => {
+  it.each(DINO_ART_KEYS)('%s is a 1024×1024 transparent cutout',
+    (key) => expectTransparentCutout('dinos', key));
+  // The whole point of keying on archetype×diet: every species resolves without
+  // new art. support-carnivore has no species today and still ships, so adding
+  // one stays a data-only change.
+  it('every species resolves to a shipped archetype image', () => {
+    for (const s of allSpecies()) {
+      expect(assetImage('dinos', `${s.archetype}-${s.diet}`), s.id).not.toBeNull();
+    }
   });
 });
