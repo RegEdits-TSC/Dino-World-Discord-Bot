@@ -20,7 +20,7 @@ cp .env.example .env
 
 Fill in `.env` from your application in the
 [Discord Developer Portal](https://discord.com/developers/applications). See the
-[README](README.md#quick-start) for what each variable does.
+[README](README.md#-quick-start) for what each variable does.
 
 Register the commands against a test guild, then start the bot:
 
