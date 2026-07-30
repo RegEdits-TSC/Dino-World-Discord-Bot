@@ -542,7 +542,7 @@ git commit --allow-empty -m "chore: verify wave 1 gates green at 630 tests"
 ### Task 6: WebP asset conversion and path-builder flip
 
 **Files:**
-- Create: `<scratchpad>/convert-webp.mjs` (one-off, never committed)
+- Create: `C:/Users/Claude/AppData/Local/Temp/claude/C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot/0f545c9e-f0ef-4a4c-aac5-332ebd11d75b/scratchpad/convert-webp.mjs` (one-off, never committed)
 - Modify: `assets/images/**` — 40 `.png` deleted, 40 `.webp` added
 - Modify: `src/core/images.ts:20`
 - Modify: `src/core/render/art.ts:35-37,46,59-63`
