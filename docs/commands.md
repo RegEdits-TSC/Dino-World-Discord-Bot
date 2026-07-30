@@ -29,7 +29,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/eggs` | Your egg inventory and incubator status | Paginated, 10 per page |
 | `/incubate` | Start incubating an egg | Autocomplete: egg |
 | `/hatch` | Hatch an egg that has finished incubating | Autocomplete: egg. Reveals the species on a button press |
-| `/mythic` | Trade shards for a Mythic egg | Asks for confirmation before spending |
+| `/mythic` | Trade shards for a Mythic egg | Needs 4.0★ best-ever rating. Asks for confirmation before spending |
 
 ## 🍖 Care
 
@@ -43,7 +43,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/expedition start` | Send a dino out to a site | Autocomplete: site |
+| `/expedition start` | Send a dig crew out to a site | Autocomplete: site |
 | `/expedition status` | Check how long your active expedition has left | |
 | `/expedition claim` | Collect the rewards from a returned expedition | |
 

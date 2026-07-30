@@ -20,13 +20,13 @@ in.
   your rating grows, with `/park view` rendering your layout as a map image
 - 🥚 **Hatch and collect** — 30 species across six rarities, from Common up to
   Mythic, each egg incubating on its own timer
-- 🗺️ **Run expeditions** — send dinos out to themed sites and claim what they
+- 🗺️ **Run expeditions** — send a dig crew out to themed sites and claim what they
   bring back
 - ⚔️ **Fight a campaign** — four chapters of five stages, each ending in a boss,
   played out as a cinematic with star ratings and first-clear rewards
 - 🍖 **Keep them fed** — six diet-typed foods, with herbivores and carnivores
   refusing each other's meals and hunger driving how much your park earns
-- 🤝 **Trade** — offer dinos, eggs, and food to other players and settle it in
+- 🤝 **Trade** — offer dinos, eggs, cash, and food to other players and settle it in
   Discord
 - 🏆 **Climb leaderboards** — ranked by rating, cash, or collection, for your
   server or globally
@@ -34,6 +34,10 @@ in.
   walks you through your first ten minutes
 
 ## 🚀 Quick Start
+
+Create an application in the [Discord Developer Portal](https://discord.com/developers/applications),
+add a bot user, and invite it to your server with the `bot` and `applications.commands` scopes.
+You need Node 22 or newer.
 
 Copy the environment template and fill in your own values:
 

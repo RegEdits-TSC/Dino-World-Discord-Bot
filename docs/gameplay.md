@@ -608,7 +608,7 @@ rating.
 Selling also has a shard cap: you can earn at most 40 shards from selling
 dinos within any rolling 24-hour window. Sales past that cap still pay their
 full cash value — you simply stop earning extra shards from selling until
-the window rolls over.
+your next sale more than 24 hours after the window opened.
 
 ## 12. Trading
 
@@ -695,10 +695,11 @@ that component.
 Alongside your current rating, the game separately tracks the highest rating
 you've ever reached, and that number never falls even if your current rating
 later drops. Almost every gate in the game — lot slots, expedition site
-unlocks, the shop's rarity ceiling, Mythic purchases, and the battle
-campaign's chapter gates — checks your **best-ever** rating. Trading is the
-lone exception: its 2.0★ minimum checks your **current** rating, so it's the
-one gate you can actually lose access to if your rating falls.
+unlocks, the shop's rarity ceiling, Mythic purchases (which need 4.0★), and
+the battle campaign's chapter gates — checks your **best-ever** rating.
+Trading is the lone exception: its 2.0★ minimum checks your **current**
+rating, so it's the one gate you can actually lose access to if your rating
+falls.
 
 ### `/top`
 
