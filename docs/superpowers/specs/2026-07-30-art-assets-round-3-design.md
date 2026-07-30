@@ -171,10 +171,12 @@ export function attach(
 A null `ref` is a no-op. Otherwise it sets the slot **and** appends the file, in one
 statement.
 
-Of the 30 `assetImage` call sites outside `images.ts`, **27 convert**: 21 assign a
-fresh `files` array and 6 append to an existing one. Append semantics cover both,
-because appending to an absent array is the same as assigning. The remaining 3 are all
-in `fightFrames` — see the exceptions below.
+Of the 30 `assetImage` call sites outside `images.ts`, **27 convert**: 23 assign a
+fresh `files` array and 4 append to an existing one. Append semantics cover both,
+because appending to an absent array is the same as assigning. The 4 appends are
+`battles/embeds.ts:163`, `expeditions/index.ts:83`, `hatchery/embeds.ts:80` and
+`shop/index.ts:57`. The remaining 3 are all in `fightFrames` — see the exceptions
+below.
 
 The point is not brevity. Round 2 produced three separate bare-attachment or
 cleared-attachment defects, each one a call site where "set the slot" and "attach the
