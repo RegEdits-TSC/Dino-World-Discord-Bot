@@ -661,8 +661,9 @@ Egg rarities so it is a choice, not a third undocumented margin.
 `{DINO}` per file:
 
 - **`bruiser-carnivore.webp`:** a heavy-set cartoon theropod predator with a
-  powerful gaping jaw full of sharp teeth, a thick muscular neck, short sturdy
-  forelimbs, and crimson-and-charcoal scales.
+  sturdy thick-boned head, a thick muscular neck, short sturdy forelimbs, a
+  closed jaw with teeth mostly hidden, smooth low-texture scales, and
+  crimson-and-charcoal coloring.
 - **`bruiser-herbivore.webp`:** a stocky cartoon plant-eating dinosaur with a
   sturdy thick-boned head, broad shoulders, a blunt beaked snout, a heavy jaw,
   and olive-green scales with a sandy underside.
@@ -673,8 +674,8 @@ Egg rarities so it is a choice, not a third undocumented margin.
   with a sturdy blunt-featured head, tough thick hide, powerful shoulders,
   small watchful eyes, and earthy brown and moss-green coloring.
 - **`swift-carnivore.webp`:** a lean, fast-built cartoon carnivore with an
-  alert forward-set eye, a sharp predatory bite, a slender agile build, and
-  teal-and-amber striped scales.
+  alert forward-set eye, a closed jaw with teeth mostly hidden, a slender
+  agile build, and teal-and-amber striped scales.
 - **`swift-herbivore.webp`:** a slender, quick-footed cartoon herbivore with a
   small beaked head, a large alert eye, a light nimble build, and pale tan
   plumage with a warm cream underside.
