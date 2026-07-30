@@ -1,9 +1,28 @@
 {
   "name": "dino-world-bot",
   "version": "1.0.0",
-  "description": "",
+  "description": "A dinosaur park tycoon game played entirely inside Discord",
   "private": true,
   "main": "index.js",
+  "keywords": [
+    "discord",
+    "discord-bot",
+    "discordjs",
+    "typescript",
+    "sqlite",
+    "drizzle-orm",
+    "game"
+  ],
+  "author": "RegEdits-TSC",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RegEdits-TSC/Dino-World-Discord-Bot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/issues"
+  },
+  "homepage": "https://github.com/RegEdits-TSC/Dino-World-Discord-Bot#readme",
   "directories": {
     "doc": "docs"
   },
@@ -22,9 +41,6 @@
     "build-emojis": "tsx src/build-emojis.ts",
     "deploy-emojis": "tsx src/deploy-emojis.ts"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "type": "module",
   "dependencies": {
     "@napi-rs/canvas": "^1.0.2",
