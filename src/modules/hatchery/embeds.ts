@@ -46,6 +46,10 @@ export function revealPayload(species: Species) {
     files: AttachmentBuilder[]; attachments: never[];
   } = { embeds: [embed], components: [], files: [], attachments: [] };
   attach(embed, payload, 'image', assetImage('hatch', `${species.rarity}-crack`));
+  // Two files on one payload, each degrading independently: the crack is the
+  // "your egg burst open" beat, the archetype thumb is what came out of it.
+  // attach appends, so neither call can clobber the other's file.
+  attach(embed, payload, 'thumbnail', assetImage('dinos', `${species.archetype}-${species.diet}`));
   return payload;
 }
 
