@@ -374,8 +374,14 @@ rather than eyeballed.
 
 ## Appendix A — command inventory
 
-Extracted from the module manifests. 11 modules, 14 top-level commands, 39
-including subcommands, autocomplete on 18.
+Extracted from the module manifests and verified against the built registry on
+2026-07-30: **11 modules, 20 top-level commands, 36 entries including
+subcommands**, autocomplete on 18.
+
+(An earlier draft of this appendix reported "14 top-level, 39 including
+subcommands" in its header. Both figures were wrong — the 36 rows below were
+always correct. The corrected counts come from enumerating `ALL_MODULES` and
+calling `.data.toJSON()` on each command.)
 
 | Module | Command | Subcommand | Description | Autocomplete | Gate |
 |---|---|---|---|---|---|

@@ -785,7 +785,7 @@ console.log('documented:', documented.size);
 console.log([...documented].sort().join('\n'));
 "
 ```
-Expected: 39 entries, matching Appendix A of the spec. Compare the printed list against Appendix A by eye and confirm both directions — nothing documented that does not exist, nothing registered that is missing. Task 9 repeats this check against the live module registry.
+Expected: **36 entries**, matching Appendix A of the spec. Compare the printed list against Appendix A by eye and confirm both directions — nothing documented that does not exist, nothing registered that is missing. Task 9 repeats this check against the live module registry.
 
 - [ ] **Step 4: Commit**
 
@@ -793,7 +793,7 @@ Expected: 39 entries, matching Appendix A of the spec. Compare the printed list 
 git add docs/commands.md
 git commit -m "Add command reference
 
-Groups all 39 commands and subcommands by what a player is trying to do
+Groups all 36 commands and subcommands by what a player is trying to do
 rather than by module, and states the autocomplete and permission rules
 once each instead of per row."
 ```
@@ -1280,28 +1280,9 @@ pkg.private === true ? pass('still private') : fail('private flag changed')
 const lic = fs.readFileSync('LICENSE', 'utf8')
 lic.includes('Copyright (c) 2026 RegEdits-TSC') ? pass('license copyright') : fail('license copyright line wrong')
 
-// 8. every documented command exists in the built registry, and vice versa
-const { ALL_MODULES } = await import('file://' + path.join(REPO, 'src/core/module-list.ts').replace(/\\/g, '/'))
-  .catch(() => ({ ALL_MODULES: null }))
-if (!ALL_MODULES) {
-  console.log('SKIP  command cross-check (module-list.ts is TypeScript; run step 2 instead)')
-} else {
-  const registered = new Set()
-  for (const mod of ALL_MODULES) {
-    for (const cmd of mod.commands ?? []) {
-      const json = cmd.builder.toJSON()
-      const subs = (json.options ?? []).filter((o) => o.type === 1)
-      if (subs.length) for (const s of subs) registered.add(`${json.name} ${s.name}`)
-      else registered.add(json.name)
-    }
-  }
-  const doc = fs.readFileSync('docs/commands.md', 'utf8')
-  const documented = new Set([...doc.matchAll(/`\/([a-z]+(?: [a-z-]+)?)`/g)].map((m) => m[1]))
-  for (const r of registered)
-    documented.has(r) ? pass('documented: /' + r) : fail('registered but undocumented: /' + r)
-  for (const d of documented)
-    registered.has(d) ? null : fail('documented but not registered: /' + d)
-}
+// 8. command cross-check runs separately through tsx — see Step 2 below.
+//    A plain Node script cannot import module-list.ts, and the registry field
+//    is `cmd.data`, not `cmd.builder`.
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} FAILURE(S)`)
 process.exit(failures === 0 ? 0 : 1)
@@ -1439,7 +1420,7 @@ what a public project needs and fixes what was wrong.
   self-host this.
 - **README rewritten** as a landing page: badges, a hero image, eight feature
   lines, setup, and links out. The deep material moved to two new guides.
-- **`docs/commands.md`** — all 39 commands and subcommands, grouped by what a
+- **`docs/commands.md`** — all 36 commands and subcommands, grouped by what a
   player is trying to do, with permission gates and autocomplete flags stated.
 - **`docs/gameplay.md`** — how every system actually works. Numbers are
   transcribed from a citation-backed extraction of the source, not from the old
