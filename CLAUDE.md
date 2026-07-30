@@ -85,6 +85,16 @@
   only (`src/core/images.ts:20-23`), so the two assets need distinct file names
   (`<site>-banner.webp` vs `<site>-thumb.webp` is safe). Live call sites:
   `/shop view`, `/expedition claim`, `/battle chapters`.
+- `fightFrames` picks its thumbnail once, up front: the boss portrait on a boss
+  stage, else the archetype art of `rosterFor(stage, squad.length)[0]` — the same
+  lead enemy the Enemies field opens with, so the frame can never disagree with
+  the fight. A boss stage whose portrait is missing degrades to **no** thumbnail;
+  it must never fall back to archetype art, because `rosterFor`'s lead entry on a
+  1-dino squad IS the boss. One merged `thumb` ref feeds `dress()` (F1-F3), F4's
+  `setThumbnail`, and both `files` arrays, so the F1/F4 upload contract holds
+  without a second code path. `revealPayload` is the other archetype surface: it
+  ships the rarity crack as `image` and the archetype as `thumbnail`, two files on
+  one `i.update` payload, each degrading independently.
 - Custom app emojis are hand-authored SVG in `assets/emojis/svg/`, rendered to
   committed 128×128 transparent PNGs in `assets/emojis/png/` by
   `npm run build-emojis` (`src/build-emojis.ts` + the `renderSvg` helper in
@@ -217,9 +227,15 @@
   PATCH in either interleaving; the lock is free during `ctx.sleep`, so a Skip
   clicked between frames still answers instantly. Any future third writer to a
   presented message must go through the same queue.
-  Embed art kinds are `eggs | sites | banners | battles | hatch` (`assetImage`,
-  `src/core/images.ts`); `hatch/<rarity>-crack.webp` is the hatch-reveal image and
-  its attachment name never collides with `eggs/<rarity>.webp`. Banners are
+  Embed art kinds are `eggs | sites | banners | battles | hatch | dinos`
+  (`assetImage`, `src/core/images.ts`); `hatch/<rarity>-crack.webp` is the
+  hatch-reveal image and its attachment name never collides with
+  `eggs/<rarity>.webp`. `assets/images/dinos/<archetype>-<diet>.webp` is a fixed
+  set of 8 (1024×1024 transparent cutouts, `fit-art.mjs cutout`, so a 31px
+  margin against the boss portraits' 24px — deliberate, recorded in
+  `docs/assets/prompts.md`): **art is keyed on archetype×diet, never on species**,
+  which is what keeps adding a species a data-only change. `support-carnivore`
+  ships with zero species using it for exactly that reason. Banners are
   1536×1024 (asserted in `tests/images.test.ts`) and transparent cutouts
   1024×1024; `node scripts/fit-art.mjs banner|cutout <src> <dest>` produces the
   banners and the hatch cracks, but NOT the eggs or the boss portraits — those
