@@ -1,6 +1,6 @@
 // Post-processing for generated art (see docs/assets/prompts.md).
-//   node scripts/fit-art.mjs banner <src> <dest>   -> 1536x1024, cover-scaled, center-cropped
-//   node scripts/fit-art.mjs cutout <src> <dest>   -> 1024x1024 transparent, defringed and centered
+//   node scripts/fit-art.mjs banner <src> <dest>   -> 1536x1024, cover-scaled, center-cropped, WebP q95
+//   node scripts/fit-art.mjs cutout <src> <dest>   -> 1024x1024 transparent, defringed and centered, WebP q95
 //
 // `cutout` is the processor for the hatch cracks and for any future cutout family.
 // It is NOT the pass that produced assets/images/eggs/ or assets/images/battles/:
@@ -13,9 +13,13 @@ import { createCanvas, Image } from '@napi-rs/canvas';
 
 const [mode, src, dest] = process.argv.slice(2);
 if (!['banner', 'cutout'].includes(mode) || !src || !dest) {
-  console.error('usage: node scripts/fit-art.mjs <banner|cutout> <src.png> <dest.png>');
+  console.error('usage: node scripts/fit-art.mjs <banner|cutout> <src> <dest.webp>');
   process.exit(2);
 }
+
+// q95 is the committed setting for every asset under assets/images (83-87% off PNG,
+// visually indistinguishable at the sizes Discord renders). Keep in sync with prompts.md.
+const Q = 95;
 
 const img = new Image();
 img.src = readFileSync(src);
@@ -27,7 +31,7 @@ if (mode === 'banner') {
   const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
   const canvas = createCanvas(W, H);
   canvas.getContext('2d').drawImage(img, Math.round((W - w) / 2), Math.round((H - h) / 2), w, h);
-  writeFileSync(dest, canvas.toBuffer('image/png'));
+  writeFileSync(dest, canvas.toBuffer('image/webp', Q));
   console.log(`banner ${dest} ${W}x${H} (source ${img.width}x${img.height})`);
   process.exit(0);
 }
@@ -82,5 +86,5 @@ const scale = Math.min((S * FIT) / bw, (S * FIT) / bh);
 const out = createCanvas(S, S);
 out.getContext('2d').drawImage(work, x0, y0, bw, bh,
   (S - bw * scale) / 2, (S - bh * scale) / 2, bw * scale, bh * scale);
-writeFileSync(dest, out.toBuffer('image/png'));
+writeFileSync(dest, out.toBuffer('image/webp', Q));
 console.log(`cutout ${dest} ${S}x${S} (opaque bbox ${bw}x${bh})`);
