@@ -55,10 +55,10 @@
   `featured ? … : null` in hatchery) stays outside `attach` — it is not an
   asset miss. `tests/images.test.ts`'s "no source file hand-assigns an embed
   payload files array" guard bans the old `payload.files = [...]` idiom outright.
-  The only exceptions are the three refs at the top of `fightFrames`
-  (`src/modules/battles/embeds.ts`), which dress one ref onto several embeds and
-  split the files across two payloads via the F1/F4 contract — do not convert
-  them. Separately, `withParkImage` (`src/modules/park/embeds.ts`) *assigns*
+  `fightFrames` (`src/modules/battles/embeds.ts`) is the one exception: every ref
+  it builds is dressed onto several embeds and the files are then split across two
+  payloads by the F1/F4 contract — do not convert any of them, however many there
+  are. Separately, `withParkImage` (`src/modules/park/embeds.ts`) *assigns*
   `files`, so it drops anything `attach` added to the payload it wraps. It has
   three call sites, harmless today for two different reasons: both `/park view`
   branches (own park, and the read-only other-user view) in
@@ -78,13 +78,18 @@
   hand-rolled per test file (`tests/notify.test.ts`,
   `tests/notify-handlers.test.ts`, `tests/journeys.test.ts`), not in the harness
   — and only `npm run typecheck` catches a stale one.
-- Two assets in one payload: the SECOND `assetImage` must APPEND
-  (`payload.files = [...(payload.files ?? []), img.file]`), never re-assign — a
-  plain assignment drops the first file and leaves a dangling `attachment://`
-  URL that Discord renders as a broken image. Attachment names are basenames
-  only (`src/core/images.ts:20-23`), so the two assets need distinct file names
-  (`<site>-banner.webp` vs `<site>-thumb.webp` is safe). Live call sites:
-  `/shop view`, `/expedition claim`, `/battle chapters`.
+- Two assets in one payload: call `attach()` for both and the second can never
+  clobber the first — appending is exactly what `attach` does, and hand-assigning
+  `payload.files` (the idiom that shipped those defects) is banned outright by
+  `tests/images.test.ts`. What `attach` cannot do for you is DEDUPE, and that
+  hazard is still live: attachment names are basenames only — `assetImage`
+  (`src/core/images.ts`) names the file `${name}.webp` with no `kind` prefix — so
+  two refs on one payload must resolve to distinct names. Same-named uploads make
+  `attachment://<name>.webp` ambiguous and one of the two embed slots renders the
+  wrong picture. `<site>-banner.webp` vs `<site>-thumb.webp` is safe; naming the
+  hatch cracks `hatch/<rarity>.webp` would NOT have been, against
+  `eggs/<rarity>.webp` — hence `<rarity>-crack`. Two-asset payloads are routine
+  now (shop, expeditions, hatchery, battles), so check the names, not the count.
 - `fightFrames` picks its thumbnail once, up front: the boss portrait on a boss
   stage, else the archetype art of `rosterFor(stage, squad.length)[0]` — the same
   lead enemy the Enemies field opens with, so the frame can never disagree with

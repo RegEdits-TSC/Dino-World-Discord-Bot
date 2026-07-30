@@ -221,7 +221,7 @@ describe('attach adoption', () => {
   // The point of attach() is that "set the slot" and "attach the file" cannot
   // drift apart. A hand-rolled `payload.files = [...]` IS that drift, and it
   // shipped three defects in round 2 — so the idiom is banned outright.
-  // fightFrames' three deliberate exceptions build their arrays as locals
+  // fightFrames' deliberate exceptions build their arrays as locals
   // (`f1.files = files`), which does not match this pattern.
   it('no source file hand-assigns an embed payload files array', () => {
     const offenders: string[] = [];
