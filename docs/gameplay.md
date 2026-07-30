@@ -30,9 +30,11 @@ only inventory you start with.
 
 ## 2. Currencies
 
-Dino World runs on four resources. Cash and battle energy show up right on
-your dashboard; food lives in its own inventory; shards are the odd one out —
-see the note below.
+Dino World runs on four resources. Cash, Food, and Rating appear on the
+`/park view` dashboard — Food shown per-item with counts, not as a single
+number. Battle energy is visible on `/battle chapters` and on the
+fight-result screen, not on the dashboard. Shards are the odd one out — see
+the note below.
 
 | Currency | What it is | How you earn it | What it's for |
 | --- | --- | --- | --- |
@@ -210,7 +212,7 @@ can block you from starting any new ones.
 
 The species inside an egg isn't decided when you get the egg — it's rolled
 the moment you hatch it (unless the egg's species was pinned when you got it,
-as with a Mythic bought from the shop). Within its rarity, every species has
+as with a Mythic egg bought with shards). Within its rarity, every species has
 an equal chance: a flat pick across that rarity's pool, with no weighting
 toward rarer or more desirable species and no duplicate protection — you can
 hatch the same species twice in a row.
