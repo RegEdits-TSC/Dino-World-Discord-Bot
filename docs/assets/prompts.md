@@ -660,27 +660,27 @@ Egg rarities so it is a choice, not a third undocumented margin.
 
 `{DINO}` per file:
 
-- **`bruiser-carnivore.webp`:** a heavy-jawed cartoon theropod predator with a
-  deep boxy skull, thick muscular neck, short powerful arms, blunt brow ridge,
-  and crimson-and-charcoal scales.
-- **`bruiser-herbivore.webp`:** a stocky cartoon ornithopod with a thick domed
-  skull, broad shoulders, blunt beak, heavy jaw, and olive-green scales with a
-  sandy underside.
-- **`tank-carnivore.webp`:** a heavily built cartoon aquatic predator with a
-  broad blunt snout, thick armored jawline, deep-blue and slate scales, a pale
-  underside, and a wet glossy sheen.
-- **`tank-herbivore.webp`:** a broad-frilled cartoon ceratopsian with a thick
-  bony frill, blunt nose horn, heavy plated shoulders, and earthy brown and
-  moss-green plating.
-- **`swift-carnivore.webp`:** a lean cartoon raptor with a narrow tapered snout,
-  alert forward-set eye, slim feather-tufted crest, and teal-and-amber striped
-  scales.
-- **`swift-herbivore.webp`:** a slender cartoon ornithomimid with a long slim
-  neck, a small beaked head, a large alert eye, and pale tan plumage with a warm
-  cream underside.
-- **`support-herbivore.webp`:** a gentle cartoon hadrosaur with a long tubular
-  head crest, a soft duck-like beak, calm eyes, and warm honey-yellow and
-  turquoise scales.
+- **`bruiser-carnivore.webp`:** a heavy-set cartoon theropod predator with a
+  powerful gaping jaw full of sharp teeth, a thick muscular neck, short sturdy
+  forelimbs, and crimson-and-charcoal scales.
+- **`bruiser-herbivore.webp`:** a stocky cartoon plant-eating dinosaur with a
+  sturdy thick-boned head, broad shoulders, a blunt beaked snout, a heavy jaw,
+  and olive-green scales with a sandy underside.
+- **`tank-carnivore.webp`:** a heavily built cartoon carnivore with a broad
+  blunt snout, a thick armored-looking jawline, deep-blue and slate scales, a
+  pale underside, and a smooth glossy sheen.
+- **`tank-herbivore.webp`:** a heavily built, thick-necked cartoon herbivore
+  with a sturdy blunt-featured head, tough thick hide, powerful shoulders,
+  small watchful eyes, and earthy brown and moss-green coloring.
+- **`swift-carnivore.webp`:** a lean, fast-built cartoon carnivore with an
+  alert forward-set eye, a sharp predatory bite, a slender agile build, and
+  teal-and-amber striped scales.
+- **`swift-herbivore.webp`:** a slender, quick-footed cartoon herbivore with a
+  small beaked head, a large alert eye, a light nimble build, and pale tan
+  plumage with a warm cream underside.
+- **`support-herbivore.webp`:** a gentle cartoon herbivore with a blunt grazing
+  beak, calm watchful eyes, a rounded approachable face, and warm honey-yellow
+  and turquoise scales.
 - **`support-carnivore.webp`:** a compact crested cartoon carnivore with a slim
   head, tall paired head crests, wide watchful eyes, and violet-and-teal scales
   that read as a clever pack helper rather than a brute.
