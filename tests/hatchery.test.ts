@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ButtonInteraction } from 'discord.js';
 import { MessageFlags } from 'discord.js';
 import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
@@ -11,6 +11,16 @@ import { preHatchPayload, eggListPayload, revealPayload } from '../src/modules/h
 import { getSpecies } from '../src/data/species/index.js';
 import { mythicSpeciesChoices } from '../src/modules/shop/shards.js';
 import { RARITY } from '../src/data/rarity.js';
+import { assetImage } from '../src/core/images.js';
+
+// assetImage is a pass-through spy by default (calls the real implementation),
+// so every test in this file except the two degrade-path tests below is
+// unaffected. Those two override exactly one queued call via
+// mockImplementationOnce to force a miss without touching real asset files.
+vi.mock('../src/core/images.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/core/images.js')>();
+  return { ...actual, assetImage: vi.fn(actual.assetImage) };
+});
 
 const M = 60_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -83,22 +93,52 @@ describe('hatchery visuals', () => {
     expect(p.embeds[0].toJSON().image).toBeUndefined();
     expect(p.files).toBeUndefined();
   });
-  it('revealPayload clears attachments so the egg image disappears on crack', () => {
-    const p = revealPayload(getSpecies('velociraptor'));
-    expect(p.files).toEqual([]);
+  it('revealPayload swaps the intact egg for the rarity crack and keeps attachments cleared', () => {
+    // attachments: [] is load-bearing — discord.js pushes the new descriptors into
+    // the array we pass, so the pre-hatch egg upload is dropped and only the crack
+    // survives on the edited message.
+    const p = revealPayload(getSpecies('velociraptor'));   // rare
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare-crack.png');
+    expect(p.files.map((f) => f.name)).toEqual(['rare-crack.png']);
     expect(p.attachments).toEqual([]);
   });
   it('reveal embed points at /dino assign', () => {
     const p = revealPayload(getSpecies('velociraptor'));
     expect(p.embeds[0].toJSON().footer?.text).toContain('/dino assign');
   });
-  it('eggListPayload thumbnails the ready egg over incubating and newest', () => {
+  it('eggListPayload thumbnails the ready egg over incubating and newest, under the incubator banner', () => {
     const ready = { ...addEgg('epic'), hatchesAt: 5, incubationStartedAt: 1 };
     const incubating = { ...addEgg('rare'), hatchesAt: 999_999, incubationStartedAt: 1 };
     const newest = addEgg('common');
     const p = eggListPayload([newest, incubating, ready], 10, 'u1');
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://epic.png');
-    expect(p.files).toHaveLength(1);
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://eggs_incubator.png');
+    expect(p.files!.map((f) => f.name)).toEqual(['epic.png', 'eggs_incubator.png']);
+  });
+  it('eggListPayload still ships the incubator banner when the featured thumb is missing', () => {
+    // Degrade path 1/2: the two assetImage lookups are independent `if` blocks —
+    // a miss on the thumb call must not suppress the banner.
+    vi.mocked(assetImage).mockImplementationOnce(() => null);   // thumb call (1st) -> missing
+    const ready = { ...addEgg('epic'), hatchesAt: 5, incubationStartedAt: 1 };
+    const p = eggListPayload([ready], 10, 'u1');
+    const embed = p.embeds[0].toJSON();
+    expect(embed.thumbnail).toBeUndefined();
+    expect(embed.image?.url).toBe('attachment://eggs_incubator.png');
+    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator.png']);
+  });
+  it('eggListPayload still ships the featured thumb when the incubator banner is missing', async () => {
+    // Degrade path 2/2: the mirror case — a miss on the banner call must not
+    // suppress the thumb that was already appended to payload.files.
+    const { assetImage: realAssetImage } = await vi.importActual<typeof import('../src/core/images.js')>('../src/core/images.js');
+    vi.mocked(assetImage)
+      .mockImplementationOnce((kind, name) => realAssetImage(kind, name))   // thumb call (1st) -> real
+      .mockImplementationOnce(() => null);                                 // banner call (2nd) -> missing
+    const ready = { ...addEgg('epic'), hatchesAt: 5, incubationStartedAt: 1 };
+    const p = eggListPayload([ready], 10, 'u1');
+    const embed = p.embeds[0].toJSON();
+    expect(embed.thumbnail?.url).toBe('attachment://epic.png');
+    expect(embed.image).toBeUndefined();
+    expect(p.files!.map((f) => f.name)).toEqual(['epic.png']);
   });
   it('eggListPayload falls back to newest-obtained when nothing is incubating', () => {
     const older = { ...addEgg('common'), obtainedAt: 1 };
@@ -106,10 +146,10 @@ describe('hatchery visuals', () => {
     const p = eggListPayload([older, newer], 10, 'u1');
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://legendary.png');
   });
-  it('eggListPayload with no eggs has no thumbnail', () => {
+  it('eggListPayload with no eggs has no thumbnail but still banners the incubator', () => {
     const p = eggListPayload([], 10, 'u1');
     expect(p.embeds[0].toJSON().thumbnail).toBeUndefined();
-    expect(p.files).toBeUndefined();
+    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator.png']);
   });
 });
 
@@ -166,14 +206,23 @@ describe('/mythic confirm flow', () => {
 });
 
 describe('/incubate execute', () => {
-  it('incubates and replies with a ready timestamp, enqueues egg_hatch timer', async () => {
+  it('incubates and replies with an illustrated ready-timestamp embed, enqueues egg_hatch timer', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
     const egg = ctx.db.insert(schema.eggs)
       .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
     const cmd = hatcheryModule.commands.find((c) => c.data.name === 'incubate')!;
     const i = fakeCommand({ name: 'incubate', user: 'u1', guild: 'g1', options: { egg: egg.id } });
     await cmd.execute(ctx, i.asChatInput());
-    expect(replyText(i.replies[0])).toContain('Incubating your common egg');
+    const payload = i.replies[0] as {
+      embeds: Array<{ toJSON(): { title?: string; description?: string; thumbnail?: { url: string } } }>;
+      files?: Array<{ name?: string | null }>;
+    };
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.title).toContain('Incubating your common egg');
+    expect(embed.description).toContain('<t:');   // relative ready stamp survives the promotion
+    // Attach-all-or-nothing: a thumbnail URL with no matching file renders broken.
+    expect(embed.thumbnail?.url).toBe('attachment://common.png');
+    expect(payload.files!.map((f) => f.name)).toContain('common.png');
     const timer = ctx.db.select().from(schema.timers).all().find((t) => t.kind === 'egg_hatch');
     expect(timer?.refId).toBe(egg.id);
   });

@@ -98,7 +98,7 @@ describe('emoji assets', () => {
 });
 
 describe('svg set parity', () => {
-  it('svg files exactly match the 21 fallback-table names', () => {
+  it('svg files exactly match the 33 fallback-table names', () => {
     const names = readdirSync(SVG_DIR).filter((f) => f.endsWith('.svg')).map((f) => f.replace('.svg', '')).sort();
     expect(names).toEqual(Object.keys(EMOJI_FALLBACK).sort());
   });
@@ -116,6 +116,13 @@ describe('emoji name parity with data tables', () => {
   it('every rarity has a dw_rarity_* SVG', () => {
     for (const r of Object.keys(RARITY)) {
       expect(svgNames, `missing SVG dw_rarity_${r}`).toContain(`dw_rarity_${r}`);
+    }
+  });
+  // The park renderer draws these chips from their SVG source (loadParkArt), so a missing file is a
+  // silently degraded park tile rather than a crash — this is the only thing that fails loudly.
+  it('every rarity has a dw_dino_* SVG', () => {
+    for (const r of Object.keys(RARITY)) {
+      expect(svgNames, `missing SVG dw_dino_${r}`).toContain(`dw_dino_${r}`);
     }
   });
   it('every expedition site has a dw_site_* SVG', () => {

@@ -40,6 +40,22 @@
 - Embed art ships from `assets/images/` via `assetImage` (`src/core/images.ts`);
   a missing file means the embed renders without the image — absent art is
   never an error. Generation prompts live in `docs/assets/prompts.md`.
+- Passive notifications carry a `NotifyPayload` (`src/core/notify.ts`):
+  `string | { content?, embeds?, files? }`. `Ctx.notify`'s third argument stays
+  `message: string` on purpose — a string is a valid payload, so every call site
+  keeps working and the `ctx.notifications` fake in `tests/harness.ts` is
+  untouched. `deliverNotification` merges the `<@id>` ping through `withMention`
+  on the CHANNEL path only; DMs go out unmentioned. `Sender` fakes are
+  hand-rolled per test file (`tests/notify.test.ts`,
+  `tests/notify-handlers.test.ts`, `tests/journeys.test.ts`), not in the harness
+  — and only `npm run typecheck` catches a stale one.
+- Two assets in one payload: the SECOND `assetImage` must APPEND
+  (`payload.files = [...(payload.files ?? []), img.file]`), never re-assign — a
+  plain assignment drops the first file and leaves a dangling `attachment://`
+  URL that Discord renders as a broken image. Attachment names are basenames
+  only (`src/core/images.ts:20-23`), so the two assets need distinct file names
+  (`<site>-banner.png` vs `<site>-thumb.png` is safe). Live call sites:
+  `/shop view`, `/expedition claim`, `/battle chapters`.
 - Custom app emojis are hand-authored SVG in `assets/emojis/svg/`, rendered to
   committed 128×128 transparent PNGs in `assets/emojis/png/` by
   `npm run build-emojis` (`src/build-emojis.ts` + the `renderSvg` helper in
@@ -74,8 +90,21 @@
   from PNG bytes and drawing in the same tick silently yields a blank canvas,
   with no error. Always `await img.decode()` before drawing a PNG. **SVG**
   buffers decode synchronously, which is why `renderSvg` needs no await and why
-  the park renderer draws its HUD cash icon straight from `dw_cash.svg` rather
-  than a PNG (`renderParkPng` is synchronous).
+  every icon the park renderer draws (HUD coin, lot icons, rarity dino chips) is
+  read from `assets/emojis/svg/*.svg` rather than a PNG. That asymmetry is what
+  splits `src/core/render/art.ts` in two: `loadSvgImage` is synchronous, the
+  three `assets/images/park/*.png` rasters are `await img.decode()`d inside
+  `loadParkArt`, and `renderParkPng(snap, art = EMPTY_ART)` **stays
+  synchronous** — never move a PNG decode into it. `worker.ts` top-level-awaits
+  `loadParkArt().catch(() => EMPTY_ART)`: `loadParkArt` must never reject and
+  the `.catch` is belt-and-braces, because a rejected worker module boot fires
+  `client.ts`'s `error` handler, which terminates and nulls the worker — every
+  later `/park view` then silently loses its image and respawns another doomed
+  worker. Art never crosses `postMessage` (a canvas `Image` is not
+  structured-cloneable), `drawImage(null)` throws so every art site needs its
+  own non-null guard, and each `null` falls back to the flat fill / emoji glyph
+  in `src/data/render-icons.ts` — that file is the live fallback path, not dead
+  code.
 - Food is typed (`src/data/foods.ts`, 3 tiers × 2 diets) and lives in the
   `food_inventory` table — `users.food` no longer exists. Feeding sets
   `hunger = fillTo` (up to 150): `comfortAt` clamps the hunger term at 100, and
@@ -111,13 +140,61 @@
   boss by matching `speciesId`, so the fight and its embed always agree on who
   actually fought; the content test pins the boss as the third authored enemy,
   which the small-squad slicing branch relies on. `fightFrames`
-  (`src/modules/battles/embeds.ts`) attaches files on frame 1 only — frames
-  2-4 reference the same `attachment://` URLs — so any edit that passes
-  `files: []` or `attachments: []` clears the originals and breaks every image
-  mid-cinematic, and no offline test catches it. `assets/images/battles/`
-  ships empty (`.gitkeep` only) by design: boss portraits are generated
-  post-merge, and `assetImage`'s null-degrade means the campaign is fully
-  playable without them.
+  (`src/modules/battles/embeds.ts`) attaches files on **frame 1 and frame 4
+  only**, and each attaching frame uploads exactly the files its embed
+  references. F2/F3 must carry no `files`/`attachments` key at all — F1's
+  uploads survive and their `attachment://` URLs keep resolving. **F1 and F4 both
+  send `attachments: []` unconditionally** (plus their own `files` when the art
+  exists), because a payload carrying `files` (or an explicit `attachments` array)
+  replaces the message's whole attachment set (discord.js `MessagePayload`): that
+  is how F4 sheds the chapter banner it no longer references, how the no-art case
+  avoids stranding F1's upload as a bare attachment card, and — on F1 — how a
+  `battle:again` replay avoids inheriting the *previous* fight's outcome banner,
+  since `presentFight` re-edits the message F4 last wrote and an F1 with neither
+  key would leave that banner live under F1–F3. Both must stay unconditional: a
+  deploy missing `assets/images/sites/` is exactly the case where F1 has no files
+  of its own. Never dress F4 with
+  the chapter banner again. `tests/battles-embeds.test.ts`'s frame-contract test
+  is the machine gate; the skip button replays the same F4 payload via
+  `i.update`, so both paths must stay identical. That replay is why F4's
+  payload can reach two send sites — `presentFight`'s closing `editReply` and,
+  if a Skip races it, the button handler's `i.update`
+  (`src/modules/battles/index.ts:34-46`): discord.js's `MessagePayload` pushes
+  into `options.attachments` and `create()` only shallow-copies it, so one
+  payload object forwarded to both sends accumulates duplicate attachment ids
+  on whichever resolves second. Invisible to `tests/battles-embeds.test.ts`,
+  which builds `FramePayload`s directly and never constructs a
+  `MessagePayload`. `finalPayload()` there is the fix and the pattern to copy
+  for any future payload reused across two send sites: hand each call its own
+  fresh `attachments: []`, never forward the same object twice. Those same two
+  send sites also need ORDERING, not just unshared arrays: `entry.skipped` is
+  only observable between frames, so a Skip landing while a beat frame's
+  `editReply` is in flight cannot stop that PATCH, and a beat frame landing after
+  F4 restores an embed pointing at a chapter banner F4 already dropped — a
+  permanently broken image. `queueEdit` serializes every edit on a presentation
+  behind the previous one and re-checks a guard before sending, so F4 is the last
+  PATCH in either interleaving; the lock is free during `ctx.sleep`, so a Skip
+  clicked between frames still answers instantly. Any future third writer to a
+  presented message must go through the same queue.
+  Embed art kinds are `eggs | sites | banners | battles | hatch` (`assetImage`,
+  `src/core/images.ts`); `hatch/<rarity>-crack.png` is the hatch-reveal image and
+  its attachment name never collides with `eggs/<rarity>.png`. Banners are
+  1536×1024 (asserted in `tests/images.test.ts`) and transparent cutouts
+  1024×1024; `node scripts/fit-art.mjs banner|cutout <src> <dest>` produces the
+  banners and the hatch cracks, but NOT the eggs or the boss portraits — those
+  came from a one-off pass with a tighter 24px margin (vs the script's 31px) and,
+  for the eggs, an egg-axis bias. `docs/assets/prompts.md` carries the numbers and
+  the two families' divergence; the cracks additionally keep multiple
+  disconnected alpha regions on purpose (falling shell fragments), so the egg
+  pass's "largest connected region" step must never be applied to them.
+  `assets/images/battles/` ships committed boss portraits
+  (`boss-<siteId>-portrait.png`, 1024×1024 transparent cutouts pinned by
+  `tests/images.test.ts`); `assetImage`'s null-degrade still holds, so the
+  campaign stays fully playable if any of them is removed. Never stage a test
+  fixture inside `assets/images/` — vitest runs test files in parallel forks,
+  so a `writeFileSync`/`rmSync` on a committed asset path can be observed (or
+  deleted) by another file mid-run; `tests/battles-embeds.test.ts` mocks
+  `assetImage` instead.
 - `npm run build` does not typecheck tests: `build` is `tsc` against
   `tsconfig.json`, which only `include`s `src`, and `npm test` (vitest)
   transpiles without typechecking. The test-inclusive gate is
@@ -125,3 +202,11 @@
   `tsconfig.json` and adds `tests` and `scripts` to `include`) — a type error
   in a test file passes both `build` and `test` clean; run `typecheck` before
   every commit that touches `tests/` or `scripts/`.
+- `HELP_TOPICS` (`src/modules/help/index.ts`) stores a LAZY art descriptor
+  (`art?: { kind, name }`), never a built `ImageRef` — `assetImage` returns a
+  fresh `AttachmentBuilder` per call and the map is module-level (same class of
+  mistake as calling `emojiTag` in a module constant). The `park` topic has no
+  descriptor: it defers and renders the reader's own map, degrading to a
+  text-only embed when `buildParkSnapshot`/`renderPark` throws. Adding or
+  removing a topic KEY changes the `/help` builder choices and forces
+  `npm run deploy-commands`; adding a field to the value type does not.

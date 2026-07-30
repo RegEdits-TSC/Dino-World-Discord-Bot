@@ -37,16 +37,24 @@ describe('/battle fight cinematic', () => {
     expect(fake.deferOpts).toHaveLength(1);
     expect(fake.replies).toHaveLength(4);   // every payload auto-validated by the harness
   });
-  it('frames 2-4 never carry a files/attachments key (would clear F1\'s uploads on edit)', async () => {
+  it('files attach on F1 and F4 only; F4 uploads exactly what its embed references', async () => {
     const ctx = makeCtx();
     const dino = seedFighter(ctx);
     const fake = fakeCommand({ name: 'battle', sub: 'fight', user: 'u1',
       options: { stage: 'coastal_dig_1', dino1: dino } });
     await battleCmd.execute(ctx, fake.asChatInput());
-    for (const frame of fake.replies.slice(1)) {
-      expect(frame).not.toHaveProperty('files');
+    for (const frame of fake.replies.slice(1, 3)) {
+      expect(frame).not.toHaveProperty('files');       // would clear F1's uploads on edit
       expect(frame).not.toHaveProperty('attachments');
     }
+    const f4 = fake.replies[3] as {
+      files?: Array<{ name: string | null }>; attachments?: unknown[];
+      embeds: Array<{ toJSON(): { image?: { url: string } } }>;
+    };
+    expect(f4.attachments).toEqual([]);                // drops F1's chapter banner
+    expect(f4.files).toHaveLength(1);
+    expect(f4.files![0].name).toMatch(/^battle_(victory|defeat)\.png$/);
+    expect(f4.embeds[0].toJSON().image?.url).toBe(`attachment://${f4.files![0].name}`);
   });
   it('rejects ephemerally with no defer when energy is empty', async () => {
     const ctx = makeCtx({ nowMs: 1_000_000 });
@@ -98,6 +106,117 @@ describe('battle buttons', () => {
     release();
     await playing;
     expect(fake.replies).toHaveLength(1);            // no F2-F4 edits after skip
+  });
+  it('skip landing mid-F4-send gets its own attachments array, never entry.final\'s shared one', async () => {
+    // presentFight's closing editReply(F4) and, if a Skip lands while that
+    // call is still in flight, the skip handler's i.update(F4) are two
+    // independent send sites for the SAME frame. discord.js's MessagePayload
+    // mutates options.attachments IN PLACE on every send (it pushes that
+    // send's file descriptors onto whatever array it finds there) — this
+    // harness never runs MessagePayload, so it can't reproduce that mutation
+    // directly, but it CAN prove the two sends never receive the same array
+    // object, which is what makes the mutation harmless regardless of send
+    // order. Reproduced by pausing the interaction's 4th editReply call
+    // (F4's) mid-flight — mirroring the real REST round trip — and clicking
+    // Skip while it's parked there, exactly the race window described in
+    // review.
+    // The Skip is NOT awaited before the gate opens: every edit on a
+    // presentation is serialized (queueEdit), so the skip's i.update is queued
+    // behind the parked editReply and cannot resolve until it does — awaiting it
+    // first would deadlock. The ordering assertion below pins that queuing.
+    const ctx = makeCtx();
+    const dino = seedFighter(ctx);
+    const fake = fakeCommand({ name: 'battle', sub: 'fight', user: 'u1',
+      options: { stage: 'coastal_dig_1', dino1: dino } });
+    const interaction = fake.asChatInput();
+    const patchable = interaction as unknown as { editReply: (payload: unknown) => Promise<unknown> };
+    const realEditReply = patchable.editReply.bind(patchable);
+    let editCount = 0;
+    let releaseF4!: () => void;
+    const f4Gate = new Promise<void>((r) => { releaseF4 = r; });
+    let f4Payload: { attachments?: unknown[] } | undefined;
+    const order: string[] = [];
+    patchable.editReply = async (payload: unknown) => {
+      editCount++;
+      if (editCount === 4) {
+        f4Payload = payload as { attachments?: unknown[] };
+        await f4Gate;   // park F4 "in flight" so a Skip click can race in
+        order.push('loop-f4-settled');
+      }
+      return realEditReply(payload);
+    };
+
+    const playing = battleCmd.execute(ctx, interaction);
+    await flush();
+    expect(editCount).toBe(4);                       // parked on F4, not yet resolved
+
+    // presentations still holds the entry — delete only runs in presentFight's
+    // finally, which can't run until this awaited editReply settles.
+    const skipId = firstButtonId(fake.replies[0]);
+    const skip = fakeButton({ customId: skipId, user: 'u1' });
+    const skipping = battleButtons.execute(ctx, skip.asInteraction() as unknown as ButtonInteraction)
+      .then(() => { order.push('skip-update-sent'); });
+    await flush();
+    expect(order).toEqual([]);                       // skip is queued, not sent, while F4 is in flight
+
+    releaseF4();
+    await skipping;
+    await playing;
+    // The whole point of the queue: no edit can overtake an in-flight one.
+    expect(order).toEqual(['loop-f4-settled', 'skip-update-sent']);
+
+    const skipPayload = skip.replies[0] as { attachments?: unknown[] };
+    expect(f4Payload?.attachments).toEqual([]);
+    expect(skipPayload.attachments).toEqual([]);
+    expect(f4Payload?.attachments).not.toBe(skipPayload.attachments);   // never the same array object
+    (f4Payload!.attachments as unknown[]).push({ id: '0' });
+    expect(skipPayload.attachments).toEqual([]);      // mutating one never reaches the other
+  });
+  it('skip landing mid-beat-frame is queued behind it, so F4 is strictly the last edit sent', async () => {
+    // entry.skipped is only consulted between frames, so a Skip that lands while a
+    // beat frame's editReply is already in flight cannot stop that PATCH — the two
+    // requests race. Losing that race is not cosmetic: F4 replaces the message's
+    // whole attachment set, so a beat frame landing AFTER F4 restores an embed
+    // pointing at attachment://coastal_dig-banner.png that F4 already dropped —
+    // a permanently broken image on the final message. Every edit is therefore
+    // serialized per presentation; this pins the resulting order.
+    const ctx = makeCtx();
+    const dino = seedFighter(ctx);
+    const fake = fakeCommand({ name: 'battle', sub: 'fight', user: 'u1',
+      options: { stage: 'coastal_dig_1', dino1: dino } });
+    const interaction = fake.asChatInput();
+    const patchable = interaction as unknown as { editReply: (payload: unknown) => Promise<unknown> };
+    const realEditReply = patchable.editReply.bind(patchable);
+    const order: string[] = [];
+    let edits = 0;
+    let releaseF2!: () => void;
+    const f2Gate = new Promise<void>((r) => { releaseF2 = r; });
+    patchable.editReply = async (payload: unknown) => {
+      const label = `frame-${++edits}`;
+      if (edits === 2) await f2Gate;   // park F2 "in flight" so a Skip can race it
+      order.push(label);
+      return realEditReply(payload);
+    };
+
+    const playing = battleCmd.execute(ctx, interaction);
+    await flush();
+    expect(order).toEqual(['frame-1']);      // F1 landed, F2 issued and parked
+    expect(edits).toBe(2);
+
+    const skip = fakeButton({ customId: firstButtonId(fake.replies[0]), user: 'u1' });
+    const skipping = battleButtons.execute(ctx, skip.asInteraction() as unknown as ButtonInteraction)
+      .then(() => { order.push('skip-f4'); });
+    await flush();
+    expect(order).toEqual(['frame-1']);      // F4 queued behind the in-flight F2, not sent
+
+    releaseF2();
+    await skipping;
+    await playing;
+
+    expect(order).toEqual(['frame-1', 'frame-2', 'skip-f4']);   // F4 last, always
+    expect(fake.replies).toHaveLength(2);    // the loop sent no F3/F4 after the skip
+    expect(skip.replies).toHaveLength(1);
+    expect(firstButtonId(skip.replies[0])).toMatch(/^battle:again:u1:coastal_dig_1$/);
   });
   it('again: re-runs the full fight on the same message via deferUpdate', async () => {
     const ctx = makeCtx();

@@ -38,7 +38,17 @@ export function revealPayload(species: Species) {
       { name: 'Income/hr', value: String(stats.incomePerHr), inline: true },
     );
   embed.setFooter({ text: 'Next: /dino assign — unassigned dinos earn nothing.' });
-  return { embeds: [embed], components: [], files: [], attachments: [] };
+  // attachments is always empty: discord.js's InteractionUpdateOptions#attachments takes
+  // existing-attachment descriptors to keep (Attachment | MessageEditAttachmentData), not
+  // AttachmentBuilder — an empty tuple both satisfies that type and, passed to i.update(),
+  // drops the pre-hatch egg upload so only the crack (via `files`) survives on the message.
+  const payload: {
+    embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[];
+    files: AttachmentBuilder[]; attachments: never[];
+  } = { embeds: [embed], components: [], files: [], attachments: [] };
+  const crack = assetImage('hatch', `${species.rarity}-crack`);
+  if (crack) { embed.setImage(crack.url); payload.files = [crack.file]; }
+  return payload;
 }
 
 // The egg the player most likely acts on next: ready-to-hatch, else incubating, else newest.
@@ -64,5 +74,9 @@ export function eggListPayload(eggs: Egg[], now: number, userId: string, page = 
   const featured = featuredEgg(eggs, now);
   const img = featured ? assetImage('eggs', featured.rarity) : null;
   if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }
+  // Banner attaches on every branch, including the no-eggs one — mirrors the
+  // two-file thumbnail+image pattern in src/modules/shop/index.ts.
+  const banner = assetImage('banners', 'eggs_incubator');
+  if (banner) { embed.setImage(banner.url); payload.files = [...(payload.files ?? []), banner.file]; }
   return payload;
 }

@@ -1,20 +1,41 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { writeFileSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
-import { fightFrames, chaptersPayload, energyLine, type ChaptersView } from '../src/modules/battles/embeds.js';
+import { describe, it, expect, vi } from 'vitest';
+import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { fightFrames, chaptersPayload, energyLine, type ChaptersView, type FramePayload } from '../src/modules/battles/embeds.js';
 import type { FightOutcome } from '../src/modules/battles/service.js';
 import type { BeatSummary } from '../src/data/battle/resolve.js';
 import { STAGES, type ProgressMap } from '../src/data/battle/chapters/index.js';
 import { ENERGY_REGEN_MS } from '../src/data/battle/constants.js';
 import { validateMessagePayload } from './lib/discord-limits.js';
+import { assetImage } from '../src/core/images.js';
 
-// Stub portrait so the thumbnail wiring is testable: assetImage only checks
-// existence, and this beforeAll runs before any assetImage call on the path.
+// Portrait presence is mocked, never staged on disk. vitest runs test FILES in
+// parallel forks, so a writeFileSync/rmSync fixture on a committed asset path
+// (this file used to stub the coastal portrait) can be observed — or deleted —
+// by another file mid-run. `portraits: false` is also the only fixture left for
+// the null-degrade branch: every boss stage ships a portrait now.
+//
+// For every other kind, assetImage stays a pass-through spy (calls the real
+// implementation) wrapped in vi.fn, so the two chaptersPayload degrade-path
+// tests below can still override exactly one queued call via
+// mockImplementationOnce to force a miss without touching real asset files.
+const art = vi.hoisted(() => ({ portraits: true, sites: true }));
+vi.mock('../src/core/images.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/core/images.js')>();
+  return {
+    ...actual,
+    assetImage: vi.fn((kind: Parameters<typeof actual.assetImage>[0], name: string) => {
+      // `sites: false` models a deploy with no chapter art (docs/ops.md: every
+      // asset is individually optional) — the only way F1 ends up with no files.
+      if (kind === 'sites' && !art.sites) return null;
+      if (kind !== 'battles') return actual.assetImage(kind, name);   // chapter banners/thumbs stay real
+      if (!art.portraits) return null;
+      const fileName = `${name}.png`;
+      return { file: new AttachmentBuilder(Buffer.from('portrait'), { name: fileName }), url: `attachment://${fileName}` };
+    }),
+  };
+});
+
 const bossId = STAGES.get('coastal_dig_boss')!.boss!.bossId;
-const portraitPath = resolve(process.cwd(), 'assets/images/battles', `${bossId}-portrait.png`);
-beforeAll(() => { writeFileSync(portraitPath, 'stub'); });
-afterAll(() => { rmSync(portraitPath, { force: true }); });
 
 const beats: [BeatSummary, BeatSummary] = [
   { title: '⚔️ Clash!', lines: ['Rexy bites Compy for 24 (crit!)'] },
@@ -33,15 +54,31 @@ function makeOutcome(over: Partial<FightOutcome> = {}): FightOutcome {
 }
 const skipStub = () => null;
 
+// Mirrors discord.js MessagePayload on a message edit: a frame carrying `files`
+// (or an explicit `attachments` array) REPLACES the message's whole attachment
+// set; a frame carrying neither leaves the previous uploads in place. Fed a
+// sequence of frames, returns what is still live on the message after the last.
+function liveAfter(frames: FramePayload[]): string[] {
+  let live: string[] = [];
+  for (const frame of frames) {
+    const own = (frame.files ?? []).map((f) => f.name!);
+    live = frame.files || frame.attachments ? own : [...live, ...own];
+  }
+  return live;
+}
+
 describe('fightFrames', () => {
-  it('returns 4 valid frames with attachments only on F1', () => {
+  it('returns 4 valid frames; files attach on F1 and F4 only', () => {
     const frames = fightFrames(makeOutcome(), skipStub);
     expect(frames).toHaveLength(4);
     for (const f of frames) validateMessagePayload(f, 'frame');
     expect(frames[0].files?.length).toBeGreaterThan(0);   // coastal_dig banner ships
     expect(frames[1].files).toBeUndefined();
     expect(frames[2].files).toBeUndefined();
-    expect(frames[3].files).toBeUndefined();
+    expect(frames[3].files?.map((f) => f.name)).toEqual(['battle_victory.png']);
+    expect(frames[0].attachments).toEqual([]);   // F1 and F4 both replace the whole set
+    expect(frames[3].attachments).toEqual([]);
+    expect(frames[3].embeds[0].toJSON().image?.url).toBe('attachment://battle_victory.png');
   });
   it('F2/F3 come straight from the result beats', () => {
     const frames = fightFrames(makeOutcome(), skipStub);
@@ -69,11 +106,12 @@ describe('fightFrames', () => {
     expect(JSON.stringify(f4.fields)).not.toContain('cash');
     expect(JSON.stringify(f4.fields)).toContain('+10 battle XP');
   });
-  it('boss stages thumbnail the portrait; normal stages never do; files still F1-only', () => {
+  it('boss stages thumbnail the portrait on F3 and F4; normal stages never do', () => {
     const boss = fightFrames(makeOutcome({ stageId: 'coastal_dig_boss', bossEgg: { rarity: 'rare' } }), skipStub);
     expect(boss[2].embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${bossId}-portrait.png`);
     expect(boss[3].embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${bossId}-portrait.png`);
     expect(boss[0].files?.map((f) => f.name)).toContain(`${bossId}-portrait.png`);
+    expect(boss[3].files?.map((f) => f.name)).toContain(`${bossId}-portrait.png`);   // re-uploaded, not re-referenced
     expect(boss[1].files).toBeUndefined();
     expect(JSON.stringify(boss[3].embeds[0].toJSON().fields)).toContain('egg');
     // The rendered enemy line, not just the thumbnail/files wiring, names the boss.
@@ -83,18 +121,22 @@ describe('fightFrames', () => {
     for (const f of normal) expect(f.embeds[0].toJSON().thumbnail).toBeUndefined();
   });
   it('boss stage with no portrait art degrades cleanly: no thumbnail anywhere, no portrait file, banner still ships', () => {
-    // amber_ridge_boss's portrait is never stubbed on disk in this file (unlike
-    // coastal_dig_boss above) — assetImage's per-path existence cache never sees
-    // it as present, so this exercises the real un-stubbed production path: no
-    // committed boss art anywhere under assets/images/battles/ today.
+    // No boss stage lacks committed art any more, so the absent-art branch is
+    // pinned by forcing assetImage('battles', …) to null — the project rule is
+    // that missing art degrades, never throws.
     const noPortraitBossId = STAGES.get('amber_ridge_boss')!.boss!.bossId;
-    const frames = fightFrames(
-      makeOutcome({ stageId: 'amber_ridge_boss', bossEgg: { rarity: 'epic' } }), skipStub);
-    expect(frames).toHaveLength(4);
-    for (const f of frames) validateMessagePayload(f, 'frame-no-portrait');
-    for (const f of frames) expect(f.embeds[0].toJSON().thumbnail).toBeUndefined();
-    expect(frames[0].files?.map((f) => f.name)).not.toContain(`${noPortraitBossId}-portrait.png`);
-    expect(frames[0].files?.map((f) => f.name)).toContain('amber_ridge-banner.png');   // chapter banner still ships
+    art.portraits = false;
+    try {
+      const frames = fightFrames(
+        makeOutcome({ stageId: 'amber_ridge_boss', bossEgg: { rarity: 'epic' } }), skipStub);
+      expect(frames).toHaveLength(4);
+      for (const f of frames) validateMessagePayload(f, 'frame-no-portrait');
+      for (const f of frames) expect(f.embeds[0].toJSON().thumbnail).toBeUndefined();
+      expect(frames[0].files?.map((f) => f.name)).not.toContain(`${noPortraitBossId}-portrait.png`);
+      expect(frames[0].files?.map((f) => f.name)).toContain('amber_ridge-banner.png');   // chapter banner still ships
+    } finally {
+      art.portraits = true;
+    }
   });
   it('calls the skip callback for frames 0-2 and attaches returned rows; F4 has no row', () => {
     const seen: number[] = [];
@@ -106,6 +148,48 @@ describe('fightFrames', () => {
     expect(seen).toEqual([0, 1, 2]);
     expect(frames[0].components).toHaveLength(1);
     expect(frames[3].components).toHaveLength(0);   // the module appends the again row (it owns userId)
+  });
+  it('replay contract: F1 clears the previous fight\'s F4 banner even when it has no art of its own', () => {
+    // `battle:again` calls presentFight again on the SAME message, so fight 2's F1
+    // lands on the message fight 1's F4 last wrote — and F4 replaces the whole
+    // attachment set with the outcome banner. On a deploy with no chapter art F1
+    // carries no files; if it also carried no `attachments` key, Discord would keep
+    // fight 1's battle_victory.png alive under F1-F3, whose embeds reference
+    // nothing. F1's `attachments: []` must therefore be unconditional, not
+    // `if (files.length)`.
+    art.sites = false;
+    try {
+      const first = fightFrames(makeOutcome(), skipStub);
+      const replay = fightFrames(makeOutcome(), skipStub);
+      expect(first[0].files).toBeUndefined();               // no chapter art in this deploy
+      expect(first[0].attachments).toEqual([]);             // ...the set is replaced regardless
+      expect(liveAfter(first)).toEqual(['battle_victory.png']);
+      // The decisive step: nothing stale survives into the replay's F1-F3.
+      expect(liveAfter([...first, replay[0]])).toEqual([]);
+      expect(liveAfter([...first, ...replay.slice(0, 3)])).toEqual([]);
+      for (const f of replay.slice(0, 3)) expect(f.embeds[0].toJSON().image).toBeUndefined();
+    } finally {
+      art.sites = true;
+    }
+  });
+  it('frame contract: every referenced attachment is live on that frame, and no frame uploads what it never references', () => {
+    const frames = fightFrames(makeOutcome({ stageId: 'coastal_dig_boss', bossEgg: { rarity: 'rare' } }), skipStub);
+    // Mirrors discord.js MessagePayload: a payload carrying `files` (or an explicit
+    // `attachments` array) REPLACES the message's whole attachment set; a payload
+    // carrying neither leaves the previous uploads in place (see liveAfter above).
+    let live: string[] = [];
+    frames.forEach((frame, idx) => {
+      const own = (frame.files ?? []).map((f) => f.name!);
+      live = frame.files || frame.attachments ? own : [...live, ...own];
+      const json = frame.embeds[0].toJSON();
+      const referenced = [json.image?.url, json.thumbnail?.url]
+        .filter((u): u is string => typeof u === 'string')
+        .map((u) => u.replace('attachment://', ''));
+      for (const r of referenced) expect(live, `frame ${idx + 1} references ${r}`).toContain(r);
+      for (const n of own) expect(referenced, `frame ${idx + 1} uploads ${n}`).toContain(n);
+    });
+    // F4 dropped the chapter banner it no longer references.
+    expect(live).toEqual(['battle_victory.png', `${bossId}-portrait.png`]);
   });
 });
 
@@ -130,6 +214,42 @@ describe('chaptersPayload', () => {
     expect(nav[0].disabled).toBe(true);
     expect(nav[1].custom_id).toBe('battle:chapter:u1:1');
     expect(nav[1].disabled).toBeFalsy();
+  });
+  it('carries the chapter banner AND thumb — both referenced, both uploaded', () => {
+    // chapterId === siteId, so both site assets are legal here. This pins the
+    // append: assigning payload.files twice would drop the banner file while the
+    // embed still points at attachment://coastal_dig-banner.png.
+    const p = chaptersPayload('u1', 0, baseView());
+    const embed = p.embeds[0].toJSON();
+    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.png');
+    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.png');
+    const names = p.files!.map((f) => f.name);
+    expect(names).toContain('coastal_dig-banner.png');
+    expect(names).toContain('coastal_dig-thumb.png');
+    expect(names).toHaveLength(2);   // nothing uploaded that the embed does not reference
+  });
+  it('chaptersPayload still ships the thumb when the banner is missing', () => {
+    // Degrade path 1/2: the two assetImage lookups are independent `if`
+    // blocks — a miss on the banner call must not suppress the thumb.
+    vi.mocked(assetImage).mockImplementationOnce(() => null);   // banner call (1st) -> missing
+    const p = chaptersPayload('u1', 0, baseView());
+    const embed = p.embeds[0].toJSON();
+    expect(embed.image).toBeUndefined();
+    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.png');
+    expect(p.files!.map((f) => f.name)).toEqual(['coastal_dig-thumb.png']);
+  });
+  it('chaptersPayload still ships the banner when the thumb is missing', async () => {
+    // Degrade path 2/2: the mirror case — a miss on the thumb call must not
+    // suppress the banner that was already appended to payload.files.
+    const { assetImage: realAssetImage } = await vi.importActual<typeof import('../src/core/images.js')>('../src/core/images.js');
+    vi.mocked(assetImage)
+      .mockImplementationOnce((kind, name) => realAssetImage(kind, name))   // banner call (1st) -> real
+      .mockImplementationOnce(() => null);                                 // thumb call (2nd) -> missing
+    const p = chaptersPayload('u1', 0, baseView());
+    const embed = p.embeds[0].toJSON();
+    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.png');
+    expect(embed.thumbnail).toBeUndefined();
+    expect(p.files!.map((f) => f.name)).toEqual(['coastal_dig-banner.png']);
   });
   it('locked chapter renders locked', () => {
     const embed = chaptersPayload('u1', 1, baseView()).embeds[0].toJSON();

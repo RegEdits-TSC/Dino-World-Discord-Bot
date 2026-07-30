@@ -11,7 +11,7 @@ import { tradingModule } from '../src/modules/trading/index.js';
 import { expeditionsModule } from '../src/modules/expeditions/index.js';
 import { adminModule } from '../src/modules/admin/index.js';
 import { settingsModule } from '../src/modules/settings/index.js';
-import { eggHatchHandler, type Sender } from '../src/core/notify.js';
+import { eggHatchHandler, type Sender, type NotifyPayload } from '../src/core/notify.js';
 import { accruedIncome, comfortAt, type ClockDino } from '../src/core/clock.js';
 import { RARITY } from '../src/data/rarity.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
@@ -51,6 +51,9 @@ function embedText(r: unknown): string {
   const payload = r as { embeds?: Array<{ toJSON(): { description?: string } }> };
   return payload.embeds?.[0]?.toJSON().description ?? '';
 }
+// Notifications are NotifyPayloads since the Sender widening: the merged <@id>
+// ping lives on `content`, the message body may live in an embed.
+const notifyContent = (p: NotifyPayload): string => (typeof p === 'string' ? p : p.content ?? '');
 
 describe('journeys', () => {
   it('spine: /incubate → time → /hatch → crack → /dino assign → time → park:collect', async () => {
@@ -82,7 +85,7 @@ describe('journeys', () => {
     const collectFrom = ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!.cash;
     ctx.setNow(ctx.now() + 2 * H);
     const collect = await click(ctx, parkModule, 'park:collect', 'p1');
-    expect(replyText(collect.replies[0])).toContain('Collected');
+    expect(embedText(collect.replies[0])).toContain('Collected');
     expect(ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!.cash)
       .toBeGreaterThan(collectFrom);
   });
@@ -130,7 +133,7 @@ describe('journeys', () => {
     const expected = accruedIncome([clockDino], facilityBonusPct(lots), capHours(lots), user.lastCollectAt, ctx.now());
     const before = user.cash;
     const collect = await click(ctx, parkModule, 'park:collect', 'p1');
-    expect(replyText(collect.replies[0])).toContain('Collected');
+    expect(embedText(collect.replies[0])).toContain('Collected');
     const after = ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!.cash;
     expect(after - before).toBe(expected);
 
@@ -171,7 +174,7 @@ describe('journeys', () => {
     const rescue = await dispatch(ctx, careModule, 'rescue', {
       name: 'rescue', user: 'p1', options: { dino: dino.id },
     });
-    expect(replyText(rescue.replies[0])).toContain('Recaptured');
+    expect(embedText(rescue.replies[0])).toContain('Recaptured');
     const feedOk = await dispatch(ctx, careModule, 'feed', {
       name: 'feed', sub: 'one', user: 'p1', options: { dino: dino.id },
     });
@@ -179,7 +182,7 @@ describe('journeys', () => {
     ctx.db.update(schema.users).set({ lastCollectAt: ctx.now() }).where(eq(schema.users.discordId, 'p1')).run();
     ctx.setNow(62 * H);
     const collect = await click(ctx, parkModule, 'park:collect', 'p1');
-    expect(replyText(collect.replies[0])).toContain('Collected');
+    expect(embedText(collect.replies[0])).toContain('Collected');
   });
 
   it('trade expiry: /trade offer → +25h → /trade accept fails expired and the dino unlocks', async () => {
@@ -196,7 +199,8 @@ describe('journeys', () => {
     const offer = await dispatch(ctx, tradingModule, 'trade', {
       name: 'trade', sub: 'offer', user: 'a', options: { user: 'b', 'give-dinos': String(dino.id) },
     });
-    expect(replyText(offer.replies[0])).toContain('Trade');
+    const offerEmbed = (offer.replies[0] as { embeds: Array<{ toJSON(): { title?: string } }> }).embeds[0].toJSON();
+    expect(offerEmbed.title).toContain('Trade');
     expect(ctx.db.select().from(schema.dinos).all()[0].locked).toBe(true);
     const trade = ctx.db.select().from(schema.trades).all()[0];
     ctx.setNow(25 * H);
@@ -218,9 +222,9 @@ describe('journeys', () => {
     // and the skip-guard that a timer whose referent (the egg) is already gone by
     // the time it fires must not notify (hatchEgg deletes the egg row on crack).
     const ctx = makeCtx(); ctx.setNow(0);
-    const sent: Array<{ channelId: string; content: string }> = [];
+    const sent: Array<{ channelId: string; payload: NotifyPayload }> = [];
     const sender: Sender = {
-      channelSend: async (channelId, content) => { sent.push({ channelId, content }); },
+      channelSend: async (channelId, payload) => { sent.push({ channelId, payload }); },
       dmSend: async () => { throw new Error('DM should not be used when the channel works'); },
     };
     ctx.scheduler.register('egg_hatch', eggHatchHandler(sender, ctx));
@@ -238,9 +242,12 @@ describe('journeys', () => {
     const fired = await ctx.scheduler.tick(ctx.now());
     expect(fired).toBe(1);
     expect(sent).toHaveLength(1);
+    const notified = sent[0].payload as { embeds?: Array<{ toJSON(): { thumbnail?: { url: string } } }>; files?: Array<{ name?: string | null }> };
+    expect(notified.embeds![0].toJSON().thumbnail?.url).toBe('attachment://common.png');
+    expect(notified.files!.map((f) => f.name)).toContain('common.png');
     expect(sent[0].channelId).toBe('notify-chan');
-    expect(sent[0].content).toContain('<@p1>');
-    expect(sent[0].content).toContain('ready to hatch');
+    expect(notifyContent(sent[0].payload)).toContain('<@p1>');
+    expect(JSON.stringify(sent[0].payload)).toContain('ready to hatch');
     // Skip-guard: an egg hatched before its timer fires must not ping.
     sent.length = 0;
     await dispatch(ctx, adminModule, 'admin', {

@@ -196,7 +196,37 @@ describe('trading module', () => {
     await tradingModule.commands[0].execute(ctx, i.asChatInput());
     const t = ctx.db.select().from(schema.trades).where(eq(schema.trades.fromUser, 'a')).get()!;
     expect(t.offer.foods).toEqual({ fish: 10 });
-    expect((i.replies[0] as { content: string }).content).toContain('10 Fish');
+    const embed = (i.replies[0] as { embeds: Array<{ toJSON(): { description?: string } }> }).embeds[0].toJSON();
+    expect(embed.description).toContain('10 Fish');
+  });
+  it('/trade offer keeps the recipient ping in content and ships the trading banner', async () => {
+    // The mention must NOT move into the embed — Discord does not ping from embed
+    // text, and this reply is the counterparty's only in-channel signal.
+    ctx.economy.apply('a', { foods: { fish: 10 } }, 'seed', 0);
+    const i = fakeCommand({ name: 'trade', sub: 'offer', user: 'a',
+      options: { user: 'b', 'give-food': 'fish', 'give-food-qty': 10 } });
+    await tradingModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as {
+      content?: string;
+      embeds: Array<{ toJSON(): { image?: { url: string } } }>;
+      files?: Array<{ name?: string | null }>;
+    };
+    expect(payload.content).toContain('<@b>');
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://trading.png');
+    expect(payload.files!.map((f) => f.name)).toContain('trading.png');
+  });
+  it('/trade accept replies with an illustrated completion embed', async () => {
+    ctx.economy.apply('a', { cash: 1_000 }, 'seed', 0);
+    const t = createTrade(ctx, 'a', 'b', { ...empty, cash: 100 }, empty);
+    const i = fakeCommand({ name: 'trade', sub: 'accept', user: 'b', guild: 'g1', options: { id: t.id } });
+    await tradingModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as {
+      embeds: Array<{ toJSON(): { title?: string; image?: { url: string } } }>;
+      files?: Array<{ name?: string | null }>;
+    };
+    expect(payload.embeds[0].toJSON().title).toContain(`Trade #${t.id} completed`);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://trading.png');
+    expect(payload.files!.map((f) => f.name)).toContain('trading.png');
   });
   it('/trade offer with a food item but no qty is an ephemeral error', async () => {
     const i = fakeCommand({ name: 'trade', sub: 'offer', user: 'a', options: { user: 'b', 'give-food': 'fish' } });

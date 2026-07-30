@@ -52,7 +52,7 @@ This guide covers deploying Dino World to production, running it as a system ser
    ```bash
    npm run deploy-emojis
    ```
-   This uploads the 21 custom emojis to the bot's Discord application and writes `assets/emojis/manifest.json` (emoji name → sha256 of the uploaded PNG). **Commit that file right away.** If it goes missing, the next `deploy-emojis` run sees every hash as changed and deletes + recreates all 21 emojis with new snowflake IDs — every message already posted with an old `<:dw_cash:ID>` tag then renders as a broken emoji, silently and with no way to recover it by rerunning. This is the only irreversible live write in the deploy; run it once, after the code is built, before starting the bot.
+   This uploads the 33 custom emojis to the bot's Discord application and writes `assets/emojis/manifest.json` (emoji name → sha256 of the uploaded PNG). **Commit that file right away.** If it goes missing, the next `deploy-emojis` run sees every hash as changed and deletes + recreates all 33 emojis with new snowflake IDs — every message already posted with an old `<:dw_cash:ID>` tag then renders as a broken emoji, silently and with no way to recover it by rerunning. This is the only irreversible live write in the deploy; run it once, after the code is built, before starting the bot.
 
 7. **Start the bot**:
    - **Direct**: `node dist/index.js`
@@ -66,14 +66,18 @@ The bot will log "Logged in as ..." when connected. It stores all state in the S
 
 `/park view` renders a PNG park map in a worker thread using `@napi-rs/canvas`
 (native, prebuilt binaries — no system libraries to install). Fonts are bundled
-at `assets/fonts/` (Noto Sans + Noto Color Emoji), the HUD coin icon is drawn
-straight from `assets/emojis/svg/dw_cash.svg`, and embed art (egg icons, site
-thumbnails, banners) lives under `assets/images/` — all three directories must
-ship with the deploy. They are read relative to the process working directory,
-so run the bot from the repo root (the systemd unit already sets
-`WorkingDirectory`). If rendering fails or exceeds ~3s, `/park view`
-automatically falls back to the text-only embed — the command never fails
-because of the renderer.
+at `assets/fonts/` (Noto Sans + Noto Color Emoji), the map backdrop and the two
+tile plates come from `assets/images/park/`, the HUD coin plus the lot and
+rarity dino icons are drawn straight from `assets/emojis/svg/*.svg`, and embed
+art (egg icons, site thumbnails, banners) lives under `assets/images/` — all
+four directories must ship with the deploy. They are read relative to the
+process working directory, so run the bot from the repo root (the systemd unit
+already sets `WorkingDirectory`). The render worker preloads the park art once
+at startup, which delays the first render only; every asset is individually
+optional, and a missing or undecodable file degrades that one element back to a
+flat fill or a unicode glyph rather than failing. If rendering fails or exceeds
+~3s, `/park view` automatically falls back to the text-only embed — the command
+never fails because of the renderer.
 
 ## Running as a Service
 

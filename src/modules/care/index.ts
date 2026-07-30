@@ -28,6 +28,17 @@ function carePayload(ctx: Ctx, userId: string, description: string) {
   return payload;
 }
 
+// /rescue success carries the rescue banner; the two failure branches stay
+// content-only ephemerals (care.test.ts pins them via replyText).
+function rescuePayload(speciesName: string, fee: number) {
+  const embed = new EmbedBuilder().setTitle('🪝 Rescue').setColor(0x3ba55c)
+    .setDescription(`Recaptured your ${speciesName} for ${fee.toLocaleString()} cash.`);
+  const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+  const banner = assetImage('banners', 'rescue');
+  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+  return payload;
+}
+
 // Autocomplete-safe dino listing: settleEscapes crashes for users with no row
 // (toClockDinos uses .get()!), so guard on row existence and never create one here.
 function settledDinos(ctx: Ctx, userId: string) {
@@ -108,7 +119,7 @@ export const careModule: ModuleManifest = {
         settleEscapes(ctx, i.user.id);
         try {
           const { species, fee } = rescueDino(ctx, i.user.id, i.options.getInteger('dino', true));
-          await i.reply({ content: `🪝 Recaptured your ${species.name} for ${fee.toLocaleString()} cash.` });
+          await i.reply(rescuePayload(species.name, fee));
         } catch (e) {
           if (e instanceof CareError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
           else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash for the recapture fee.', flags: MessageFlags.Ephemeral });

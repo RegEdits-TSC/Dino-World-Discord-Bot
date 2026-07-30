@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { isMainThread } from 'node:worker_threads';
 import { handleRenderRequest } from '../src/core/render/protocol.js';
 import { createRunner } from '../src/core/render/client.js';
 
@@ -41,5 +44,26 @@ describe('createRunner', () => {
     const p2 = run({} as never);
     w.emit('error', new Error('worker died'));
     await expect(p2).rejects.toThrow('worker died');
+  });
+});
+
+describe('worker entry', () => {
+  // Vitest's default `forks` pool runs each test file in a child PROCESS, where `parentPort` is null,
+  // so importing the worker entry registers no listener — it only executes the module's top-level
+  // await. Under a `threads` pool that would not hold (the import would hijack vitest's own message
+  // port), so the boot pin is skipped there rather than corrupting the run.
+  it.skipIf(!isMainThread)('boots: its top-level art preload resolves and never rejects', async () => {
+    await expect(import('../src/core/render/worker.js')).resolves.toBeDefined();
+  });
+
+  // A booted module alone does not prove the art is used, and the wiring cannot be observed from the
+  // main thread (the entry exports nothing and only reacts to a real MessagePort). These two source
+  // assertions pin the parts with the worst failure modes: a preload without `.catch` turns one bad
+  // asset into a permanently image-less /park view, and a render call without `art` silently renders
+  // the flat fallback forever while every other test stays green.
+  it('preloads the art with a never-reject guard and passes it into every render', () => {
+    const src = readFileSync(resolve(process.cwd(), 'src/core/render/worker.ts'), 'utf8');
+    expect(src).toMatch(/await\s+loadParkArt\(\)\.catch\(/);
+    expect(src).toMatch(/renderParkPng\(\s*\w+\s*,\s*art\s*\)/);
   });
 });

@@ -78,6 +78,9 @@ ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'velociraptor', hung
 const readyEgg = ctx.db.insert(schema.eggs).values({ userId: P1, rarity: 'rare', source: 'shop', obtainedAt: ctx.now() }).returning().get();
 incubateEgg(ctx, P1, readyEgg.id, devGuildId);
 ctx.db.update(schema.eggs).set({ hatchesAt: ctx.now() - 1 }).run();   // force-ready for /hatch
+// Inserted AFTER the force-ready update above so this one stays un-incubated for
+// the /incubate case, which runs after hatch:crack frees the single incubator slot.
+const spareEgg = ctx.db.insert(schema.eggs).values({ userId: P1, rarity: 'epic', source: 'shop', obtainedAt: ctx.now() }).returning().get();
 const spareDino = ctx.db.select().from(schema.dinos).all()[1];
 // buildLot/assignDino above ran recomputeRating, which unconditionally overwrote parkRating below TRADE_MIN_RATING — restore it so createTrade's rating gate passes.
 ctx.db.update(schema.users).set({ parkRating: 200 }).run();
@@ -94,9 +97,24 @@ ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'spinosaurus', hunge
 ctx.db.update(schema.dinos).set({ battleXp: 10_000 }).where(eq(schema.dinos.userId, P1)).run();
 const squad = ctx.db.select().from(schema.dinos).all().filter((d) => d.userId === P1 && !d.locked);
 const [b1, b2, b3] = [squad[0], squad[squad.length - 2], squad[squad.length - 1]];
-for (const stageId of ['coastal_dig_1', 'coastal_dig_2', 'coastal_dig_3', 'coastal_dig_4']) {
+// amber_ridge_1..4 are seeded so the amber boss case has a stage gate to pass;
+// its CHAPTER gate (coastal_dig_boss first-cleared) is left to the coastal boss
+// case that runs earlier in `cases` — that keeps /battle chapters posting the
+// chapter-1 page with later chapters locked, which is what the overview should
+// show in the gallery. coastal_dig_boss is deliberately NOT seeded: the case
+// above it is a FIRST clear and needs the egg line on F4.
+for (const stageId of ['coastal_dig_1', 'coastal_dig_2', 'coastal_dig_3', 'coastal_dig_4',
+  'amber_ridge_1', 'amber_ridge_2', 'amber_ridge_3', 'amber_ridge_4']) {
   ctx.db.insert(schema.battleProgress).values({ userId: P1, stageId, stars: 3, firstClearedAt: ctx.now(), attempts: 1 }).run();
 }
+
+// Two extra dinos seeded AFTER the squad picks above so b1/b2/b3 keep their
+// identities: one already escaped (for /rescue), one Lv.1 weakling that loses
+// to the coastal boss (for the defeat banner).
+ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'stegosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(), escapedAt: ctx.now() - 3_600_000 }).run();
+const escapedDino = ctx.db.select().from(schema.dinos).all().at(-1)!;
+ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'compsognathus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
+const weakDino = ctx.db.select().from(schema.dinos).all().at(-1)!;
 
 // If any service signature above disagrees with the source, match the source —
 // tests/*.test.ts show every call shape.
@@ -119,23 +137,46 @@ const button = async (m: string, customId: string, user: string) => {
 
 const cases: Case[] = [
   { title: '/help — overview', run: () => slash('help', 'help', { name: 'help', user: P1 }) },
+  { title: '/help topic:park — own-park canvas render', run: () => slash('help', 'help', { name: 'help', user: P1, options: { topic: 'park' } }) },
+  { title: '/help topic:eggs — egg art', run: () => slash('help', 'help', { name: 'help', user: P1, options: { topic: 'eggs' } }) },
+  { title: '/help topic:battles — chapter banner', run: () => slash('help', 'help', { name: 'help', user: P1, options: { topic: 'battles' } }) },
   { title: '/park view — dashboard + render', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P1 }) },
   { title: '/eggs — list', run: () => slash('hatchery', 'eggs', { name: 'eggs', user: P1 }) },
   { title: '/hatch — pre-hatch embed', run: () => slash('hatchery', 'hatch', { name: 'hatch', user: P1, options: { egg: readyEgg.id } }) },
   { title: 'hatch:crack — reveal', run: () => button('hatchery', `hatch:crack:${readyEgg.id}`, P1) },
+  { title: '/incubate — timer started', run: () => slash('hatchery', 'incubate', { name: 'incubate', user: P1, options: { egg: spareEgg.id } }) },
   { title: '/shop view — storefront', run: () => slash('shop', 'shop', { name: 'shop', sub: 'view', user: P1 }) },
   { title: '/shop food — purchase', run: () => slash('shop', 'shop', { name: 'shop', sub: 'food', user: P1, options: { item: 'ferns', units: 10 } }) },
   { title: '/sell — confirm prompt (ephemeral in production)', run: () => slash('shop', 'sell', { name: 'sell', user: P1, options: { dino: dino.id } }) },
   { title: '/mythic — confirm prompt (ephemeral in production)', run: () => slash('hatchery', 'mythic', { name: 'mythic', user: P1, options: { species: 'indominus' } }) },
   { title: '/expedition status — digging', run: () => slash('expeditions', 'expedition', { name: 'expedition', sub: 'status', user: P1 }) },
+  { title: '/expedition claim — returned loot', run: () => {
+      ctx.db.update(schema.expeditions).set({ returnsAt: ctx.now() - 1 }).run();   // force the seeded dig home
+      return slash('expeditions', 'expedition', { name: 'expedition', sub: 'claim', user: P1 });
+    } },
   { title: '/feed all — care banner', run: () => slash('care', 'feed', { name: 'feed', sub: 'all', user: P1 }) },
   { title: '/dino list — roster', run: () => slash('park', 'dino', { name: 'dino', sub: 'list', user: P1 }) },
   { title: '/trade list — pending trades', run: () => slash('trading', 'trade', { name: 'trade', sub: 'list', user: P1 }) },
+  { title: '/trade offer — new offer', run: () => {
+      // hatchEgg/claimExpedition above run recomputeRating, which can drop parkRating
+      // below TRADE_MIN_RATING — same restore the seed does at the top of this file.
+      ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+      return slash('trading', 'trade', { name: 'trade', sub: 'offer', user: P1, options: { user: P2, 'give-cash': 250, 'want-cash': 100 } });
+    } },
+  { title: '/trade accept — completed', run: () => {
+      const pending = ctx.db.select().from(schema.trades).all()
+        .filter((t) => t.toUser === P2 && t.status === 'pending').sort((x, y) => y.id - x.id);
+      return slash('trading', 'trade', { name: 'trade', sub: 'accept', user: P2, options: { id: pending[0].id } });
+    } },
   { title: '/top — leaderboard', run: () => slash('leaderboards', 'top', { name: 'top', user: P1, guild: devGuildId, options: { metric: 'rating' } }) },
   { title: '/admin inspect — (ephemeral in production)', run: () => slash('admin', 'admin', { name: 'admin', sub: 'inspect', user: 'owner', options: { user: P1 } }) },
   { title: '/battle chapters — campaign overview', run: () => slash('battles', 'battle', { name: 'battle', sub: 'chapters', user: P1 }) },
   { title: '/battle fight — all 4 cinematic frames (coastal_dig_1 win)', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_1', dino1: b1.id, dino2: b2.id } }) },
   { title: '/battle fight — boss FIRST clear: portrait thumb + egg line on F4', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } }) },
+  { title: '/battle fight — amber_ridge boss: second portrait (edit off the coastal reference)', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'amber_ridge_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } }) },
+  { title: 'park:collect — income embed (ephemeral in production)', run: () => button('park', 'park:collect', P1) },
+  { title: '/rescue — recapture embed', run: () => slash('care', 'rescue', { name: 'rescue', user: P1, options: { dino: escapedDino.id } }) },
+  { title: '/battle fight — DEFEAT: lone Lv.1 squad vs the coastal boss', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_boss', dino1: weakDino.id } }) },
 ];
 
 type RawFilePayload = { data: Buffer; name: string };
@@ -150,6 +191,12 @@ function toPost(payload: unknown): { body: Record<string, unknown>; files: RawFi
     files.push({ data: Buffer.isBuffer(f.attachment) ? f.attachment : readFileSync(f.attachment), name: f.name });
   }
   delete p.files;
+  // `attachments` is an EDIT-only field: on a channel POST Discord either rejects
+  // it or treats the empty array as "keep nothing", silently dropping the upload
+  // we just read above. Payloads that carry BOTH files and an explicit
+  // attachments: [] (revealPayload, battle F4) are exactly the gallery cases that
+  // exist to review the hatch cracks and the outcome banners/boss portraits.
+  delete p.attachments;
   p.embeds = ((p.embeds as Array<{ toJSON?: () => unknown }> | undefined) ?? []).map((e) => e.toJSON ? e.toJSON() : e);
   p.components = ((p.components as Array<{ toJSON?: () => unknown }> | undefined) ?? []).map((c) => c.toJSON ? c.toJSON() : c);
   return { body: p, files };

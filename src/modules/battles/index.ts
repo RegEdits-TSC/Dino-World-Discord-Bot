@@ -26,10 +26,50 @@ let presentationSeq = 0;
 // frozen pre-restart message can carry a live-looking pid that now belongs
 // to a different user's fresh fight. Trusting the customId's owner segment
 // alone would let that stale click hijack (and leak) someone else's outcome.
-const presentations = new Map<string, { userId: string; final: FramePayload; skipped: boolean }>();
+interface Presentation {
+  userId: string;
+  final: FramePayload;
+  skipped: boolean;
+  // Tail of the serialized edit queue for this presentation's message — see queueEdit.
+  lock: Promise<unknown>;
+}
+const presentations = new Map<string, Presentation>();
+
+// The cinematic loop and the Skip handler are two independent writers to the SAME
+// message, and `entry.skipped` alone cannot order them: a Skip that lands while a
+// beat frame's editReply is already in flight sets the flag too late to stop that
+// PATCH, and the two requests then race. Losing that race is not cosmetic — F4
+// replaces the message's whole attachment set, so a beat frame landing after it
+// restores an embed pointing at attachment://<chapter>-banner.png that no longer
+// exists, i.e. a permanently broken image on the final message.
+// Every edit therefore queues behind the previous one and only fires if its guard
+// still holds, which makes F4 the last PATCH sent in either interleaving: a Skip
+// arriving mid-frame waits for that frame's response before sending F4, and a beat
+// frame queued behind an already-sent F4 is dropped instead of sent after it.
+// The queue is per presentation and the lock is free during ctx.sleep, so in the
+// common case (Skip clicked between frames) the button still answers immediately.
+function queueEdit(entry: Presentation, guard: () => boolean, send: () => Promise<unknown>): Promise<void> {
+  const run = entry.lock.then(() => (guard() ? send() : undefined));
+  entry.lock = run.catch(() => {});   // a failed edit must not wedge the queue
+  return run.then(() => {});          // ...but the caller still sees the rejection
+}
 // The again button's customId carries only the stageId; the squad is remembered
 // here. Empty after a restart -> the button degrades to an ephemeral nudge.
 const lastSquads = new Map<string, number[]>();
+
+// entry.final (the F4 payload) has two possible send sites: presentFight's own
+// closing editReply below, and — if a Skip lands in the narrow window while
+// that editReply is already in flight — the skip button handler's i.update,
+// racing it. discord.js's MessagePayload mutates options.attachments IN PLACE
+// on every send (it pushes that send's file descriptors onto whatever array it
+// finds there), so if both sites forwarded the same entry.final object, the
+// second send to resolve would push onto an array the first send already
+// populated, corrupting it with duplicate/stale ids. Never pass entry.final
+// straight through — always route it through here, which hands out a fresh,
+// unshared attachments array per call so two racing sends can never collide.
+function finalPayload(entry: { final: FramePayload }): FramePayload {
+  return { ...entry.final, attachments: [] };
+}
 
 function skipRow(userId: string, presentationId: string) {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -52,14 +92,16 @@ async function presentFight(ctx: Ctx, i: ChatInputCommandInteraction | ButtonInt
     // presentation-layer failure only, never a reason to imply nothing happened.
     const frames = fightFrames(outcome, () => skipRow(userId, pid));
     frames[3].components.push(againRow(userId, outcome.stageId));
-    const entry = { userId, final: frames[3], skipped: false };
+    const entry: Presentation = { userId, final: frames[3], skipped: false, lock: Promise.resolve() };
     presentations.set(pid, entry);
+    const unskipped = () => !entry.skipped;
     for (const idx of [0, 1, 2] as const) {
       if (entry.skipped) return;
-      await i.editReply(frames[idx]);
+      await queueEdit(entry, unskipped, () => i.editReply(frames[idx]));
+      if (entry.skipped) return;   // a Skip landed while that frame was in flight
       await ctx.sleep(FIGHT_FRAME_DELAY_MS);
     }
-    if (!entry.skipped) await i.editReply(frames[3]);
+    if (!entry.skipped) await queueEdit(entry, unskipped, () => i.editReply(finalPayload(entry)));
   } catch (err) {
     logger.debug({ err }, 'battle cinematic render failed');
     await i.editReply({
@@ -178,7 +220,10 @@ export const battlesModule: ModuleManifest = {
           // record's own stored owner is the authority, not the customId.
           if (!entry || entry.userId !== i.user.id) { await i.deferUpdate(); return; }
           entry.skipped = true;
-          await i.update(entry.final);
+          // Guard is always-true: this update is also the button's acknowledgement,
+          // so it must be sent even if the loop already reached F4 (the second send
+          // is the same content, and finalPayload hands it its own attachments array).
+          await queueEdit(entry, () => true, () => i.update(finalPayload(entry)));
         } else if (action === 'again') {
           const squad = lastSquads.get(`${i.user.id}:${arg}`);
           if (!squad) { await i.reply({ content: 'That battle expired — start a new one with /battle fight.', flags: MessageFlags.Ephemeral }); return; }

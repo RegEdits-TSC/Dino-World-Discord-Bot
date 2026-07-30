@@ -19,9 +19,26 @@ import { paginate, pageRow } from '../../core/paginate.js';
 import { emojiTag, foodEmoji } from '../../core/emojis.js';
 import { FOODS, type FoodId } from '../../data/foods.js';
 import type { Ctx } from '../../core/context.js';
+import { assetImage } from '../../core/images.js';
+import type { AttachmentBuilder } from 'discord.js';
 
 const kindChoices = [...Object.keys(PADDOCKS), ...Object.keys(FACILITIES)]
   .map((k) => ({ name: k.replaceAll('_', ' '), value: k }));
+
+// emojiTag is resolved per call, never at module scope — the app-emoji map only
+// loads after client ready.
+function collectPayload(amount: number) {
+  const embed = new EmbedBuilder().setColor(0x3ba55c)
+    .setTitle(`${emojiTag('dw_cash')} Park income`)
+    .setDescription(amount > 0
+      ? `Collected **${amount.toLocaleString()}** cash.`
+      : 'Nothing to collect yet — give your dinos time to earn.');
+  const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[]; flags: MessageFlags.Ephemeral } =
+    { embeds: [embed], flags: MessageFlags.Ephemeral };
+  const banner = assetImage('banners', 'collect');
+  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+  return payload;
+}
 
 function dinoListPayload(ctx: Ctx, userId: string, page: number) {
   const all = listDinos(ctx, userId);
@@ -39,7 +56,11 @@ function dinoListPayload(ctx: Ctx, userId: string, page: number) {
     : 'No dinos yet. Hatch one!';
   const embed = new EmbedBuilder().setTitle('🦕 Your dinos').setDescription(lines).setColor(0x3ba55c)
     .setFooter({ text: `Page ${p}/${pages}` });
-  return { embeds: [embed], components: pages > 1 ? [pageRow('park', 'dinos', userId, p, pages)] : [] };
+  const payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof pageRow>[]; files?: AttachmentBuilder[] } =
+    { embeds: [embed], components: pages > 1 ? [pageRow('park', 'dinos', userId, p, pages)] : [] };
+  const banner = assetImage('banners', 'dino_roster');
+  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+  return payload;
 }
 
 export const parkModule: ModuleManifest = {
@@ -251,7 +272,7 @@ export const parkModule: ModuleManifest = {
         if (i.customId === 'park:collect') {
           settleEscapes(ctx, i.user.id);
           const { amount } = collectIncome(ctx, i.user.id);
-          await i.reply({ content: amount > 0 ? `${emojiTag('dw_cash')} Collected **${amount.toLocaleString()}** cash.` : 'Nothing to collect yet.', flags: MessageFlags.Ephemeral });
+          await i.reply(collectPayload(amount));
           return;
         }
         const parts = i.customId.split(':');
@@ -272,7 +293,7 @@ export const parkModule: ModuleManifest = {
         if (action === 'dinos') {
           if (i.user.id !== uid) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
           settleEscapes(ctx, i.user.id);
-          await i.update(dinoListPayload(ctx, i.user.id, Number(pageStr)));
+          await i.update({ ...dinoListPayload(ctx, i.user.id, Number(pageStr)), attachments: [] });
         }
       },
     },
