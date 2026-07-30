@@ -235,7 +235,14 @@
   margin against the boss portraits' 24px — deliberate, recorded in
   `docs/assets/prompts.md`): **art is keyed on archetype×diet, never on species**,
   which is what keeps adding a species a data-only change. `support-carnivore`
-  ships with zero species using it for exactly that reason. Banners are
+  ships with zero species using it for exactly that reason. That fixed cost has
+  a fidelity price: `archetype` is a combat concept, not a body-plan one, so
+  outliers share art loosely — `swift-carnivore` covers both `velociraptor` and
+  `quetzalcoatlus` (a beaked pterosaur), rendered as a scaled toothy theropod.
+  Accepted deliberately: a per-species `silhouette` field was considered and
+  declined, since it would have traded 8 images for roughly 12 plus a migration
+  across all 30 species files, to fix fidelity for a handful of outliers.
+  Banners are
   1536×1024 (asserted in `tests/images.test.ts`) and transparent cutouts
   1024×1024; `node scripts/fit-art.mjs banner|cutout <src> <dest>` produces the
   banners and the hatch cracks, but NOT the eggs or the boss portraits — those

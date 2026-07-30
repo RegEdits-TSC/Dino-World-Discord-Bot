@@ -606,6 +606,15 @@ everywhere, like every other family here.
 `herbivore` or `carnivore`. `support-carnivore` has no species today and is
 generated anyway — the guarantee is that adding a species never needs new art.
 
+**Fidelity cost of the fixed set:** `archetype` is a combat concept, not a
+body-plan one, so the guarantee above buys loose anatomical fidelity for
+outliers. `swift-carnivore` covers both `velociraptor` and `quetzalcoatlus` —
+a beaked pterosaur — and the shared portrait is a scaled toothy theropod, not
+anything pterosaur-shaped. Accepted deliberately, not an oversight: a
+per-species `silhouette` field was considered and declined, since it would
+have traded eight images for roughly twelve plus a migration across all 30
+species files, to fix fidelity for a handful of outliers like this one.
+
 **Style: deliberately simpler than the four boss portraits.** Same house
 glossy-cartoon treatment and the same head-and-shoulders three-quarter framing,
 but flatter: clean archetype silhouettes, no scarring, no individuating damage,
