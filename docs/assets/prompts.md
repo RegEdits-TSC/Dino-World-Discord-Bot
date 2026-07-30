@@ -681,8 +681,8 @@ Egg rarities so it is a choice, not a third undocumented margin.
 - **`support-herbivore.webp`:** a gentle cartoon herbivore with a blunt grazing
   beak, calm watchful eyes, a rounded approachable face, and warm honey-yellow
   and turquoise scales.
-- **`support-carnivore.webp`:** a compact crested cartoon carnivore with a slim
-  head, tall paired head crests, wide watchful eyes, and violet-and-teal scales
+- **`support-carnivore.webp`:** a compact cartoon carnivore with an alert slim
+  head, a sharp predatory bite, wide watchful eyes, and violet-and-teal scales
   that read as a clever pack helper rather than a brute.
 
 ## Park map
