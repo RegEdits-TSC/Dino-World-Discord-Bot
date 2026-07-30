@@ -1,6 +1,6 @@
 # Command Reference
 
-![Dino World](../assets/images/banners/eggs_incubator.png)
+![Dino World](../assets/images/banners/eggs_incubator.webp)
 
 Every slash command Dino World registers. Options marked **autocomplete** suggest
 valid values as you type — start typing and pick from the list rather than

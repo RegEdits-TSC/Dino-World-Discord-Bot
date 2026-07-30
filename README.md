@@ -19,7 +19,7 @@ bot is in.
 - 🏞️ **Build a park** — paddocks, facilities, and decor across lots you unlock as
   your rating grows, with `/park view` rendering your layout as a map image
 - 🥚 **Hatch and collect** — 30 species across six rarities, from Common up to
-  Mythic, each egg incubating on its own timer
+  Mythic, each egg incubating on its own timer and hatching into illustrated art
 - 🗺️ **Run expeditions** — send a dig crew out to themed sites and claim what they
   bring back
 - ⚔️ **Fight a campaign** — four chapters of five stages, each ending in a boss,

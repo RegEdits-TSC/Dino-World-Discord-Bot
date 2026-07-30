@@ -1,6 +1,6 @@
 # Gameplay Guide
 
-![Dino World](../assets/images/sites/amber_ridge-banner.png)
+![Dino World](../assets/images/sites/amber_ridge-banner.webp)
 
 How Dino World actually works — what everything costs, how long things take, and
 what raises your rating. For the commands themselves, see the
