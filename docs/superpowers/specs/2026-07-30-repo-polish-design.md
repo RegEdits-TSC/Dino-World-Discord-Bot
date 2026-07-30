@@ -49,17 +49,30 @@ These were settled during brainstorming and are not open questions.
 | Hero art | `banners/help.png` in README; `banners/eggs_incubator.png` on commands; `sites/amber_ridge-banner.png` on gameplay |
 | Community files | All four: contributing, security, code of conduct, issue/PR templates |
 | Code of Conduct | Contributor Covenant 2.1 |
-| Reporting contact | GitHub private vulnerability reporting plus contacting `@RegEdits-TSC` — no email address published |
+| Authorship | RegEdits-TSC, on every artifact |
+| Reporting contact | GitHub private vulnerability reporting plus contacting `@RegEdits-TSC` — no email address published anywhere |
 | Delivery | One branch, one pull request |
 
-### Why no email contact
+### Authorship and contact
 
-The maintainer's git identity is
-`177423420+RegEdits-TSC@users.noreply.github.com`. GitHub noreply addresses are
-outbound-only and **do not receive mail**, so publishing one as a reporting
-contact would silently drop every report. The maintainer also deliberately keeps
-their real address private. GitHub's private vulnerability reporting form solves
-both problems: it is reachable, it is private, and it exposes no address.
+**Every artifact in this change is authored by RegEdits-TSC.** That is the
+`author` field in `package.json`, the copyright holder in `LICENSE`, and the
+identity behind any byline or maintainer reference in the documentation. No
+other name, handle, tool, assistant, or generator appears anywhere in the output.
+
+**No email address is published, anywhere.** Not in `CODE_OF_CONDUCT.md`, not in
+`SECURITY.md`, not in `package.json`'s `author` field, not in an issue template.
+
+The project has no contact address to give. The maintainer's git identity is a
+GitHub noreply address, and those are outbound-only — they **do not receive
+mail**, so publishing one as a reporting contact would silently drop every report
+sent to it. The maintainer's real address is deliberately private.
+
+Every place that would conventionally carry an email instead points at GitHub:
+the private vulnerability reporting form for security and conduct reports, and
+`@RegEdits-TSC` for everything else. That channel is reachable, private, and
+exposes no address. Where a template or license text ships with an email
+placeholder, the placeholder is removed rather than filled in.
 
 ## Deliverables
 
@@ -207,7 +220,7 @@ Field changes only. No dependency, script, or `engines` changes.
 |---|---|---|
 | `license` | `"ISC"` | `"MIT"` |
 | `description` | `""` | `"A dinosaur park tycoon game played entirely inside Discord"` |
-| `author` | `""` | `"RegEdits-TSC"` |
+| `author` | `""` | `"RegEdits-TSC"` — the bare name, with no `<email>` component |
 | `keywords` | `[]` | `["discord", "discord-bot", "discordjs", "typescript", "sqlite", "drizzle-orm", "game"]` |
 | `repository` | absent | `{ "type": "git", "url": "git+https://github.com/RegEdits-TSC/Dino-World-Discord-Bot.git" }` |
 | `bugs` | absent | `{ "url": "https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/issues" }` |
@@ -260,9 +273,11 @@ project's own voice, with no reference to any assistant or tool.
 
 ### 8. `CODE_OF_CONDUCT.md`
 
-Contributor Covenant 2.1, verbatim, with the enforcement contact replaced by:
-report through GitHub's private vulnerability reporting form, or by contacting
-`@RegEdits-TSC` on GitHub. No email address appears.
+Contributor Covenant 2.1, verbatim, with one change: the enforcement section of
+the stock text carries an `[INSERT CONTACT METHOD]` placeholder, and that
+placeholder is replaced by an instruction to report through GitHub's private
+vulnerability reporting form or by contacting `@RegEdits-TSC` on GitHub. The
+placeholder must not survive into the shipped file, and no email address appears.
 
 ### 9. Issue templates
 
@@ -331,11 +346,16 @@ references rather than behaviour.
    names the module manifests actually build, in both directions: every command
    documented must exist, and every registered command must be documented.
    Appendix A is the expected set — 39 entries including subcommands.
-6. **Rendered check, after the pull request is open** — confirm the issue forms
+6. **Authorship check** — grep every file this change adds or edits for an email
+   pattern and for any unfilled template placeholder such as
+   `[INSERT CONTACT METHOD]`. Both must return nothing. Confirm `package.json`'s
+   `author` is the bare string `RegEdits-TSC` with no angle-bracket email, and
+   that `LICENSE` names RegEdits-TSC as the copyright holder.
+7. **Rendered check, after the pull request is open** — confirm the issue forms
    render as forms rather than raw YAML, confirm the badges resolve, and confirm
    GitHub's sidebar now reports the MIT license.
 
-Steps 3 through 5 are mechanical and should be scripted during implementation
+Steps 3 through 6 are mechanical and should be scripted during implementation
 rather than eyeballed.
 
 ## Risks
