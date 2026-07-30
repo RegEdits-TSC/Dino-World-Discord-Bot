@@ -259,3 +259,500 @@ start hatching: 16 species are herbivores and 14 are carnivores.
 | Quetzalcoatlus | Legendary | carnivore |
 | Indominus rex | Mythic | carnivore |
 | Indoraptor | Mythic | carnivore |
+
+## 7. Care
+
+### Hunger
+
+Hunger drains on its own, linearly, from whatever it was last fed to down to 0
+over 48 hours — about 2.08 points per hour — and it never goes negative.
+Feeding **sets** hunger to a food's fill value rather than adding to it: a
+dino sitting at 90 that eats Ferns (fills to 100) ends at exactly 100 — the
+90 is simply overwritten, not added to. Because the drain rate is fixed, a
+dino fed to a higher value takes longer to reach zero — a dino fed to 150
+takes about 72 hours. Only three things ever change hunger: feeding, being
+rescued, and that passive drain. A freshly hatched dino starts at hunger
+100.
+
+### Comfort and habitat fit
+
+Comfort is what actually matters for income and rating. It's hunger (counted
+only up to 100, so overfeeding doesn't help comfort) expressed as a
+percentage, multiplied by how well the paddock suits that dino:
+
+- A dino in the **correct-diet** paddock for its species keeps 75% of its
+  hunger-based comfort.
+- A dino in the **wrong-diet** paddock keeps only 50%.
+- A dino with **no paddock at all** has 0% comfort, full stop — it earns
+  nothing and cannot escape, since escaping requires being somewhere to
+  escape from.
+
+Assigning a dino to the wrong-diet paddock isn't blocked — the game warns you
+first and asks you to confirm — but it halves that dino's comfort for as
+long as it stays there. Comfort feeds both your income (see Income above)
+and the comfort third of your park rating (see Rating and leaderboards
+below).
+
+### Escapes
+
+A dino escapes once its comfort has stayed below 25% for 8 straight hours in
+a row — a grace period, not an instant trip wire. Escapes aren't caught in
+real time; they're settled the next time any command touches your park,
+including someone else simply looking at it with `/park view`. Whenever it's
+settled, the game records the *actual* moment the dino left, not the moment
+anyone noticed.
+
+Feeding a higher tier buys more time before that clock can even start,
+because it takes longer for hunger to fall far enough to drop comfort under
+25%. Roughly, from a fresh feed:
+
+| Paddock | Fed to 100 | Fed to 125 | Fed to 150 |
+| --- | --- | --- | --- |
+| Correct-diet paddock | about 40 h | about 52 h | about 64 h |
+| Wrong-diet paddock | 32 h | about 44 h | about 56 h |
+
+The dashboard flags a dino as "at risk" once its projected escape is within
+12 hours, and `/dino list` shows the same countdown per dino — but only for
+an assigned dino with a projected escape time; an unassigned dino never
+shows this warning (it also never escapes). Separately, the food pickers tag
+a dino "VERY HUNGRY" once 36 hours have passed since it was last fed — that
+tag is based purely on time since feeding, not on actual hunger, so a dino
+fed Royal Greens can be flagged VERY HUNGRY while its real hunger — and its
+real escape risk — is still comfortably high. Treat the two warnings as
+separate signals, not the same thing.
+
+An escaped dino cannot be fed, assigned to a paddock, entered into a battle,
+or offered in a trade, and it earns no income and drops out of the comfort
+average behind your rating. It can, however, still be sold.
+
+### Rescue
+
+`/rescue` recaptures an escaped dino for a cash fee equal to four hours of
+that dino's normal income rate:
+
+| Rarity | Rescue fee |
+| --- | --- |
+| Common | 240 |
+| Uncommon | 600 |
+| Rare | 1,600 |
+| Epic | 4,400 |
+| Legendary | 12,000 |
+| Mythic | 36,000 |
+
+Rescue doesn't fully restore the dino — it resets hunger to about half of
+what full comfort would take: 67 in a correct-diet paddock, or 100 in a
+wrong-diet paddock (which is halved anyway, so it ends up at a similar
+comfort either way). The escaped flag clears immediately and the dino starts
+earning again right away. You can't rescue a dino that hasn't escaped, and
+if you can't afford the fee, nothing changes.
+
+## 8. Food
+
+Food is six named items — three price tiers for each diet — bought with cash
+from `/shop food` and kept in your pantry, not a single number:
+
+| Item | Diet | Tier | Cash per unit | Fills hunger to |
+| --- | --- | --- | --- | --- |
+| Ferns | herbivore | 1 | 10 | 100 |
+| Fruit Basket | herbivore | 2 | 15 | 125 |
+| Royal Greens | herbivore | 3 | 20 | 150 |
+| Fish | carnivore | 1 | 12 | 100 |
+| Goat | carnivore | 2 | 18 | 125 |
+| Prime Steak | carnivore | 3 | 24 | 150 |
+
+Feeding **sets** a dino's hunger to that item's fill value — it's a reset,
+not a top-up. The two higher tiers overfill past 100, which doesn't raise a
+dino's comfort or income any further, but it does buy more real time before
+hunger runs out and the dino risks escaping (see Care above). A dino only
+accepts food matching its own diet — offering the wrong diet is refused
+outright, not merely penalized.
+
+The shop suggests buying in bundles of 10, 50, or 100 units, but any
+positive amount is allowed and there's no maximum — only your cash balance
+limits a purchase.
+
+Feeding itself costs **food units from your pantry, not cash**. How many
+units a single feed consumes depends on the dino's rarity:
+
+| Rarity | Feed cost (food units) |
+| --- | --- |
+| Common | 5 |
+| Uncommon | 10 |
+| Rare | 20 |
+| Epic | 40 |
+| Legendary | 80 |
+| Mythic | 160 |
+
+Leave the food option blank on `/feed one` and the game automatically picks
+the cheapest food of the right diet that you own enough of. `/feed all`
+feeds every dino whose current (already-decayed) hunger is under 100,
+skips escaped dinos, and works through the hungriest dinos first — if it
+runs out of matching food partway through, it reports which dinos it had to
+skip and keeps going for the rest.
+
+## 9. Expeditions
+
+Expeditions don't use any dinos — you send a dig crew to one of four sites,
+pay a cash fee up front, wait out the duration, and claim the results. Only
+one expedition can be out at a time.
+
+| Site | Unlocks at | Cost | Duration | Cash bonus | Food bonus |
+| --- | --- | --- | --- | --- | --- |
+| Coastal Dig | 0.0★ | 200 | 15 min | 50–200 | 2–6 |
+| Amber Ridge | 1.5★ | 1,000 | 1 h | 200–800 | 4–10 |
+| Frozen Cliffs | 2.5★ | 4,000 | 4 h | 800–2,500 | 8–20 |
+| Volcano Core | 4.0★ | 15,000 | 8 h | 3,000–9,000 | 20–50 |
+
+Site unlocks are gated on your **best-ever** rating, so a site never
+re-locks even if your current rating later drops. No site's maximum cash
+bonus can beat its fee outright — at Coastal Dig the best case (200) merely
+breaks even — so an expedition is never a guaranteed cash profit on its own;
+the egg and the food are the real payoff.
+
+Every claim pays out exactly three things at once: one egg, a cash amount
+rolled anywhere between the site's min and max (inclusive), and a stack of
+food. The food is always the tier-1 item of a diet chosen by a 50/50 coin
+flip at claim time — Ferns or Fish — regardless of what your park actually
+raises, so an all-herbivore park will still get handed Fish about half the
+time. Expeditions never pay shards. The egg itself arrives with no species
+assigned yet — you still need to incubate and hatch it like any other egg.
+
+The egg's rarity is rolled from odds set per site:
+
+| Site | Common | Uncommon | Rare | Epic | Legendary | Mythic |
+| --- | --- | --- | --- | --- | --- | --- |
+| Coastal Dig | 70% | 30% | — | — | — | — |
+| Amber Ridge | 45% | 40% | 15% | — | — | — |
+| Frozen Cliffs | — | 40% | 40% | 20% | — | — |
+| Volcano Core | — | — | 40% | 40% | 19.8% | 0.2% |
+
+Volcano Core is the only site that can ever drop a Legendary or Mythic egg.
+There is no failure, risk, or partial-loss outcome — a returned expedition
+always pays its full loot — and there is no cancel or refund once you've
+sent a crew out.
+
+## 10. The battle campaign
+
+### Chapters and unlocking
+
+The campaign is four chapters, each five stages long, with the fifth stage
+always the boss:
+
+| # | Chapter |
+| --- | --- |
+| 1 | Coastal Dig |
+| 2 | Amber Ridge |
+| 3 | Frozen Cliffs |
+| 4 | Volcano Core |
+
+Within a chapter, stage 1 is always open, and every later stage unlocks once
+you've earned at least 1 star on the stage before it. Chapter 1 is always
+open too. Every later chapter needs **both** a recorded first clear of the
+previous chapter's boss **and** a best-ever park rating at or above that
+chapter's gate — the same thresholds as the identically named expedition
+sites: 0.0★, 1.5★, 2.5★, and 4.0★.
+
+### Energy
+
+Fighting costs battle energy, the resource shown on `/battle chapters` and
+on the fight-result screen — never on the park dashboard. The pool caps at
+10 and regenerates one point every 10 minutes, so a full refill from empty
+takes about 100 minutes. Energy is spent whether you win or lose, and it
+can't be bought, gifted, or refilled by any item. Trying to fight without
+enough energy is refused up front, before anything happens, and tells you
+exactly how much you have and when the next point lands.
+
+Within a chapter, the first three stages cost 1 energy each, the fourth
+costs 2, and every boss stage costs 3.
+
+### Squads
+
+You bring 1 to 3 of your own dinos into a stage; the same dino can't be
+entered twice. An escaped dino can't fight and is filtered out of the
+picker entirely. A dino currently locked in a pending trade **can** still
+fight — battling never transfers or consumes a dino.
+
+The number of enemies you face matches your squad size, and normal stages
+field their weakest enemies first — a solo dino only ever meets the single
+weakest enemy on a normal stage. Boss stages are the exception: the boss is
+always in the fight no matter your squad size, so on a boss stage a smaller
+squad doesn't mean an easier fight — with one or two dinos you still face
+the boss, just with fewer or no other enemies alongside it.
+
+### How stars are decided
+
+The game checks these conditions **in order**, and stops at the first one
+that matches:
+
+1. Lose the fight → **0 stars**.
+2. Win without losing a single dino → **3 stars**.
+3. Otherwise, win by losing at most one dino, or by finishing within 12
+   rounds → **2 stars**.
+4. Any other win → **1 star**.
+
+The round-count fallback matters: a win finished within 12 rounds still
+earns 2 stars even if you lost two or more dinos along the way, while a
+slower win (past round 12) with those same losses only earns 1 star. Your
+recorded best for a stage only ever improves; a weaker rerun never lowers
+it, and every attempt still counts toward your history.
+
+### Rewards
+
+Cash, food, and battle XP for a stage all scale with the stars you earn:
+
+| Reward | Loss | 1★ | 2★ | 3★ |
+| --- | --- | --- | --- | --- |
+| Cash | 0 | ×1 | ×1.25 | ×1.5 |
+| Food | 0 | ×1 | ×1.25 | ×1.5 |
+| Battle XP | ×0.25 (consolation) | ×1 | ×1.25 | ×1.5 |
+
+The first time you clear a stage, you also earn a one-time first-clear shard
+bonus that is **not** scaled by stars — a scrappy 1-star first win pays the
+same shards as a flawless 3-star one. Clearing every stage in all four
+chapters for the first time pays 93 first-clear shards in total across the
+whole campaign.
+
+Battle XP for a win is split evenly across your squad (rounded down, with
+any leftover point going to your first squad slot), so a solo dino keeps
+the entire payout. Each dino has its own battle level, separate from its
+rarity, capped at level 10:
+
+| Level | Cumulative XP needed |
+| --- | --- |
+| 2 | 100 |
+| 3 | 250 |
+| 4 | 450 |
+| 5 | 700 |
+| 6 | 1,000 |
+| 7 | 1,400 |
+| 8 | 1,900 |
+| 9 | 2,500 |
+| 10 | 3,200 |
+
+**Every reward from a fight is banked before the cinematic even plays**, so
+skipping the animation with the Skip button never costs you any part of the
+payout.
+
+### Bosses
+
+Each chapter's fifth stage pits you against that chapter's boss — a tougher
+version of the chapter's strongest enemy species, with roughly two and a
+half times the HP and about a fifth more attack than a normal encounter of
+that species. Clearing a boss for the first time awards a one-time trophy
+egg (repeat clears pay no further egg):
+
+| Boss | Chapter | Trophy egg rarity | Species |
+| --- | --- | --- | --- |
+| Old Riptooth | Coastal Dig | Rare | rolls at hatch |
+| Ridgeback Alpha | Amber Ridge | Epic | rolls at hatch |
+| Stormwing | Frozen Cliffs | Legendary | rolls at hatch |
+| The Tyrant King | Volcano Core | Legendary | pinned: Tyrannosaurus |
+
+No boss ever drops a Mythic egg. Beating a chapter's boss for the first
+time is also, alongside the matching rating threshold, one half of what
+unlocks the next chapter.
+
+## 11. Shop and selling
+
+### Buying eggs
+
+`/shop egg` sells eggs at a flat price per rarity, drawn from a rotation that
+changes once a day:
+
+| Rarity | Shop price |
+| --- | --- |
+| Common | 500 |
+| Uncommon | 2,000 |
+| Rare | 8,000 |
+| Epic | 30,000 |
+| Legendary | 120,000 |
+| Mythic | never sold here — buy with shards via `/mythic` instead |
+
+Each day the shop draws up to 3 rarities from the pool at or below your
+rarity ceiling, and — only once your ceiling reaches Legendary — has a
+separate 10% chance to add a Legendary egg on top, making that a
+four-egg day. While your ceiling is still Uncommon, there are only 2
+rarities to draw from, so the shop shows 2. Trying to buy a rarity that
+isn't in today's rotation is refused.
+
+Your rarity ceiling is set by your **best-ever** park rating:
+
+| Best-ever rating | Highest buyable rarity |
+| --- | --- |
+| below 1.0★ | Uncommon |
+| 1.0★ | Rare |
+| 2.0★ | Epic |
+| 3.5★ | Legendary |
+
+### Selling dinos
+
+`/sell` shows a confirm preview with the cash value and shard range before
+anything happens — nothing is sold until you press Confirm, and the dino is
+then permanently removed from your park. Cash is a flat amount by rarity;
+shards are a random roll within a range:
+
+| Rarity | Sell cash | Sell shards |
+| --- | --- | --- |
+| Common | 50 | 1–3 |
+| Uncommon | 150 | 3–6 |
+| Rare | 500 | 8–15 |
+| Epic | 1,500 | 20–35 |
+| Legendary | 5,000 | 50–80 |
+| Mythic | — | — |
+
+**Mythics cannot be sold at all.** A dino locked in a pending trade can't be
+sold either. A dino you received through a trade still sells for its full
+cash value, but always pays 0 shards. Selling always recomputes your park
+rating.
+
+Selling also has a shard cap: you can earn at most 40 shards from selling
+dinos within any rolling 24-hour window. Sales past that cap still pay their
+full cash value — you simply stop earning extra shards from selling until
+the window rolls over.
+
+## 12. Trading
+
+`/trade` has five subcommands: `offer`, `list`, `accept`, `decline`, and
+`cancel`. An offer names one other player and sets both sides of the deal at
+once — what you're giving and what you want back — in up to four
+categories per side: dinos, eggs, cash, and one stack of a single food item.
+Shards can never be part of a trade.
+
+### Gates and limits
+
+| Rule | Value |
+| --- | --- |
+| Minimum park rating, both players | 2.0★ — checked against your **current** rating, the one gate in the game that isn't based on your best-ever high mark |
+| Trades you may start | 3 within any rolling 24 hours, counting every trade you've sent in that window, even ones that were declined, cancelled, or expired |
+| Items per side | up to 5, counting dinos, eggs, and food stacks together — cash doesn't count, and a whole food stack counts as just one item no matter its quantity |
+| Offer expiry | 24 hours after it's sent |
+
+The rating gate is re-checked again at the moment of acceptance, not just
+when the offer is sent.
+
+### What can't be traded
+
+Mythic dinos and Mythic eggs can never be traded, an escaped dino can't be
+offered until it's rescued, an egg that's currently incubating can't be
+traded, and you can't trade with yourself or with a bot. Anything already
+locked in another pending trade of yours can't be offered again until that
+trade resolves.
+
+### Flow
+
+The moment you send an offer, everything you're giving is locked — it can't
+be sold or offered in a second trade while the offer is pending. Only the
+recipient can accept or decline an offer, and only the sender can cancel
+one. Accepting re-checks that both sides still actually own and can afford
+everything in the deal; if something has changed, the accept simply fails
+and the offer stays open, so the sender can still cancel it. Declining,
+cancelling, or letting an offer expire closes it and unlocks everything —
+nothing changes hands. Cash and food always net out exactly between the two
+players, so a trade never creates currency out of nothing.
+
+When a trade goes through, both players' park ratings are recalculated
+immediately, and any dinos received arrive unassigned — you'll need to place
+them in a paddock before they start earning. Anything you receive through a
+trade — dino or egg — always sells for 0 shards later, though it still sells
+for its full cash value.
+
+`/trade list` shows your pending trades, incoming and outgoing, 10 per page.
+
+## 13. Rating and leaderboards
+
+### How it's calculated
+
+Park rating is built from three weighted components, each capped at 1 (100%):
+
+| Component | Weight | What raises it |
+| --- | --- | --- |
+| Collection | 40% | The summed rarity value of the **distinct** species you own, out of the value of all 30 species combined. Owning duplicates of a species you already have adds nothing further. |
+| Park | 35% | The combined levels of all your lots plus the total number of decor pieces you've placed, out of a maximum of 40. |
+| Comfort | 25% | The average comfort of dinos that are currently assigned to a paddock and haven't escaped. Unassigned or escaped dinos are simply left out of the average — they don't drag it down, but they also don't help. |
+
+The three components combine into a score out of 500, which is what's
+displayed as stars to one decimal place — a rating of 340 shows as 3.4★.
+Since none of the three components can score above 1, a park's rating
+tops out at 5.0★.
+
+### When it actually updates
+
+Your rating is recalculated whenever you hatch, sell, assign or unassign a
+dino, decorate, build, upgrade a lot, feed, rescue, or complete a trade.
+
+**It is not recalculated by viewing your park, by collecting income, or
+simply by time passing** — even though the comfort component would
+technically change continuously as hunger drains. The number shown on your
+dashboard, on `/top`, and checked at the trade gate stays exactly where it
+was after your last rating-changing action until you do one of the things
+above again. Battle results don't feed rating directly either — winning
+fights and earning stars never touches it. The one indirect link is a boss's
+trophy egg: hatching it can add a new species to your collection and raise
+that component.
+
+### Best-ever vs. current rating
+
+Alongside your current rating, the game separately tracks the highest rating
+you've ever reached, and that number never falls even if your current rating
+later drops. Almost every gate in the game — lot slots, expedition site
+unlocks, the shop's rarity ceiling, Mythic purchases, and the battle
+campaign's chapter gates — checks your **best-ever** rating. Trading is the
+lone exception: its 2.0★ minimum checks your **current** rating, so it's the
+one gate you can actually lose access to if your rating falls.
+
+### `/top`
+
+`/top` ranks players by one of three metrics — rating, cash, or collection —
+scoped to either your server or globally. Left unset, it defaults to your
+server when run inside a server and to global when run in a DM. It always
+shows the top 10 with no further pages; if you're not in that top 10, a
+footer line shows your own rank and value instead. Server scope only ranks
+players who have used the bot in that server; global scope ranks every
+registered player anywhere. There's no tiebreak rule for players with equal
+values — their relative order isn't defined.
+
+## 14. Notifications
+
+The bot can proactively notify you about three things: an egg finishing
+incubation, an expedition returning, and trade activity. There are no
+hunger or escape notifications of any kind — those are only ever surfaced
+when you next run a command yourself.
+
+- **Egg ready** — fires once the egg you're incubating finishes, naming its
+  rarity and pointing you at `/hatch`.
+- **Expedition returned** — fires once your expedition's timer is up,
+  naming the site and pointing you at `/expedition claim`.
+- **Trade activity** — fires immediately rather than on a timer: the
+  recipient is notified the moment an offer is sent to them, and the
+  sender is notified when it's accepted or declined. Cancelling a trade you
+  sent notifies no one.
+
+Either of the timer-based notifications is simply skipped if you've already
+handled it yourself (already hatched the egg, or already claimed the
+expedition) by the time it would have fired.
+
+### Where it goes
+
+Notifications go to a server's configured notification channel first, with
+a ping, if one is set; otherwise they arrive as a DM with no ping. If the
+channel can't be posted to for any reason, the bot silently falls back to a
+DM, and if that also fails, the notification is simply dropped. The channel
+used is always the one configured in the server where you started the
+timer — not wherever you happen to be when it eventually fires — and if you
+started the incubation or expedition inside a DM, the notification arrives
+by DM regardless. Trade notifications follow the same channel-then-DM rule.
+
+Notifications are checked roughly every 30 seconds, so one can land up to
+about half a minute after it technically came due. If the bot was offline
+when something became due, it still notifies you once it's back — late,
+never dropped.
+
+### `/settings channel`
+
+Server admins with the Manage Server permission can run `/settings channel`
+to set where hatch and expedition notifications post in that server —
+it only accepts a normal text channel, and only works when run inside a
+server. Running it again simply replaces the previous channel; there's no
+way to clear or unset it once set. There's no per-player notification
+preference anywhere in the game — no DM opt-out, no per-type toggle — the
+only thing stored is one channel per server.
