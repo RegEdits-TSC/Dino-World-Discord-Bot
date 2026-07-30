@@ -40,6 +40,27 @@
 - Embed art ships from `assets/images/` via `assetImage` (`src/core/images.ts`);
   a missing file means the embed renders without the image — absent art is
   never an error. Generation prompts live in `docs/assets/prompts.md`.
+  **Always wire art with `attach(embed, payload, slot, assetImage(...))`** — it
+  sets the embed slot and appends the file together, so the two can never drift
+  apart (that drift shipped three attachment defects in round 2). A null ref is
+  a total no-op: `payload.files` is not even created, so an art-free payload
+  never ships an empty attachment array — `tests/hatchery.test.ts` and
+  `tests/notify-handlers.test.ts` both assert `files` is `undefined`, not `[]`.
+  `attach` APPENDS, so two calls on one payload both survive and **call order is
+  upload order**: several tests pin `files.map((f) => f.name)` with `toEqual`,
+  and three mock `assetImage` as a `mockImplementationOnce` queue keyed on
+  1st-call/2nd-call identity, so never reorder the calls, never hoist the
+  lookups above them, and never collect refs into an array first. A ternary that
+  guards on *domain data* (`best ? assetImage(...) : null` in shop,
+  `featured ? … : null` in hatchery) stays outside `attach` — it is not an
+  asset miss. `tests/images.test.ts`'s "no source file hand-assigns an embed
+  payload files array" guard bans the old `payload.files = [...]` idiom outright.
+  The only exceptions are the three refs at the top of `fightFrames`
+  (`src/modules/battles/embeds.ts`), which dress one ref onto several embeds and
+  split the files across two payloads via the F1/F4 contract — do not convert
+  them. Separately, `withParkImage` (`src/modules/park/embeds.ts`) *assigns*
+  `files`, so it drops anything `attach` added to the payload it wraps; only
+  `/help topic:park` pipes a payload through it, and that topic has no art.
 - Passive notifications carry a `NotifyPayload` (`src/core/notify.ts`):
   `string | { content?, embeds?, files? }`. `Ctx.notify`'s third argument stays
   `message: string` on purpose — a string is a valid payload, so every call site
