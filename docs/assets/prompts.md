@@ -85,6 +85,28 @@ center on the **egg's own axis** (top ~45% of the silhouette), not the whole
 bbox, so asymmetric nest dressing doesn't push the egg off-center. Verify: all
 border pixels transparent, exactly one connected region.
 
+**This 5-step pass is a one-off, NOT `scripts/fit-art.mjs`.** The committed
+script's `cutout` mode implements a subset — alpha threshold, the 3-pass
+luminance peel of step (2), then a whole-bbox fit at 0.94 (a 31px margin) — with
+no largest-region step, no border flood, no 2px shave, and no egg-axis bias.
+That is deliberate, and the two are not interchangeable:
+
+| | margin on tight axis | centering | regions kept |
+|---|---|---|---|
+| `assets/images/eggs/` (this one-off pass) | 24px | egg axis — L/R margins are asymmetric on purpose (e.g. `common.png` L74/R53) | 1 |
+| `assets/images/battles/` (same pass, whole-bbox variant) | 24px | whole bbox | 1 |
+| `assets/images/hatch/` (`fit-art.mjs cutout`) | 31px | whole bbox | all (see Hatch cracks) |
+
+Consequences when reusing either pass on a new or regenerated asset:
+
+- Running `fit-art.mjs cutout` on a regenerated **egg** or **boss portrait**
+  yields a slightly smaller, whole-bbox-centred subject than the committed set —
+  visible side by side in an embed thumbnail row. Either accept the shift for the
+  whole family or redo the one-off pass; do not mix the two within one family.
+- Steps (1) and the "exactly one connected region" verification assume a single
+  silhouette. They must **not** be applied to the hatch cracks, whose falling
+  shell fragments are legitimately disconnected — see the Hatch cracks section.
+
 **Common (reference egg):**
 
 > A single large cartoon dinosaur egg standing upright, sitting in a low woven
@@ -471,10 +493,11 @@ framing filling the square with a small even margin. Generate the other three
 as image-edits of the approved coastal portrait (Nano Banana Pro, `medias`
 role `image`) so pose, framing, and rendering read as a set — all three edit
 from the coastal portrait directly, never from each other. Post-process each
-with `remove_background` plus the defringe + fit pass described in the Egg
-rarities section, with one difference: portraits fit and center on the **whole
-silhouette bbox** (there is no egg axis to bias toward), 24px margin on a
-1024×1024 transparent canvas.
+with `remove_background` plus the one-off defringe + fit pass described in the Egg
+rarities section (not `scripts/fit-art.mjs`, which fits to 31px), with one
+difference: portraits fit and center on the **whole silhouette bbox** (there is
+no egg axis to bias toward), 24px margin on a 1024×1024 transparent canvas — the
+margin the four committed portraits measure at.
 
 **boss-coastal_dig — Old Riptooth (reference portrait):**
 
@@ -696,7 +719,23 @@ allowed only ON surfaces. Every prompt carries this rule verbatim.
 `assets/images/eggs/<rarity>.png` attached as the `image` reference (Nano Banana
 Pro, `medias` role `image`) — never from another crack — so the shell design and
 nest match the egg the player was just shown. Post-process each with
-`remove_background`, then `node scripts/fit-art.mjs cutout <src> <dest>`.
+`remove_background`, then `node scripts/fit-art.mjs cutout <src> <dest>` — whole
+bbox, 31px margin (see the table in Egg rarities; the eggs themselves sit at
+24px, so a crack is very slightly smaller than the egg it follows).
+
+**Multiple disconnected regions are intentional here — never reduce a crack to
+one region.** The prompt asks for shell fragments falling away from the egg, and
+a fragment that has cleared the nest silhouette is its own opaque island. Five of
+the six committed cracks have 3–6 regions (`uncommon` 6, `legendary` and `rare` 5,
+`epic` 4, `common` 3; only `mythic` happens to land at 1). Step (1) of the Egg
+rarities pass — "keep only the largest connected region" — and its "exactly one
+connected region" verification are therefore **not** part of this family's
+post-processing: applying either would silently delete the fragments and leave a
+plain open egg, and `fit-art.mjs cutout` correctly keeps every region. No test
+catches that loss (`tests/images.test.ts` checks size and corner transparency
+only), so it is a review-by-eye property: after regenerating, confirm the falling
+fragments survived. What still applies from that pass is the *defringe* half —
+the light studio rim must be peeled, and all border pixels must end transparent.
 
 **Prompt (identical for all six; only the attached reference changes):**
 

@@ -101,4 +101,48 @@ describe('hatch crack art', () => {
       expect(px[(y * img.width + x) * 4 + 3], `corner ${x},${y}`).toBe(0);
     }
   });
+
+  // The cracks are the one cutout family that MUST keep several disconnected
+  // alpha regions: the prompt asks for shell fragments falling away, and a
+  // fragment clear of the nest is its own opaque island. prompts.md's egg pass
+  // opens with "keep only the largest connected region" and verifies "exactly
+  // one connected region" — applying either step here silently deletes the
+  // fragments and leaves a plain open egg, which every size/corner check above
+  // still passes. This is the gate for that: a blanket single-region pass over
+  // the set takes the count below to 0. Individual cracks may legitimately land
+  // at one region (`mythic` does), so the assertion is on the set, not per file.
+  it('keeps the falling shell fragments — the set is not reduced to one region each', async () => {
+    const counts: Record<string, number> = {};
+    for (const rarity of RARITIES) {
+      const img = new Image();
+      img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${rarity}-crack.png`));
+      await img.decode();
+      const canvas = createCanvas(img.width, img.height);
+      const c2d = canvas.getContext('2d');
+      c2d.drawImage(img, 0, 0);
+      const px = c2d.getImageData(0, 0, img.width, img.height).data;
+      const w = img.width, total = w * img.height;
+      const seen = new Uint8Array(total);
+      const stack = new Int32Array(total);
+      let regions = 0;
+      for (let start = 0; start < total; start++) {
+        if (seen[start] || px[start * 4 + 3] === 0) continue;
+        regions++;
+        let top = 0;
+        stack[top++] = start;
+        seen[start] = 1;
+        while (top > 0) {
+          const p = stack[--top];
+          const x = p % w;
+          if (x > 0 && !seen[p - 1] && px[(p - 1) * 4 + 3] !== 0) { seen[p - 1] = 1; stack[top++] = p - 1; }
+          if (x < w - 1 && !seen[p + 1] && px[(p + 1) * 4 + 3] !== 0) { seen[p + 1] = 1; stack[top++] = p + 1; }
+          if (p >= w && !seen[p - w] && px[(p - w) * 4 + 3] !== 0) { seen[p - w] = 1; stack[top++] = p - w; }
+          if (p + w < total && !seen[p + w] && px[(p + w) * 4 + 3] !== 0) { seen[p + w] = 1; stack[top++] = p + w; }
+        }
+      }
+      counts[rarity] = regions;
+    }
+    const multiRegion = RARITIES.filter((r) => counts[r] > 1);
+    expect(multiRegion.length, `region counts: ${JSON.stringify(counts)}`).toBeGreaterThan(0);
+  });
 });

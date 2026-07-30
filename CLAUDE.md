@@ -178,9 +178,15 @@
   presented message must go through the same queue.
   Embed art kinds are `eggs | sites | banners | battles | hatch` (`assetImage`,
   `src/core/images.ts`); `hatch/<rarity>-crack.png` is the hatch-reveal image and
-  its attachment name never collides with `eggs/<rarity>.png`. Generated art is
-  fitted by `node scripts/fit-art.mjs banner|cutout <src> <dest>` — banners are
-  1536×1024 (asserted in `tests/images.test.ts`), transparent cutouts 1024×1024.
+  its attachment name never collides with `eggs/<rarity>.png`. Banners are
+  1536×1024 (asserted in `tests/images.test.ts`) and transparent cutouts
+  1024×1024; `node scripts/fit-art.mjs banner|cutout <src> <dest>` produces the
+  banners and the hatch cracks, but NOT the eggs or the boss portraits — those
+  came from a one-off pass with a tighter 24px margin (vs the script's 31px) and,
+  for the eggs, an egg-axis bias. `docs/assets/prompts.md` carries the numbers and
+  the two families' divergence; the cracks additionally keep multiple
+  disconnected alpha regions on purpose (falling shell fragments), so the egg
+  pass's "largest connected region" step must never be applied to them.
   `assets/images/battles/` ships committed boss portraits
   (`boss-<siteId>-portrait.png`, 1024×1024 transparent cutouts pinned by
   `tests/images.test.ts`); `assetImage`'s null-degrade still holds, so the

@@ -1,6 +1,13 @@
 // Post-processing for generated art (see docs/assets/prompts.md).
 //   node scripts/fit-art.mjs banner <src> <dest>   -> 1536x1024, cover-scaled, center-cropped
 //   node scripts/fit-art.mjs cutout <src> <dest>   -> 1024x1024 transparent, defringed and centered
+//
+// `cutout` is the processor for the hatch cracks and for any future cutout family.
+// It is NOT the pass that produced assets/images/eggs/ or assets/images/battles/:
+// those predate this script and were fitted by a one-off with a tighter margin and
+// (for the eggs) an egg-axis bias. It also deliberately keeps every opaque region,
+// not just the largest — the cracks' falling shell fragments are disconnected on
+// purpose. prompts.md records the divergence and the numbers.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createCanvas, Image } from '@napi-rs/canvas';
 
@@ -65,8 +72,13 @@ for (let y = 0; y < h; y++) {
   }
 }
 if (x1 < 0) { console.error('cutout: image is fully transparent'); process.exit(1); }
+// 0.94 of 1024 = 962px on the tight axis, i.e. a 31px margin — what the six
+// committed hatch cracks were fitted at. The eggs and boss portraits sit at 24px
+// (0.953); do not "unify" this number without re-fitting the cracks, which would
+// mean regenerating committed art. Centering is on the whole opaque bbox.
+const FIT = 0.94;
 const S = 1024, bw = x1 - x0 + 1, bh = y1 - y0 + 1;
-const scale = Math.min((S * 0.94) / bw, (S * 0.94) / bh);
+const scale = Math.min((S * FIT) / bw, (S * FIT) / bh);
 const out = createCanvas(S, S);
 out.getContext('2d').drawImage(work, x0, y0, bw, bh,
   (S - bw * scale) / 2, (S - bh * scale) / 2, bw * scale, bh * scale);
