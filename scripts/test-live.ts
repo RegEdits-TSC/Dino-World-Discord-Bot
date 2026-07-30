@@ -191,6 +191,12 @@ function toPost(payload: unknown): { body: Record<string, unknown>; files: RawFi
     files.push({ data: Buffer.isBuffer(f.attachment) ? f.attachment : readFileSync(f.attachment), name: f.name });
   }
   delete p.files;
+  // `attachments` is an EDIT-only field: on a channel POST Discord either rejects
+  // it or treats the empty array as "keep nothing", silently dropping the upload
+  // we just read above. Payloads that carry BOTH files and an explicit
+  // attachments: [] (revealPayload, battle F4) are exactly the gallery cases that
+  // exist to review the hatch cracks and the outcome banners/boss portraits.
+  delete p.attachments;
   p.embeds = ((p.embeds as Array<{ toJSON?: () => unknown }> | undefined) ?? []).map((e) => e.toJSON ? e.toJSON() : e);
   p.components = ((p.components as Array<{ toJSON?: () => unknown }> | undefined) ?? []).map((c) => c.toJSON ? c.toJSON() : c);
   return { body: p, files };
