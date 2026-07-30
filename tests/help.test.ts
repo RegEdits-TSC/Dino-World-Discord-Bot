@@ -33,6 +33,7 @@ describe('/help', () => {
     expect(t.body).toMatch(/escaped/i);
   });
   it('every topic that declares art ships the image and its file together', async () => {
+    const covered: string[] = [];
     for (const [topic, t] of Object.entries(HELP_TOPICS)) {
       if (!t.art) continue;
       const i = fakeCommand({ name: 'help', user: 'u1', options: { topic } });
@@ -43,7 +44,14 @@ describe('/help', () => {
       };
       expect(payload.embeds[0].toJSON().image?.url, topic).toBe(`attachment://${t.art.name}.png`);
       expect(payload.files!.map((f) => f.name), topic).toContain(`${t.art.name}.png`);
+      covered.push(topic);
     }
+    // Hard-coded list, deliberately NOT derived from HELP_TOPICS: the loop above
+    // skips art-less topics, so a count computed from the same map it walks would
+    // fall to 0 alongside it and this test would pass with zero assertions run.
+    // Naming every topic also fails a PARTIAL regression (art dropped from one).
+    expect([...covered].sort()).toEqual(
+      ['battles', 'care', 'eggs', 'expeditions', 'getting-started', 'ranks', 'shop', 'trading']);
   });
   it('the park topic defers and still renders one embed when the map render fails', async () => {
     // 'no-park' has no user row, so buildParkSnapshot throws inside the try —
