@@ -335,7 +335,17 @@ Diet decides which paddock the dino can live in without halved comfort. Archetyp
 | Indominus rex | Mythic | carnivore | bruiser | volcanic | `indominus.ts:3-4` |
 | Indoraptor | Mythic | carnivore | swift | volcanic | `indoraptor.ts:3-4` |
 
-Diet split: 17 herbivore, 13 carnivore. Biome-tag tally: forest 10, plains 11, swamp 4, volcanic 3, coast 2, **tundra 0** (inferred arithmetic from the table above).
+Diet split: **16 herbivore, 14 carnivore** — recounted directly from the species
+definitions, not from the table above. Biome-tag tally: forest 10, plains 11,
+swamp 4, volcanic 3, coast 2, **tundra 0** (inferred arithmetic from the table
+above; not independently recounted, so treat with the same caution).
+
+> An earlier revision of this line said "17 herbivore, 13 carnivore." That was an
+> arithmetic slip in this document's own summary — the per-species rows above were
+> always right. The corrected split is confirmed by counting the `diet` field
+> across all 30 species definitions. The lesson generalises: summary lines in this
+> document are derived, while the cited per-item rows are extracted. When the two
+> disagree, the rows win.
 
 ---
 
