@@ -1,0 +1,56 @@
+name: Bug report
+description: Something in the bot behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Please do not include your
+        bot token or any other secret in this issue.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did the bot do, and what did you expect it to do instead?
+      placeholder: I ran /hatch on a ready egg and the reply said the egg was still incubating.
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      description: The exact slash command and options you used.
+      placeholder: /battle fight stage:1-3 dino1:12
+    validations:
+      required: true
+
+  - type: dropdown
+    id: role
+    attributes:
+      label: Are you self-hosting?
+      options:
+        - I am self-hosting this bot
+        - I am playing on someone else's instance
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Commit
+      description: If self-hosting, the commit SHA you are running (`git rev-parse --short HEAD`).
+      placeholder: a2a6276
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Paste any error output. This is rendered as code, so no backticks are needed.
+      render: shell
+    validations:
+      required: false
