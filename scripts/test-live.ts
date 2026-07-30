@@ -15,6 +15,7 @@ import { assignDino } from '../src/modules/park/dinos.js';
 import { incubateEgg } from '../src/modules/hatchery/service.js';
 import { startExpedition } from '../src/modules/expeditions/service.js';
 import { createTrade } from '../src/modules/trading/service.js';
+import { ENERGY_CAP } from '../src/data/battle/constants.js';
 import { makeCtx, fakeCommand, fakeButton, type FakeInteraction } from '../tests/harness.js';
 import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
 import type { Ctx } from '../src/core/context.js';
@@ -171,7 +172,17 @@ const cases: Case[] = [
   { title: '/top — leaderboard', run: () => slash('leaderboards', 'top', { name: 'top', user: P1, guild: devGuildId, options: { metric: 'rating' } }) },
   { title: '/admin inspect — (ephemeral in production)', run: () => slash('admin', 'admin', { name: 'admin', sub: 'inspect', user: 'owner', options: { user: P1 } }) },
   { title: '/battle chapters — campaign overview', run: () => slash('battles', 'battle', { name: 'battle', sub: 'chapters', user: P1 }) },
-  { title: '/battle fight — all 4 cinematic frames (coastal_dig_1 win)', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_1', dino1: b1.id, dino2: b2.id } }) },
+  { title: '/battle fight — coastal_dig_1 win: swift-carnivore archetype thumb on all 4 frames', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_1', dino1: b1.id, dino2: b2.id } }) },
+  { title: '/battle fight — coastal_dig_3: a DIFFERENT archetype thumb (support-herbivore)', run: () => {
+      // Five fights cost 11 energy against a cap of 10, and the DEFEAT case at the
+      // bottom needs 3 of them — top up in place, same precedent as /trade offer's
+      // parkRating restore. coastal_dig_3 is already 3-starred by the seed, so this
+      // is a repeat clear (no first-clear egg) and its roster leads with
+      // microceratus -> support-herbivore.
+      ctx.db.update(schema.users).set({ energy: ENERGY_CAP, energyUpdatedAt: ctx.now() })
+        .where(eq(schema.users.discordId, P1)).run();
+      return slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_3', dino1: b1.id, dino2: b2.id } });
+    } },
   { title: '/battle fight — boss FIRST clear: portrait thumb + egg line on F4', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } }) },
   { title: '/battle fight — amber_ridge boss: second portrait (edit off the coastal reference)', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'amber_ridge_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } }) },
   { title: 'park:collect — income embed (ephemeral in production)', run: () => button('park', 'park:collect', P1) },
