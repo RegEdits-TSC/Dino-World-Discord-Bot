@@ -33,8 +33,9 @@ export const EMPTY_ART: ParkArt = {
 };
 
 // SVG only. @napi-rs/canvas decodes SVG buffers synchronously, so there is nothing to await — which
-// is what lets the synchronous renderer draw these. A PNG through this path would silently draw a
-// blank rectangle with no error (see CLAUDE.md); use the internal PNG loader in loadParkArt for rasters.
+// is what lets the synchronous renderer draw these. A raster (PNG or WebP) through this path would
+// silently draw a blank rectangle with no error (see CLAUDE.md); use the internal raster loader in
+// loadParkArt for those.
 export function loadSvgImage(absPath: string): Image | null {
   try {
     const img = new Image();
@@ -43,7 +44,9 @@ export function loadSvgImage(absPath: string): Image | null {
   } catch { return null; }
 }
 
-async function loadPngImage(absPath: string): Promise<Image | null> {
+// WebP decodes asynchronously exactly like PNG — verified: setting `src` and drawing in the same
+// tick yields an all-zero canvas. The await below is load-bearing, not ceremony.
+async function loadRasterImage(absPath: string): Promise<Image | null> {
   try {
     const img = new Image();
     img.src = readFileSync(absPath);
@@ -56,11 +59,11 @@ async function loadPngImage(absPath: string): Promise<Image | null> {
 // whole call is the worker's top-level await — a rejection there permanently costs /park view its
 // image (client.ts terminates and nulls the worker, then respawns another doomed one).
 export async function loadParkArt(): Promise<ParkArt> {
-  const png = (name: string) => loadPngImage(resolve(process.cwd(), 'assets/images/park', name));
+  const raster = (name: string) => loadRasterImage(resolve(process.cwd(), 'assets/images/park', name));
   const svg = (name: string) => loadSvgImage(resolve(process.cwd(), 'assets/emojis/svg', `${name}.svg`));
 
   const [ground, platePaddock, plateFacility] = await Promise.all([
-    png('ground.png'), png('plate-paddock.png'), png('plate-facility.png'),
+    raster('ground.webp'), raster('plate-paddock.webp'), raster('plate-facility.webp'),
   ]);
 
   const lotIcons: Record<string, Image | null> = {};

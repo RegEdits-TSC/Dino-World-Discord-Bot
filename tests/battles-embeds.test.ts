@@ -29,7 +29,7 @@ vi.mock('../src/core/images.js', async (importOriginal) => {
       if (kind === 'sites' && !art.sites) return null;
       if (kind !== 'battles') return actual.assetImage(kind, name);   // chapter banners/thumbs stay real
       if (!art.portraits) return null;
-      const fileName = `${name}.png`;
+      const fileName = `${name}.webp`;
       return { file: new AttachmentBuilder(Buffer.from('portrait'), { name: fileName }), url: `attachment://${fileName}` };
     }),
   };
@@ -75,10 +75,10 @@ describe('fightFrames', () => {
     expect(frames[0].files?.length).toBeGreaterThan(0);   // coastal_dig banner ships
     expect(frames[1].files).toBeUndefined();
     expect(frames[2].files).toBeUndefined();
-    expect(frames[3].files?.map((f) => f.name)).toEqual(['battle_victory.png']);
+    expect(frames[3].files?.map((f) => f.name)).toEqual(['battle_victory.webp']);
     expect(frames[0].attachments).toEqual([]);   // F1 and F4 both replace the whole set
     expect(frames[3].attachments).toEqual([]);
-    expect(frames[3].embeds[0].toJSON().image?.url).toBe('attachment://battle_victory.png');
+    expect(frames[3].embeds[0].toJSON().image?.url).toBe('attachment://battle_victory.webp');
   });
   it('F2/F3 come straight from the result beats', () => {
     const frames = fightFrames(makeOutcome(), skipStub);
@@ -108,10 +108,10 @@ describe('fightFrames', () => {
   });
   it('boss stages thumbnail the portrait on F3 and F4; normal stages never do', () => {
     const boss = fightFrames(makeOutcome({ stageId: 'coastal_dig_boss', bossEgg: { rarity: 'rare' } }), skipStub);
-    expect(boss[2].embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${bossId}-portrait.png`);
-    expect(boss[3].embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${bossId}-portrait.png`);
-    expect(boss[0].files?.map((f) => f.name)).toContain(`${bossId}-portrait.png`);
-    expect(boss[3].files?.map((f) => f.name)).toContain(`${bossId}-portrait.png`);   // re-uploaded, not re-referenced
+    expect(boss[2].embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${bossId}-portrait.webp`);
+    expect(boss[3].embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${bossId}-portrait.webp`);
+    expect(boss[0].files?.map((f) => f.name)).toContain(`${bossId}-portrait.webp`);
+    expect(boss[3].files?.map((f) => f.name)).toContain(`${bossId}-portrait.webp`);   // re-uploaded, not re-referenced
     expect(boss[1].files).toBeUndefined();
     expect(JSON.stringify(boss[3].embeds[0].toJSON().fields)).toContain('egg');
     // The rendered enemy line, not just the thumbnail/files wiring, names the boss.
@@ -132,8 +132,8 @@ describe('fightFrames', () => {
       expect(frames).toHaveLength(4);
       for (const f of frames) validateMessagePayload(f, 'frame-no-portrait');
       for (const f of frames) expect(f.embeds[0].toJSON().thumbnail).toBeUndefined();
-      expect(frames[0].files?.map((f) => f.name)).not.toContain(`${noPortraitBossId}-portrait.png`);
-      expect(frames[0].files?.map((f) => f.name)).toContain('amber_ridge-banner.png');   // chapter banner still ships
+      expect(frames[0].files?.map((f) => f.name)).not.toContain(`${noPortraitBossId}-portrait.webp`);
+      expect(frames[0].files?.map((f) => f.name)).toContain('amber_ridge-banner.webp');   // chapter banner still ships
     } finally {
       art.portraits = true;
     }
@@ -154,7 +154,7 @@ describe('fightFrames', () => {
     // lands on the message fight 1's F4 last wrote — and F4 replaces the whole
     // attachment set with the outcome banner. On a deploy with no chapter art F1
     // carries no files; if it also carried no `attachments` key, Discord would keep
-    // fight 1's battle_victory.png alive under F1-F3, whose embeds reference
+    // fight 1's battle_victory.webp alive under F1-F3, whose embeds reference
     // nothing. F1's `attachments: []` must therefore be unconditional, not
     // `if (files.length)`.
     art.sites = false;
@@ -163,7 +163,7 @@ describe('fightFrames', () => {
       const replay = fightFrames(makeOutcome(), skipStub);
       expect(first[0].files).toBeUndefined();               // no chapter art in this deploy
       expect(first[0].attachments).toEqual([]);             // ...the set is replaced regardless
-      expect(liveAfter(first)).toEqual(['battle_victory.png']);
+      expect(liveAfter(first)).toEqual(['battle_victory.webp']);
       // The decisive step: nothing stale survives into the replay's F1-F3.
       expect(liveAfter([...first, replay[0]])).toEqual([]);
       expect(liveAfter([...first, ...replay.slice(0, 3)])).toEqual([]);
@@ -189,7 +189,7 @@ describe('fightFrames', () => {
       for (const n of own) expect(referenced, `frame ${idx + 1} uploads ${n}`).toContain(n);
     });
     // F4 dropped the chapter banner it no longer references.
-    expect(live).toEqual(['battle_victory.png', `${bossId}-portrait.png`]);
+    expect(live).toEqual(['battle_victory.webp', `${bossId}-portrait.webp`]);
   });
 });
 
@@ -218,14 +218,14 @@ describe('chaptersPayload', () => {
   it('carries the chapter banner AND thumb — both referenced, both uploaded', () => {
     // chapterId === siteId, so both site assets are legal here. This pins the
     // append: assigning payload.files twice would drop the banner file while the
-    // embed still points at attachment://coastal_dig-banner.png.
+    // embed still points at attachment://coastal_dig-banner.webp.
     const p = chaptersPayload('u1', 0, baseView());
     const embed = p.embeds[0].toJSON();
-    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.png');
-    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.png');
+    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.webp');
+    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.webp');
     const names = p.files!.map((f) => f.name);
-    expect(names).toContain('coastal_dig-banner.png');
-    expect(names).toContain('coastal_dig-thumb.png');
+    expect(names).toContain('coastal_dig-banner.webp');
+    expect(names).toContain('coastal_dig-thumb.webp');
     expect(names).toHaveLength(2);   // nothing uploaded that the embed does not reference
   });
   it('chaptersPayload still ships the thumb when the banner is missing', () => {
@@ -235,8 +235,8 @@ describe('chaptersPayload', () => {
     const p = chaptersPayload('u1', 0, baseView());
     const embed = p.embeds[0].toJSON();
     expect(embed.image).toBeUndefined();
-    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.png');
-    expect(p.files!.map((f) => f.name)).toEqual(['coastal_dig-thumb.png']);
+    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.webp');
+    expect(p.files!.map((f) => f.name)).toEqual(['coastal_dig-thumb.webp']);
   });
   it('chaptersPayload still ships the banner when the thumb is missing', async () => {
     // Degrade path 2/2: the mirror case — a miss on the thumb call must not
@@ -247,9 +247,9 @@ describe('chaptersPayload', () => {
       .mockImplementationOnce(() => null);                                 // thumb call (2nd) -> missing
     const p = chaptersPayload('u1', 0, baseView());
     const embed = p.embeds[0].toJSON();
-    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.png');
+    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.webp');
     expect(embed.thumbnail).toBeUndefined();
-    expect(p.files!.map((f) => f.name)).toEqual(['coastal_dig-banner.png']);
+    expect(p.files!.map((f) => f.name)).toEqual(['coastal_dig-banner.webp']);
   });
   it('locked chapter renders locked', () => {
     const embed = chaptersPayload('u1', 1, baseView()).embeds[0].toJSON();

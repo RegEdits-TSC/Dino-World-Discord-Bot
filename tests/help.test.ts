@@ -42,8 +42,8 @@ describe('/help', () => {
         embeds: Array<{ toJSON(): { image?: { url: string } } }>;
         files?: Array<{ name?: string | null }>;
       };
-      expect(payload.embeds[0].toJSON().image?.url, topic).toBe(`attachment://${t.art.name}.png`);
-      expect(payload.files!.map((f) => f.name), topic).toContain(`${t.art.name}.png`);
+      expect(payload.embeds[0].toJSON().image?.url, topic).toBe(`attachment://${t.art.name}.webp`);
+      expect(payload.files!.map((f) => f.name), topic).toContain(`${t.art.name}.webp`);
       covered.push(topic);
     }
     // Hard-coded list, deliberately NOT derived from HELP_TOPICS: the loop above

@@ -15,8 +15,8 @@ import { matches, respondRanked, emptyRow, dinoLabel, VERY_HUNGRY_MS } from '../
 import { emojiTag } from '../../core/emojis.js';
 import { assetImage, attach } from '../../core/images.js';
 
-// Care replies carry a banner: care_neglect.png when any of the player's non-escaped
-// dinos has gone unfed past the VERY HUNGRY threshold, care.png otherwise.
+// Care replies carry a banner: care_neglect.webp when any of the player's non-escaped
+// dinos has gone unfed past the VERY HUNGRY threshold, care.webp otherwise.
 function carePayload(ctx: Ctx, userId: string, description: string) {
   const embed = new EmbedBuilder().setTitle(`${emojiTag('dw_food')} Care`).setColor(0x3ba55c).setDescription(description);
   const now = ctx.now();

@@ -53,7 +53,7 @@ describe('/battle fight cinematic', () => {
     };
     expect(f4.attachments).toEqual([]);                // drops F1's chapter banner
     expect(f4.files).toHaveLength(1);
-    expect(f4.files![0].name).toMatch(/^battle_(victory|defeat)\.png$/);
+    expect(f4.files![0].name).toMatch(/^battle_(victory|defeat)\.webp$/);
     expect(f4.embeds[0].toJSON().image?.url).toBe(`attachment://${f4.files![0].name}`);
   });
   it('rejects ephemerally with no defer when energy is empty', async () => {
@@ -177,7 +177,7 @@ describe('battle buttons', () => {
     // beat frame's editReply is already in flight cannot stop that PATCH — the two
     // requests race. Losing that race is not cosmetic: F4 replaces the message's
     // whole attachment set, so a beat frame landing AFTER F4 restores an embed
-    // pointing at attachment://coastal_dig-banner.png that F4 already dropped —
+    // pointing at attachment://coastal_dig-banner.webp that F4 already dropped —
     // a permanently broken image on the final message. Every edit is therefore
     // serialized per presentation; this pins the resulting order.
     const ctx = makeCtx();

@@ -84,7 +84,7 @@ describe('hatchery module', () => {
 describe('hatchery visuals', () => {
   it('preHatchPayload sets the hero egg image and attaches the file', () => {
     const p = preHatchPayload('rare', 7);
-    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare.png');
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare.webp');
     expect(p.files).toHaveLength(1);
     expect(p.components).toHaveLength(1); // crack button preserved
   });
@@ -98,8 +98,8 @@ describe('hatchery visuals', () => {
     // the array we pass, so the pre-hatch egg upload is dropped and only the crack
     // survives on the edited message.
     const p = revealPayload(getSpecies('velociraptor'));   // rare
-    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare-crack.png');
-    expect(p.files.map((f) => f.name)).toEqual(['rare-crack.png']);
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare-crack.webp');
+    expect(p.files.map((f) => f.name)).toEqual(['rare-crack.webp']);
     expect(p.attachments).toEqual([]);
   });
   it('reveal embed points at /dino assign', () => {
@@ -111,9 +111,9 @@ describe('hatchery visuals', () => {
     const incubating = { ...addEgg('rare'), hatchesAt: 999_999, incubationStartedAt: 1 };
     const newest = addEgg('common');
     const p = eggListPayload([newest, incubating, ready], 10, 'u1');
-    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://epic.png');
-    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://eggs_incubator.png');
-    expect(p.files!.map((f) => f.name)).toEqual(['epic.png', 'eggs_incubator.png']);
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://epic.webp');
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://eggs_incubator.webp');
+    expect(p.files!.map((f) => f.name)).toEqual(['epic.webp', 'eggs_incubator.webp']);
   });
   it('eggListPayload still ships the incubator banner when the featured thumb is missing', () => {
     // Degrade path 1/2: the two assetImage lookups are independent `if` blocks —
@@ -123,8 +123,8 @@ describe('hatchery visuals', () => {
     const p = eggListPayload([ready], 10, 'u1');
     const embed = p.embeds[0].toJSON();
     expect(embed.thumbnail).toBeUndefined();
-    expect(embed.image?.url).toBe('attachment://eggs_incubator.png');
-    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator.png']);
+    expect(embed.image?.url).toBe('attachment://eggs_incubator.webp');
+    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator.webp']);
   });
   it('eggListPayload still ships the featured thumb when the incubator banner is missing', async () => {
     // Degrade path 2/2: the mirror case — a miss on the banner call must not
@@ -136,20 +136,20 @@ describe('hatchery visuals', () => {
     const ready = { ...addEgg('epic'), hatchesAt: 5, incubationStartedAt: 1 };
     const p = eggListPayload([ready], 10, 'u1');
     const embed = p.embeds[0].toJSON();
-    expect(embed.thumbnail?.url).toBe('attachment://epic.png');
+    expect(embed.thumbnail?.url).toBe('attachment://epic.webp');
     expect(embed.image).toBeUndefined();
-    expect(p.files!.map((f) => f.name)).toEqual(['epic.png']);
+    expect(p.files!.map((f) => f.name)).toEqual(['epic.webp']);
   });
   it('eggListPayload falls back to newest-obtained when nothing is incubating', () => {
     const older = { ...addEgg('common'), obtainedAt: 1 };
     const newer = { ...addEgg('legendary'), obtainedAt: 2 };
     const p = eggListPayload([older, newer], 10, 'u1');
-    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://legendary.png');
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://legendary.webp');
   });
   it('eggListPayload with no eggs has no thumbnail but still banners the incubator', () => {
     const p = eggListPayload([], 10, 'u1');
     expect(p.embeds[0].toJSON().thumbnail).toBeUndefined();
-    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator.png']);
+    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator.webp']);
   });
 });
 
@@ -221,8 +221,8 @@ describe('/incubate execute', () => {
     expect(embed.title).toContain('Incubating your common egg');
     expect(embed.description).toContain('<t:');   // relative ready stamp survives the promotion
     // Attach-all-or-nothing: a thumbnail URL with no matching file renders broken.
-    expect(embed.thumbnail?.url).toBe('attachment://common.png');
-    expect(payload.files!.map((f) => f.name)).toContain('common.png');
+    expect(embed.thumbnail?.url).toBe('attachment://common.webp');
+    expect(payload.files!.map((f) => f.name)).toContain('common.webp');
     const timer = ctx.db.select().from(schema.timers).all().find((t) => t.kind === 'egg_hatch');
     expect(timer?.refId).toBe(egg.id);
   });

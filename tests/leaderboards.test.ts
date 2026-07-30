@@ -62,13 +62,13 @@ describe('/top command', () => {
 
 describe('leaderboards visuals', () => {
   it('/top attaches the leaderboards banner image and file together', async () => {
-    // assets/images/banners/leaderboards.png ships in the repo, so this exercises
+    // assets/images/banners/leaderboards.webp ships in the repo, so this exercises
     // the real attached path — asserting the URL without the file (or vice versa)
     // is exactly the broken-image bug this test guards against.
     const i = fakeCommand({ name: 'top', user: 'a', options: { metric: 'cash', scope: 'global' } });
     await leaderboardsModule.commands[0].execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { image?: { url: string } } }>; files?: unknown[] };
-    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://leaderboards.png');
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://leaderboards.webp');
     expect(payload.files).toHaveLength(1);
   });
 });

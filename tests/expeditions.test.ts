@@ -89,11 +89,11 @@ describe('expedition visuals', () => {
     };
     const embed = payload.embeds[0].toJSON();
     expect(embed.title).toBe('🧭 🐚 Coastal Dig — returned!');
-    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.png');
-    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.png');
+    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.webp');
+    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.webp');
     const names = payload.files!.map((f) => f.name);
-    expect(names).toContain('coastal_dig-banner.png');
-    expect(names).toContain('coastal_dig-thumb.png');
+    expect(names).toContain('coastal_dig-banner.webp');
+    expect(names).toContain('coastal_dig-thumb.webp');
   });
   it('/expedition claim still attaches the thumb when the banner is missing', async () => {
     // Degrade path 1/2: the two assetImage lookups are independent `if`
@@ -112,8 +112,8 @@ describe('expedition visuals', () => {
     const embed = payload.embeds[0].toJSON();
     expect(embed.title).toBe('🧭 🐚 Coastal Dig — returned!');
     expect(embed.image).toBeUndefined();
-    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.png');
-    expect(payload.files!.map((f) => f.name)).toEqual(['coastal_dig-thumb.png']);
+    expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.webp');
+    expect(payload.files!.map((f) => f.name)).toEqual(['coastal_dig-thumb.webp']);
   });
   it('/expedition claim still attaches the banner when the thumb is missing', async () => {
     // Degrade path 2/2: the mirror case — a miss on the thumb call must not
@@ -134,9 +134,9 @@ describe('expedition visuals', () => {
     };
     const embed = payload.embeds[0].toJSON();
     expect(embed.title).toBe('🧭 🐚 Coastal Dig — returned!');
-    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.png');
+    expect(embed.image?.url).toBe('attachment://coastal_dig-banner.webp');
     expect(embed.thumbnail).toBeUndefined();
-    expect(payload.files!.map((f) => f.name)).toEqual(['coastal_dig-banner.png']);
+    expect(payload.files!.map((f) => f.name)).toEqual(['coastal_dig-banner.webp']);
   });
   it('/expedition status with none active is an ephemeral hint', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');

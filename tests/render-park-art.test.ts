@@ -58,8 +58,8 @@ describe('park render with the committed art', () => {
   // half-broken draw (art loaded, but never actually blitted) can also satisfy by accident.
   it('paints the real ground, plate, lot-icon and dino-chip art onto the canvas at the exact spots draw.ts targets', async () => {
     const art = await loadParkArt();
-    expect(art.ground, 'assets/images/park/ground.png missing or undecodable').not.toBeNull();
-    expect(art.platePaddock, 'assets/images/park/plate-paddock.png missing or undecodable').not.toBeNull();
+    expect(art.ground, 'assets/images/park/ground.webp missing or undecodable').not.toBeNull();
+    expect(art.platePaddock, 'assets/images/park/plate-paddock.webp missing or undecodable').not.toBeNull();
     expect(art.lotIcons.carnivore_paddock, 'assets/emojis/svg/dw_lot_carnivore.svg missing or undecodable').not.toBeNull();
     expect(art.dinoChips.legendary, 'assets/emojis/svg/dw_dino_legendary.svg missing or undecodable').not.toBeNull();
 

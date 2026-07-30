@@ -13,8 +13,8 @@ describe('assetImage', () => {
   it('returns an attachment ref for a present file', () => {
     const img = assetImage('eggs', 'common');
     expect(img).not.toBeNull();
-    expect(img!.url).toBe('attachment://common.png');
-    expect(img!.file.name).toBe('common.png');
+    expect(img!.url).toBe('attachment://common.webp');
+    expect(img!.file.name).toBe('common.webp');
   });
   it('returns null for a missing file', () => {
     expect(assetImage('eggs', 'no-such-rarity')).toBeNull();
@@ -31,7 +31,7 @@ describe('assetImage', () => {
     for (const name of BANNERS) {
       const img = assetImage('banners', name);
       expect(img, name).not.toBeNull();
-      expect(img!.url).toBe(`attachment://${name}.png`);
+      expect(img!.url).toBe(`attachment://${name}.webp`);
     }
   });
   it('accepts the battles kind and null-degrades when absent', () => {
@@ -59,33 +59,33 @@ describe('attach', () => {
   it('sets the image slot and attaches its file together', () => {
     const { embed, payload } = blank();
     attach(embed, payload, 'image', assetImage('eggs', 'common'));
-    expect(embed.toJSON().image?.url).toBe('attachment://common.png');
+    expect(embed.toJSON().image?.url).toBe('attachment://common.webp');
     expect(embed.toJSON().thumbnail).toBeUndefined();
-    expect(payload.files!.map((f) => f.name)).toEqual(['common.png']);
+    expect(payload.files!.map((f) => f.name)).toEqual(['common.webp']);
   });
 
   it('sets the thumbnail slot and attaches its file together', () => {
     const { embed, payload } = blank();
     attach(embed, payload, 'thumbnail', assetImage('eggs', 'common'));
-    expect(embed.toJSON().thumbnail?.url).toBe('attachment://common.png');
+    expect(embed.toJSON().thumbnail?.url).toBe('attachment://common.webp');
     expect(embed.toJSON().image).toBeUndefined();
-    expect(payload.files!.map((f) => f.name)).toEqual(['common.png']);
+    expect(payload.files!.map((f) => f.name)).toEqual(['common.webp']);
   });
 
   it('appends rather than assigns, so two calls both survive in call order', () => {
     const { embed, payload } = blank();
     attach(embed, payload, 'thumbnail', assetImage('eggs', 'epic'));
     attach(embed, payload, 'image', assetImage('banners', 'eggs_incubator'));
-    expect(embed.toJSON().thumbnail?.url).toBe('attachment://epic.png');
-    expect(embed.toJSON().image?.url).toBe('attachment://eggs_incubator.png');
-    expect(payload.files!.map((f) => f.name)).toEqual(['epic.png', 'eggs_incubator.png']);
+    expect(embed.toJSON().thumbnail?.url).toBe('attachment://epic.webp');
+    expect(embed.toJSON().image?.url).toBe('attachment://eggs_incubator.webp');
+    expect(payload.files!.map((f) => f.name)).toEqual(['epic.webp', 'eggs_incubator.webp']);
   });
 
   it("appends onto a pre-initialised files array (revealPayload's shape)", () => {
     const embed = new EmbedBuilder().setTitle('t');
     const payload: { files: AttachmentBuilder[]; attachments: never[] } = { files: [], attachments: [] };
     attach(embed, payload, 'image', assetImage('hatch', 'rare-crack'));
-    expect(payload.files.map((f) => f.name)).toEqual(['rare-crack.png']);
+    expect(payload.files.map((f) => f.name)).toEqual(['rare-crack.webp']);
     expect(payload.attachments).toEqual([]);
   });
 
@@ -93,9 +93,9 @@ describe('attach', () => {
     const { embed, payload } = blank();
     attach(embed, payload, 'thumbnail', assetImage('eggs', 'epic'));
     attach(embed, payload, 'image', assetImage('banners', 'no-such-banner'));
-    expect(embed.toJSON().thumbnail?.url).toBe('attachment://epic.png');
+    expect(embed.toJSON().thumbnail?.url).toBe('attachment://epic.webp');
     expect(embed.toJSON().image).toBeUndefined();
-    expect(payload.files!.map((f) => f.name)).toEqual(['epic.png']);
+    expect(payload.files!.map((f) => f.name)).toEqual(['epic.webp']);
   });
 });
 
@@ -104,7 +104,7 @@ describe('banner art', () => {
   // letterboxes or crops; 1536×1024 matches the site banners already shipping.
   it.each(BANNERS)('%s is 1536×1024', async (name) => {
     const img = new Image();
-    img.src = readFileSync(resolve(process.cwd(), 'assets/images/banners', `${name}.png`));
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/banners', `${name}.webp`));
     await img.decode();
     expect(img.width).toBe(1536);
     expect(img.height).toBe(1024);
@@ -118,8 +118,8 @@ describe('banner art', () => {
 async function expectTransparentPortrait(bossId: string): Promise<void> {
   expect(assetImage('battles', `${bossId}-portrait`), bossId).not.toBeNull();
   const img = new Image();
-  img.src = readFileSync(resolve(process.cwd(), 'assets/images/battles', `${bossId}-portrait.png`));
-  await img.decode();   // PNG decode is async — drawing without it silently yields a blank canvas
+  img.src = readFileSync(resolve(process.cwd(), 'assets/images/battles', `${bossId}-portrait.webp`));
+  await img.decode();   // raster decode is async — drawing without it silently yields a blank canvas
   expect(img.width, bossId).toBe(1024);
   expect(img.height, bossId).toBe(1024);
   const canvas = createCanvas(1024, 1024);
@@ -145,9 +145,9 @@ describe('hatch crack art', () => {
   it.each(RARITIES)('%s-crack ships at 1024x1024 with transparent corners', async (rarity) => {
     const ref = assetImage('hatch', `${rarity}-crack`);
     expect(ref, rarity).not.toBeNull();
-    expect(ref!.url).toBe(`attachment://${rarity}-crack.png`);
+    expect(ref!.url).toBe(`attachment://${rarity}-crack.webp`);
     const img = new Image();
-    img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${rarity}-crack.png`));
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${rarity}-crack.webp`));
     await img.decode();
     expect(img.width).toBe(1024);
     expect(img.height).toBe(1024);
@@ -173,7 +173,7 @@ describe('hatch crack art', () => {
     const counts: Record<string, number> = {};
     for (const rarity of RARITIES) {
       const img = new Image();
-      img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${rarity}-crack.png`));
+      img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${rarity}-crack.webp`));
       await img.decode();
       const canvas = createCanvas(img.width, img.height);
       const c2d = canvas.getContext('2d');
@@ -226,5 +226,34 @@ describe('attach adoption', () => {
       });
     }
     expect(offenders, `use attach() instead of assigning files:\n${offenders.join('\n')}`).toEqual([]);
+  });
+});
+
+// A half-finished conversion is SILENT: assetImage null-degrades, so an asset that
+// never converted just renders imageless and every payload assertion still passes.
+// This is the gate for that. Read-only by necessity — never writeFileSync/rmSync
+// under assets/images (CLAUDE.md: vitest runs test files in parallel forks, so one
+// file can observe or delete another's committed asset mid-run).
+describe('the committed asset set', () => {
+  const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? walk(resolve(dir, e.name)) : [resolve(dir, e.name)]));
+
+  it('ships every file under assets/images as .webp', () => {
+    const files = walk(resolve(process.cwd(), 'assets/images'))
+      .filter((f) => !f.endsWith('.gitkeep'));
+    expect(files.length, 'no assets found — wrong root?').toBeGreaterThan(0);
+    const stragglers = files.filter((f) => !f.endsWith('.webp'));
+    expect(stragglers.map((f) => f.split('assets')[1]), 'non-WebP assets remain').toEqual([]);
+  });
+
+  it('resolves every asset kind the bot references', () => {
+    for (const r of RARITIES) {
+      expect(assetImage('eggs', r), `eggs/${r}`).not.toBeNull();
+      expect(assetImage('hatch', `${r}-crack`), `hatch/${r}-crack`).not.toBeNull();
+    }
+    for (const c of CAMPAIGN) {
+      expect(assetImage('sites', `${c.id}-banner`), `sites/${c.id}-banner`).not.toBeNull();
+      expect(assetImage('sites', `${c.id}-thumb`), `sites/${c.id}-thumb`).not.toBeNull();
+    }
   });
 });

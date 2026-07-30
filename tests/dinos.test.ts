@@ -101,8 +101,8 @@ describe('park dino commands', () => {
     const payload = i.replies[0] as {
       embeds: Array<{ toJSON(): { image?: { url: string } } }>; files?: Array<{ name: string | null }>;
     };
-    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://dino_roster.png');
-    expect(payload.files!.map((f) => f.name)).toEqual(['dino_roster.png']);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://dino_roster.webp');
+    expect(payload.files!.map((f) => f.name)).toEqual(['dino_roster.webp']);
   });
 });
 
@@ -214,13 +214,13 @@ describe('/dino unassign and park:collect execute', () => {
     await comp.execute(ctx, b1.asInteraction() as unknown as ButtonInteraction);
     const first = b1.replies[0] as CollectPayload;
     expect(first.embeds[0].toJSON().description).toContain('Collected');
-    expect(first.embeds[0].toJSON().image?.url).toBe('attachment://collect.png');
-    expect(first.files!.map((f) => f.name)).toEqual(['collect.png']);
+    expect(first.embeds[0].toJSON().image?.url).toBe('attachment://collect.webp');
+    expect(first.files!.map((f) => f.name)).toEqual(['collect.webp']);
     expect(first.flags).toBe(MessageFlags.Ephemeral);   // stays private
     const b2 = fakeButton({ customId: 'park:collect', user: 'u1' });
     await comp.execute(ctx, b2.asInteraction() as unknown as ButtonInteraction);
     const second = b2.replies[0] as CollectPayload;
     expect(second.embeds[0].toJSON().description).toContain('Nothing to collect');
-    expect(second.files!.map((f) => f.name)).toEqual(['collect.png']);
+    expect(second.files!.map((f) => f.name)).toEqual(['collect.webp']);
   });
 });

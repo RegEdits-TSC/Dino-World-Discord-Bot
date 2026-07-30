@@ -243,8 +243,8 @@ describe('journeys', () => {
     expect(fired).toBe(1);
     expect(sent).toHaveLength(1);
     const notified = sent[0].payload as { embeds?: Array<{ toJSON(): { thumbnail?: { url: string } } }>; files?: Array<{ name?: string | null }> };
-    expect(notified.embeds![0].toJSON().thumbnail?.url).toBe('attachment://common.png');
-    expect(notified.files!.map((f) => f.name)).toContain('common.png');
+    expect(notified.embeds![0].toJSON().thumbnail?.url).toBe('attachment://common.webp');
+    expect(notified.files!.map((f) => f.name)).toContain('common.webp');
     expect(sent[0].channelId).toBe('notify-chan');
     expect(notifyContent(sent[0].payload)).toContain('<@p1>');
     expect(JSON.stringify(sent[0].payload)).toContain('ready to hatch');
