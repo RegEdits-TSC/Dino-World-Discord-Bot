@@ -1,5 +1,5 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type AttachmentBuilder } from 'discord.js';
-import { assetImage } from '../../core/images.js';
+import { assetImage, attach } from '../../core/images.js';
 import { getSpecies } from '../../data/species/index.js';
 import { FOODS } from '../../data/foods.js';
 import { CAMPAIGN, STAGES, stageUnlocked, chapterUnlocked, rosterFor, type ProgressMap } from '../../data/battle/chapters/index.js';
@@ -156,10 +156,7 @@ export function chaptersPayload(userId: string, chapterIndex: number, view: Chap
   );
   const payload: FramePayload = { embeds: [embed], components: [nav] };
   // chapterId === siteId invariant (content test) makes the site art legal here.
-  const banner = assetImage('sites', `${ch.id}-banner`);
-  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
-  // APPEND — a second assignment would drop the banner file.
-  const thumb = assetImage('sites', `${ch.id}-thumb`);
-  if (thumb) { embed.setThumbnail(thumb.url); payload.files = [...(payload.files ?? []), thumb.file]; }
+  attach(embed, payload, 'image', assetImage('sites', `${ch.id}-banner`));
+  attach(embed, payload, 'thumbnail', assetImage('sites', `${ch.id}-thumb`));
   return payload;
 }

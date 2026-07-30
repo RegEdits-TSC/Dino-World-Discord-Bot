@@ -13,7 +13,7 @@ import { FOODS, foodsForDiet, type FoodId } from '../../data/foods.js';
 import { RARITY } from '../../data/rarity.js';
 import { matches, respondRanked, emptyRow, dinoLabel, VERY_HUNGRY_MS } from '../../core/autocomplete.js';
 import { emojiTag } from '../../core/emojis.js';
-import { assetImage } from '../../core/images.js';
+import { assetImage, attach } from '../../core/images.js';
 
 // Care replies carry a banner: care_neglect.png when any of the player's non-escaped
 // dinos has gone unfed past the VERY HUNGRY threshold, care.png otherwise.
@@ -23,8 +23,7 @@ function carePayload(ctx: Ctx, userId: string, description: string) {
   const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all();
   const neglected = dinos.some((d) => d.escapedAt === null && now - d.lastFedAt >= VERY_HUNGRY_MS);
   const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-  const banner = assetImage('banners', neglected ? 'care_neglect' : 'care');
-  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+  attach(embed, payload, 'image', assetImage('banners', neglected ? 'care_neglect' : 'care'));
   return payload;
 }
 
@@ -34,8 +33,7 @@ function rescuePayload(speciesName: string, fee: number) {
   const embed = new EmbedBuilder().setTitle('🪝 Rescue').setColor(0x3ba55c)
     .setDescription(`Recaptured your ${speciesName} for ${fee.toLocaleString()} cash.`);
   const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-  const banner = assetImage('banners', 'rescue');
-  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+  attach(embed, payload, 'image', assetImage('banners', 'rescue'));
   return payload;
 }
 

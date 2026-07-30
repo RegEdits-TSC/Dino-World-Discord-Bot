@@ -15,7 +15,7 @@ import { TRADE_MAX_ITEMS_PER_SIDE } from '../../data/trade.js';
 import { paginate, pageRow } from '../../core/paginate.js';
 import type { Ctx } from '../../core/context.js';
 import { emojiTag, EMOJI_FALLBACK } from '../../core/emojis.js';
-import { assetImage } from '../../core/images.js';
+import { assetImage, attach } from '../../core/images.js';
 
 // Default formatter is the unicode fallback table, so autocomplete call
 // sites (Discord renders custom emoji as literal text there) can call
@@ -59,8 +59,7 @@ function tradeListPayload(ctx: Ctx, userId: string, page: number) {
     .setFooter({ text: `Page ${p}/${pages}` });
   const payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof pageRow>[]; files?: AttachmentBuilder[] } =
     { embeds: [embed], components: pages > 1 ? [pageRow('trade', 'list', userId, p, pages)] : [] };
-  const banner = assetImage('banners', 'trading');
-  if (banner) { embed.setImage(banner.url); payload.files = [banner.file]; }
+  attach(embed, payload, 'image', assetImage('banners', 'trading'));
   return payload;
 }
 
@@ -125,8 +124,7 @@ export const tradingModule: ModuleManifest = {
             // The ping stays in `content`: a mention inside an embed does not notify.
             const offerPayload: { content: string; embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } =
               { content: `<@${target.id}>`, embeds: [offerEmbed] };
-            const offerBanner = assetImage('banners', 'trading');
-            if (offerBanner) { offerEmbed.setImage(offerBanner.url); offerPayload.files = [offerBanner.file]; }
+            attach(offerEmbed, offerPayload, 'image', assetImage('banners', 'trading'));
             await i.reply(offerPayload);
             // originGuildId is the acting user's guild, so delivery falls back to DM when the counterparty isn't in that guild's notify channel.
             await ctx.notify(target.id, i.guildId,
@@ -139,8 +137,7 @@ export const tradingModule: ModuleManifest = {
               .setTitle(`✅ Trade #${t.id} completed!`)
               .setDescription('Everything has changed hands — check `/dino list`, `/eggs`, or `/park view`.');
             const acceptPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [acceptEmbed] };
-            const acceptBanner = assetImage('banners', 'trading');
-            if (acceptBanner) { acceptEmbed.setImage(acceptBanner.url); acceptPayload.files = [acceptBanner.file]; }
+            attach(acceptEmbed, acceptPayload, 'image', assetImage('banners', 'trading'));
             await i.reply(acceptPayload);
             await ctx.notify(t.fromUser, i.guildId, `✅ **${i.user.displayName}** accepted your trade #${t.id}!`);
           } else if (sub === 'decline') {

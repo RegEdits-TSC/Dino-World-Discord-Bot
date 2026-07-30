@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { Image, createCanvas } from '@napi-rs/canvas';
 import { EmbedBuilder, type AttachmentBuilder } from 'discord.js';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { assetImage, attach } from '../src/core/images.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 
@@ -202,5 +202,29 @@ describe('hatch crack art', () => {
     }
     const multiRegion = RARITIES.filter((r) => counts[r] > 1);
     expect(multiRegion.length, `region counts: ${JSON.stringify(counts)}`).toBeGreaterThan(0);
+  });
+});
+
+function srcFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = join(dir, e.name);
+    return e.isDirectory() ? srcFiles(p) : e.name.endsWith('.ts') ? [p] : [];
+  });
+}
+
+describe('attach adoption', () => {
+  // The point of attach() is that "set the slot" and "attach the file" cannot
+  // drift apart. A hand-rolled `payload.files = [...]` IS that drift, and it
+  // shipped three defects in round 2 — so the idiom is banned outright.
+  // fightFrames' three deliberate exceptions build their arrays as locals
+  // (`f1.files = files`), which does not match this pattern.
+  it('no source file hand-assigns an embed payload files array', () => {
+    const offenders: string[] = [];
+    for (const file of srcFiles(resolve(process.cwd(), 'src'))) {
+      readFileSync(file, 'utf8').split(/\r?\n/).forEach((line, idx) => {
+        if (/\.files\s*=\s*\[/.test(line)) offenders.push(`${file}:${idx + 1} ${line.trim()}`);
+      });
+    }
+    expect(offenders, `use attach() instead of assigning files:\n${offenders.join('\n')}`).toEqual([]);
   });
 });

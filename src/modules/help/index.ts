@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, type AttachmentBuilder } from 'discord.js';
 import type { ModuleManifest } from '../../core/modules.js';
-import { assetImage } from '../../core/images.js';
+import { assetImage, attach } from '../../core/images.js';
 import { renderPark } from '../../core/render/client.js';
 import { buildParkSnapshot } from '../park/snapshot.js';
 import { withParkImage } from '../park/embeds.js';
@@ -86,8 +86,7 @@ export const helpModule: ModuleManifest = {
           const embed = new EmbedBuilder().setTitle(t.title).setDescription(t.body).setColor(0x5865F2);
           const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
           if (t.art) {
-            const img = assetImage(t.art.kind, t.art.name);
-            if (img) { embed.setImage(img.url); payload.files = [img.file]; }
+            attach(embed, payload, 'image', assetImage(t.art.kind, t.art.name));
           }
           if (topic === 'park') {
             // The park topic illustrates itself with the reader's own map: a worker
@@ -109,8 +108,7 @@ export const helpModule: ModuleManifest = {
             name: t.title, value: `\`/help topic:${key}\``, inline: true,
           })));
         const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [overview] };
-        const banner = assetImage('banners', 'help');
-        if (banner) { overview.setImage(banner.url); payload.files = [banner.file]; }
+        attach(overview, payload, 'image', assetImage('banners', 'help'));
         await i.reply(payload);
       } },
   ],

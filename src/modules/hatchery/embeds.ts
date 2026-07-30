@@ -1,7 +1,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type AttachmentBuilder } from 'discord.js';
 import type { Species } from '../../data/types.js';
 import { RARITY } from '../../data/rarity.js';
-import { assetImage } from '../../core/images.js';
+import { assetImage, attach } from '../../core/images.js';
 import { rarityEmoji } from '../../core/emojis.js';
 import { paginate, pageRow } from '../../core/paginate.js';
 import type { Egg } from './service.js';
@@ -23,8 +23,7 @@ export function preHatchPayload(rarity: string, eggId: number) {
   const embed = preHatchEmbed(rarity);
   const payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof crackButton>[]; files?: AttachmentBuilder[] } =
     { embeds: [embed], components: [crackButton(eggId)] };
-  const img = assetImage('eggs', rarity);
-  if (img) { embed.setImage(img.url); payload.files = [img.file]; }
+  attach(embed, payload, 'image', assetImage('eggs', rarity));
   return payload;
 }
 export function revealPayload(species: Species) {
@@ -46,8 +45,7 @@ export function revealPayload(species: Species) {
     embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[];
     files: AttachmentBuilder[]; attachments: never[];
   } = { embeds: [embed], components: [], files: [], attachments: [] };
-  const crack = assetImage('hatch', `${species.rarity}-crack`);
-  if (crack) { embed.setImage(crack.url); payload.files = [crack.file]; }
+  attach(embed, payload, 'image', assetImage('hatch', `${species.rarity}-crack`));
   return payload;
 }
 
@@ -72,11 +70,9 @@ export function eggListPayload(eggs: Egg[], now: number, userId: string, page = 
   // Featured thumbnail is computed from ALL eggs, not just the current page, so the
   // "act on next" egg keeps showing even when it lives on a different page.
   const featured = featuredEgg(eggs, now);
-  const img = featured ? assetImage('eggs', featured.rarity) : null;
-  if (img) { embed.setThumbnail(img.url); payload.files = [img.file]; }
+  attach(embed, payload, 'thumbnail', featured ? assetImage('eggs', featured.rarity) : null);
   // Banner attaches on every branch, including the no-eggs one — mirrors the
   // two-file thumbnail+image pattern in src/modules/shop/index.ts.
-  const banner = assetImage('banners', 'eggs_incubator');
-  if (banner) { embed.setImage(banner.url); payload.files = [...(payload.files ?? []), banner.file]; }
+  attach(embed, payload, 'image', assetImage('banners', 'eggs_incubator'));
   return payload;
 }
