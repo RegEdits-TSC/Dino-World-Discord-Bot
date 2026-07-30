@@ -17,10 +17,18 @@ if (!['banner', 'cutout'].includes(mode) || !src || !dest) {
   process.exit(2);
 }
 
-// q95 is the committed setting for every asset under assets/images (83-87% off PNG,
-// visually indistinguishable at the sizes Discord renders). Keep in sync with prompts.md.
+// q95 is the committed setting for every asset under assets/images — the pass that
+// introduced WebP took the 40 files committed at the time from 63.4 MB to 8.9 MB
+// (~86% smaller), visually indistinguishable at the sizes Discord renders. Keep in
+// sync with prompts.md.
 const Q = 95;
 
+// If this decode throws `Error: Invalid SVG image` (code 'InvalidArg') on a PNG that
+// opens fine everywhere else, the file is not corrupt — it carries a C2PA / Content
+// Credentials `caBX` chunk whose metadata contains the literal text `<svg`, and
+// @napi-rs/canvas's format sniffer scans the whole buffer for that substring instead
+// of trusting the leading magic bytes. Strip the chunk (pure provenance metadata; no
+// pixel data) and retry. Recipe and background: docs/assets/prompts.md, "Decode trap".
 const img = new Image();
 img.src = readFileSync(src);
 await img.decode();

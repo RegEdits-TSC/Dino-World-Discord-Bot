@@ -43,8 +43,10 @@ part of that pass; a future regeneration should target 1024×1024 to match the
 other three site thumbs.
 
 **Output format.** Every committed file under `assets/images/` is **WebP, quality 95**,
-encoded through `@napi-rs/canvas`'s `canvas.toBuffer('image/webp', 95)` — an 83-87%
-saving over PNG that is indistinguishable at the sizes Discord renders.
+encoded through `@napi-rs/canvas`'s `canvas.toBuffer('image/webp', 95)`, and
+indistinguishable from PNG at the sizes Discord renders. The conversion pass that
+introduced it took the 40 files committed at the time from **63.4 MB of PNG to 8.9 MB
+of WebP** — about 86% smaller in aggregate.
 `scripts/fit-art.mjs` emits it directly, so both modes write the shipped format and no
 separate conversion step is needed. Intermediates are exempt: a generator's output and
 the `remove_background` result in the walkthroughs below are whatever the tool produced
@@ -52,6 +54,55 @@ the `remove_background` result in the walkthroughs below are whatever the tool p
 Discord's application-emoji upload expects PNG and `manifest.json` hashes those exact
 bytes — and `assets/emojis/svg/` stays SVG because the park renderer decodes it
 synchronously.
+
+**Decode trap: Content Credentials (C2PA) in a source PNG.** *Symptom:*
+`scripts/fit-art.mjs` — or any other pass that hands a freshly generated PNG to
+`@napi-rs/canvas` — throws
+
+```
+Error: Invalid SVG image
+  { code: 'InvalidArg' }
+```
+
+on a file that opens fine in every viewer and whose chunk CRCs all validate. The
+file is neither corrupt nor an SVG. *Cause:* it carries a `caBX` chunk — an
+ancillary, private, safe-to-copy PNG chunk holding an embedded C2PA
+content-credentials (JUMBF) manifest, which several current generators and
+editors attach by default — and that manifest's payload contains the literal
+text `<svg`. `@napi-rs/canvas`'s format sniffer scans the buffer for that
+substring instead of trusting only the leading magic bytes, concludes the whole
+file is SVG, and fails parsing it as one. Hence the misleading error, which
+names a format the file has nothing to do with.
+
+*Remedy:* drop the chunk before decoding. It is pure provenance metadata, is
+read nowhere in this codebase, and would not survive re-encoding to WebP in any
+case, so removing it is pixel-for-pixel content-neutral. Walk the chunk stream
+and copy everything except `caBX`:
+
+```js
+// PNG = 8-byte signature, then [4B length][4B type][data][4B CRC] chunks.
+function stripCaBX(buf) {
+  const out = [buf.subarray(0, 8)];
+  for (let p = 8; p + 8 <= buf.length; ) {
+    const end = p + 12 + buf.readUInt32BE(p);
+    if (buf.toString('latin1', p + 4, p + 8) !== 'caBX') out.push(buf.subarray(p, end));
+    p = end;
+  }
+  return Buffer.concat(out);
+}
+img.src = stripCaBX(readFileSync(src));   // instead of readFileSync(src)
+```
+
+Three of the 40 files in the WebP conversion pass were affected
+(`sites/frozen_cliffs-banner`, `sites/volcano_core-banner`,
+`sites/volcano_core-thumb`). The strip was checked, not assumed: their chunk
+streams were byte-identical to the originals once `caBX` was removed, their
+alpha channels matched exactly, and their WebP encoding error landed in the same
+band as files that never needed stripping (mean absolute error 1.45–2.21 against
+1.15–1.43 for the untouched controls — the q95 encode, not the strip). Any
+newly generated PNG can carry the chunk, so
+expect this again — searching a source file's bytes for the four-character
+chunk type `caBX` identifies it before the decode does.
 
 Banner = wide establishing shot of the site. Thumb = square icon-style
 composition with one central landmark and a simple background (readable at
@@ -729,8 +780,9 @@ luminance is the only lever for legibility, and it must independently clear
 WCAG AA (4.5:1) against the fixed text color, at both the lot-name band
 (`fillText(name, x+54, y+34)`, 18px) and the `Lv N` band
 (`fillText(`Lv ${level}`, x+54, y+54)`, 13px) — sample the actual committed
-PNG at those exact tile-local offsets, not the raw generation, and not by
-eye. Treat ~6:1 as the target, matching the flat-fill baseline it replaces
+file (`assets/images/park/plate-paddock.webp` /
+`assets/images/park/plate-facility.webp`) at those exact tile-local offsets,
+not the raw generation, and not by eye. Treat ~6:1 as the target, matching the flat-fill baseline it replaces
 (`PADDOCK_PALETTE.fill` / `FACILITY_PALETTE.fill`) — 4.5:1 is a floor, not a
 goal, because the plate's own gradient means different bands (and different
 real lot names) sample slightly different pixels.
