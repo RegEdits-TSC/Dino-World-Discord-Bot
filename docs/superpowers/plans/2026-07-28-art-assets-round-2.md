@@ -21,7 +21,8 @@
 - **resvg gotcha:** `<ellipse fill="url(#gradient)">` with default `objectBoundingBox` gradientUnits renders solid black — use `gradientUnits="userSpaceOnUse"` with `y1 = cy - ry` and `y2 = cy + ry`.
 - **`npm run build` does not typecheck tests.** Run `npm run typecheck` (`tsc --noEmit -p tsconfig.test.json`) before every commit that touches `tests/` or `scripts/`.
 - **`npm run deploy-commands` is NOT required in any wave** — no command builder changes. `npm run build-emojis` + `npm run deploy-emojis` are required in Wave 3 for the six new icons.
-- **Attribution:** no commit message, PR body, code comment, or doc line may mention Claude, AI, an assistant, or any tool. All work is authored by the user.
+- **Attribution:** every commit message, PR body, code comment, and doc line is authored by the user — no `Co-Authored-By` trailer, no "generated with" footer, no tool or third-party attribution of any kind.
+- **Paths below are placeholders**, not literal locations: `<repo>` is this checkout's root and `<scratchpad>` is any working directory outside it. Substitute your own; nothing under `<scratchpad>` is ever committed.
 
 
 ## File Structure
@@ -1187,7 +1188,7 @@ git commit -m "test(battles): mock portrait art instead of stubbing a committed 
 
 **Files:**
 - Create: `assets/images/battles/boss-coastal_dig-portrait.png`
-- Create: `C:/Users/Claude/AppData/Local/Temp/claude/C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot/0f545c9e-f0ef-4a4c-aac5-332ebd11d75b/scratchpad/fit-portrait.mjs`
+- Create: `<scratchpad>/fit-portrait.mjs`
 - Modify: `tests/images.test.ts:1-7` (imports), append `describe('boss portrait art')`
 - Modify: `CLAUDE.md:117-120`
 - Modify: `docs/assets/prompts.md:362-364`
@@ -1244,16 +1245,16 @@ Generate with `mcp__claude_ai_Higgsfield__generate_image`, model `nano_banana_pr
 Poll with `mcp__claude_ai_Higgsfield__job_status` (`{"jobId":"<generate job_id>","sync":true}`). **Keep this raw job_id** — Task 11's three edits reference it, not the cutout. Then cut out with `mcp__claude_ai_Higgsfield__remove_background`: `{"params":{"media_id":"<generate job_id>","media_type":"image"}}`, poll again, and download the result:
 
 ```powershell
-$scratch = "C:\Users\Claude\AppData\Local\Temp\claude\C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot\0f545c9e-f0ef-4a4c-aac5-332ebd11d75b\scratchpad"
+$scratch = "<scratchpad>"
 Invoke-WebRequest -Uri "<remove_background result url>" -OutFile "$scratch\boss-coastal_dig-cutout.png"
 ```
 
-Write the defringe + fit pass to `<scratch>/fit-portrait.mjs` (`createRequire` because the scratchpad sits outside the repo's `node_modules` resolution root):
+Write the defringe + fit pass to `<scratchpad>/fit-portrait.mjs` (`createRequire` because the scratchpad sits outside the repo's `node_modules` resolution root):
 
 ```js
 import { createRequire } from 'node:module';
 import { readFileSync, writeFileSync } from 'node:fs';
-const require = createRequire('C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot/package.json');
+const require = createRequire('<repo>/package.json');
 const { createCanvas, Image } = require('@napi-rs/canvas');
 
 const SIZE = 1024, MARGIN = 24;
@@ -1340,7 +1341,7 @@ console.log(`${outPath}: source ${bw}x${bh} -> 1024x1024 @ ${scale.toFixed(3)}`)
 Run it into place:
 
 ```powershell
-node "$scratch\fit-portrait.mjs" "$scratch\boss-coastal_dig-cutout.png" "C:\Users\Claude\Documents\GitHub\Dino-World-Discord-Bot\assets\images\battles\boss-coastal_dig-portrait.png"
+node "$scratch\fit-portrait.mjs" "$scratch\boss-coastal_dig-cutout.png" "<repo>\assets\images\battles\boss-coastal_dig-portrait.png"
 ```
 
 Then update the two docs the drop makes stale. `docs/assets/prompts.md:362-364` — replace `Post-process each with `remove_background` plus the defringe + fit pass described in the Egg rarities section.` with:
@@ -1435,8 +1436,8 @@ Three `mcp__claude_ai_Higgsfield__generate_image` calls, each an edit of the **r
 For each: poll `mcp__claude_ai_Higgsfield__job_status` (`sync: true`), then `mcp__claude_ai_Higgsfield__remove_background` (`{"params":{"media_id":"<that edit's job_id>","media_type":"image"}}`), poll, download, and run the same fit pass:
 
 ```powershell
-$scratch = "C:\Users\Claude\AppData\Local\Temp\claude\C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot\0f545c9e-f0ef-4a4c-aac5-332ebd11d75b\scratchpad"
-$repo = "C:\Users\Claude\Documents\GitHub\Dino-World-Discord-Bot"
+$scratch = "<scratchpad>"
+$repo = "<repo>"
 foreach ($id in @('amber_ridge','frozen_cliffs','volcano_core')) {
   node "$scratch\fit-portrait.mjs" "$scratch\boss-$id-cutout.png" "$repo\assets\images\battles\boss-$id-portrait.png"
 }
@@ -2318,12 +2319,12 @@ await fit(process.argv[2], process.argv[3], Number(process.argv[4]), Number(proc
 Then download and fit (Git Bash):
 
 ```bash
-SCRATCH="C:/Users/Claude/AppData/Local/Temp/claude/C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot/0f545c9e-f0ef-4a4c-aac5-332ebd11d75b/scratchpad"
-mkdir -p "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot/assets/images/park"
+SCRATCH="<scratchpad>"
+mkdir -p "<repo>/assets/images/park"
 curl -L -o "$SCRATCH/raw-ground.png" "<ground result url>"
 curl -L -o "$SCRATCH/raw-plate-paddock.png" "<paddock plate result url>"
 curl -L -o "$SCRATCH/raw-plate-facility.png" "<facility plate result url>"
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
+cd "<repo>"
 npx tsx "$SCRATCH/fit-park-art.ts" "$SCRATCH/raw-ground.png" assets/images/park/ground.png 1200 800
 npx tsx "$SCRATCH/fit-park-art.ts" "$SCRATCH/raw-plate-paddock.png" assets/images/park/plate-paddock.png 270 150
 npx tsx "$SCRATCH/fit-park-art.ts" "$SCRATCH/raw-plate-facility.png" assets/images/park/plate-facility.png 270 150
@@ -2791,7 +2792,7 @@ nest match the egg the player was just shown. Post-process each with
 For each rarity: call `mcp__claude_ai_Higgsfield__media_upload` with `filename: "<rarity>.png"`, `content_type: "image/png"`; PUT the bytes, then confirm:
 
 ```bash
-curl -s -X PUT --upload-file "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot/assets/images/eggs/common.png" "<upload_url>"
+curl -s -X PUT --upload-file "<repo>/assets/images/eggs/common.png" "<upload_url>"
 ```
 
 Then call `mcp__claude_ai_Higgsfield__media_confirm` for each upload and record the six `media_id`s.
@@ -2815,12 +2816,12 @@ Call `mcp__claude_ai_Higgsfield__remove_background` once per crack with `{"param
 - [ ] **Step 8: Download and fit the six cutouts**
 
 ```bash
-mkdir -p "$TEMP/dw-art-round2" "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot/assets/images/hatch"
+mkdir -p "$TEMP/dw-art-round2" "<repo>/assets/images/hatch"
 for r in common uncommon rare epic legendary mythic; do
   curl -sL "<no-bg url for $r>" -o "$TEMP/dw-art-round2/$r-crack-raw.png"
-  node "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot/scripts/fit-art.mjs" cutout \
+  node "<repo>/scripts/fit-art.mjs" cutout \
     "$TEMP/dw-art-round2/$r-crack-raw.png" \
-    "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot/assets/images/hatch/$r-crack.png"
+    "<repo>/assets/images/hatch/$r-crack.png"
 done
 ```
 
@@ -3005,9 +3006,9 @@ mkdir -p "$TEMP/dw-art-round2"
 curl -sL "<victory url>" -o "$TEMP/dw-art-round2/battle_victory-raw.png"
 curl -sL "<defeat url>"  -o "$TEMP/dw-art-round2/battle_defeat-raw.png"
 for b in battle_victory battle_defeat; do
-  node "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot/scripts/fit-art.mjs" banner \
+  node "<repo>/scripts/fit-art.mjs" banner \
     "$TEMP/dw-art-round2/$b-raw.png" \
-    "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot/assets/images/banners/$b.png"
+    "<repo>/assets/images/banners/$b.png"
 done
 ```
 
@@ -3265,9 +3266,9 @@ mkdir -p "$TEMP/dw-art-round2"
 curl -sL "<collect url>" -o "$TEMP/dw-art-round2/collect-raw.png"
 curl -sL "<rescue url>"  -o "$TEMP/dw-art-round2/rescue-raw.png"
 for b in collect rescue; do
-  node "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot/scripts/fit-art.mjs" banner \
+  node "<repo>/scripts/fit-art.mjs" banner \
     "$TEMP/dw-art-round2/$b-raw.png" \
-    "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot/assets/images/banners/$b.png"
+    "<repo>/assets/images/banners/$b.png"
 done
 ```
 
@@ -3582,9 +3583,9 @@ curl -sL "<dino_roster url>"    -o "$TEMP/dw-art-round2/dino_roster-raw.png"
 curl -sL "<eggs_incubator url>" -o "$TEMP/dw-art-round2/eggs_incubator-raw.png"
 curl -sL "<sell url>"           -o "$TEMP/dw-art-round2/sell-raw.png"
 for b in dino_roster eggs_incubator sell; do
-  node "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot/scripts/fit-art.mjs" banner \
+  node "<repo>/scripts/fit-art.mjs" banner \
     "$TEMP/dw-art-round2/$b-raw.png" \
-    "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot/assets/images/banners/$b.png"
+    "<repo>/assets/images/banners/$b.png"
 done
 ```
 

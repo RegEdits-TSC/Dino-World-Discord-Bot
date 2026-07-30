@@ -10,7 +10,7 @@ review is limited to cosmetics (image renders, emoji art, banner layout).
 Everything else — command logic, interaction lifecycle, Discord payload
 validity, builder↔handler contracts, multi-step player journeys, deploy
 scripts, scheduler/notification plumbing — is verified by automated tests
-Claude (or CI) runs.
+the operator (or CI) runs.
 
 ## Context: what the audit found
 

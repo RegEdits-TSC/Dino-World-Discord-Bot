@@ -42,7 +42,7 @@
 
 <h2>Global Constraints</h2>
 <ul>
-<li>Commits authored by <b>RegEdits-TSC</b> — no other identity, no <code>Co-Authored-By</code>, no AI/Claude/assistant/"generated with" in any durable artifact.</li>
+<li>Commits authored by <b>RegEdits-TSC</b> — no other identity, no <code>Co-Authored-By</code> trailer, no tool or third-party attribution of any kind in any durable artifact.</li>
 <li>TypeScript <code>strict: true</code>, no explicit <code>any</code>. <code>npm run typecheck</code> and <code>npm run build</code> exit 0; full <code>npx vitest run</code> green.</li>
 <li><b>Owner gate:</b> every subcommand calls <code>requireOwner</code> first; a non-owner gets an ephemeral reject and NO mutation.</li>
 <li><b>Atomicity:</b> currency only via <code>ctx.economy.apply</code>; each multi-row admin mutation is ONE <code>ctx.db.transaction</code>. Any collection/comfort change calls <code>recomputeRating</code>. Reads of escaped-dependent state call <code>settleEscapes(target)</code> first.</li>

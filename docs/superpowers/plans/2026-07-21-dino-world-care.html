@@ -41,7 +41,7 @@
 
 <h2>Global Constraints</h2>
 <ul>
-<li>Commits authored by <b>RegEdits-TSC</b> — no other identity, no <code>Co-Authored-By</code>, no AI/Claude/assistant/"generated with" in any durable artifact.</li>
+<li>Commits authored by <b>RegEdits-TSC</b> — no other identity, no <code>Co-Authored-By</code> trailer, no tool or third-party attribution of any kind in any durable artifact.</li>
 <li>TypeScript <code>strict: true</code>, no explicit <code>any</code>. Run <code>npm run typecheck</code> (src+tests) and <code>npm run build</code> — both exit 0.</li>
 <li><b>Atomicity:</b> every currency+item flow in ONE <code>ctx.db.transaction</code> (<code>EconomyService.apply</code> nests as a savepoint). Feed = food out + hunger reset (one tx). Rescue = cash out + dino update (one tx). <code>/feed all</code> feeds each dino in its own transaction (spec §3.4: "each dino is an atomic action").</li>
 <li>Currency only via <code>ctx.economy.apply</code>. Time via <code>ctx.now()</code>. No <code>Math.random()</code>/<code>Date.now()</code> in logic.</li>

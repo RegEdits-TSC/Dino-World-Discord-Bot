@@ -210,7 +210,7 @@ for (const r of rarities) {
 - [ ] **Step 3: Run it**
 
 ```bash
-cd "C:\Users\Claude\Documents\GitHub\Dino-World-Discord-Bot"
+cd "<repo>"
 node "<scratchpad>/finalize-eggs.mjs" "<scratchpad>/eggs-cut" "assets/images/eggs"
 ```
 

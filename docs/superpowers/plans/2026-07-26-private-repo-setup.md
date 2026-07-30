@@ -32,7 +32,7 @@
 
 - [ ] **Step 1: Operator logs in as RegEdits-TSC**
 
-The operator types this in the Claude Code prompt (the `!` prefix runs it interactively in-session):
+The operator runs this interactively in-session (a leading `!` sends the rest of the line straight to the shell):
 
 ```
 ! gh auth login

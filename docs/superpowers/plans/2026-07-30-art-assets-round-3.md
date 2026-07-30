@@ -23,7 +23,8 @@
 - **`npm run build` does not typecheck tests.** Run `npm run typecheck` (`tsc --noEmit -p tsconfig.test.json`) before every commit touching `tests/` or `scripts/`.
 - **`npm run test:live` is the only real verification of image work** — bare-attachment cards, cleared attachments and broken `attachment://` references all render green offline. Required after Waves 2 and 3.
 - **`npm run deploy-commands` and `npm run deploy-emojis` are NOT required** in any wave — no command builder and no emoji changes.
-- **Attribution:** no commit message, PR body, code comment, or doc line may mention Claude, AI, an assistant, or any tool. All work is authored by the user.
+- **Attribution:** every commit message, PR body, code comment, and doc line is authored by the user — no `Co-Authored-By` trailer, no "generated with" footer, no tool or third-party attribution of any kind.
+- **Paths below are placeholders**, not literal locations: `<repo>` is this checkout's root and `<scratchpad>` is any working directory outside it. Substitute your own; nothing under `<scratchpad>` is ever committed.
 
 ---
 
@@ -191,7 +192,7 @@ git commit -m "feat(images): add attach helper binding embed slot to file upload
 ### Task 2: Codemod the 27 call sites onto `attach`
 
 **Files:**
-- Create: `C:/Users/Claude/AppData/Local/Temp/claude/C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot/0f545c9e-f0ef-4a4c-aac5-332ebd11d75b/scratchpad/attach-codemod.mjs` (throwaway, not committed)
+- Create: `<scratchpad>/attach-codemod.mjs` (throwaway, not committed)
 - Modify: `src/core/notify.ts:8,62-64,78-80` · `src/modules/battles/embeds.ts:2,157-163` · `src/modules/care/index.ts:16,25-27,36-38` · `src/modules/expeditions/index.ts:13,25-27,77-83` · `src/modules/hatchery/embeds.ts:4,24-27,45-50,70-80` · `src/modules/hatchery/index.ts:10,35-37` · `src/modules/help/index.ts:3,87-91,111-113` · `src/modules/leaderboards/index.ts:6,42-44` · `src/modules/park/index.ts:22,36-39,59-62` · `src/modules/shop/index.ts:15,51-57,67-69,77-79,130-135` · `src/modules/trading/index.ts:18,60-63,126-129,141-143`
 - Test: `tests/images.test.ts:1-4` (imports), `tests/images.test.ts` (append guard describe at end of file)
 
@@ -300,8 +301,8 @@ if (total !== 27) { console.error(`EXPECTED 27, GOT ${total}`); process.exit(1);
 Run it:
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
-node "C:/Users/Claude/AppData/Local/Temp/claude/C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot/0f545c9e-f0ef-4a4c-aac5-332ebd11d75b/scratchpad/attach-codemod.mjs"
+cd "<repo>"
+node "<scratchpad>/attach-codemod.mjs"
 ```
 
 Expected per-file output: notify 2, battles/embeds 2, care 2, expeditions 3, hatchery/embeds 4, hatchery/index 1, help 2, leaderboards 1, park 2, shop 5, trading 3 — `total call sites converted: 27`. A non-27 total exits 1 and the codemod must be fixed, not worked around.
@@ -542,7 +543,7 @@ git commit --allow-empty -m "chore: verify wave 1 gates green at 630 tests"
 ### Task 6: WebP asset conversion and path-builder flip
 
 **Files:**
-- Create: `C:/Users/Claude/AppData/Local/Temp/claude/C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot/0f545c9e-f0ef-4a4c-aac5-332ebd11d75b/scratchpad/convert-webp.mjs` (one-off, never committed)
+- Create: `<scratchpad>/convert-webp.mjs` (one-off, never committed)
 - Modify: `assets/images/**` — 40 `.png` deleted, 40 `.webp` added
 - Modify: `src/core/images.ts:20`
 - Modify: `src/core/render/art.ts:35-37,46,59-63`
@@ -648,8 +649,8 @@ console.log(`\nconverted ${expected.length} files: ${(before / 1e6).toFixed(1)} 
 Run it:
 
 ```bash
-SCRATCH="C:/Users/Claude/AppData/Local/Temp/claude/C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot/0f545c9e-f0ef-4a4c-aac5-332ebd11d75b/scratchpad"
-node "$SCRATCH/convert-webp.mjs" "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
+SCRATCH="<scratchpad>"
+node "$SCRATCH/convert-webp.mjs" "<repo>"
 ```
 
 Expected: `converted 40 files: ~62 MB -> ~9 MB`, and `assets/images/battles/.gitkeep` untouched.
@@ -695,7 +696,7 @@ Call sites (lines 59-63):
 103 `.png` occurrences across exactly these 15 files. Verified safe: none of them contains `park.png`, an `assets/emojis/png` path, or the PNG magic-byte assertion. `tests/docs-assets.test.ts` is deliberately EXCLUDED — it must move in lockstep with `prompts.md` in Task 8.
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
+cd "<repo>"
 sed -i 's/\.png/.webp/g' \
   tests/battles-embeds.test.ts tests/battles-module.test.ts tests/care.test.ts \
   tests/dinos.test.ts tests/expeditions.test.ts tests/hatchery.test.ts \
@@ -726,7 +727,7 @@ async function decodeRaster(bytes: Buffer): Promise<Image> {
 then update its two call sites:
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
+cd "<repo>"
 sed -i 's/decodePng(/decodeRaster(/g' tests/park-art-assets.test.ts
 sed -i 's|// PNG decode is async — drawing|// raster decode is async — drawing|' tests/images.test.ts
 grep -n "decodePng\|PNG decode is async" tests/park-art-assets.test.ts tests/images.test.ts   # expect no output
@@ -740,7 +741,7 @@ Expected: PASS — including `ships every file under assets/images as .webp` and
 Then confirm no straggler outside the protected set:
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
+cd "<repo>"
 grep -rl "\.png" --include=*.ts --include=*.mjs src tests scripts | wc -l   # expect 39
 ```
 
@@ -754,7 +755,7 @@ Expected: PASS — 64 files, 623 tests, plus the 2 new guards = 625.
 - [ ] **Step 9: Commit**
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
+cd "<repo>"
 git add assets/images src/core/images.ts src/core/render/art.ts tests/
 git commit -m "Convert embed art to WebP q95"
 ```
@@ -778,8 +779,8 @@ Git will record this as 40 deletions + 40 additions rather than renames — the 
 There is no test harness for this script, so the check is a real smoke run against a converted asset. Establish the current (wrong) behaviour first:
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
-SCRATCH="C:/Users/Claude/AppData/Local/Temp/claude/C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot/0f545c9e-f0ef-4a4c-aac5-332ebd11d75b/scratchpad"
+cd "<repo>"
+SCRATCH="<scratchpad>"
 node scripts/fit-art.mjs banner assets/images/banners/trading.webp "$SCRATCH/smoke.webp"
 node -e "const b=require('fs').readFileSync(process.argv[1]); console.log('magic:', b.subarray(0,4).toString('ascii'), b.subarray(8,12).toString('ascii'), 'bytes:', b.length)" "$SCRATCH/smoke.webp"
 ```
@@ -826,8 +827,8 @@ Line 22's `await img.decode()` on the source stays — decode is async for PNG a
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
-SCRATCH="C:/Users/Claude/AppData/Local/Temp/claude/C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot/0f545c9e-f0ef-4a4c-aac5-332ebd11d75b/scratchpad"
+cd "<repo>"
+SCRATCH="<scratchpad>"
 node scripts/fit-art.mjs banner assets/images/banners/trading.webp "$SCRATCH/smoke.webp"
 node scripts/fit-art.mjs cutout assets/images/eggs/mythic.webp "$SCRATCH/smoke-cut.webp"
 node -e "
@@ -844,7 +845,7 @@ Expected: PASS — both report magic `RIFF` / `WEBP`, banner ~0.4 MB and cutout 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
+cd "<repo>"
 git add scripts/fit-art.mjs
 git commit -m "Emit WebP q95 from fit-art.mjs"
 ```
@@ -883,7 +884,7 @@ Expected: FAIL — `prompts.md is missing the regeneration target park/ground.we
 A global replace is safe here: `prompts.md` contains 45 `.png` occurrences and **zero** references to `assets/emojis/png/` (verified). Every remaining hit names a committed asset, including the reference-chain mentions (`eggs/mythic.png`, `eggs/<rarity>.png`, `common.png`), all of which are now WebP.
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
+cd "<repo>"
 sed -i 's/\.png/.webp/g' docs/assets/prompts.md
 grep -c "\.png" docs/assets/prompts.md   # expect 0
 ```
@@ -911,7 +912,7 @@ Expected: PASS — both tests. The emoji-count test above it is unaffected (it m
 - [ ] **Step 5: Commit**
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
+cd "<repo>"
 git add docs/assets/prompts.md tests/docs-assets.test.ts
 git commit -m "Update regeneration targets to WebP"
 ```
@@ -934,7 +935,7 @@ git commit -m "Update regeneration targets to WebP"
 No test asserts comment text. The gate is the standing "documentation tracks the code" rule, so the failing state is demonstrated by grepping for the now-false claims:
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
+cd "<repo>"
 grep -n "assets/images/park/\*\.png\|<bossId>-portrait\.png\|<rarity>-crack\.png\|care_neglect\.png\|<chapter>-banner\.png" CLAUDE.md src/modules/care/index.ts src/modules/battles/index.ts src/data/battle/chapters/index.ts
 ```
 
@@ -1010,7 +1011,7 @@ Then the three production comments. `src/modules/care/index.ts:18-19`:
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
+cd "<repo>"
 grep -rn "assets/images.*\.png" CLAUDE.md src/   # expect no output
 npm run typecheck
 ```
@@ -1020,7 +1021,7 @@ Expected: PASS — the grep returns nothing and typecheck is clean. The 30 `src/
 - [ ] **Step 5: Commit**
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
+cd "<repo>"
 git add CLAUDE.md src/modules/care/index.ts src/modules/battles/index.ts src/data/battle/chapters/index.ts
 git commit -m "Document the WebP asset format"
 ```
@@ -1068,7 +1069,7 @@ If any embed renders imageless, the cause is `assetImage` null-degrading on a fi
 - [ ] **Step 5: Confirm the wave is complete and the tree is clean**
 
 ```bash
-cd "C:/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot"
+cd "<repo>"
 git status --porcelain          # expect no output
 git log --oneline -4            # expect the four wave-2 commits
 find assets/images -type f ! -name '*.webp' ! -name '.gitkeep' | wc -l   # expect 0
@@ -1268,8 +1269,8 @@ The committed portrait is WebP and transparent; decode it to an opaque-safe PNG
 in the scratchpad first so the upload MIME type is unambiguous, then upload:
 
 ```bash
-cd /c/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot
-SCRATCH="C:/Users/Claude/AppData/Local/Temp/claude/C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot/0f545c9e-f0ef-4a4c-aac5-332ebd11d75b/scratchpad"
+cd <repo>
+SCRATCH="<scratchpad>"
 mkdir -p "$SCRATCH/dinos"
 node -e "
 const { Image, createCanvas } = require('@napi-rs/canvas');
@@ -1334,7 +1335,7 @@ in one message, then `mcp__claude_ai_Higgsfield__job_status` on each. Download
 the eight cutouts into the scratchpad under their target names:
 
 ```bash
-SCRATCH="C:/Users/Claude/AppData/Local/Temp/claude/C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot/0f545c9e-f0ef-4a4c-aac5-332ebd11d75b/scratchpad/dinos"
+SCRATCH="<scratchpad>/dinos"
 # one line per pair, using the result URL job_status returned for that cutout
 curl -L -o "$SCRATCH/bruiser-carnivore.png"  "<url>"
 curl -L -o "$SCRATCH/bruiser-herbivore.png"  "<url>"
@@ -1349,8 +1350,8 @@ curl -L -o "$SCRATCH/support-herbivore.png"  "<url>"
 - [ ] **Step 4: Fit all 8 into the shipped assets**
 
 ```bash
-cd /c/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot
-SCRATCH="C:/Users/Claude/AppData/Local/Temp/claude/C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot/0f545c9e-f0ef-4a4c-aac5-332ebd11d75b/scratchpad/dinos"
+cd <repo>
+SCRATCH="<scratchpad>/dinos"
 mkdir -p assets/images/dinos
 for key in bruiser-carnivore bruiser-herbivore tank-carnivore tank-herbivore \
            swift-carnivore swift-herbivore support-carnivore support-herbivore; do
@@ -1361,7 +1362,7 @@ done
 - [ ] **Step 5: Verify all 8 landed as 1024×1024 transparent cutouts**
 
 ```bash
-cd /c/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot
+cd <repo>
 node -e "
 const { Image, createCanvas } = require('@napi-rs/canvas');
 const { readFileSync } = require('node:fs');
@@ -1525,14 +1526,14 @@ Expected: FAIL with 30 × `error TS2353: Object literal may only specify known p
 - [ ] **Step 3: Strip the field from all 30 species files**
 
 ```bash
-cd /c/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot
+cd <repo>
 sed -i -E "s/, spriteRef: '[a-z]+\.(png|webp)'//" src/data/species/*.ts
 ```
 
 - [ ] **Step 4: Verify every site was converted and nothing else moved**
 
 ```bash
-cd /c/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot
+cd <repo>
 test "$(grep -rn 'spriteRef' src tests scripts | wc -l)" -eq 0 && echo "spriteRef: 0 references"
 git diff --numstat src/data/species | wc -l    # expect 30 files touched
 npm run typecheck
@@ -1944,7 +1945,7 @@ art (egg icons, site thumbnails, banners, archetype dino portraits) lives under
 - [ ] **Step 3: Verify the docs actually say it**
 
 ```bash
-cd /c/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot
+cd <repo>
 grep -n "dinos" CLAUDE.md
 grep -n "archetype" CLAUDE.md README.md docs/ops.md
 ```
@@ -2008,7 +2009,7 @@ Expected: PASS — a stale fixture or a wrong option key in `scripts/` is caught
 - [ ] **Step 4: Confirm all 8 assets are on disk before treating the sweep as a gate**
 
 ```bash
-cd /c/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot
+cd <repo>
 ls assets/images/dinos/*.webp | wc -l
 ```
 Expected: `8`. `toPost` reads `f.attachment` as a path, and a missing file makes `assetImage` return null — the gallery would then post a thumbnail-free embed and look fine while proving nothing.
@@ -2057,7 +2058,7 @@ Expected: every case posts to `TEST_CHANNEL_ID` with no failures reported. This 
 - [ ] **Step 5: Confirm the tree is clean and the wave is complete**
 
 ```bash
-cd /c/Users/Claude/Documents/GitHub/Dino-World-Discord-Bot
+cd <repo>
 git status --short
 git log --oneline -8
 ```
