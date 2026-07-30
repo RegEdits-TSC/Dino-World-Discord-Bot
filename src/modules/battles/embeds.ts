@@ -48,10 +48,11 @@ export function fightFrames(
   const outcomeBanner = assetImage('banners', outcome.won ? 'battle_victory' : 'battle_defeat');
 
   // Files attach on F1 and F4 only, and each attaching frame uploads exactly the
-  // files its embed references. F2/F3 carry no files/attachments key at all, so
-  // F1's uploads survive and their attachment:// URLs keep resolving. F4 replaces
-  // the set (see below) — never add a file here that no frame references, it
-  // renders as a bare attachment card under the message.
+  // files its embed references. F1 and F4 both replace the message's whole
+  // attachment set (`attachments: []`, unconditional on both); F2/F3 carry no
+  // files/attachments key at all, so F1's uploads survive and their
+  // attachment:// URLs keep resolving. Never add a file here that no frame
+  // references — it renders as a bare attachment card under the message.
   const dress = (embed: EmbedBuilder) => {
     if (banner) embed.setImage(banner.url);
     if (portrait) embed.setThumbnail(portrait.url);
@@ -77,9 +78,14 @@ export function fightFrames(
         { name: 'Enemies', value: enemyLines, inline: true },
       ))],
     components: [],
+    // Unconditional, for the same reason as F4's below: `battle:again` re-edits
+    // the message F4 last wrote, so on a deploy with no chapter art F1 would
+    // carry no files AND no attachments key and Discord would keep F4's outcome
+    // banner alive under F1-F3, whose embeds reference nothing.
+    attachments: [],
   };
   const files = [banner?.file, portrait?.file].filter((f): f is AttachmentBuilder => f != null);
-  if (files.length) f1.files = files;   // attachments only on F1
+  if (files.length) f1.files = files;   // uploads on F1; F2/F3 ride on them
 
   const beatFrame = (beat: BeatSummary): FramePayload => ({
     embeds: [dress(new EmbedBuilder().setColor(0xd35400)

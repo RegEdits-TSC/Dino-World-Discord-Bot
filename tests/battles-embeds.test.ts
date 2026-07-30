@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
-import { fightFrames, chaptersPayload, energyLine, type ChaptersView } from '../src/modules/battles/embeds.js';
+import { fightFrames, chaptersPayload, energyLine, type ChaptersView, type FramePayload } from '../src/modules/battles/embeds.js';
 import type { FightOutcome } from '../src/modules/battles/service.js';
 import type { BeatSummary } from '../src/data/battle/resolve.js';
 import { STAGES, type ProgressMap } from '../src/data/battle/chapters/index.js';
@@ -18,12 +18,15 @@ import { assetImage } from '../src/core/images.js';
 // implementation) wrapped in vi.fn, so the two chaptersPayload degrade-path
 // tests below can still override exactly one queued call via
 // mockImplementationOnce to force a miss without touching real asset files.
-const art = vi.hoisted(() => ({ portraits: true }));
+const art = vi.hoisted(() => ({ portraits: true, sites: true }));
 vi.mock('../src/core/images.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/core/images.js')>();
   return {
     ...actual,
     assetImage: vi.fn((kind: Parameters<typeof actual.assetImage>[0], name: string) => {
+      // `sites: false` models a deploy with no chapter art (docs/ops.md: every
+      // asset is individually optional) — the only way F1 ends up with no files.
+      if (kind === 'sites' && !art.sites) return null;
       if (kind !== 'battles') return actual.assetImage(kind, name);   // chapter banners/thumbs stay real
       if (!art.portraits) return null;
       const fileName = `${name}.png`;
@@ -51,6 +54,19 @@ function makeOutcome(over: Partial<FightOutcome> = {}): FightOutcome {
 }
 const skipStub = () => null;
 
+// Mirrors discord.js MessagePayload on a message edit: a frame carrying `files`
+// (or an explicit `attachments` array) REPLACES the message's whole attachment
+// set; a frame carrying neither leaves the previous uploads in place. Fed a
+// sequence of frames, returns what is still live on the message after the last.
+function liveAfter(frames: FramePayload[]): string[] {
+  let live: string[] = [];
+  for (const frame of frames) {
+    const own = (frame.files ?? []).map((f) => f.name!);
+    live = frame.files || frame.attachments ? own : [...live, ...own];
+  }
+  return live;
+}
+
 describe('fightFrames', () => {
   it('returns 4 valid frames; files attach on F1 and F4 only', () => {
     const frames = fightFrames(makeOutcome(), skipStub);
@@ -60,6 +76,7 @@ describe('fightFrames', () => {
     expect(frames[1].files).toBeUndefined();
     expect(frames[2].files).toBeUndefined();
     expect(frames[3].files?.map((f) => f.name)).toEqual(['battle_victory.png']);
+    expect(frames[0].attachments).toEqual([]);   // F1 and F4 both replace the whole set
     expect(frames[3].attachments).toEqual([]);
     expect(frames[3].embeds[0].toJSON().image?.url).toBe('attachment://battle_victory.png');
   });
@@ -132,11 +149,34 @@ describe('fightFrames', () => {
     expect(frames[0].components).toHaveLength(1);
     expect(frames[3].components).toHaveLength(0);   // the module appends the again row (it owns userId)
   });
+  it('replay contract: F1 clears the previous fight\'s F4 banner even when it has no art of its own', () => {
+    // `battle:again` calls presentFight again on the SAME message, so fight 2's F1
+    // lands on the message fight 1's F4 last wrote — and F4 replaces the whole
+    // attachment set with the outcome banner. On a deploy with no chapter art F1
+    // carries no files; if it also carried no `attachments` key, Discord would keep
+    // fight 1's battle_victory.png alive under F1-F3, whose embeds reference
+    // nothing. F1's `attachments: []` must therefore be unconditional, not
+    // `if (files.length)`.
+    art.sites = false;
+    try {
+      const first = fightFrames(makeOutcome(), skipStub);
+      const replay = fightFrames(makeOutcome(), skipStub);
+      expect(first[0].files).toBeUndefined();               // no chapter art in this deploy
+      expect(first[0].attachments).toEqual([]);             // ...the set is replaced regardless
+      expect(liveAfter(first)).toEqual(['battle_victory.png']);
+      // The decisive step: nothing stale survives into the replay's F1-F3.
+      expect(liveAfter([...first, replay[0]])).toEqual([]);
+      expect(liveAfter([...first, ...replay.slice(0, 3)])).toEqual([]);
+      for (const f of replay.slice(0, 3)) expect(f.embeds[0].toJSON().image).toBeUndefined();
+    } finally {
+      art.sites = true;
+    }
+  });
   it('frame contract: every referenced attachment is live on that frame, and no frame uploads what it never references', () => {
     const frames = fightFrames(makeOutcome({ stageId: 'coastal_dig_boss', bossEgg: { rarity: 'rare' } }), skipStub);
     // Mirrors discord.js MessagePayload: a payload carrying `files` (or an explicit
     // `attachments` array) REPLACES the message's whole attachment set; a payload
-    // carrying neither leaves the previous uploads in place.
+    // carrying neither leaves the previous uploads in place (see liveAfter above).
     let live: string[] = [];
     frames.forEach((frame, idx) => {
       const own = (frame.files ?? []).map((f) => f.name!);

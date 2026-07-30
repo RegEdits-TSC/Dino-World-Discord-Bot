@@ -143,12 +143,17 @@
   (`src/modules/battles/embeds.ts`) attaches files on **frame 1 and frame 4
   only**, and each attaching frame uploads exactly the files its embed
   references. F2/F3 must carry no `files`/`attachments` key at all — F1's
-  uploads survive and their `attachment://` URLs keep resolving. F4 is the
-  opposite: it always sends `attachments: []` plus its own `files`, because a
-  payload carrying `files` (or an explicit `attachments` array) replaces the
-  message's whole attachment set (discord.js `MessagePayload`), which is how F4
-  sheds the chapter banner it no longer references and how the no-art case
-  avoids stranding F1's upload as a bare attachment card. Never dress F4 with
+  uploads survive and their `attachment://` URLs keep resolving. **F1 and F4 both
+  send `attachments: []` unconditionally** (plus their own `files` when the art
+  exists), because a payload carrying `files` (or an explicit `attachments` array)
+  replaces the message's whole attachment set (discord.js `MessagePayload`): that
+  is how F4 sheds the chapter banner it no longer references, how the no-art case
+  avoids stranding F1's upload as a bare attachment card, and — on F1 — how a
+  `battle:again` replay avoids inheriting the *previous* fight's outcome banner,
+  since `presentFight` re-edits the message F4 last wrote and an F1 with neither
+  key would leave that banner live under F1–F3. Both must stay unconditional: a
+  deploy missing `assets/images/sites/` is exactly the case where F1 has no files
+  of its own. Never dress F4 with
   the chapter banner again. `tests/battles-embeds.test.ts`'s frame-contract test
   is the machine gate; the skip button replays the same F4 payload via
   `i.update`, so both paths must stay identical. That replay is why F4's
@@ -161,7 +166,16 @@
   which builds `FramePayload`s directly and never constructs a
   `MessagePayload`. `finalPayload()` there is the fix and the pattern to copy
   for any future payload reused across two send sites: hand each call its own
-  fresh `attachments: []`, never forward the same object twice.
+  fresh `attachments: []`, never forward the same object twice. Those same two
+  send sites also need ORDERING, not just unshared arrays: `entry.skipped` is
+  only observable between frames, so a Skip landing while a beat frame's
+  `editReply` is in flight cannot stop that PATCH, and a beat frame landing after
+  F4 restores an embed pointing at a chapter banner F4 already dropped — a
+  permanently broken image. `queueEdit` serializes every edit on a presentation
+  behind the previous one and re-checks a guard before sending, so F4 is the last
+  PATCH in either interleaving; the lock is free during `ctx.sleep`, so a Skip
+  clicked between frames still answers instantly. Any future third writer to a
+  presented message must go through the same queue.
   Embed art kinds are `eggs | sites | banners | battles | hatch` (`assetImage`,
   `src/core/images.ts`); `hatch/<rarity>-crack.png` is the hatch-reveal image and
   its attachment name never collides with `eggs/<rarity>.png`. Generated art is
