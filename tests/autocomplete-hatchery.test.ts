@@ -95,9 +95,9 @@ describe('/hatch egg autocomplete', () => {
     const i = fakeAutocomplete({ name: 'hatch', user: 'u1', focused: { name: 'egg', value: '' } });
     await cmd('hatch').autocomplete!(ctx, i.asAutocomplete());
     const rows = i.replies[0] as Array<{ name: string; value: number }>;
-    expect(rows[0].value).not.toBe(locked.id);
-    expect(rows.find((r) => r.value === locked.id)!.name)
-      .toBe(`🥚 #${locked.id} Legendary — locked in a trade`);
+    expect(rows[rows.length - 1]).toEqual({
+      name: `🥚 #${locked.id} Legendary — locked in a trade`, value: locked.id,
+    });
   });
 
   it('sweeps expired trades so a stale lock does not demote a ready egg', async () => {
