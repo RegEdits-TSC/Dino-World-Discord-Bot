@@ -193,6 +193,14 @@ describe('hatchery visuals', () => {
     expect(embed.image).toBeUndefined();
     expect(p.files!.map((f) => f.name)).toEqual(['epic.webp']);
   });
+  it('eggListPayload marks a trade-locked egg with a padlock, ahead of its timer state', () => {
+    const locked = { ...addEgg('epic'), locked: true, hatchesAt: 5, incubationStartedAt: 1 };
+    const free = addEgg('common');
+    const p = eggListPayload([locked, free], 10, 'u1');
+    const desc = p.embeds[0].toJSON().description!;
+    expect(desc).toContain(`#${locked.id} — epic egg — 🔒 locked in a trade`);
+    expect(desc).toContain(`#${free.id} — common egg — in inventory`);
+  });
   it('eggListPayload falls back to newest-obtained when nothing is incubating', () => {
     const older = { ...addEgg('common'), obtainedAt: 1 };
     const newer = { ...addEgg('legendary'), obtainedAt: 2 };

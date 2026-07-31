@@ -63,7 +63,9 @@ function featuredEgg(eggs: Egg[], now: number): Egg | undefined {
 export function eggListPayload(eggs: Egg[], now: number, userId: string, page = 1) {
   const { items, page: p, pages } = paginate(eggs, page);
   const lines = items.length ? items.map((e) => {
-    const status = e.hatchesAt === null ? 'in inventory'
+    // Lock first: it outranks every timer state, because a locked egg cannot be acted on.
+    const status = e.locked ? '🔒 locked in a trade'
+      : e.hatchesAt === null ? 'in inventory'
       : e.hatchesAt <= now ? 'READY — /hatch' : `hatching (ready <t:${Math.floor(e.hatchesAt / 1000)}:R>)`;
     return `#${e.id} — ${rarityEmoji(e.rarity)}${e.rarity} egg — ${status}`;
   }).join('\n') : 'No eggs. Run /expedition or /shop.';
