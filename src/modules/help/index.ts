@@ -46,6 +46,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '`/shop egg rarity:<r>` — buy an egg from today\'s rotation.',
     '`/shop food item:<food> units:<n>` — diet-matched food; carnivore food costs ~20% more.',
     '`/sell dino:<id>` — sell a dino for cash + shards (shards buy Mythics).',
+    'A dino you have offered in a trade is locked 🔒 — /sell is blocked until the trade resolves.',
   ].join('\n') },
   care: { title: '🍖 Care', art: { kind: 'banners', name: 'care' }, body: [
     '`/feed one dino:<id> [food:<item>]` or `/feed all` — feeding resets hunger; costs food by rarity.',
