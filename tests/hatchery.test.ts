@@ -14,7 +14,7 @@ import { RARITY } from '../src/data/rarity.js';
 import { assetImage } from '../src/core/images.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
-import { rollTraits } from '../src/data/traits.js';
+import { traitLines } from '../src/core/trait-display.js';
 
 // assetImage is a pass-through spy by default (calls the real implementation),
 // so every test in this file except the two degrade-path tests below is
@@ -119,7 +119,15 @@ describe('hatchery', () => {
   });
 
   it('rolls fresh traits for a wild egg and stores them on the dino', () => {
-    const ctx = makeCtx({ nowMs: 0, rng: mulberry32(11) });
+    // Seed 10 is pinned deliberately: hatchEgg draws the species roll (no
+    // speciesId on this egg) before the trait roll, and this seed's stream
+    // is verified (via a standalone rollSpeciesInRarity + rollTraits replay)
+    // to land on a non-empty, two-trait result — so this test can actually
+    // fail if the rollTraits(ctx.rng) call in hatchEgg were ever dropped in
+    // favor of a hardcoded []. Seed 11 (the original pin) happens to roll
+    // zero traits for a wild common egg, which made the old assertions
+    // (toEqual + length <= 2) pass identically whether or not the roll ran.
+    const ctx = makeCtx({ nowMs: 0, rng: mulberry32(10) });
     getOrCreateUser(ctx, 'u1', 'u1');
     const egg = ctx.db.insert(schema.eggs).values({
       userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0,
@@ -130,7 +138,7 @@ describe('hatchery', () => {
     const out = hatchEgg(ctx, 'u1', egg.id);
     const dino = ctx.db.select().from(schema.dinos).all()[0];
     expect(dino.traits).toEqual(out.traits);
-    expect(dino.traits.length).toBeLessThanOrEqual(2);
+    expect(out.traits).toEqual(['fleet', 'prodigy']);
   });
 
   it('uses the stored inheritance for a bred egg instead of rolling', () => {
@@ -145,6 +153,12 @@ describe('hatchery', () => {
     const out = hatchEgg(ctx, 'u1', egg.id);
     expect(out.traits).toEqual(['hardy', 'savage']);
     expect(ctx.db.select().from(schema.dinos).all()[0].traits).toEqual(['hardy', 'savage']);
+  });
+});
+
+describe('traitLines', () => {
+  it('degrades to a placeholder for a dino with no traits, never an empty field value', () => {
+    expect(traitLines([])).toBe('_No traits_');
   });
 });
 
