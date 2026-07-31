@@ -130,6 +130,7 @@ describe('journeys', () => {
     const clockDino: ClockDino = {
       species: getSpecies(row.speciesId), paddock: PADDOCKS[lotRow.kind], decor: lotRow.decor,
       hungerAtFed: row.hunger, lastFedAt: row.lastFedAt, escapedAt: row.escapedAt,
+      traits: row.traits,
     };
     const user = ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!;
     const expected = accruedIncome([clockDino], facilityBonusPct(lots), capHours(lots), user.lastCollectAt, ctx.now());

@@ -7,7 +7,7 @@ import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
 import { feedDino, feedAll, rescueDino, CareError } from './service.js';
 import { InsufficientFundsError } from '../../core/economy.js';
-import { hungerAt } from '../../core/clock.js';
+import { hungerAt, drainMsFor } from '../../core/clock.js';
 import { getSpecies } from '../../data/species/index.js';
 import { FOODS, foodsForDiet, type FoodId } from '../../data/foods.js';
 import { RARITY } from '../../data/rarity.js';
@@ -107,7 +107,8 @@ export const careModule: ModuleManifest = {
         await respondRanked(i, dinos
           .map((d) => ({ d, species: getSpecies(d.speciesId) }))
           .filter(({ d, species }) => matches(q, d.id, species.name, species.rarity))
-          .sort((a, b) => hungerAt(a.d.hunger, a.d.lastFedAt, now) - hungerAt(b.d.hunger, b.d.lastFedAt, now))
+          .sort((a, b) => hungerAt(a.d.hunger, a.d.lastFedAt, now, drainMsFor(a.d.traits))
+                        - hungerAt(b.d.hunger, b.d.lastFedAt, now, drainMsFor(b.d.traits)))
           .map(({ d, species }) => ({ value: d.id, label: dinoLabel(d, species, now), valid: d.escapedAt === null })));
       } },
     { data: new SlashCommandBuilder().setName('rescue').setDescription('Recapture an escaped dino')

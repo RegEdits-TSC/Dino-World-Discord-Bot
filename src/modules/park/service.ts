@@ -122,6 +122,7 @@ export function toClockDinos(ctx: Ctx, userId: string): { clockDinos: ClockDino[
       paddock: isPaddock ? PADDOCKS[lot!.kind] : null,
       decor: isPaddock ? lot!.decor : [],
       hungerAtFed: d.hunger, lastFedAt: d.lastFedAt, escapedAt: d.escapedAt,
+      traits: d.traits,
     };
   });
   return { clockDinos, lots, user, dinos };

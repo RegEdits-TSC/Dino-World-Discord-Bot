@@ -5,7 +5,7 @@ import type { Species, Diet } from '../../data/types.js';
 import { FOODS, foodsForDiet, type FoodDef, type FoodId } from '../../data/foods.js';
 import { RARITY } from '../../data/rarity.js';
 import { getSpecies } from '../../data/species/index.js';
-import { hungerAt, paddockFit } from '../../core/clock.js';
+import { hungerAt, drainMsFor, paddockFit } from '../../core/clock.js';
 import { toClockDinos } from '../park/service.js';
 import { recomputeRating } from '../park/rating.js';
 import { PADDOCKS } from '../../data/paddocks.js';
@@ -52,7 +52,7 @@ export function feedAll(ctx: Ctx, userId: string):
     { fed: number[]; skipped: number[]; spent: Partial<Record<FoodId, number>> } {
   const { clockDinos, dinos } = toClockDinos(ctx, userId);
   const candidates = dinos
-    .map((d, i) => ({ id: d.id, species: clockDinos[i].species, hunger: hungerAt(d.hunger, d.lastFedAt, ctx.now()), escaped: d.escapedAt !== null }))
+    .map((d, i) => ({ id: d.id, species: clockDinos[i].species, hunger: hungerAt(d.hunger, d.lastFedAt, ctx.now(), drainMsFor(d.traits)), escaped: d.escapedAt !== null }))
     .filter((c) => !c.escaped && c.hunger < 100)
     .sort((a, b) => a.hunger - b.hunger);                // hungriest first
   const fed: number[] = []; const skipped: number[] = [];

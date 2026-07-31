@@ -1,4 +1,5 @@
 import { RARITY } from '../data/rarity.js';
+import { modProduct } from '../data/traits.js';
 import type { Species, PaddockDef } from '../data/types.js';
 
 export const HUNGER_DRAIN_MS = 48 * 3_600_000;   // spec §3.4
@@ -10,10 +11,21 @@ export const ESCAPE_WARN_MS = 12 * 3_600_000;
 export interface ClockDino {
   species: Species; paddock: PaddockDef | null; decor: string[];
   hungerAtFed: number; lastFedAt: number; escapedAt: number | null;
+  traits: string[];
 }
 
-export function hungerAt(hungerAtFed: number, lastFedAt: number, at: number): number {
-  const drained = ((at - lastFedAt) / HUNGER_DRAIN_MS) * 100;
+/**
+ * The drain window for one dino. `drain` is a RATE multiplier, so the window is
+ * the base divided by it: Hardy (0.75) drains 25% slower and therefore lasts longer.
+ */
+export function drainMsFor(traits: string[]): number {
+  return HUNGER_DRAIN_MS / modProduct(traits, 'drain');
+}
+
+// `drainMs` is deliberately REQUIRED: a default would let a call site silently keep
+// the global rate, which is exactly the bug this parameter exists to prevent.
+export function hungerAt(hungerAtFed: number, lastFedAt: number, at: number, drainMs: number): number {
+  const drained = ((at - lastFedAt) / drainMs) * 100;
   return Math.max(0, hungerAtFed - drained);
 }
 
@@ -26,7 +38,8 @@ export function paddockFit(species: Species, paddock: PaddockDef, decor: string[
 export function comfortAt(d: ClockDino, at: number): number {
   if (!d.paddock) return 0;
   // Overfilled dinos (fillTo up to 150) sit at full comfort until hunger drains back under 100.
-  return (Math.min(100, hungerAt(d.hungerAtFed, d.lastFedAt, at)) / 100) * paddockFit(d.species, d.paddock, d.decor);
+  return (Math.min(100, hungerAt(d.hungerAtFed, d.lastFedAt, at, drainMsFor(d.traits))) / 100)
+    * paddockFit(d.species, d.paddock, d.decor);
 }
 
 /** Time at which comfort first crosses below ESCAPE_COMFORT, or null if it never does while assigned. */
@@ -35,7 +48,7 @@ function comfortCrossing(d: ClockDino): number | null {
   const fit = paddockFit(d.species, d.paddock, d.decor);
   const hungerThreshold = (ESCAPE_COMFORT / fit) * 100;   // hunger% where comfort == threshold
   if (hungerThreshold >= d.hungerAtFed) return d.lastFedAt; // already at/below threshold when fed
-  const msUntil = ((d.hungerAtFed - hungerThreshold) / 100) * HUNGER_DRAIN_MS;
+  const msUntil = ((d.hungerAtFed - hungerThreshold) / 100) * drainMsFor(d.traits);
   return d.lastFedAt + msUntil;
 }
 
@@ -62,21 +75,24 @@ export function accruedIncome(
   for (const d of dinos) {
     if (!d.paddock) continue;                                // unassigned earns nothing
     if (d.escapedAt !== null && d.escapedAt <= from) continue; // already escaped before window
+    // Every time-from-hunger derivation below uses this dino's own rate, not the global
+    // constant: a missed one silently over-/under-pays a trait-bearing dino.
+    const drainMs = drainMsFor(d.traits);
     let dinoEnd = end;
     const esc = escapeAt(d);
     if (esc !== null) dinoEnd = Math.min(dinoEnd, Math.max(from, esc));
-    const hungerZero = d.lastFedAt + (d.hungerAtFed / 100) * HUNGER_DRAIN_MS;
+    const hungerZero = d.lastFedAt + (d.hungerAtFed / 100) * drainMs;
     dinoEnd = Math.min(dinoEnd, Math.max(from, hungerZero));
     if (dinoEnd <= from) continue;
     // Comfort is piecewise linear with a knee where hunger crosses 100 (overfill).
     // A two-point mean is exact on each side of the knee but wrong across it.
     const seg = (a: number, b: number) =>
       ((comfortAt(d, a) + comfortAt(d, b)) / 2) * ((b - a) / 3_600_000);
-    const knee = d.lastFedAt + Math.max(0, (d.hungerAtFed - 100) / 100) * HUNGER_DRAIN_MS;
+    const knee = d.lastFedAt + Math.max(0, (d.hungerAtFed - 100) / 100) * drainMs;
     const comfortHours = knee > from && knee < dinoEnd
       ? seg(from, knee) + seg(knee, dinoEnd)
       : seg(from, dinoEnd);
-    total += RARITY[d.species.rarity].incomePerHr * comfortHours;
+    total += RARITY[d.species.rarity].incomePerHr * modProduct(d.traits, 'income') * comfortHours;
   }
   return Math.floor(total * (1 + facilityBonusPct / 100));
 }
