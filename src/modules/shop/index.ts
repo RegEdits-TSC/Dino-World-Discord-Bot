@@ -5,6 +5,7 @@ import type { Rarity } from '../../data/types.js';
 import { getOrCreateUser } from '../park/service.js';
 import { dailyEggOffers, buyEgg, buyFood, ShopError } from './service.js';
 import { sellDino, previewSell, ShardError } from './shards.js';
+import { expireStale } from '../trading/service.js';
 import { schema } from '../../core/db/index.js';
 import { getSpecies } from '../../data/species/index.js';
 import { SHOP_EGG_PRICES, FOOD_BUNDLES } from '../../data/shop.js';
@@ -113,6 +114,7 @@ export const shopModule: ModuleManifest = {
         .addIntegerOption((o) => o.setName('dino').setDescription('Dino id from /dino list').setRequired(true).setAutocomplete(true)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        expireStale(ctx, i.user.id);
         const dinoId = i.options.getInteger('dino', true);
         try {
           const p = previewSell(ctx, i.user.id, dinoId);
@@ -132,6 +134,7 @@ export const shopModule: ModuleManifest = {
         } catch (e) { if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
       },
       async autocomplete(ctx, i) {
+        expireStale(ctx, i.user.id);
         const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all();
         if (!dinos.length) { await respondRanked(i, [emptyRow('No dinos — hatch an egg first', 0)]); return; }
         const q = String(i.options.getFocused());
@@ -151,6 +154,7 @@ export const shopModule: ModuleManifest = {
     { prefix: 'sell', async execute(ctx, i) {
         const [, action, idStr] = i.customId.split(':');
         if (action !== 'confirm') return;
+        expireStale(ctx, i.user.id);
         try {
           const res = sellDino(ctx, i.user.id, Number(idStr));
           const cap = res.capped ? ' (shard cap reached)' : '';

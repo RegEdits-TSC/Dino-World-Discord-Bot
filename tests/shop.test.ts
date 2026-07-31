@@ -4,6 +4,7 @@ import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { dailyEggOffers, buyEgg, buyFood, ShopError } from '../src/modules/shop/service.js';
 import { shopModule } from '../src/modules/shop/index.js';
+import { createTrade } from '../src/modules/trading/service.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 
@@ -159,5 +160,41 @@ describe('shop food and sell error branches', () => {
     const b = fakeButton({ customId: `sell:confirm:${dino.id}`, user: 'u1' });
     await comp.execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
     expect(replyText(b.replies[0])).toContain('locked');
+  });
+
+  it('/sell sweeps an expired trade first, so a stale lock does not block the sale prompt', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    const dino = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'velociraptor', hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [dino.id], eggIds: [], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    ctx.setNow(ctx.now() + 25 * 3_600_000);          // TRADE_EXPIRY_MS is 24h
+    const sell = shopModule.commands.find((c) => c.data.name === 'sell')!;
+    const i = fakeCommand({ name: 'sell', user: 'u1', options: { dino: dino.id } });
+    await sell.execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: Array<{ toJSON(): { description?: string } }> };
+    expect(payload.embeds[0].toJSON().description).toContain(`Sell dino #${dino.id} for 500 cash`);
+    const after = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dino.id)).get()!;
+    expect(after.locked).toBe(false);
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
+  });
+
+  it('sell:confirm sweeps an expired trade first, so a stale lock does not block the sale', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    const dino = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'velociraptor', hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [dino.id], eggIds: [], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    ctx.setNow(ctx.now() + 25 * 3_600_000);          // TRADE_EXPIRY_MS is 24h
+    const comp = shopModule.components.find((c) => c.prefix === 'sell')!;
+    const b = fakeButton({ customId: `sell:confirm:${dino.id}`, user: 'u1' });
+    await comp.execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
+    expect(replyText(b.replies[0])).toContain('Sold for');
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dino.id)).get()).toBeUndefined();
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
   });
 });

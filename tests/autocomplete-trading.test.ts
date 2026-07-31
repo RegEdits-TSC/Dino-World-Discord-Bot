@@ -4,6 +4,7 @@ import { tradingModule } from '../src/modules/trading/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { schema } from '../src/core/db/index.js';
+import { eq } from 'drizzle-orm';
 
 const cmd = () => tradingModule.commands[0];
 const H = 3_600_000;
@@ -131,6 +132,28 @@ describe('/trade offer id-list autocomplete', () => {
     });
     await cmd().autocomplete!(ctx, i.asAutocomplete());
     expect(i.replies[0]).toEqual([{ name: 'Pick the user option first', value: '-' }]);
+  });
+
+  it('want-dinos: sweeps the counterparty\'s expired trade first, so a stale lock does not hide their dino', async () => {
+    const ctx = makeCtx();
+    seedInventory(ctx, 'u1');
+    const theirs = seedInventory(ctx, 'u2');
+    getOrCreateUser(ctx, 'u3', 'u3');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    const target = theirs.dino({});
+    createTrade(ctx, 'u2', 'u3', { dinoIds: [target.id], eggIds: [], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    ctx.setNow(ctx.now() + 25 * H);   // past TRADE_EXPIRY_MS (24h)
+    const i = fakeAutocomplete({
+      name: 'trade', sub: 'offer', user: 'u1',
+      focused: { name: 'want-dinos', value: '' },
+      options: { user: 'u2' },
+    });
+    await cmd().autocomplete!(ctx, i.asAutocomplete());
+    expect(i.replies[0]).toEqual([{ name: `${target.id} — 🦖 Velociraptor (rare)`, value: String(target.id) }]);
+    const after = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, target.id)).get()!;
+    expect(after.locked).toBe(false);
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
   });
 
   it('empty tradeable pool yields an informational row', async () => {
