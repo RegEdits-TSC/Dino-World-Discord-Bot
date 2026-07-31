@@ -12,6 +12,7 @@ import { expeditionsModule } from '../src/modules/expeditions/index.js';
 import { adminModule } from '../src/modules/admin/index.js';
 import { settingsModule } from '../src/modules/settings/index.js';
 import { eggHatchHandler, type Sender, type NotifyPayload } from '../src/core/notify.js';
+import { sellDino } from '../src/modules/shop/shards.js';
 import { accruedIncome, comfortAt, type ClockDino } from '../src/core/clock.js';
 import { RARITY } from '../src/data/rarity.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
@@ -214,6 +215,38 @@ describe('journeys', () => {
     expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
     expect(ctx.db.select().from(schema.dinos).all()[0].locked).toBe(false);
     expect(ctx.db.select().from(schema.dinos).all()[0].userId).toBe('a');
+  });
+
+  it('shard funnel: /trade offer egg → accept → incubate → crack → /sell pays 0 shards', async () => {
+    // The alt-to-main funnel one hatch-step removed. Trading flags the EGG via_trade;
+    // before the fix hatchEgg dropped the flag and the hatchling sold at full shard value.
+    const ctx = makeCtx(); ctx.setNow(1000);
+    getOrCreateUser(ctx, 'a', 'a'); getOrCreateUser(ctx, 'b', 'b');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both sides ≥ 2★ gate
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'a', rarity: 'rare', source: 'expedition', obtainedAt: 0 }).returning().get();
+
+    await dispatch(ctx, tradingModule, 'trade', {
+      name: 'trade', sub: 'offer', user: 'a', options: { user: 'b', 'give-eggs': String(egg.id) },
+    });
+    const t = ctx.db.select().from(schema.trades).where(eq(schema.trades.fromUser, 'a')).get()!;
+    await dispatch(ctx, tradingModule, 'trade', {
+      name: 'trade', sub: 'accept', user: 'b', options: { id: t.id },
+    });
+    const moved = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!;
+    expect(moved.userId).toBe('b');
+    expect(moved.viaTrade).toBe(true);
+    expect(moved.locked).toBe(false);            // accept unlocks, so 'b' can incubate it
+
+    await dispatch(ctx, hatcheryModule, 'incubate', { name: 'incubate', user: 'b', options: { egg: egg.id } });
+    ctx.setNow(ctx.now() + RARITY.rare.incubationMs + 1);
+    await click(ctx, hatcheryModule, `hatch:crack:${egg.id}`, 'b');
+
+    const dino = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, 'b')).get()!;
+    expect(dino.viaTrade).toBe(true);
+    const sale = sellDino(ctx, 'b', dino.id);
+    expect(sale.shards).toBe(0);
+    expect(sale.cash).toBeGreaterThan(0);        // cash still flows; only shards are denied
   });
 
   it('notification chain: /settings channel → /incubate → tick → channel ping; hatched egg → no ping', async () => {
