@@ -42,12 +42,13 @@ export const hatcheryModule: ModuleManifest = {
         } catch (e) { if (e instanceof HatcheryError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
       },
       async autocomplete(ctx, i) {
+        expireStale(ctx, i.user.id);
         const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, i.user.id)).all();
         if (!eggs.length) { await respondRanked(i, [emptyRow('No eggs — get one from /shop egg or /expedition', 0)]); return; }
         const q = String(i.options.getFocused());
         await respondRanked(i, eggs
           .filter((e) => matches(q, e.id, e.rarity))
-          .map((e) => ({ value: e.id, label: eggLabel(e, ctx.now()), valid: e.incubationStartedAt === null })));
+          .map((e) => ({ value: e.id, label: eggLabel(e, ctx.now()), valid: e.incubationStartedAt === null && !e.locked })));
       } },
     { data: new SlashCommandBuilder().setName('hatch').setDescription('Hatch a ready egg')
         .addIntegerOption((o) => o.setName('egg').setDescription('Egg — type to search').setRequired(true).setAutocomplete(true)),
@@ -62,12 +63,13 @@ export const hatcheryModule: ModuleManifest = {
         await i.reply(preHatchPayload(egg.rarity, eggId));
       },
       async autocomplete(ctx, i) {
+        expireStale(ctx, i.user.id);
         const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, i.user.id)).all();
         if (!eggs.length) { await respondRanked(i, [emptyRow('No eggs — get one from /shop egg or /expedition', 0)]); return; }
         const q = String(i.options.getFocused());
         await respondRanked(i, eggs
           .filter((e) => matches(q, e.id, e.rarity))
-          .map((e) => ({ value: e.id, label: eggLabel(e, ctx.now()), valid: e.hatchesAt !== null && e.hatchesAt <= ctx.now() })));
+          .map((e) => ({ value: e.id, label: eggLabel(e, ctx.now()), valid: e.hatchesAt !== null && e.hatchesAt <= ctx.now() && !e.locked })));
       } },
     { data: new SlashCommandBuilder().setName('mythic').setDescription('Spend 500 shards on a Mythic egg (needs 4★)')
         .addStringOption((o) => o.setName('species').setDescription('Which Mythic').setRequired(true).addChoices(...mythicChoices)),

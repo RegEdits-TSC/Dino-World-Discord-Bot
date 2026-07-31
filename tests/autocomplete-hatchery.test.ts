@@ -3,6 +3,8 @@ import { makeCtx, fakeAutocomplete } from './harness.js';
 import { hatcheryModule } from '../src/modules/hatchery/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { schema } from '../src/core/db/index.js';
+import { createTrade } from '../src/modules/trading/service.js';
+import { eq } from 'drizzle-orm';
 
 const H = 3_600_000;
 const cmd = (name: string) => hatcheryModule.commands.find((c) => c.data.name === name)!;
@@ -46,6 +48,21 @@ describe('/incubate egg autocomplete', () => {
     await cmd('incubate').autocomplete!(ctx, i.asAutocomplete());
     expect(i.replies[0]).toEqual([{ name: 'No eggs — get one from /shop egg or /expedition', value: 0 }]);
   });
+
+  it('tags a locked egg and ranks it below the valid ones', async () => {
+    const ctx = makeCtx({ nowMs: 2 * H });
+    const { inventory } = seedEggs(ctx);
+    const locked = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'legendary', source: 'shop', obtainedAt: 0, locked: true })
+      .returning().get();
+    const i = fakeAutocomplete({ name: 'incubate', user: 'u1', focused: { name: 'egg', value: '' } });
+    await cmd('incubate').autocomplete!(ctx, i.asAutocomplete());
+    const rows = i.replies[0] as Array<{ name: string; value: number }>;
+    expect(rows[0].value).toBe(inventory.id);                      // valid first
+    expect(rows[rows.length - 1]).toEqual({
+      name: `🥚 #${locked.id} Legendary — locked in a trade`, value: locked.id,
+    });
+  });
 });
 
 describe('/hatch egg autocomplete', () => {
@@ -66,5 +83,41 @@ describe('/hatch egg autocomplete', () => {
     const i = fakeAutocomplete({ name: 'hatch', user: 'u2', focused: { name: 'egg', value: '' } });
     await cmd('hatch').autocomplete!(ctx, i.asAutocomplete());
     expect(i.replies[0]).toEqual([{ name: 'No eggs — get one from /shop egg or /expedition', value: 0 }]);
+  });
+
+  it('never ranks a locked egg as ready, even when its timer is up', async () => {
+    const ctx = makeCtx({ nowMs: 2 * H });
+    seedEggs(ctx);
+    const locked = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'legendary', source: 'shop', obtainedAt: 0,
+                incubationStartedAt: 0, hatchesAt: 1, locked: true })
+      .returning().get();
+    const i = fakeAutocomplete({ name: 'hatch', user: 'u1', focused: { name: 'egg', value: '' } });
+    await cmd('hatch').autocomplete!(ctx, i.asAutocomplete());
+    const rows = i.replies[0] as Array<{ name: string; value: number }>;
+    expect(rows[0].value).not.toBe(locked.id);
+    expect(rows.find((r) => r.value === locked.id)!.name)
+      .toBe(`🥚 #${locked.id} Legendary — locked in a trade`);
+  });
+
+  it('sweeps expired trades so a stale lock does not demote a ready egg', async () => {
+    // A locked AND ready row cannot be built through services in either order —
+    // createTrade refuses an incubating egg, and (after this work) incubateEgg refuses
+    // a locked one. Trade first, then set the timer fields directly.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    ctx.db.update(schema.eggs).set({ incubationStartedAt: 0, hatchesAt: 1 })
+      .where(eq(schema.eggs.id, egg.id)).run();
+    ctx.setNow(25 * 3_600_000);                                        // TRADE_EXPIRY_MS is 24h
+    const i = fakeAutocomplete({ name: 'hatch', user: 'u1', focused: { name: 'egg', value: '' } });
+    await cmd('hatch').autocomplete!(ctx, i.asAutocomplete());
+    const rows = i.replies[0] as Array<{ name: string; value: number }>;
+    expect(rows[0]).toEqual({ name: `🥚 #${egg.id} Common — READY`, value: egg.id });
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.locked).toBe(false);
   });
 });
