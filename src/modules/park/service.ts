@@ -56,6 +56,13 @@ export function capHours(lots: Lot[]): number {
   return level > 0 ? FACILITIES.visitor_center.capHours![level - 1] : 8;
 }
 
+// Returns 0 without a Gene Lab, unlike capHours/incubatorSlots: there is no free
+// breeding slot the way every park gets a free incubator.
+export function breedingSlots(lots: Lot[]): number {
+  const level = facilityLevel(lots, 'gene_lab');
+  return level > 0 ? FACILITIES.gene_lab.breedingSlots![level - 1] : 0;
+}
+
 export function buildLot(ctx: Ctx, userId: string, kind: string): Lot {
   const paddock = PADDOCKS[kind]; const facility = FACILITIES[kind];
   if (!paddock && !facility) throw new UnknownKindError(kind);
@@ -64,8 +71,8 @@ export function buildLot(ctx: Ctx, userId: string, kind: string): Lot {
   // One facility per kind. capHours/incubatorSlots/facilityBonusPct each resolve a kind
   // to its best row, so a second one costs cash and changes nothing. Paddocks are exempt:
   // building more of one kind IS the capacity progression.
-  // Checked before the slot cap: with 3 base slots and 3 facility kinds a player who owns
-  // all three is already capped, and naming the facility is the more actionable message.
+  // Checked before the slot cap: with 3 base slots and 4 facility kinds a player who owns
+  // all four is already capped, and naming the facility is the more actionable message.
   if (facility && lots.some((l) => l.kind === kind)) throw new DuplicateFacilityError(facility.name);
   const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!;
   if (lots.length >= lotSlots(user.ratingHighWater)) throw new LotLimitError();

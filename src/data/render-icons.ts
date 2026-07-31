@@ -15,6 +15,7 @@ const LOT_ICON: Record<string, string> = {
   food_court: '🍔',
   hatchery_lab: '🥚',
   visitor_center: '🏛️',
+  gene_lab: '🧬',
 };
 
 // Known kinds get a specific icon; anything else falls back by lot type.

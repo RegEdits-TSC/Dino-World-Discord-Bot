@@ -5,6 +5,7 @@ import { emojiTag } from '../../core/emojis.js';
 const LOT_EMOJI: Record<string, string> = {
   carnivore_paddock: 'dw_lot_carnivore', herbivore_paddock: 'dw_lot_herbivore',
   food_court: 'dw_lot_food_court', hatchery_lab: 'dw_lot_hatchery', visitor_center: 'dw_lot_visitor',
+  gene_lab: 'dw_lot_genelab',
 };
 
 export function dashboardPayload(

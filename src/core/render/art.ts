@@ -21,6 +21,7 @@ const LOT_ICON_SVG: Record<string, string> = {
   food_court: 'dw_lot_food_court',
   hatchery_lab: 'dw_lot_hatchery',
   visitor_center: 'dw_lot_visitor',
+  gene_lab: 'dw_lot_genelab',
 };
 
 function nullChips(): Record<Rarity, Image | null> {

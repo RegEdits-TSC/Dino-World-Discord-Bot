@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { MessageFlags } from 'discord.js';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
-import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, BASE_LOT_SLOTS } from '../src/modules/park/service.js';
+import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, BASE_LOT_SLOTS, breedingSlots } from '../src/modules/park/service.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
@@ -355,5 +355,35 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     await cmd.execute(ctx, i.asChatInput());
     expect(replyText(i.replies[0])).toBe('You already have a Visitor Center — upgrade it instead.');
     expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+});
+
+describe('gene lab', () => {
+  it('grants no breeding slots without one', () => {
+    expect(breedingSlots([])).toBe(0);
+  });
+
+  it('grants 1/2/3 slots by level', () => {
+    const lot = (level: number) => ([{ id: 1, userId: 'u', type: 'facility', kind: 'gene_lab', name: 'Gene Lab', level, decor: [] }] as never);
+    expect(breedingSlots(lot(1))).toBe(1);
+    expect(breedingSlots(lot(2))).toBe(2);
+    expect(breedingSlots(lot(3))).toBe(3);
+  });
+
+  it('adds no income bonus', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'test', 0);
+    buildLot(ctx, 'u1', 'gene_lab');
+    const lots = ctx.db.select().from(schema.lots).all();
+    expect(facilityBonusPct(lots)).toBe(0);
+  });
+
+  it('allows only one per park', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'test', 0);
+    buildLot(ctx, 'u1', 'gene_lab');
+    expect(() => buildLot(ctx, 'u1', 'gene_lab')).toThrow(DuplicateFacilityError);
   });
 });

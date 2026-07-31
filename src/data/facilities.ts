@@ -17,4 +17,10 @@ export const FACILITIES: Record<string, FacilityDef> = {
     incomeBonusPct: [4, 8, 12],
     buildCost: 8_000, upgradeCosts: [20_000, 200_000],
   },
+  gene_lab: {
+    kind: 'gene_lab', name: 'Gene Lab', maxLevel: 3,
+    incomeBonusPct: [0, 0, 0],
+    breedingSlots: [1, 2, 3],
+    buildCost: 20_000, upgradeCosts: [60_000, 250_000],
+  },
 };
