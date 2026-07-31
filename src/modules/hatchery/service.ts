@@ -7,14 +7,14 @@ import { FACILITIES } from '../../data/facilities.js';
 import { getSpecies } from '../../data/species/index.js';
 import { rollSpeciesInRarity } from '../../core/rolls.js';
 import { recomputeRating } from '../park/rating.js';
-import type { Lot } from '../park/service.js';
+import { facilityLevel, type Lot } from '../park/service.js';
 
 export class HatcheryError extends Error {}
 export type Egg = typeof schema.eggs.$inferSelect;
 
 export function incubatorSlots(lots: Lot[]): number {
-  const lab = lots.find((l) => l.kind === 'hatchery_lab');
-  return lab ? FACILITIES.hatchery_lab.incubatorSlots![lab.level - 1] : 1;
+  const level = facilityLevel(lots, 'hatchery_lab');
+  return level > 0 ? FACILITIES.hatchery_lab.incubatorSlots![level - 1] : 1;
 }
 
 export function incubatingCount(ctx: Ctx, userId: string): number {

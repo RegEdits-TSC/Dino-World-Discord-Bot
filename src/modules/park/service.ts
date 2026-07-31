@@ -34,14 +34,26 @@ export function getOrCreateUser(ctx: Ctx, userId: string, displayName: string): 
   });
 }
 
+// Best row per kind. buildLot now blocks new duplicates, but rows that predate that block
+// still exist on live databases, and `find` resolved them to whichever the unordered SELECT
+// returned first — usually the lowest id, i.e. the one the player did NOT upgrade.
+// Returns 0 when the kind is absent; callers branch on that rather than indexing with a
+// computed maximum, because Math.max() of an empty list is -Infinity and neither level
+// table guards its index.
+export function facilityLevel(lots: Lot[], kind: string): number {
+  return lots.reduce((best, l) => (l.kind === kind && l.level > best ? l.level : best), 0);
+}
+
 export function facilityBonusPct(lots: Lot[]): number {
-  return lots.filter((l) => l.type === 'facility')
-    .reduce((sum, l) => sum + (FACILITIES[l.kind]?.incomeBonusPct[l.level - 1] ?? 0), 0);
+  return Object.keys(FACILITIES).reduce((sum, kind) => {
+    const level = facilityLevel(lots, kind);
+    return sum + (level > 0 ? FACILITIES[kind].incomeBonusPct[level - 1] ?? 0 : 0);
+  }, 0);
 }
 
 export function capHours(lots: Lot[]): number {
-  const vc = lots.find((l) => l.kind === 'visitor_center');
-  return vc ? FACILITIES.visitor_center.capHours![vc.level - 1] : 8;
+  const level = facilityLevel(lots, 'visitor_center');
+  return level > 0 ? FACILITIES.visitor_center.capHours![level - 1] : 8;
 }
 
 export function buildLot(ctx: Ctx, userId: string, kind: string): Lot {

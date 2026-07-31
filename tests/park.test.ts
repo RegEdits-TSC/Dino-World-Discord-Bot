@@ -15,6 +15,13 @@ const H = 3_600_000;
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
 
+// Direct insert, because buildLot refuses a duplicate facility — these rows simulate
+// the pre-existing duplicates on a live DB that the fix deliberately does not migrate.
+const seedLot = (over: Partial<typeof schema.lots.$inferInsert> = {}) =>
+  ctx.db.insert(schema.lots).values({
+    userId: 'u1', type: 'facility', kind: 'visitor_center', name: 'Visitor Center', ...over,
+  }).returning().get();
+
 describe('park service', () => {
   it('creates a user once with starting wallet', () => {
     const u1 = getOrCreateUser(ctx, 'u1', 'Reg');
@@ -42,6 +49,32 @@ describe('park service', () => {
     const lots = ctx.db.select().from(schema.lots).all();
     expect(capHours(lots)).toBe(8);               // VC level 1
     expect(facilityBonusPct(lots)).toBe(4);       // VC lvl1 0% + food court lvl1 4%
+  });
+
+  it('resolves duplicate facility rows to the best one, for cap and for income alike', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    // Level 2 first, not level 1: a level-1 Visitor Center contributes 0% income, which
+    // would make the summing and max-per-kind answers identical and prove nothing.
+    seedLot({ level: 2 });                                             // built first, the one find() returns
+    seedLot({ level: 4 });                                             // the one actually upgraded
+    seedLot({ type: 'facility', kind: 'food_court', name: 'Food Court', level: 2 });
+    const lots = ctx.db.select().from(schema.lots).all();
+    expect(capHours(lots)).toBe(20);                                   // capHours[3], not the lvl-2 row's 12
+    expect(facilityBonusPct(lots)).toBe(23);                           // VC lvl4 15% + Food Court lvl2 8%,
+                                                                       // not 5+15+8 summed across both VCs
+  });
+
+  it('keeps the no-facility defaults', () => {
+    expect(capHours([])).toBe(8);
+    expect(facilityBonusPct([])).toBe(0);
+  });
+
+  it('ignores paddock rows when resolving facilities', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    seedLot({ type: 'paddock', kind: 'herbivore_paddock', name: 'Herbivore Paddock', level: 4 });
+    const lots = ctx.db.select().from(schema.lots).all();
+    expect(capHours(lots)).toBe(8);
+    expect(facilityBonusPct(lots)).toBe(0);
   });
 
   it('collectIncome pays integrated income and stamps lastCollectAt', () => {

@@ -42,6 +42,14 @@ describe('hatchery', () => {
     expect(() => incubateEgg(ctx, 'u1', b.id, 'g1')).toThrow(HatcheryError);
     expect(incubatorSlots([])).toBe(1);
   });
+  it('incubator slots come from the best Hatchery Lab, not the first one built', () => {
+    const lab = (level: number) => ctx.db.insert(schema.lots)
+      .values({ userId: 'u1', type: 'facility', kind: 'hatchery_lab', name: 'Hatchery Lab', level })
+      .returning().get();
+    const lots = [lab(1), lab(3)];
+    expect(incubatorSlots(lots)).toBe(3);
+    expect(incubatorSlots([])).toBe(1);
+  });
   it('hatch before ready fails; hatch after ready creates a dino of the egg rarity and removes the egg', () => {
     const egg = addEgg('rare');
     incubateEgg(ctx, 'u1', egg.id, 'g1');
