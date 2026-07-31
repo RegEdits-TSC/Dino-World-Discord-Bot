@@ -5,6 +5,7 @@ import { schema } from '../../core/db/index.js';
 import { getOrCreateUser } from '../park/service.js';
 import { incubateEgg, hatchEgg, HatcheryError } from './service.js';
 import { buyMythicEgg, mythicSpeciesChoices, ShardError } from '../shop/shards.js';
+import { expireStale } from '../trading/service.js';
 import { getSpecies } from '../../data/species/index.js';
 import { preHatchPayload, revealPayload, eggListPayload, RARITY_COLOR } from './embeds.js';
 import { assetImage, attach } from '../../core/images.js';
@@ -27,6 +28,9 @@ export const hatcheryModule: ModuleManifest = {
         .addIntegerOption((o) => o.setName('egg').setDescription('Egg — type to search').setRequired(true).setAutocomplete(true)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        // Escrow locks only clear when someone touches a /trade surface, so sweep before
+        // reading eggs — otherwise a dead trade rejects with a lock that no longer exists.
+        expireStale(ctx, i.user.id);
         try {
           const egg = incubateEgg(ctx, i.user.id, i.options.getInteger('egg', true), i.guildId);
           const embed = new EmbedBuilder().setColor(RARITY_COLOR[egg.rarity] ?? 0x95a5a6)
@@ -49,9 +53,11 @@ export const hatcheryModule: ModuleManifest = {
         .addIntegerOption((o) => o.setName('egg').setDescription('Egg — type to search').setRequired(true).setAutocomplete(true)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        expireStale(ctx, i.user.id);
         const eggId = i.options.getInteger('egg', true);
         const egg = ctx.db.select().from(schema.eggs).where(and(eq(schema.eggs.id, eggId), eq(schema.eggs.userId, i.user.id))).get();
         if (!egg) { await i.reply({ content: 'You do not own that egg.', flags: MessageFlags.Ephemeral }); return; }
+        if (egg.locked) { await i.reply({ content: 'That egg is locked in a pending trade.', flags: MessageFlags.Ephemeral }); return; }
         if (egg.hatchesAt === null || egg.hatchesAt > ctx.now()) { await i.reply({ content: 'That egg is not ready to hatch.', flags: MessageFlags.Ephemeral }); return; }
         await i.reply(preHatchPayload(egg.rarity, eggId));
       },
