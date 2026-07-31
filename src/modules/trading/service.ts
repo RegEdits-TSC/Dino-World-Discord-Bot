@@ -3,7 +3,7 @@ import { schema } from '../../core/db/index.js';
 import type { TradeSide } from '../../core/db/schema.js';
 import type { Ctx } from '../../core/context.js';
 import { getSpecies } from '../../data/species/index.js';
-import { locksFor, type Locks } from '../../core/locks.js';
+import { locksFor, type LockReason } from '../../core/locks.js';
 import { TradeError, sideItemCount } from './validate.js';
 import { FOODS, type FoodId } from '../../data/foods.js';
 import { TRADE_MIN_RATING, TRADE_DAILY_CAP, TRADE_MAX_ITEMS_PER_SIDE, TRADE_EXPIRY_MS } from '../../data/trade.js';
@@ -18,9 +18,13 @@ export function liveRating(ctx: Ctx, userId: string): number {
   return ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!.parkRating;
 }
 
-// Verify a user owns every dino/egg in a side, none Mythic, none locked (unless skipLockCheck), no escaped dino, and has the cash/food.
-// skipLockCheck: at accept time, the OFFER side's items are locked BY THIS trade — expected, not an exploit.
-export function verifySide(ctx: Ctx, userId: string, side: TradeSide, opts: { skipLockCheck?: boolean } = {}): void {
+// Verify a user owns every dino/egg in a side, none Mythic, none escrowed, no escaped dino, and has the cash/food.
+// forTradeId waives EXACTLY ONE lock: the named trade's own escrow, because at accept time the offer side is
+// locked BY THAT TRADE — expected, not an exploit. Every other reason still rejects. This must stay scoped to a
+// single trade id rather than a blanket skip: escrow now carries a second reason, and a blanket skip would let
+// acceptTrade transfer a dino whose unclaimed breeding is still in flight — which src/core/db/schema.ts's
+// `breedings` note ("their parents are locked, so they cannot vanish mid-flight") relies on being impossible.
+export function verifySide(ctx: Ctx, userId: string, side: TradeSide, opts: { forTradeId?: number } = {}): void {
   if (sideItemCount(side) > TRADE_MAX_ITEMS_PER_SIDE) throw new TradeError(`At most ${TRADE_MAX_ITEMS_PER_SIDE} items per side.`);
   if (side.cash < 0) throw new TradeError('Amounts cannot be negative.');
   for (const [foodId, qty] of Object.entries(side.foods)) {
@@ -36,18 +40,21 @@ export function verifySide(ctx: Ctx, userId: string, side: TradeSide, opts: { sk
       throw new TradeError(`Not enough ${FOODS[foodId as FoodId].name} for the trade.`);
   }
   // One batched lock read for the whole side — never one per id.
-  const locks: Locks = opts.skipLockCheck ? { dinos: new Map(), eggs: new Map() } : locksFor(ctx, userId);
+  const locks = locksFor(ctx, userId);
+  // Undefined forTradeId waives nothing: `r.tradeId === undefined` is never true for a real row.
+  const escrowed = (r: LockReason | undefined): boolean =>
+    r !== undefined && !(r.kind === 'trade' && r.tradeId === opts.forTradeId);
   for (const id of side.dinoIds) {
     const d = ctx.db.select().from(schema.dinos).where(and(eq(schema.dinos.id, id), eq(schema.dinos.userId, userId))).get();
     if (!d) throw new TradeError(`You do not own dino #${id}.`);
-    if (locks.dinos.has(id)) throw new TradeError(`Dino #${id} is already in a pending trade or breeding.`);
+    if (escrowed(locks.dinos.get(id))) throw new TradeError(`Dino #${id} is already in a pending trade or breeding.`);
     if (d.escapedAt !== null) throw new TradeError(`Dino #${id} has escaped — rescue it first.`);
     if (getSpecies(d.speciesId).rarity === 'mythic') throw new TradeError('Mythics cannot be traded.');
   }
   for (const id of side.eggIds) {
     const e = ctx.db.select().from(schema.eggs).where(and(eq(schema.eggs.id, id), eq(schema.eggs.userId, userId))).get();
     if (!e) throw new TradeError(`You do not own egg #${id}.`);
-    if (locks.eggs.has(id)) throw new TradeError(`Egg #${id} is already in a pending trade.`);
+    if (escrowed(locks.eggs.get(id))) throw new TradeError(`Egg #${id} is already in a pending trade.`);
     if (e.rarity === 'mythic') throw new TradeError('Mythic eggs cannot be traded.');
     if (e.incubationStartedAt !== null) throw new TradeError(`Egg #${id} is incubating — it cannot be traded.`);
   }
@@ -89,9 +96,10 @@ export function acceptTrade(ctx: Ctx, userId: string, tradeId: number): Trade {
   if (trade.createdAt + TRADE_EXPIRY_MS <= ctx.now()) throw new TradeError('That trade has expired.');
   // Re-verify against current state (reads, outside the transaction — a failed verify leaves the trade
   // pending with the offer's items still locked, so the sender can still /trade cancel).
-  // The offer's items are locked BY THIS trade → skipLockCheck. The request side is verified normally
-  // (its items must not be locked in some other pending trade).
-  verifySide(ctx, trade.fromUser, trade.offer, { skipLockCheck: true });
+  // The offer's items are locked BY THIS trade → waive that one lock and nothing else, so a second
+  // pending trade or an unclaimed breeding still blocks the transfer. The request side is verified
+  // with no waiver at all.
+  verifySide(ctx, trade.fromUser, trade.offer, { forTradeId: trade.id });
   verifySide(ctx, trade.toUser, trade.request);
   if (liveRating(ctx, trade.fromUser) < TRADE_MIN_RATING || liveRating(ctx, trade.toUser) < TRADE_MIN_RATING)
     throw new TradeError('Both players must be at 2★ to complete the trade.');

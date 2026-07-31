@@ -137,6 +137,20 @@ describe('acceptTrade', () => {
     const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [da.id] }, empty);
     expect(() => acceptTrade(ctx, 'a', t.id)).toThrow(TradeError);
   });
+  it('refuses to transfer an offered dino that a breeding also holds', () => {
+    // The accept-time lock waiver is scoped to THIS trade's own escrow, nothing wider. A Gene
+    // Lab breeding started after the offer must still block the transfer, or the parents vanish
+    // mid-flight — which src/core/db/schema.ts's `breedings` note relies on being impossible.
+    const d = addDino('a');
+    const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty);
+    ctx.db.insert(schema.breedings).values({
+      userId: 'a', parentA: d.id, parentB: d.id, rarity: 'common', startedAt: 0, readyAt: 100,
+    }).run();
+    expect(() => acceptTrade(ctx, 'b', t.id)).toThrow(TradeError);
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.userId).toBe('a');
+    // Failed verify leaves the offer open, so the sender can still /trade cancel.
+    expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('pending');
+  });
   it('cannot accept an already-resolved trade twice', () => {
     const da = addDino('a');
     const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [da.id] }, empty);

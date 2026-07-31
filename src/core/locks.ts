@@ -41,6 +41,10 @@ export function locksFor(ctx: Ctx, userId: string): Locks {
     for (const id of t.offer.eggIds) eggs.set(id, reason);
   }
 
+  // Breedings are resolved AFTER trades on purpose: one id holds one reason, and `verifySide`
+  // waives a lock only when it reads back as the accepting trade's own. Overwriting a trade
+  // reason with a breeding one is the fail-safe direction — the reverse order would let
+  // acceptTrade transfer a dino whose breeding is still in flight. Never swap these loops.
   const breeds = ctx.db.select().from(schema.breedings)
     .where(and(eq(schema.breedings.userId, userId), isNull(schema.breedings.claimedAt))).all();
   for (const b of breeds) {

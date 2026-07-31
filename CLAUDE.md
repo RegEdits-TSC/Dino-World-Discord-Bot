@@ -303,8 +303,15 @@
   Enforcement still lands only at paths that CONSUME an item, never at paths that
   merely use one: `sellDino`, `incubateEgg` and `hatchEgg` reject escrowed rows,
   while battling an escrowed dino stays legal (`src/modules/battles/service.ts`)
-  because it neither consumes nor transfers. `verifySide`'s `skipLockCheck` is not
-  an exploit: at accept time the offer side is escrowed BY THAT VERY TRADE.
+  because it neither consumes nor transfers. `verifySide`'s `forTradeId` is not an
+  exploit: at accept time the offer side is escrowed BY THAT VERY TRADE, so
+  `acceptTrade` waives that one lock and nothing else — a second pending trade or an
+  unclaimed breeding still blocks the transfer. It must stay a trade id, never a
+  blanket boolean: escrow carries two reasons now, and waiving both would let a
+  breeding's parents be traded away mid-flight, which `src/core/db/schema.ts`'s
+  `breedings` note relies on being impossible. That check reads back ONE reason per
+  id, so `locksFor` resolves breedings after trades on purpose — the fail-safe
+  overwrite direction. Never swap those two loops.
   `createTrade`'s `verifySide` refuses an incubating egg, so an escrowed *and*
   incubating row can only be legacy data — `hatchEgg`'s guard is unreachable through
   the public API and its test builds the state by inserting the pending trade row
