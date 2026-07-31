@@ -386,4 +386,19 @@ describe('gene lab', () => {
     buildLot(ctx, 'u1', 'gene_lab');
     expect(() => buildLot(ctx, 'u1', 'gene_lab')).toThrow(DuplicateFacilityError);
   });
+
+  // dw_lot_genelab has no EMOJI_FALLBACK entry until Task 12 ships its SVG (the parity
+  // test in tests/emoji-assets.test.ts enforces that pairing). Until then, emojiTag()
+  // returns '' for it — this pins the dashboard's degrade as plain text, not a stray
+  // space or a literal '<:dw_lot_genelab:...>'-shaped broken tag.
+  it('renders as plain text on the dashboard, with no emoji, while the SVG is pending', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const user = getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'test', 0);
+    const lot = buildLot(ctx, 'u1', 'gene_lab');
+    const lots = ctx.db.select().from(schema.lots).all();
+    const p = dashboardPayload(user, lots, 0, 0, 0, {});
+    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏗️ Lots')!;
+    expect(field.value).toBe(`#${lot.id} Gene Lab (lvl 1)`);
+  });
 });
