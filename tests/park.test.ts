@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
+import { MessageFlags } from 'discord.js';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, BASE_LOT_SLOTS } from '../src/modules/park/service.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
@@ -311,5 +312,15 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     const broke = fakeCommand({ name: 'build', user: 'u1', options: { kind } });
     await cmd.execute(ctx, broke.asChatInput());
     expect(replyText(broke.replies[0])).toContain('Not enough cash');
+  });
+  it('/build maps DuplicateFacilityError to an ephemeral reply naming the facility', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
+    buildLot(ctx, 'u1', 'visitor_center');
+    const cmd = parkModule.commands.find((c) => c.data.name === 'build')!;
+    const i = fakeCommand({ name: 'build', user: 'u1', options: { kind: 'visitor_center' } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toBe('You already have a Visitor Center — upgrade it instead.');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
 });
