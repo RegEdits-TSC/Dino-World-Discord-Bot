@@ -22,7 +22,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
   park: { title: '🏞️ Park', body: [
     '`/park view [user]` — dashboard, park map, Collect button.',
     '`/park rename name:<text>` — rename your park.',
-    '`/build kind:<lot>` — build a paddock or facility on an empty lot.',
+    '`/build kind:<lot>` — build on an empty lot. Paddocks stack; one facility of each kind, so upgrade rather than rebuild.',
     '`/upgrade lot:<id>` — raise a lot one level.',
     '`/decorate lot:<id> item:<decor>` — decor boosts comfort for matching biomes.',
     'Income accrues while dinos are comfortable, up to your Visitor Center cap — collect often.',
@@ -32,6 +32,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '`/eggs` — your eggs and incubator status.',
     '`/incubate egg:<id>` — start the timer (slots grow with the Hatchery Lab).',
     '`/hatch egg:<id>` — crack a ready egg and meet your dino.',
+    'An egg you have offered in a trade is locked 🔒 — incubate and hatch are blocked until the trade resolves.',
     '`/mythic species:<name>` — spend 500 shards on a Mythic egg (needs 4★ rating).',
   ].join('\n') },
   expeditions: { title: '🧭 Expeditions', art: { kind: 'sites', name: 'coastal_dig-banner' }, body: [
