@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: How to play
+    url: https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/blob/main/docs/gameplay.md
+    about: The gameplay guide explains every system in the game.
+  - name: Command reference
+    url: https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/blob/main/docs/commands.md
+    about: Every slash command, what it does, and who can run it.
+  - name: Report a security vulnerability
+    url: https://github.com/RegEdits-TSC/Dino-World-Discord-Bot/security/advisories/new
+    about: Report privately. Do not open a public issue for a vulnerability.
