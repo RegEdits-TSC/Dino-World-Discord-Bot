@@ -47,6 +47,9 @@ type DinoRow = typeof schema.dinos.$inferSelect;
 
 export function eggLabel(egg: EggRow, now: number): string {
   const base = `🥚 #${egg.id} ${capitalize(egg.rarity)}`;
+  // Checked first: a locked egg cannot be incubated or hatched, so the lock is the
+  // state the player needs, whatever the timer says.
+  if (egg.locked) return `${base} — locked in a trade`;
   if (egg.hatchesAt === null) return `${base} — in inventory`;
   if (egg.hatchesAt <= now) return `${base} — READY`;
   return `${base} — hatching, ${fmtDuration(egg.hatchesAt - now)} left`;
