@@ -12,6 +12,7 @@ import { getSpecies } from '../src/data/species/index.js';
 import { mythicSpeciesChoices } from '../src/modules/shop/shards.js';
 import { RARITY } from '../src/data/rarity.js';
 import { assetImage } from '../src/core/images.js';
+import { createTrade } from '../src/modules/trading/service.js';
 
 // assetImage is a pass-through spy by default (calls the real implementation),
 // so every test in this file except the two degrade-path tests below is
@@ -41,6 +42,14 @@ describe('hatchery', () => {
     expect(() => incubateEgg(ctx, 'u1', b.id, 'g1')).toThrow(HatcheryError);
     expect(incubatorSlots([])).toBe(1);
   });
+  it('incubator slots come from the best Hatchery Lab, not the first one built', () => {
+    const lab = (level: number) => ctx.db.insert(schema.lots)
+      .values({ userId: 'u1', type: 'facility', kind: 'hatchery_lab', name: 'Hatchery Lab', level })
+      .returning().get();
+    const lots = [lab(1), lab(3)];
+    expect(incubatorSlots(lots)).toBe(3);
+    expect(incubatorSlots([])).toBe(1);
+  });
   it('hatch before ready fails; hatch after ready creates a dino of the egg rarity and removes the egg', () => {
     const egg = addEgg('rare');
     incubateEgg(ctx, 'u1', egg.id, 'g1');
@@ -56,6 +65,44 @@ describe('hatchery', () => {
     incubateEgg(ctx, 'u1', egg.id, 'g1');
     ctx.setNow(ctx.now() + 48 * 3_600_000);
     expect(hatchEgg(ctx, 'u1', egg.id).species.id).toBe('indominus');
+  });
+
+  it('refuses to incubate an egg escrowed in a pending trade', () => {
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0, locked: true })
+      .returning().get();
+    expect(() => incubateEgg(ctx, 'u1', egg.id, 'g1')).toThrow(HatcheryError);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.incubationStartedAt).toBeNull();
+    expect(ctx.db.select().from(schema.timers).all()).toHaveLength(0);
+  });
+
+  it('refuses to hatch an egg that was locked after incubation started', () => {
+    // Unreachable through services — createTrade refuses an incubating egg and is the
+    // only writer of eggs.locked — so the belt guard is exercised by locking the row
+    // directly, which is exactly the pre-existing state bug 1 could leave behind.
+    const egg = addEgg('common');
+    incubateEgg(ctx, 'u1', egg.id, 'g1');
+    ctx.db.update(schema.eggs).set({ locked: true }).where(eq(schema.eggs.id, egg.id)).run();
+    ctx.setNow(ctx.now() + 15 * M);
+    expect(() => hatchEgg(ctx, 'u1', egg.id)).toThrow(HatcheryError);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()).toBeDefined();
+    expect(ctx.db.select().from(schema.dinos).all()).toHaveLength(0);
+  });
+
+  it('a hatchling inherits the egg\'s via-trade flag, and only that', () => {
+    const traded = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0, viaTrade: true })
+      .returning().get();
+    incubateEgg(ctx, 'u1', traded.id, 'g1');
+    ctx.setNow(ctx.now() + 15 * M);
+    const fromTrade = hatchEgg(ctx, 'u1', traded.id);
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, fromTrade.dinoId)).get()!.viaTrade).toBe(true);
+
+    const own = addEgg('common');
+    incubateEgg(ctx, 'u1', own.id, 'g1');
+    ctx.setNow(ctx.now() + 15 * M);
+    const fromLoot = hatchEgg(ctx, 'u1', own.id);
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, fromLoot.dinoId)).get()!.viaTrade).toBe(false);
   });
 });
 
@@ -170,6 +217,14 @@ describe('hatchery visuals', () => {
     expect(embed.image).toBeUndefined();
     expect(p.files!.map((f) => f.name)).toEqual(['epic.webp']);
   });
+  it('eggListPayload marks a trade-locked egg with a padlock, ahead of its timer state', () => {
+    const locked = { ...addEgg('epic'), locked: true, hatchesAt: 5, incubationStartedAt: 1 };
+    const free = addEgg('common');
+    const p = eggListPayload([locked, free], 10, 'u1');
+    const desc = p.embeds[0].toJSON().description!;
+    expect(desc).toContain(`#${locked.id} — epic egg — 🔒 locked in a trade`);
+    expect(desc).toContain(`#${free.id} — common egg — in inventory`);
+  });
   it('eggListPayload falls back to newest-obtained when nothing is incubating', () => {
     const older = { ...addEgg('common'), obtainedAt: 1 };
     const newer = { ...addEgg('legendary'), obtainedAt: 2 };
@@ -208,6 +263,21 @@ describe('egg list pagination', () => {
     const b = fakeButton({ customId: 'hatch:eggs:u1:2', user: 'u2', guild: 'g1' });
     await hatchComponent.execute(ctx, b.asInteraction() as never);
     expect((b.replies[0] as { content: string }).content).toContain('Not your');
+  });
+
+  it('sweeps an expired trade first, so /eggs does not show a stale padlock', async () => {
+    getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    const egg = addEgg('common');
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    ctx.setNow(25 * 3_600_000);                                        // TRADE_EXPIRY_MS is 24h
+    const i = fakeCommand({ name: 'eggs', user: 'u1' });
+    await hatcheryModule.commands[0].execute(ctx, i.asChatInput());
+    const desc = (i.replies[0] as { embeds: Array<{ toJSON(): { description?: string } }> })
+      .embeds[0].toJSON().description!;
+    expect(desc).not.toContain('locked in a trade');
+    expect(desc).toContain(`#${egg.id} — common egg — in inventory`);
   });
 });
 
@@ -266,6 +336,39 @@ describe('/incubate execute', () => {
     expect(replyText(i.replies[0])).toContain('do not own');
     expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
+
+  it('rejects an egg locked in a pending trade, ephemeral', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both sides ≥ 2★ gate
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    const cmd = hatcheryModule.commands.find((c) => c.data.name === 'incubate')!;
+    const i = fakeCommand({ name: 'incubate', user: 'u1', options: { egg: egg.id } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('locked in a pending trade');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+
+  it('sweeps an expired trade first, so a stale lock does not block incubation', async () => {
+    // expireStale is lazy and only ever ran from /trade surfaces, so without the sweep
+    // a dead trade would hold the lock — and reject with a statement that is false.
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    ctx.setNow(ctx.now() + 25 * 3_600_000);          // TRADE_EXPIRY_MS is 24h
+    const cmd = hatcheryModule.commands.find((c) => c.data.name === 'incubate')!;
+    const i = fakeCommand({ name: 'incubate', user: 'u1', options: { egg: egg.id } });
+    await cmd.execute(ctx, i.asChatInput());
+    const after = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!;
+    expect(after.locked).toBe(false);
+    expect(after.incubationStartedAt).not.toBeNull();
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
+  });
 });
 
 describe('/hatch execute', () => {
@@ -294,6 +397,42 @@ describe('/hatch execute', () => {
     await cmd.execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { components?: unknown[] };
     expect(JSON.stringify(payload.components ?? [])).toContain(`hatch:crack:${egg.id}`);
+  });
+
+  it('locked egg is an ephemeral rejection, with no crack button', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
+    incubateEgg(ctx, 'u1', egg.id, null);
+    ctx.db.update(schema.eggs).set({ locked: true }).where(eq(schema.eggs.id, egg.id)).run();
+    ctx.setNow(RARITY.common.incubationMs + 1);
+    const cmd = hatcheryModule.commands.find((c) => c.data.name === 'hatch')!;
+    const i = fakeCommand({ name: 'hatch', user: 'u1', options: { egg: egg.id } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('locked in a pending trade');
+    expect(JSON.stringify(i.replies[0])).not.toContain('hatch:crack');
+  });
+
+  it('sweeps an expired trade first, so a stale lock does not block hatching', async () => {
+    // A locked AND ready row cannot be built through services in either order —
+    // createTrade refuses an incubating egg, and incubateEgg refuses a locked one.
+    // Trade first, then set the timer fields directly.
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    ctx.db.update(schema.eggs).set({ incubationStartedAt: 0, hatchesAt: 1 })
+      .where(eq(schema.eggs.id, egg.id)).run();
+    ctx.setNow(25 * 3_600_000);                                        // TRADE_EXPIRY_MS is 24h
+    const cmd = hatcheryModule.commands.find((c) => c.data.name === 'hatch')!;
+    const i = fakeCommand({ name: 'hatch', user: 'u1', options: { egg: egg.id } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).not.toContain('locked in a pending trade');
+    const payload = i.replies[0] as { components?: unknown[] };
+    expect(JSON.stringify(payload.components ?? [])).toContain(`hatch:crack:${egg.id}`);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.locked).toBe(false);
   });
 });
 

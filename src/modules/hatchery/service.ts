@@ -7,14 +7,14 @@ import { FACILITIES } from '../../data/facilities.js';
 import { getSpecies } from '../../data/species/index.js';
 import { rollSpeciesInRarity } from '../../core/rolls.js';
 import { recomputeRating } from '../park/rating.js';
-import type { Lot } from '../park/service.js';
+import { facilityLevel, type Lot } from '../park/service.js';
 
 export class HatcheryError extends Error {}
 export type Egg = typeof schema.eggs.$inferSelect;
 
 export function incubatorSlots(lots: Lot[]): number {
-  const lab = lots.find((l) => l.kind === 'hatchery_lab');
-  return lab ? FACILITIES.hatchery_lab.incubatorSlots![lab.level - 1] : 1;
+  const level = facilityLevel(lots, 'hatchery_lab');
+  return level > 0 ? FACILITIES.hatchery_lab.incubatorSlots![level - 1] : 1;
 }
 
 export function incubatingCount(ctx: Ctx, userId: string): number {
@@ -26,6 +26,9 @@ export function incubateEgg(ctx: Ctx, userId: string, eggId: number, guildId: st
   const egg = ctx.db.select().from(schema.eggs)
     .where(and(eq(schema.eggs.id, eggId), eq(schema.eggs.userId, userId))).get();
   if (!egg) throw new HatcheryError('You do not own that egg.');
+  // Trade escrow: hatching CONSUMES the egg, so unlike battling a locked dino
+  // (src/modules/battles/service.ts) it would make the pending trade unfulfillable.
+  if (egg.locked) throw new HatcheryError('That egg is locked in a pending trade.');
   if (egg.incubationStartedAt !== null) throw new HatcheryError('That egg is already incubating.');
   const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, userId)).all();
   if (incubatingCount(ctx, userId) >= incubatorSlots(lots))
@@ -42,12 +45,17 @@ export function hatchEgg(ctx: Ctx, userId: string, eggId: number): { species: Sp
   const egg = ctx.db.select().from(schema.eggs)
     .where(and(eq(schema.eggs.id, eggId), eq(schema.eggs.userId, userId))).get();
   if (!egg) throw new HatcheryError('You do not own that egg.');
+  if (egg.locked) throw new HatcheryError('That egg is locked in a pending trade.');
   if (egg.incubationStartedAt === null || egg.hatchesAt === null) throw new HatcheryError('That egg is not incubating.');
   if (egg.hatchesAt > ctx.now()) throw new HatcheryError('That egg is not ready to hatch yet.');
   const species = egg.speciesId ? getSpecies(egg.speciesId) : rollSpeciesInRarity(egg.rarity, ctx.rng);
   const dinoId = ctx.db.transaction(() => {
     const dino = ctx.db.insert(schema.dinos).values({
       userId, lotId: null, speciesId: species.id, hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),
+      // Provenance survives the hatch: without this the dino takes the column default and a
+      // traded egg launders into a full-shard sale, reopening the alt-to-main funnel that
+      // moveItems (src/modules/trading/service.ts) closes for dinos.
+      viaTrade: egg.viaTrade,
     }).returning().get();
     ctx.db.delete(schema.eggs).where(eq(schema.eggs.id, eggId)).run();
     return dino.id;

@@ -12,6 +12,9 @@ import { recomputeRating } from './rating.js';
 export const BASE_LOT_SLOTS = 3;
 export class LotLimitError extends Error {}
 export class UnknownKindError extends Error {}
+// Carries the facility's display name as its message so /build can name it in the reply.
+// LotLimitError has no message, which is why its text is hardcoded at the call site.
+export class DuplicateFacilityError extends Error {}
 
 export type User = typeof schema.users.$inferSelect;
 export type Lot = typeof schema.lots.$inferSelect;
@@ -31,23 +34,41 @@ export function getOrCreateUser(ctx: Ctx, userId: string, displayName: string): 
   });
 }
 
+// Best row per kind. buildLot now blocks new duplicates, but rows that predate that block
+// still exist on live databases, and `find` resolved them to whichever the unordered SELECT
+// returned first — usually the lowest id, i.e. the one the player did NOT upgrade.
+// Returns 0 when the kind is absent; callers branch on that rather than indexing with a
+// computed maximum, because Math.max() of an empty list is -Infinity and neither level
+// table guards its index.
+export function facilityLevel(lots: Lot[], kind: string): number {
+  return lots.reduce((best, l) => (l.kind === kind && l.level > best ? l.level : best), 0);
+}
+
 export function facilityBonusPct(lots: Lot[]): number {
-  return lots.filter((l) => l.type === 'facility')
-    .reduce((sum, l) => sum + (FACILITIES[l.kind]?.incomeBonusPct[l.level - 1] ?? 0), 0);
+  return Object.keys(FACILITIES).reduce((sum, kind) => {
+    const level = facilityLevel(lots, kind);
+    return sum + (level > 0 ? FACILITIES[kind].incomeBonusPct[level - 1] ?? 0 : 0);
+  }, 0);
 }
 
 export function capHours(lots: Lot[]): number {
-  const vc = lots.find((l) => l.kind === 'visitor_center');
-  return vc ? FACILITIES.visitor_center.capHours![vc.level - 1] : 8;
+  const level = facilityLevel(lots, 'visitor_center');
+  return level > 0 ? FACILITIES.visitor_center.capHours![level - 1] : 8;
 }
 
 export function buildLot(ctx: Ctx, userId: string, kind: string): Lot {
   const paddock = PADDOCKS[kind]; const facility = FACILITIES[kind];
   if (!paddock && !facility) throw new UnknownKindError(kind);
-  const count = ctx.db.select().from(schema.lots)
-    .where(eq(schema.lots.userId, userId)).all().length;
+  const lots = ctx.db.select().from(schema.lots)
+    .where(eq(schema.lots.userId, userId)).all();
+  // One facility per kind. capHours/incubatorSlots/facilityBonusPct each resolve a kind
+  // to its best row, so a second one costs cash and changes nothing. Paddocks are exempt:
+  // building more of one kind IS the capacity progression.
+  // Checked before the slot cap: with 3 base slots and 3 facility kinds a player who owns
+  // all three is already capped, and naming the facility is the more actionable message.
+  if (facility && lots.some((l) => l.kind === kind)) throw new DuplicateFacilityError(facility.name);
   const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!;
-  if (count >= lotSlots(user.ratingHighWater)) throw new LotLimitError();
+  if (lots.length >= lotSlots(user.ratingHighWater)) throw new LotLimitError();
   const cost = paddock ? paddock.buildCost : facility!.buildCost;
   // Charge + insert must be atomic: EconomyService.apply commits its own transaction,
   // so without this outer transaction a failed insert after a successful charge would

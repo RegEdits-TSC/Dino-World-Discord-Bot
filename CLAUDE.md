@@ -279,3 +279,38 @@
   text-only embed when `buildParkSnapshot`/`renderPark` throws. Adding or
   removing a topic KEY changes the `/help` builder choices and forces
   `npm run deploy-commands`; adding a field to the value type does not.
+- Trade escrow is enforced at every path that CONSUMES an item, never at paths that
+  merely use one: `sellDino`, `incubateEgg` and `hatchEgg` all reject `locked` rows,
+  while battling a locked dino stays legal (`src/modules/battles/service.ts`) because
+  it neither consumes nor transfers. `createTrade` is the only writer of
+  `eggs.locked = true`, and its `verifySide` refuses an incubating egg, so a locked
+  *and* incubating row can only be legacy data — `hatchEgg`'s guard is unreachable
+  through the public API and its test must lock the row with a raw `ctx.db.update`.
+  Because `expireStale` is lazy — no timer sweeps expired trades, so a dead
+  trade keeps its lock until something calls it — every entry point that reads
+  escrowable rows must sweep first, or it rejects on a lock that no longer
+  exists. Three of the four hatchery executes sweep — `/eggs`, `/incubate`,
+  `/hatch` — the fourth, `/mythic`, never reads an egg/dino row so there is
+  nothing for it to sweep; both hatchery autocomplete providers (`/incubate`,
+  `/hatch`) sweep too, and so does the `hatch:eggs` pagination branch. The
+  trading module sweeps in `/trade`'s own execute (every subcommand, both
+  sides of an `offer`) and in the `accept`/`decline`/`cancel` autocomplete
+  branch and the `list` pagination branch, but `/trade offer`'s own
+  dino/egg autocomplete (`tradeableDinos`/`tradeableEggs`) does not — a
+  stale lock can still shadow a tradeable item there. `/sell` still does
+  not sweep at all, in either its execute or its autocomplete, which
+  leaves that staleness gap live for dinos.
+- Provenance survives the hatch: `hatchEgg` inserts the dino with
+  `viaTrade: egg.viaTrade`. `eggs.viaTrade` had no reader before this; the three
+  readers of `dinos.viaTrade` are all in the shop module, so dropping it at the hatch
+  boundary silently reopened the alt-to-main shard funnel.
+- One facility of each kind per park (`buildLot` throws `DuplicateFacilityError`,
+  whose `message` is the facility's display name). Paddocks stay duplicable — more of
+  one kind IS the capacity progression. `facilityLevel` (`src/modules/park/service.ts`)
+  resolves a kind to its highest-level row and is the single source for `capHours`,
+  `facilityBonusPct` and `incubatorSlots`, so pre-existing duplicate rows on a live DB
+  resolve to the best facility rather than to whichever the unordered SELECT returned
+  first. It returns 0 for an absent kind on purpose: `Math.max()` over an empty array
+  is `-Infinity` and neither level table guards its index, so a bare reduce would
+  return `undefined` and poison `accruedIncome` with `NaN`. There is no cleanup
+  migration and no way to delete a duplicate lot short of `adminReset`.

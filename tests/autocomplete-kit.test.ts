@@ -107,6 +107,13 @@ describe('eggLabel', () => {
       .toBe('🥚 #12 Rare — hatching, 3h 20m left');
     expect(eggLabel(egg({ incubationStartedAt: 0, hatchesAt: 100 }), 100)).toBe('🥚 #12 Rare — READY');
   });
+  it('tags a trade-locked egg, ahead of every other state', () => {
+    expect(eggLabel(egg({ locked: true }), 0)).toBe('🥚 #12 Rare — locked in a trade');
+    // Lock wins over READY: a pre-existing locked+incubating row predates the
+    // incubate guard, and the lock is the state that blocks the player.
+    expect(eggLabel(egg({ locked: true, incubationStartedAt: 0, hatchesAt: 100 }), 100))
+      .toBe('🥚 #12 Rare — locked in a trade');
+  });
 });
 
 describe('dinoLabel', () => {

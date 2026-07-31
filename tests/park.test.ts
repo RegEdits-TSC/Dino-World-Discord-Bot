@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
+import { MessageFlags } from 'discord.js';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
-import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, upgradeLot, BASE_LOT_SLOTS } from '../src/modules/park/service.js';
+import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, BASE_LOT_SLOTS } from '../src/modules/park/service.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
@@ -13,6 +14,13 @@ import { lotSlots } from '../src/data/progression.js';
 const H = 3_600_000;
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
+
+// Direct insert, because buildLot refuses a duplicate facility — these rows simulate
+// the pre-existing duplicates on a live DB that the fix deliberately does not migrate.
+const seedLot = (over: Partial<typeof schema.lots.$inferInsert> = {}) =>
+  ctx.db.insert(schema.lots).values({
+    userId: 'u1', type: 'facility', kind: 'visitor_center', name: 'Visitor Center', ...over,
+  }).returning().get();
 
 describe('park service', () => {
   it('creates a user once with starting wallet', () => {
@@ -43,6 +51,32 @@ describe('park service', () => {
     expect(facilityBonusPct(lots)).toBe(4);       // VC lvl1 0% + food court lvl1 4%
   });
 
+  it('resolves duplicate facility rows to the best one, for cap and for income alike', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    // Level 2 first, not level 1: a level-1 Visitor Center contributes 0% income, which
+    // would make the summing and max-per-kind answers identical and prove nothing.
+    seedLot({ level: 2 });                                             // built first, the one find() returns
+    seedLot({ level: 4 });                                             // the one actually upgraded
+    seedLot({ type: 'facility', kind: 'food_court', name: 'Food Court', level: 2 });
+    const lots = ctx.db.select().from(schema.lots).all();
+    expect(capHours(lots)).toBe(20);                                   // capHours[3], not the lvl-2 row's 12
+    expect(facilityBonusPct(lots)).toBe(23);                           // VC lvl4 15% + Food Court lvl2 8%,
+                                                                       // not 5+15+8 summed across both VCs
+  });
+
+  it('keeps the no-facility defaults', () => {
+    expect(capHours([])).toBe(8);
+    expect(facilityBonusPct([])).toBe(0);
+  });
+
+  it('ignores paddock rows when resolving facilities', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    seedLot({ type: 'paddock', kind: 'herbivore_paddock', name: 'Herbivore Paddock', level: 4 });
+    const lots = ctx.db.select().from(schema.lots).all();
+    expect(capHours(lots)).toBe(8);
+    expect(facilityBonusPct(lots)).toBe(0);
+  });
+
   it('collectIncome pays integrated income and stamps lastCollectAt', () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
     ctx.economy.apply('u1', { cash: 2_000 }, 'test:seed', 0);
@@ -71,6 +105,26 @@ describe('park service', () => {
     // one level-1 lot => park term (1+0)/40; rating round(500 * 0.35 * 0.025) = 4.
     expect(after.parkRating).toBeGreaterThan(0);
     expect(after.ratingHighWater).toBeGreaterThan(0);
+  });
+
+  it('allows one facility of each kind and refuses a second, while paddocks still stack', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'test:seed', 0);
+    buildLot(ctx, 'u1', 'visitor_center');
+    expect(() => buildLot(ctx, 'u1', 'visitor_center')).toThrow(DuplicateFacilityError);
+    buildLot(ctx, 'u1', 'herbivore_paddock');
+    buildLot(ctx, 'u1', 'herbivore_paddock');                          // paddocks are capacity, not upgrades
+    expect(ctx.db.select().from(schema.lots).all()).toHaveLength(3);
+  });
+
+  it('names the facility on the duplicate error and charges nothing', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'test:seed', 0);
+    buildLot(ctx, 'u1', 'food_court');
+    const before = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.cash;
+    expect(() => buildLot(ctx, 'u1', 'food_court')).toThrow('Food Court');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.cash).toBe(before);
+    expect(ctx.db.select().from(schema.lots).all()).toHaveLength(1);
   });
 
   it('rolls back the charge when the build insert fails (proves buildLot atomicity)', () => {
@@ -291,5 +345,15 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     const broke = fakeCommand({ name: 'build', user: 'u1', options: { kind } });
     await cmd.execute(ctx, broke.asChatInput());
     expect(replyText(broke.replies[0])).toContain('Not enough cash');
+  });
+  it('/build maps DuplicateFacilityError to an ephemeral reply naming the facility', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
+    buildLot(ctx, 'u1', 'visitor_center');
+    const cmd = parkModule.commands.find((c) => c.data.name === 'build')!;
+    const i = fakeCommand({ name: 'build', user: 'u1', options: { kind: 'visitor_center' } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toBe('You already have a Visitor Center — upgrade it instead.');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
 });
