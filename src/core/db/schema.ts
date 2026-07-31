@@ -52,6 +52,7 @@ export const dinos = sqliteTable('dinos', {
   viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
   locked: integer('locked', { mode: 'boolean' }).notNull().default(false),
   battleXp: integer('battle_xp').notNull().default(0),
+  traits: text('traits', { mode: 'json' }).$type<string[]>().notNull().default([]),
   hatchedAt: integer('hatched_at_ms').notNull(),
 });
 
@@ -62,6 +63,8 @@ export const eggs = sqliteTable('eggs', {
   speciesId: text('species_id'),
   source: text('source', { enum: ['expedition', 'shop', 'trade', 'admin', 'battle'] }).notNull(),
   viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
+  // Bred eggs carry their rolled inheritance here; wild eggs stay [] and roll at hatch.
+  traits: text('traits', { mode: 'json' }).$type<string[]>().notNull().default([]),
   locked: integer('locked', { mode: 'boolean' }).notNull().default(false),
   obtainedAt: integer('obtained_at_ms').notNull(),
   incubationStartedAt: integer('incubation_started_at_ms'),
@@ -78,6 +81,23 @@ export const battleProgress = sqliteTable('battle_progress', {
   primaryKey({ columns: [t.userId, t.stageId] }),
   check('stars_range', sql`${t.stars} >= 0 AND ${t.stars} <= 3`),
 ]);
+
+// parentA/parentB deliberately carry NO foreign key to dinos.id: a claimed row is
+// history, and the dino it names may later be sold. While a breeding is pending its
+// parents are locked (src/core/locks.ts), so they cannot vanish mid-flight.
+export const breedings = sqliteTable('breedings', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull().references(() => users.discordId),
+  parentA: integer('parent_a').notNull(),
+  parentB: integer('parent_b').notNull(),
+  rarity: text('rarity', { enum: ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] }).notNull(),
+  speciesId: text('species_id'),
+  traits: text('traits', { mode: 'json' }).$type<string[]>().notNull().default([]),
+  viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
+  startedAt: integer('started_at_ms').notNull(),
+  readyAt: integer('ready_at_ms').notNull(),
+  claimedAt: integer('claimed_at_ms'),
+});
 
 export const expeditions = sqliteTable('expeditions', {
   id: integer('id').primaryKey({ autoIncrement: true }),
