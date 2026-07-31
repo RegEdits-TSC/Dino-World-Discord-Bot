@@ -52,6 +52,10 @@ export function adminReset(ctx: Ctx, targetId: string): void {
     ctx.db.delete(schema.trades)
       .where(or(eq(schema.trades.fromUser, targetId), eq(schema.trades.toUser, targetId))).run();
     ctx.db.delete(schema.battleProgress).where(eq(schema.battleProgress.userId, targetId)).run();
+    // Same reasoning as trades: a pending breeding IS a parent lock (src/core/locks.ts),
+    // and the dinos it names were just deleted. Leaving the row behind holds a Gene Lab
+    // slot busy forever and leaves a claimable pairing whose parents no longer exist.
+    ctx.db.delete(schema.breedings).where(eq(schema.breedings.userId, targetId)).run();
     ctx.db.update(schema.users).set({
       cash: 500, shards: 0, parkRating: 0, ratingHighWater: 0, parkName: 'New Park',
       shardsWindowStart: 0, shardsWindowEarned: 0, lastCollectAt: ctx.now(),

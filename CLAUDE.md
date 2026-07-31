@@ -324,7 +324,15 @@
 - Provenance survives the hatch: `hatchEgg` inserts the dino with
   `viaTrade: egg.viaTrade`. `eggs.viaTrade` had no reader before this; the three
   readers of `dinos.viaTrade` are all in the shop module, so dropping it at the hatch
-  boundary silently reopened the alt-to-main shard funnel.
+  boundary silently reopened the alt-to-main shard funnel. Breeding is the third
+  boundary: `startBreeding` snapshots `parentA.viaTrade || parentB.viaTrade` onto the
+  `breedings` row (both parents are guaranteed present there, and the flag is only ever
+  set, never cleared) and `claimBreeding` ORs that floor with a fresh read of both
+  parents. Any future path that MINTS an item from an existing one has to carry it too.
+- `adminReset` must delete from every table `locksFor` reads — `trades` and now
+  `breedings` — not only the tables holding the player's own items. The parents are
+  deleted moments earlier, so a surviving pending breeding holds a Gene Lab slot busy
+  forever and leaves a claimable pairing whose parents no longer exist.
 - One facility of each kind per park (`buildLot` throws `DuplicateFacilityError`,
   whose `message` is the facility's display name). Paddocks stay duplicable — more of
   one kind IS the capacity progression. `facilityLevel` (`src/modules/park/service.ts`)
