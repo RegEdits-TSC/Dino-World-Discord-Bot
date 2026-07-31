@@ -3,7 +3,7 @@ import type { EmbedBuilder } from 'discord.js';
 import { MessageFlags } from 'discord.js';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
-import { feedDino, feedAll, rescueDino, CareError } from '../src/modules/care/service.js';
+import { feedDino, feedAll, rescueDino, feedCostFor, CareError } from '../src/modules/care/service.js';
 import { careModule } from '../src/modules/care/index.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
@@ -53,6 +53,33 @@ describe('feedDino', () => {
     ctx.db.delete(schema.foodInventory).run();
     const d = addDino();
     expect(() => feedDino(ctx, 'u1', d.id)).toThrow('You have no herbivore food — buy Ferns with /shop food.');
+  });
+
+  it('discounts feed cost for Thrifty and surcharges it for Gluttonous', () => {
+    expect(feedCostFor('rare', [])).toBe(20);
+    expect(feedCostFor('rare', ['thrifty'])).toBe(15);
+    expect(feedCostFor('rare', ['gluttonous'])).toBe(25);
+  });
+
+  it('never lets a feed cost round to zero', () => {
+    expect(feedCostFor('common', ['thrifty'])).toBeGreaterThanOrEqual(1);
+  });
+
+  it('charges the discounted amount when feeding a Thrifty dino', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    // getOrCreateUser seeds STARTER_FOOD (10 ferns); economy.apply is a delta, not a set,
+    // so clear it first — otherwise the credit below lands at 110, not 100.
+    ctx.db.delete(schema.foodInventory).run();
+    ctx.economy.apply('u1', { foods: { ferns: 100 } }, 'test', 0);
+    const dino = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', hunger: 10, lastFedAt: 0, hatchedAt: 0,
+      traits: ['thrifty'],
+    }).returning().get();
+
+    feedDino(ctx, 'u1', dino.id, 'ferns');
+    // common feedCost 5, thrifty 0.75 -> 4 (rounded)
+    expect(ctx.economy.getFoodInventory('u1').ferns).toBe(96);
   });
 });
 

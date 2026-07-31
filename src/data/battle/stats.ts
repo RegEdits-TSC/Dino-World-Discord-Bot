@@ -1,6 +1,7 @@
 import type { Archetype, Rarity } from '../types.js';
 import { getSpecies } from '../species/index.js';
 import { LEVEL_CAP } from './constants.js';
+import { modProduct } from '../traits.js';
 
 export interface BattleStats { hp: number; atk: number; def: number; spd: number }
 
@@ -33,15 +34,17 @@ export function battleLevel(xp: number): number {
   return level;
 }
 
-export function statsFor(speciesId: string, level: number): BattleStats {
+// traits default to none: enemy and boss combatants call this without them, and
+// must never receive player traits.
+export function statsFor(speciesId: string, level: number, traits: string[] = []): BattleStats {
   const s = getSpecies(speciesId);
   const base = BATTLE_BASE[s.rarity];
   const mult = ARCHETYPE_MULT[s.archetype];
   const scale = 1 + 0.08 * (level - 1);
   return {
-    hp: Math.floor(base.hp * mult.hp * scale),
-    atk: Math.floor(base.atk * mult.atk * scale),
-    def: Math.floor(base.def * mult.def * scale),
-    spd: Math.floor(base.spd * mult.spd * scale),
+    hp: Math.floor(base.hp * mult.hp * scale * modProduct(traits, 'hp')),
+    atk: Math.floor(base.atk * mult.atk * scale * modProduct(traits, 'atk')),
+    def: Math.floor(base.def * mult.def * scale * modProduct(traits, 'def')),
+    spd: Math.floor(base.spd * mult.spd * scale * modProduct(traits, 'spd')),
   };
 }

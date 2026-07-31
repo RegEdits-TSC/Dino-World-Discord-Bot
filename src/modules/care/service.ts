@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
-import type { Species, Diet } from '../../data/types.js';
+import type { Species, Diet, Rarity } from '../../data/types.js';
 import { FOODS, foodsForDiet, type FoodDef, type FoodId } from '../../data/foods.js';
 import { RARITY } from '../../data/rarity.js';
 import { getSpecies } from '../../data/species/index.js';
@@ -10,8 +10,15 @@ import { toClockDinos } from '../park/service.js';
 import { recomputeRating } from '../park/rating.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { RECAPTURE_FEE_HOURS } from '../../data/care.js';
+import { modProduct } from '../../data/traits.js';
 
 export class CareError extends Error {}
+
+// Feed cost in food units, after trait modifiers. Floored at 1: a discount must
+// never make feeding free.
+export function feedCostFor(rarity: Rarity, traits: string[]): number {
+  return Math.max(1, Math.round(RARITY[rarity].feedCost * modProduct(traits, 'feed')));
+}
 
 function pickFood(ctx: Ctx, userId: string, diet: Diet, cost: number): FoodDef | null {
   const inv = ctx.economy.getFoodInventory(userId);
@@ -25,7 +32,7 @@ export function feedDino(ctx: Ctx, userId: string, dinoId: number, foodId?: stri
   if (!dino) throw new CareError('You do not own that dino.');
   if (dino.escapedAt !== null) throw new CareError('That dino has escaped — rescue it first.');
   const species = getSpecies(dino.speciesId);
-  const cost = RARITY[species.rarity].feedCost;
+  const cost = feedCostFor(species.rarity, dino.traits);
   let food: FoodDef;
   if (foodId) {
     const chosen = (FOODS as Record<string, FoodDef | undefined>)[foodId];
@@ -52,13 +59,16 @@ export function feedAll(ctx: Ctx, userId: string):
     { fed: number[]; skipped: number[]; spent: Partial<Record<FoodId, number>> } {
   const { clockDinos, dinos } = toClockDinos(ctx, userId);
   const candidates = dinos
-    .map((d, i) => ({ id: d.id, species: clockDinos[i].species, hunger: hungerAt(d.hunger, d.lastFedAt, ctx.now(), drainMsFor(d.traits)), escaped: d.escapedAt !== null }))
+    .map((d, i) => ({
+      id: d.id, species: clockDinos[i].species, traits: d.traits,
+      hunger: hungerAt(d.hunger, d.lastFedAt, ctx.now(), drainMsFor(d.traits)), escaped: d.escapedAt !== null,
+    }))
     .filter((c) => !c.escaped && c.hunger < 100)
     .sort((a, b) => a.hunger - b.hunger);                // hungriest first
   const fed: number[] = []; const skipped: number[] = [];
   const spent: Partial<Record<FoodId, number>> = {};
   for (const c of candidates) {
-    const cost = RARITY[c.species.rarity].feedCost;
+    const cost = feedCostFor(c.species.rarity, c.traits);
     const food = pickFood(ctx, userId, c.species.diet, cost);
     if (!food) { skipped.push(c.id); continue; }
     ctx.db.transaction(() => {

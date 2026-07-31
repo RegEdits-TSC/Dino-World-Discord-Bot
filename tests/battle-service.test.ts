@@ -14,9 +14,11 @@ const CH1 = ['coastal_dig_1', 'coastal_dig_2', 'coastal_dig_3', 'coastal_dig_4']
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); ctx.setNow(T0); getOrCreateUser(ctx, 'p', 'P'); });
 
-function addDino(userId: string, speciesId: string, battleXp = 0, escapedAt: number | null = null): number {
+function addDino(
+  userId: string, speciesId: string, battleXp = 0, escapedAt: number | null = null, traits: string[] = [],
+): number {
   return ctx.db.insert(schema.dinos).values({
-    userId, speciesId, hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(), battleXp, escapedAt,
+    userId, speciesId, hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(), battleXp, escapedAt, traits,
   }).returning().get().id;
 }
 const user = () => ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'p')).get()!;
@@ -78,6 +80,29 @@ describe('runFight — happy path', () => {
     const expectedFoodQty = Math.round(stage.rewards.food!.qty * STAR_REWARD_MULT[out.stars]);
     expect(out.rewards.food).toEqual({ foodId: stage.rewards.food!.foodId, qty: expectedFoodQty });
     expect(foodQty(stage.rewards.food!.foodId)).toBe(foodBefore + expectedFoodQty);
+  });
+
+  it('the xp trait scales only that dino\'s own share, not the shared pool before the split', () => {
+    clearThrough(['coastal_dig_1']);
+    const squad = [
+      addDino('p', 'tyrannosaurus', XP_MAX),
+      addDino('p', 'giganotosaurus', XP_MAX, null, ['prodigy']),   // +20% xp, no combat effect
+      addDino('p', 'spinosaurus', XP_MAX),
+    ];
+    const stage = STAGES.get('coastal_dig_2')!;
+    const out = runFight(ctx, 'p', 'coastal_dig_2', squad);
+    expect(out.won).toBe(true);
+    const totalXp = Math.round(stage.rewards.xp * STAR_XP_MULT[out.stars]);
+    const baseXp = Math.floor(totalXp / 3);
+    // Slot 0 keeps the even-split remainder, untraited. Slot 1 (prodigy) scales only its
+    // own post-split share. Slot 2 is untraited and stays at the plain base share. If the
+    // pool were scaled before splitting instead, every slot would move, not just slot 1.
+    expect(out.rewards.xpPerDino).toEqual([
+      baseXp + (totalXp % 3),
+      Math.floor(baseXp * 1.20),
+      baseXp,
+    ]);
+    squad.forEach((id, k) => expect(dinoRow(id).battleXp).toBe(XP_MAX + out.rewards.xpPerDino[k]));
   });
 });
 
