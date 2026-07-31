@@ -57,6 +57,28 @@ describe('hatchery', () => {
     ctx.setNow(ctx.now() + 48 * 3_600_000);
     expect(hatchEgg(ctx, 'u1', egg.id).species.id).toBe('indominus');
   });
+
+  it('refuses to incubate an egg escrowed in a pending trade', () => {
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0, locked: true })
+      .returning().get();
+    expect(() => incubateEgg(ctx, 'u1', egg.id, 'g1')).toThrow(HatcheryError);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.incubationStartedAt).toBeNull();
+    expect(ctx.db.select().from(schema.timers).all()).toHaveLength(0);
+  });
+
+  it('refuses to hatch an egg that was locked after incubation started', () => {
+    // Unreachable through services — createTrade refuses an incubating egg and is the
+    // only writer of eggs.locked — so the belt guard is exercised by locking the row
+    // directly, which is exactly the pre-existing state bug 1 could leave behind.
+    const egg = addEgg('common');
+    incubateEgg(ctx, 'u1', egg.id, 'g1');
+    ctx.db.update(schema.eggs).set({ locked: true }).where(eq(schema.eggs.id, egg.id)).run();
+    ctx.setNow(ctx.now() + 15 * M);
+    expect(() => hatchEgg(ctx, 'u1', egg.id)).toThrow(HatcheryError);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()).toBeDefined();
+    expect(ctx.db.select().from(schema.dinos).all()).toHaveLength(0);
+  });
 });
 
 describe('hatchery module', () => {

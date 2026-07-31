@@ -26,6 +26,9 @@ export function incubateEgg(ctx: Ctx, userId: string, eggId: number, guildId: st
   const egg = ctx.db.select().from(schema.eggs)
     .where(and(eq(schema.eggs.id, eggId), eq(schema.eggs.userId, userId))).get();
   if (!egg) throw new HatcheryError('You do not own that egg.');
+  // Trade escrow: hatching CONSUMES the egg, so unlike battling a locked dino
+  // (src/modules/battles/service.ts) it would make the pending trade unfulfillable.
+  if (egg.locked) throw new HatcheryError('That egg is locked in a pending trade.');
   if (egg.incubationStartedAt !== null) throw new HatcheryError('That egg is already incubating.');
   const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, userId)).all();
   if (incubatingCount(ctx, userId) >= incubatorSlots(lots))
@@ -42,6 +45,7 @@ export function hatchEgg(ctx: Ctx, userId: string, eggId: number): { species: Sp
   const egg = ctx.db.select().from(schema.eggs)
     .where(and(eq(schema.eggs.id, eggId), eq(schema.eggs.userId, userId))).get();
   if (!egg) throw new HatcheryError('You do not own that egg.');
+  if (egg.locked) throw new HatcheryError('That egg is locked in a pending trade.');
   if (egg.incubationStartedAt === null || egg.hatchesAt === null) throw new HatcheryError('That egg is not incubating.');
   if (egg.hatchesAt > ctx.now()) throw new HatcheryError('That egg is not ready to hatch yet.');
   const species = egg.speciesId ? getSpecies(egg.speciesId) : rollSpeciesInRarity(egg.rarity, ctx.rng);
