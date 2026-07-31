@@ -154,6 +154,25 @@ describe('hatchery', () => {
     expect(out.traits).toEqual(['hardy', 'savage']);
     expect(ctx.db.select().from(schema.dinos).all()[0].traits).toEqual(['hardy', 'savage']);
   });
+
+  it('keeps an EMPTY inheritance on a bred egg instead of re-rolling it', () => {
+    // BRED_SLOT_ODDS rolls zero traits 25% of the time and that outcome is
+    // authoritative, so `source` is the discriminator, not `traits.length`.
+    // Same rarity, seed and null speciesId as the wild-egg test above, whose
+    // pinned result is ['fleet', 'prodigy'] — so a re-roll here cannot come
+    // back empty and this test cannot pass by accident.
+    const ctx = makeCtx({ nowMs: 0, rng: mulberry32(10) });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const egg = ctx.db.insert(schema.eggs).values({
+      userId: 'u1', rarity: 'common', source: 'breeding', obtainedAt: 0,
+      traits: [], incubationStartedAt: 0, hatchesAt: 1,
+    }).returning().get();
+    ctx.setNow(2);
+
+    const out = hatchEgg(ctx, 'u1', egg.id);
+    expect(out.traits).toEqual([]);
+    expect(ctx.db.select().from(schema.dinos).all()[0].traits).toEqual([]);
+  });
 });
 
 describe('traitLines', () => {

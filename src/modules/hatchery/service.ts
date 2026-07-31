@@ -51,8 +51,13 @@ export function hatchEgg(ctx: Ctx, userId: string, eggId: number): { species: Sp
   if (egg.incubationStartedAt === null || egg.hatchesAt === null) throw new HatcheryError('That egg is not incubating.');
   if (egg.hatchesAt > ctx.now()) throw new HatcheryError('That egg is not ready to hatch yet.');
   const species = egg.speciesId ? getSpecies(egg.speciesId) : rollSpeciesInRarity(egg.rarity, ctx.rng);
-  // A bred egg carries the inheritance rolled at /breed claim; a wild egg rolls now.
-  const traits = egg.traits.length ? egg.traits : rollTraits(ctx.rng);
+  // A bred egg's inheritance was rolled at /breed claim and is authoritative,
+  // INCLUDING when it came out empty — BRED_SLOT_ODDS gives 0 traits 25% of the
+  // time, and re-rolling those on wild odds would silently replace the bred
+  // distribution with [13.75%, 53.75%, 32.5%]. `source` is the discriminator, not
+  // `traits.length`: breeding is the only writer of eggs.traits, and a trade moves
+  // an egg without touching either column, so it survives changing hands.
+  const traits = egg.source === 'breeding' ? egg.traits : rollTraits(ctx.rng);
   const dinoId = ctx.db.transaction(() => {
     const dino = ctx.db.insert(schema.dinos).values({
       userId, lotId: null, speciesId: species.id, hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),

@@ -63,6 +63,8 @@ export const eggs = sqliteTable('eggs', {
   source: text('source', { enum: ['expedition', 'shop', 'trade', 'admin', 'battle', 'breeding'] }).notNull(),
   viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
   // Bred eggs carry their rolled inheritance here; wild eggs stay [] and roll at hatch.
+  // An empty array on a BRED egg is a real result (25% under BRED_SLOT_ODDS), not "unset",
+  // so hatchEgg discriminates on `source`, never on this array's length.
   traits: text('traits', { mode: 'json' }).$type<string[]>().notNull().default([]),
   obtainedAt: integer('obtained_at_ms').notNull(),
   incubationStartedAt: integer('incubation_started_at_ms'),
