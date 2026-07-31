@@ -10,6 +10,7 @@ import { getSpecies } from '../../data/species/index.js';
 import { preHatchPayload, revealPayload, eggListPayload, RARITY_COLOR } from './embeds.js';
 import { assetImage, attach } from '../../core/images.js';
 import { rarityEmoji } from '../../core/emojis.js';
+import { traitLines } from '../../core/trait-display.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, eggLabel } from '../../core/autocomplete.js';
 
@@ -93,8 +94,13 @@ export const hatcheryModule: ModuleManifest = {
         if (action !== 'crack') return;
         const idStr = a2;
         try {
-          const { species } = hatchEgg(ctx, i.user.id, Number(idStr));
-          await i.update(revealPayload(species));
+          const { species, traits } = hatchEgg(ctx, i.user.id, Number(idStr));
+          const payload = revealPayload(species);
+          // Traits field appended after revealPayload's Diet/Biome/Income/hr fields —
+          // added here rather than inside revealPayload so the two attach() calls
+          // there (crack image, archetype thumbnail) stay untouched.
+          payload.embeds[0].addFields({ name: '🧬 Traits', value: traitLines(traits), inline: false });
+          await i.update(payload);
         } catch (e) {
           if (e instanceof HatcheryError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e;
         }

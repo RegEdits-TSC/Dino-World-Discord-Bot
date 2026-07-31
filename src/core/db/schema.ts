@@ -60,7 +60,7 @@ export const eggs = sqliteTable('eggs', {
   userId: text('user_id').notNull().references(() => users.discordId),
   rarity: text('rarity', { enum: ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] }).notNull(),
   speciesId: text('species_id'),
-  source: text('source', { enum: ['expedition', 'shop', 'trade', 'admin', 'battle'] }).notNull(),
+  source: text('source', { enum: ['expedition', 'shop', 'trade', 'admin', 'battle', 'breeding'] }).notNull(),
   viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
   // Bred eggs carry their rolled inheritance here; wild eggs stay [] and roll at hatch.
   traits: text('traits', { mode: 'json' }).$type<string[]>().notNull().default([]),

@@ -6,6 +6,7 @@ import { RARITY } from '../../data/rarity.js';
 import { FACILITIES } from '../../data/facilities.js';
 import { getSpecies } from '../../data/species/index.js';
 import { rollSpeciesInRarity } from '../../core/rolls.js';
+import { rollTraits } from '../../data/traits.js';
 import { locksFor } from '../../core/locks.js';
 import { recomputeRating } from '../park/rating.js';
 import { facilityLevel, type Lot } from '../park/service.js';
@@ -42,7 +43,7 @@ export function incubateEgg(ctx: Ctx, userId: string, eggId: number, guildId: st
   return { ...egg, incubationStartedAt: now, hatchesAt };
 }
 
-export function hatchEgg(ctx: Ctx, userId: string, eggId: number): { species: Species; dinoId: number } {
+export function hatchEgg(ctx: Ctx, userId: string, eggId: number): { species: Species; dinoId: number; traits: string[] } {
   const egg = ctx.db.select().from(schema.eggs)
     .where(and(eq(schema.eggs.id, eggId), eq(schema.eggs.userId, userId))).get();
   if (!egg) throw new HatcheryError('You do not own that egg.');
@@ -50,6 +51,8 @@ export function hatchEgg(ctx: Ctx, userId: string, eggId: number): { species: Sp
   if (egg.incubationStartedAt === null || egg.hatchesAt === null) throw new HatcheryError('That egg is not incubating.');
   if (egg.hatchesAt > ctx.now()) throw new HatcheryError('That egg is not ready to hatch yet.');
   const species = egg.speciesId ? getSpecies(egg.speciesId) : rollSpeciesInRarity(egg.rarity, ctx.rng);
+  // A bred egg carries the inheritance rolled at /breed claim; a wild egg rolls now.
+  const traits = egg.traits.length ? egg.traits : rollTraits(ctx.rng);
   const dinoId = ctx.db.transaction(() => {
     const dino = ctx.db.insert(schema.dinos).values({
       userId, lotId: null, speciesId: species.id, hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),
@@ -57,10 +60,11 @@ export function hatchEgg(ctx: Ctx, userId: string, eggId: number): { species: Sp
       // traded egg launders into a full-shard sale, reopening the alt-to-main funnel that
       // moveItems (src/modules/trading/service.ts) closes for dinos.
       viaTrade: egg.viaTrade,
+      traits,
     }).returning().get();
     ctx.db.delete(schema.eggs).where(eq(schema.eggs.id, eggId)).run();
     return dino.id;
   });
   recomputeRating(ctx, userId);
-  return { species, dinoId };
+  return { species, dinoId, traits };
 }

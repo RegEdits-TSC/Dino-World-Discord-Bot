@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ButtonInteraction } from 'discord.js';
 import { MessageFlags } from 'discord.js';
-import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, replyText, mulberry32 } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { incubateEgg, hatchEgg, incubatorSlots, HatcheryError } from '../src/modules/hatchery/service.js';
 import { hatcheryModule } from '../src/modules/hatchery/index.js';
@@ -14,6 +14,7 @@ import { RARITY } from '../src/data/rarity.js';
 import { assetImage } from '../src/core/images.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
+import { rollTraits } from '../src/data/traits.js';
 
 // assetImage is a pass-through spy by default (calls the real implementation),
 // so every test in this file except the two degrade-path tests below is
@@ -115,6 +116,35 @@ describe('hatchery', () => {
     ctx.setNow(ctx.now() + 15 * M);
     const fromLoot = hatchEgg(ctx, 'u1', own.id);
     expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, fromLoot.dinoId)).get()!.viaTrade).toBe(false);
+  });
+
+  it('rolls fresh traits for a wild egg and stores them on the dino', () => {
+    const ctx = makeCtx({ nowMs: 0, rng: mulberry32(11) });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const egg = ctx.db.insert(schema.eggs).values({
+      userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0,
+      incubationStartedAt: 0, hatchesAt: 1,
+    }).returning().get();
+    ctx.setNow(2);
+
+    const out = hatchEgg(ctx, 'u1', egg.id);
+    const dino = ctx.db.select().from(schema.dinos).all()[0];
+    expect(dino.traits).toEqual(out.traits);
+    expect(dino.traits.length).toBeLessThanOrEqual(2);
+  });
+
+  it('uses the stored inheritance for a bred egg instead of rolling', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const egg = ctx.db.insert(schema.eggs).values({
+      userId: 'u1', rarity: 'rare', source: 'breeding', obtainedAt: 0,
+      traits: ['hardy', 'savage'], incubationStartedAt: 0, hatchesAt: 1,
+    }).returning().get();
+    ctx.setNow(2);
+
+    const out = hatchEgg(ctx, 'u1', egg.id);
+    expect(out.traits).toEqual(['hardy', 'savage']);
+    expect(ctx.db.select().from(schema.dinos).all()[0].traits).toEqual(['hardy', 'savage']);
   });
 });
 
