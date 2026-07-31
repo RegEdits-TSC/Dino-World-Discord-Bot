@@ -279,6 +279,28 @@ describe('egg list pagination', () => {
     expect(desc).not.toContain('locked in a trade');
     expect(desc).toContain(`#${egg.id} — common egg — in inventory`);
   });
+
+  it('the page button sweeps too, so a stale padlock does not survive on page 2', async () => {
+    // Same lazy-expiry hazard as /eggs, one surface further in: paging is its own
+    // read of the egg rows, so it needs its own sweep or page 2 keeps rendering
+    // a lock that no longer exists.
+    getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    for (let n = 0; n < 10; n++) addEgg('common');
+    const locked = addEgg('epic');                       // 11th row → index 10 → page 2's only item
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [locked.id], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    ctx.setNow(25 * 3_600_000);                          // TRADE_EXPIRY_MS is 24h
+    const hatchComponent = hatcheryModule.components.find((c) => c.prefix === 'hatch')!;
+    const b = fakeButton({ customId: 'hatch:eggs:u1:2', user: 'u1', guild: 'g1' });
+    await hatchComponent.execute(ctx, b.asInteraction() as never);
+    const embed = (b.replies[0] as { embeds: Array<{ toJSON(): { description?: string; footer?: { text: string } } }> })
+      .embeds[0].toJSON();
+    expect(embed.footer?.text).toBe('Page 2/2');         // the swept egg really is on the page we rendered
+    expect(embed.description).toBe(`#${locked.id} — epic egg — in inventory`);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, locked.id)).get()!.locked).toBe(false);
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
+  });
 });
 
 describe('/mythic confirm flow', () => {
