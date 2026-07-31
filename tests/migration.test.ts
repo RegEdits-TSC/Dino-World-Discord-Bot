@@ -175,3 +175,72 @@ describe('0002 battle columns via the real drizzle migrator (production path)', 
     }
   });
 });
+
+describe('0005 locked-column drop via the real drizzle migrator (production path)', () => {
+  it('preserves populated dino and egg rows across the locked-column drop', () => {
+    // Reach the 0004 schema (the last one that still has dinos.locked / eggs.locked) via a
+    // scratch folder, seed rows through RAW pre-0005 SQL — both of them locked, so the drop is
+    // exercised against a column that actually carries data — then let the real migrateDb apply
+    // 0005 exactly as the bot does at startup. Seeding AFTER the migration would prove nothing:
+    // the risk this test exists for is losing (or blanking) rows in the column rewrite.
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig5-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^000[0-4].*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 4);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');                   // production createDb sets this
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });           // apply 0000-0004 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, last_collect_at_ms, created_at_ms) VALUES ('u1', 0, 0)`).run();
+    const lotId = Number(sqlite.prepare(
+      `INSERT INTO lots (user_id, type, kind, name) VALUES ('u1', 'paddock', 'herbivore_paddock', 'Fern Hollow')`
+    ).run().lastInsertRowid);
+    sqlite.prepare(`INSERT INTO dinos (user_id, lot_id, species_id, nickname, hunger, last_fed_at_ms, hatched_at_ms,
+                                       via_trade, locked, battle_xp, traits)
+                    VALUES ('u1', ?, 'triceratops', 'Trixie', 87, 5, 5, 1, 1, 250, '["hardy"]')`).run(lotId);
+    sqlite.prepare(`INSERT INTO eggs (user_id, rarity, species_id, source, via_trade, locked, traits,
+                                      obtained_at_ms, incubation_started_at_ms, hatches_at_ms)
+                    VALUES ('u1', 'epic', 'stegosaurus', 'trade', 1, 1, '["swift"]', 7, 9, 11)`).run();
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+
+      // The columns are gone...
+      const cols = (t: string) => (sqlite.prepare(`SELECT name FROM pragma_table_info('${t}')`).all() as Array<{ name: string }>)
+        .map((r) => r.name);
+      expect(cols('dinos')).not.toContain('locked');
+      expect(cols('eggs')).not.toContain('locked');
+
+      // ...and every surviving column kept its value. A rewrite that dropped rows, or reset
+      // them to column defaults, fails here — not just on the row count.
+      const dinos = sqlite.prepare(`SELECT * FROM dinos`).all() as Array<Record<string, unknown>>;
+      expect(dinos).toHaveLength(1);
+      expect(dinos[0]).toMatchObject({
+        user_id: 'u1', lot_id: lotId, species_id: 'triceratops', nickname: 'Trixie', hunger: 87,
+        last_fed_at_ms: 5, escaped_at_ms: null, via_trade: 1, battle_xp: 250, traits: '["hardy"]', hatched_at_ms: 5,
+      });
+      const eggs = sqlite.prepare(`SELECT * FROM eggs`).all() as Array<Record<string, unknown>>;
+      expect(eggs).toHaveLength(1);
+      expect(eggs[0]).toMatchObject({
+        user_id: 'u1', rarity: 'epic', species_id: 'stegosaurus', source: 'trade', via_trade: 1,
+        traits: '["swift"]', obtained_at_ms: 7, incubation_started_at_ms: 9, hatches_at_ms: 11,
+      });
+
+      // The dino's lot FK must still resolve — nothing was renamed out from under it.
+      expect(sqlite.prepare(
+        `SELECT d.id FROM dinos d JOIN lots l ON l.id = d.lot_id WHERE l.user_id = 'u1'`
+      ).all()).toHaveLength(1);
+
+      // migrateDb must leave FK enforcement ON — runtime integrity depends on it.
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});

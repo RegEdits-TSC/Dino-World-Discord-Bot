@@ -15,6 +15,7 @@ import { assignDino } from '../src/modules/park/dinos.js';
 import { incubateEgg } from '../src/modules/hatchery/service.js';
 import { startExpedition } from '../src/modules/expeditions/service.js';
 import { createTrade } from '../src/modules/trading/service.js';
+import { locksFor } from '../src/core/locks.js';
 import { ENERGY_CAP } from '../src/data/battle/constants.js';
 import { makeCtx, fakeCommand, fakeButton, type FakeInteraction } from '../tests/harness.js';
 import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
@@ -96,7 +97,8 @@ startExpedition(ctx, P1, 'coastal_dig', devGuildId);
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'tyrannosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'spinosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
 ctx.db.update(schema.dinos).set({ battleXp: 10_000 }).where(eq(schema.dinos.userId, P1)).run();
-const squad = ctx.db.select().from(schema.dinos).all().filter((d) => d.userId === P1 && !d.locked);
+const p1Locks = locksFor(ctx, P1).dinos;   // spareDino is escrowed by the trade seeded above
+const squad = ctx.db.select().from(schema.dinos).all().filter((d) => d.userId === P1 && !p1Locks.has(d.id));
 const [b1, b2, b3] = [squad[0], squad[squad.length - 2], squad[squad.length - 1]];
 // amber_ridge_1..4 are seeded so the amber boss case has a stage gate to pass;
 // its CHAPTER gate (coastal_dig_boss first-cleared) is left to the coastal boss

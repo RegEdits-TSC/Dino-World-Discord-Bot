@@ -4,10 +4,21 @@ import { hatcheryModule } from '../src/modules/hatchery/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { schema } from '../src/core/db/index.js';
 import { createTrade } from '../src/modules/trading/service.js';
+import { locksFor } from '../src/core/locks.js';
 import { eq } from 'drizzle-orm';
 
 const H = 3_600_000;
 const cmd = (name: string) => hatcheryModule.commands.find((c) => c.data.name === name)!;
+
+// A pending u1->u2 trade offering the given eggs — the only thing that escrows them now.
+function escrowEggs(ctx: ReturnType<typeof makeCtx>, eggIds: number[]) {
+  getOrCreateUser(ctx, 'u2', 'u2');
+  ctx.db.insert(schema.trades).values({
+    fromUser: 'u1', toUser: 'u2', offer: { dinoIds: [], eggIds, cash: 0, foods: {} },
+    request: { dinoIds: [], eggIds: [], cash: 0, foods: {} },
+    status: 'pending', createdAt: ctx.now(),
+  }).run();
+}
 
 function seedEggs(ctx: ReturnType<typeof makeCtx>) {
   getOrCreateUser(ctx, 'u1', 'u1');
@@ -53,8 +64,9 @@ describe('/incubate egg autocomplete', () => {
     const ctx = makeCtx({ nowMs: 2 * H });
     const { inventory } = seedEggs(ctx);
     const locked = ctx.db.insert(schema.eggs)
-      .values({ userId: 'u1', rarity: 'legendary', source: 'shop', obtainedAt: 0, locked: true })
+      .values({ userId: 'u1', rarity: 'legendary', source: 'shop', obtainedAt: 0 })
       .returning().get();
+    escrowEggs(ctx, [locked.id]);
     const i = fakeAutocomplete({ name: 'incubate', user: 'u1', focused: { name: 'egg', value: '' } });
     await cmd('incubate').autocomplete!(ctx, i.asAutocomplete());
     const rows = i.replies[0] as Array<{ name: string; value: number }>;
@@ -64,7 +76,7 @@ describe('/incubate egg autocomplete', () => {
     });
   });
 
-  it('sweeps expired trades so a stale lock does not shadow an inventory egg', async () => {
+  it('an expired trade stops shadowing an inventory egg, with no sweep', async () => {
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
     ctx.db.update(schema.users).set({ parkRating: 200 }).run();
@@ -77,7 +89,9 @@ describe('/incubate egg autocomplete', () => {
     await cmd('incubate').autocomplete!(ctx, i.asAutocomplete());
     const rows = i.replies[0] as Array<{ name: string; value: number }>;
     expect(rows[0]).toEqual({ name: `🥚 #${egg.id} Common — in inventory`, value: egg.id });
-    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.locked).toBe(false);
+    expect(locksFor(ctx, 'u1').eggs.has(egg.id)).toBe(false);
+    // The provider writes nothing — the lock lapsed on the clock, not on a sweep.
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('pending');
   });
 });
 
@@ -106,8 +120,9 @@ describe('/hatch egg autocomplete', () => {
     seedEggs(ctx);
     const locked = ctx.db.insert(schema.eggs)
       .values({ userId: 'u1', rarity: 'legendary', source: 'shop', obtainedAt: 0,
-                incubationStartedAt: 0, hatchesAt: 1, locked: true })
+                incubationStartedAt: 0, hatchesAt: 1 })
       .returning().get();
+    escrowEggs(ctx, [locked.id]);
     const i = fakeAutocomplete({ name: 'hatch', user: 'u1', focused: { name: 'egg', value: '' } });
     await cmd('hatch').autocomplete!(ctx, i.asAutocomplete());
     const rows = i.replies[0] as Array<{ name: string; value: number }>;
@@ -116,7 +131,7 @@ describe('/hatch egg autocomplete', () => {
     });
   });
 
-  it('sweeps expired trades so a stale lock does not demote a ready egg', async () => {
+  it('an expired trade stops demoting a ready egg, with no sweep', async () => {
     // A locked AND ready row cannot be built through services in either order —
     // createTrade refuses an incubating egg, and (after this work) incubateEgg refuses
     // a locked one. Trade first, then set the timer fields directly.
@@ -134,6 +149,8 @@ describe('/hatch egg autocomplete', () => {
     await cmd('hatch').autocomplete!(ctx, i.asAutocomplete());
     const rows = i.replies[0] as Array<{ name: string; value: number }>;
     expect(rows[0]).toEqual({ name: `🥚 #${egg.id} Common — READY`, value: egg.id });
-    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.locked).toBe(false);
+    expect(locksFor(ctx, 'u1').eggs.has(egg.id)).toBe(false);
+    // The provider writes nothing — the lock lapsed on the clock, not on a sweep.
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('pending');
   });
 });

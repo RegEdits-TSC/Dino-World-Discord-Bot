@@ -8,10 +8,12 @@
 - Slash commands live in `ModuleManifest`s (`src/core/modules.ts`). Commands
   may define `autocomplete?(ctx, i)`: providers only ever `i.respond(...)`
   (never `reply`/`defer`), never call `getOrCreateUser` (no row creation on
-  keystrokes), and are read-only — the only permitted writes are
-  `settleEscapes` (guard on the user row existing first: it crashes for
-  unknown users) and `expireStale`. Router-level errors degrade to an empty
-  suggestion list.
+  keystrokes), and are read-only — the only permitted write is `settleEscapes`
+  (guard on the user row existing first: it crashes for unknown users). Escrow
+  no longer needs a sweep here: `locksFor` (`src/core/locks.ts`) is a pure read.
+  `expireStale` survives in the `/trade accept|decline|cancel` provider only
+  because that list's `status` filter is what hides a dead trade. Router-level
+  errors degrade to an empty suggestion list.
 - Registering a new module touches 4 sites: modules.json, `src/core/module-list.ts`
   (the `ALL_MODULES` array), tests/registry-load.test.ts (command count),
   tests/config.test.ts (expected modules). `src/index.ts` and
@@ -279,36 +281,39 @@
   text-only embed when `buildParkSnapshot`/`renderPark` throws. Adding or
   removing a topic KEY changes the `/help` builder choices and forces
   `npm run deploy-commands`; adding a field to the value type does not.
-- Trade escrow is enforced at every path that CONSUMES an item, never at paths that
-  merely use one: `sellDino`, `incubateEgg` and `hatchEgg` all reject `locked` rows,
-  while battling a locked dino stays legal (`src/modules/battles/service.ts`) because
-  it neither consumes nor transfers. `createTrade` is the only writer of
-  `eggs.locked = true`, and its `verifySide` refuses an incubating egg, so a locked
-  *and* incubating row can only be legacy data — `hatchEgg`'s guard is unreachable
-  through the public API and its test must lock the row with a raw `ctx.db.update`.
-  Because `expireStale` is lazy — no timer sweeps expired trades, so a dead
-  trade keeps its lock until something calls it — the rule is that every
-  entry point that reads `dinos.locked` or `eggs.locked` must sweep first,
-  or it acts on a lock that no longer exists. Every such read across
-  hatchery, shop and trading is now behind a sweep; the only exception is
-  `hatchEgg`'s guard above, left unswept because — as just shown — it is
-  unreachable through the public API. One subtlety: the `/trade offer`
-  autocomplete sweeps the resolved `ownerId`, not `i.user.id`, since the
-  `want-*` options list the TARGET's inventory and it is the target's locks
-  that must be fresh; a test pins this by escrowing the target's dino in a
-  trade with a third user, so sweeping the wrong id fails it. Autocomplete
-  providers are otherwise read-only (see the `expireStale` note above); it's
-  safe there because it only reads the trades table and creates no user row.
-  Standing warning: `locked` is a denormalized boolean cache of a
-  time-dependent predicate, and `createTrade` is its only writer of `true` —
-  that's why the sweep count keeps growing (0 → 6 → 14); if it needs to grow
-  again, derive lock state from the trades table and drop the column rather
-  than add a fifteenth call site. Scaling note: `expireStale` filters by user
-  in JS rather than SQL, so every call scans all pending trades — a trade
-  between two players who both quit stays `pending` forever and gets
-  re-scanned by every later sweep, including at keystroke-rate autocomplete
-  sites. Sub-millisecond at current scale; revisit if abandoned pending
-  trades ever become measurable.
+- Escrow is DERIVED, never stored: `locksFor(ctx, userId)` (`src/core/locks.ts`)
+  returns `{ dinos, eggs }` maps of id → `LockReason`, built from the pending,
+  unexpired trades the user SENT (only the offer side is ever escrowed, and the
+  offer belongs to `fromUser`) plus their unclaimed `breedings` rows. The
+  `dinos.locked`/`eggs.locked` columns were dropped in migration 0005 — a stale
+  lock is no longer representable, so **no caller ever has to sweep before reading
+  one**. That retired 11 of the 14 `expireStale` calls; the 3 that survive
+  (all in `src/modules/trading/index.ts`) exist only to flip `status` for
+  `/trade list` display and history, and `expireStale` is no longer load-bearing
+  for escrow at all.
+  Two properties keep this design honest, and both must survive future work:
+  (1) **batch-per-user, not per-row** — callers build one `Locks` and test
+  membership; never add a per-id `isLocked(dinoId)`, it becomes an N+1 inside
+  `/dino list` and every autocomplete provider. Pure formatters therefore take
+  the lock as an ARGUMENT (`eggLabel(egg, now, locked)` in
+  `src/core/autocomplete.ts`, `eggListPayload(..., locks)` in
+  `src/modules/hatchery/embeds.ts`) and their callers build the map once.
+  (2) **expiry is evaluated at read time** — a trade escrows iff
+  `createdAt + TRADE_EXPIRY_MS > now`; nothing sweeps.
+  Enforcement still lands only at paths that CONSUME an item, never at paths that
+  merely use one: `sellDino`, `incubateEgg` and `hatchEgg` reject escrowed rows,
+  while battling an escrowed dino stays legal (`src/modules/battles/service.ts`)
+  because it neither consumes nor transfers. `verifySide`'s `skipLockCheck` is not
+  an exploit: at accept time the offer side is escrowed BY THAT VERY TRADE.
+  `createTrade`'s `verifySide` refuses an incubating egg, so an escrowed *and*
+  incubating row can only be legacy data — `hatchEgg`'s guard is unreachable through
+  the public API and its test builds the state by inserting the pending trade row
+  directly. One subtlety survives the rewrite: the `/trade offer` autocomplete builds
+  locks for the resolved `ownerId`, NOT `i.user.id`, because the `want-*` options list
+  the TARGET's inventory — a test pins this by escrowing the target's dino in a trade
+  with a third user, so reading the wrong id fails it. Scaling note: `locksFor` runs two
+  unindexed table filters per call, but filters in SQL (unlike `expireStale`, which
+  still filters by user in JS); sub-millisecond at current scale.
 - Provenance survives the hatch: `hatchEgg` inserts the dino with
   `viaTrade: egg.viaTrade`. `eggs.viaTrade` had no reader before this; the three
   readers of `dinos.viaTrade` are all in the shop module, so dropping it at the hatch

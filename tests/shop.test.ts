@@ -5,6 +5,7 @@ import { getOrCreateUser } from '../src/modules/park/service.js';
 import { dailyEggOffers, buyEgg, buyFood, ShopError } from '../src/modules/shop/service.js';
 import { shopModule } from '../src/modules/shop/index.js';
 import { createTrade } from '../src/modules/trading/service.js';
+import { locksFor } from '../src/core/locks.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 
@@ -147,11 +148,13 @@ describe('shop food and sell error branches', () => {
     expect(ctx.economy.getFoodInventory('u1').ferns).toBe(20);   // 10 starter + 10 bought
   });
   it('/sell rejects an unsellable (locked) dino ephemeral, and sell:confirm re-checks', async () => {
-    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
-    ctx.db.insert(schema.dinos).values({
-      userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0, locked: true,
-    }).run();
-    const dino = ctx.db.select().from(schema.dinos).all()[0];
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    const dino = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [dino.id], eggIds: [], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
     const sell = shopModule.commands.find((c) => c.data.name === 'sell')!;
     const i = fakeCommand({ name: 'sell', user: 'u1', options: { dino: dino.id } });
     await sell.execute(ctx, i.asChatInput());
@@ -162,7 +165,7 @@ describe('shop food and sell error branches', () => {
     expect(replyText(b.replies[0])).toContain('locked');
   });
 
-  it('/sell sweeps an expired trade first, so a stale lock does not block the sale prompt', async () => {
+  it('/sell: an expired trade stops blocking the sale prompt, with no sweep', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
     ctx.db.update(schema.users).set({ parkRating: 200 }).run();
     const dino = ctx.db.insert(schema.dinos).values({
@@ -176,12 +179,12 @@ describe('shop food and sell error branches', () => {
     await sell.execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { description?: string } }> };
     expect(payload.embeds[0].toJSON().description).toContain(`Sell dino #${dino.id} for 500 cash`);
-    const after = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dino.id)).get()!;
-    expect(after.locked).toBe(false);
-    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
+    expect(locksFor(ctx, 'u1').dinos.has(dino.id)).toBe(false);
+    // The command writes nothing: the lock lapsed on the clock, not on a sweep.
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('pending');
   });
 
-  it('sell:confirm sweeps an expired trade first, so a stale lock does not block the sale', async () => {
+  it('sell:confirm: an expired trade stops blocking the sale, with no sweep', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
     ctx.db.update(schema.users).set({ parkRating: 200 }).run();
     const dino = ctx.db.insert(schema.dinos).values({
@@ -195,6 +198,6 @@ describe('shop food and sell error branches', () => {
     await comp.execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
     expect(replyText(b.replies[0])).toContain('Sold for');
     expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dino.id)).get()).toBeUndefined();
-    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('pending');
   });
 });

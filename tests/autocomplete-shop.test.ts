@@ -8,6 +8,7 @@ import { SHOP_EGG_PRICES } from '../src/data/shop.js';
 import type { Rarity } from '../src/data/types.js';
 import { eq } from 'drizzle-orm';
 import { createTrade } from '../src/modules/trading/service.js';
+import { locksFor } from '../src/core/locks.js';
 
 const cmd = (name: string) => shopModule.commands.find((c) => c.data.name === name)!;
 
@@ -41,13 +42,17 @@ describe('/shop egg rarity autocomplete', () => {
 describe('/sell dino autocomplete', () => {
   it('tags mythic and trade-locked dinos, appends sale value to valid ones', async () => {
     const ctx = makeCtx();
-    getOrCreateUser(ctx, 'u1', 'u1');
+    getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both 2★ so createTrade passes
     const mk = (over: Partial<typeof schema.dinos.$inferInsert>) =>
       ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'velociraptor', lastFedAt: 0, hatchedAt: 0, ...over }).returning().get();
     const ok = mk({});                                         // velociraptor is rare -> 500 cash
     const traded = mk({ speciesId: 'triceratops', viaTrade: true });
-    const locked = mk({ speciesId: 'stegosaurus', locked: true });
+    const locked = mk({ speciesId: 'stegosaurus' });
     const mythic = mk({ speciesId: 'indominus' });
+    // Escrow is derived from the pending trade, so the lock has to come from a real one.
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [locked.id], eggIds: [], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
     const i = fakeAutocomplete({ name: 'sell', user: 'u1', focused: { name: 'dino', value: '' } });
     await cmd('sell').autocomplete!(ctx, i.asAutocomplete());
     const rows = i.replies[0] as Array<{ name: string; value: number }>;
@@ -58,7 +63,7 @@ describe('/sell dino autocomplete', () => {
     expect(rows[3].name).toBe(`🦖 #${mythic.id} Indominus rex — MYTHIC, can't sell`);
   });
 
-  it('sweeps an expired trade first, so a stale lock does not hide a sellable dino', async () => {
+  it('an expired trade stops hiding a sellable dino with no sweep at all', async () => {
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
     ctx.db.update(schema.users).set({ parkRating: 200 }).run();
@@ -71,9 +76,9 @@ describe('/sell dino autocomplete', () => {
     await cmd('sell').autocomplete!(ctx, i.asAutocomplete());
     const rows = i.replies[0] as Array<{ name: string; value: number }>;
     expect(rows[0].name).toBe(`🦖 #${dino.id} Velociraptor — 500 cash`);
-    const after = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dino.id)).get()!;
-    expect(after.locked).toBe(false);
-    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
+    expect(locksFor(ctx, 'u1').dinos.has(dino.id)).toBe(false);
+    // The provider no longer sweeps — the row is untouched and the lock lapsed on the clock.
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('pending');
   });
 });
 

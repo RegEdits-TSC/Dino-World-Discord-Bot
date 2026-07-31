@@ -8,6 +8,7 @@ import { requireOwner } from '../src/modules/admin/guard.js';
 import { adminGive, adminReset, adminFastForward, AdminError } from '../src/modules/admin/service.js';
 import { adminModule } from '../src/modules/admin/index.js';
 import { createTrade } from '../src/modules/trading/service.js';
+import { locksFor } from '../src/core/locks.js';
 import { ENERGY_CAP } from '../src/data/battle/constants.js';
 import { settleEnergy } from '../src/data/battle/energy.js';
 
@@ -82,11 +83,12 @@ describe('adminReset + trades', () => {
     ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both 2★ so createTrade passes
     const dino = ctx.db.insert(schema.dinos).values({ userId: 'o', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
     createTrade(ctx, 'o', 't', { dinoIds: [dino.id], eggIds: [], cash: 0, foods: {} }, { dinoIds: [], eggIds: [], cash: 0, foods: {} });
-    // dino now locked, owned by o, in a pending o->t trade
+    // dino now escrowed, owned by o, in a pending o->t trade
+    expect(locksFor(ctx, 'o').dinos.has(dino.id)).toBe(true);
     adminReset(ctx, 't');   // t is the RECIPIENT
     const d = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dino.id)).get()!;
-    expect(d.userId).toBe('o');     // still o's
-    expect(d.locked).toBe(false);   // unlocked, not stranded
+    expect(d.userId).toBe('o');                             // still o's
+    expect(locksFor(ctx, 'o').dinos.has(dino.id)).toBe(false);   // freed, not stranded
   });
 });
 

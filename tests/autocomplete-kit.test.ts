@@ -88,14 +88,14 @@ const H = 3_600_000;
 function egg(over: Record<string, unknown> = {}) {
   return {
     id: 12, userId: 'u1', rarity: 'rare', speciesId: null, source: 'shop',
-    viaTrade: false, locked: false, obtainedAt: 0, incubationStartedAt: null, hatchesAt: null,
+    viaTrade: false, traits: [], obtainedAt: 0, incubationStartedAt: null, hatchesAt: null,
     ...over,
   } as never;
 }
 function dino(over: Record<string, unknown> = {}) {
   return {
     id: 7, userId: 'u1', lotId: 3, speciesId: 'velociraptor', nickname: null,
-    hunger: 100, lastFedAt: 0, escapedAt: null, viaTrade: false, locked: false, hatchedAt: 0,
+    hunger: 100, lastFedAt: 0, escapedAt: null, viaTrade: false, traits: [], hatchedAt: 0,
     ...over,
   } as never;
 }
@@ -108,11 +108,15 @@ describe('eggLabel', () => {
     expect(eggLabel(egg({ incubationStartedAt: 0, hatchesAt: 100 }), 100)).toBe('🥚 #12 Rare — READY');
   });
   it('tags a trade-locked egg, ahead of every other state', () => {
-    expect(eggLabel(egg({ locked: true }), 0)).toBe('🥚 #12 Rare — locked in a trade');
+    // The lock is an ARGUMENT now, not a row field: escrow is derived per user
+    // (locksFor) and this formatter has no ctx.
+    expect(eggLabel(egg(), 0, true)).toBe('🥚 #12 Rare — locked in a trade');
     // Lock wins over READY: a pre-existing locked+incubating row predates the
     // incubate guard, and the lock is the state that blocks the player.
-    expect(eggLabel(egg({ locked: true, incubationStartedAt: 0, hatchesAt: 100 }), 100))
+    expect(eggLabel(egg({ incubationStartedAt: 0, hatchesAt: 100 }), 100, true))
       .toBe('🥚 #12 Rare — locked in a trade');
+    // ...and the default is unlocked, so every other caller reads the timer states.
+    expect(eggLabel(egg({ incubationStartedAt: 0, hatchesAt: 100 }), 100)).toBe('🥚 #12 Rare — READY');
   });
 });
 

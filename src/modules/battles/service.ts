@@ -48,9 +48,10 @@ export function runFight(ctx: Ctx, userId: string, stageId: string, dinoIds: num
   const owned = ctx.db.select().from(schema.dinos)
     .where(and(eq(schema.dinos.userId, userId), inArray(schema.dinos.id, dinoIds))).all();
   const byId = new Map(owned.map((d) => [d.id, d]));
-  // Unlike sellDino (src/modules/shop/shards.ts), `locked` dinos are deliberately NOT
-  // rejected here: battling neither consumes nor transfers a dino, so it can't violate
-  // a pending trade's escrow the way a sale would. Only escaped dinos are unfit to fight.
+  // Unlike sellDino (src/modules/shop/shards.ts), escrowed dinos (locksFor,
+  // src/core/locks.ts) are deliberately NOT rejected here: battling neither consumes nor
+  // transfers a dino, so it can't violate a pending trade's escrow the way a sale would.
+  // Only escaped dinos are unfit to fight.
   const squadRows = dinoIds.map((id) => {
     const d = byId.get(id);
     if (!d) throw new BattleError('You can only field dinos you own.');

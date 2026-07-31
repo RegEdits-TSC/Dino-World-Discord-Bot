@@ -50,7 +50,6 @@ export const dinos = sqliteTable('dinos', {
   lastFedAt: integer('last_fed_at_ms').notNull(),
   escapedAt: integer('escaped_at_ms'),
   viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
-  locked: integer('locked', { mode: 'boolean' }).notNull().default(false),
   battleXp: integer('battle_xp').notNull().default(0),
   traits: text('traits', { mode: 'json' }).$type<string[]>().notNull().default([]),
   hatchedAt: integer('hatched_at_ms').notNull(),
@@ -65,7 +64,6 @@ export const eggs = sqliteTable('eggs', {
   viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
   // Bred eggs carry their rolled inheritance here; wild eggs stay [] and roll at hatch.
   traits: text('traits', { mode: 'json' }).$type<string[]>().notNull().default([]),
-  locked: integer('locked', { mode: 'boolean' }).notNull().default(false),
   obtainedAt: integer('obtained_at_ms').notNull(),
   incubationStartedAt: integer('incubation_started_at_ms'),
   hatchesAt: integer('hatches_at_ms'),

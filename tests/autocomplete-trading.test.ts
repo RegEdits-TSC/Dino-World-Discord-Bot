@@ -4,7 +4,7 @@ import { tradingModule } from '../src/modules/trading/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { schema } from '../src/core/db/index.js';
-import { eq } from 'drizzle-orm';
+import { locksFor } from '../src/core/locks.js';
 
 const cmd = () => tradingModule.commands[0];
 const H = 3_600_000;
@@ -71,6 +71,15 @@ describe('/trade accept|decline|cancel id autocomplete', () => {
 });
 
 describe('/trade offer id-list autocomplete', () => {
+  // A pending u1->u2 trade offering the given items — the only thing that escrows them now.
+  function escrow(ctx: ReturnType<typeof makeCtx>, offer: { dinoIds: number[]; eggIds: number[] }) {
+    ctx.db.insert(schema.trades).values({
+      fromUser: 'u1', toUser: 'u2', offer: { ...offer, cash: 0, foods: {} },
+      request: { dinoIds: [], eggIds: [], cash: 0, foods: {} },
+      status: 'pending', createdAt: ctx.now(),
+    }).run();
+  }
+
   function seedInventory(ctx: ReturnType<typeof makeCtx>, userId: string) {
     getOrCreateUser(ctx, userId, userId);
     const dino = (over: Partial<typeof schema.dinos.$inferInsert> = {}) =>
@@ -83,8 +92,10 @@ describe('/trade offer id-list autocomplete', () => {
   it('give-dinos: lists only tradeable dinos, completing the last token', async () => {
     const ctx = makeCtx();
     const inv = seedInventory(ctx, 'u1');
+    getOrCreateUser(ctx, 'u2', 'u2');
     const ok = inv.dino({});
-    inv.dino({ locked: true });
+    // Escrow is derived, so the lock has to come from a real pending trade row.
+    escrow(ctx, { dinoIds: [inv.dino({}).id], eggIds: [] });   // escrowed — must not be listed
     inv.dino({ escapedAt: 1 });
     inv.dino({ speciesId: 'indominus' });          // mythic — untradeable
     const i = fakeAutocomplete({
@@ -98,9 +109,10 @@ describe('/trade offer id-list autocomplete', () => {
   it('give-eggs: excludes incubating and locked eggs, re-emits the prefix', async () => {
     const ctx = makeCtx();
     const inv = seedInventory(ctx, 'u1');
+    getOrCreateUser(ctx, 'u2', 'u2');
     const ok = inv.egg({});
     inv.egg({ incubationStartedAt: 0, hatchesAt: 99 });
-    inv.egg({ locked: true });
+    escrow(ctx, { dinoIds: [], eggIds: [inv.egg({}).id] });    // escrowed — must not be listed
     const i = fakeAutocomplete({
       name: 'trade', sub: 'offer', user: 'u1',
       focused: { name: 'give-eggs', value: '500, ' },
@@ -151,9 +163,10 @@ describe('/trade offer id-list autocomplete', () => {
     });
     await cmd().autocomplete!(ctx, i.asAutocomplete());
     expect(i.replies[0]).toEqual([{ name: `${target.id} — 🦖 Velociraptor (rare)`, value: String(target.id) }]);
-    const after = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, target.id)).get()!;
-    expect(after.locked).toBe(false);
-    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
+    // Escrow is read against the TARGET (u2), not the invoker, and it lapsed on the clock —
+    // the provider writes nothing, so the trade row is still pending.
+    expect(locksFor(ctx, 'u2').dinos.has(target.id)).toBe(false);
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('pending');
   });
 
   it('empty tradeable pool yields an informational row', async () => {

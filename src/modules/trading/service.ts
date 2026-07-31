@@ -3,6 +3,7 @@ import { schema } from '../../core/db/index.js';
 import type { TradeSide } from '../../core/db/schema.js';
 import type { Ctx } from '../../core/context.js';
 import { getSpecies } from '../../data/species/index.js';
+import { locksFor, type Locks } from '../../core/locks.js';
 import { TradeError, sideItemCount } from './validate.js';
 import { FOODS, type FoodId } from '../../data/foods.js';
 import { TRADE_MIN_RATING, TRADE_DAILY_CAP, TRADE_MAX_ITEMS_PER_SIDE, TRADE_EXPIRY_MS } from '../../data/trade.js';
@@ -34,17 +35,19 @@ export function verifySide(ctx: Ctx, userId: string, side: TradeSide, opts: { sk
     if ((inv[foodId as FoodId] ?? 0) < qty)
       throw new TradeError(`Not enough ${FOODS[foodId as FoodId].name} for the trade.`);
   }
+  // One batched lock read for the whole side — never one per id.
+  const locks: Locks = opts.skipLockCheck ? { dinos: new Map(), eggs: new Map() } : locksFor(ctx, userId);
   for (const id of side.dinoIds) {
     const d = ctx.db.select().from(schema.dinos).where(and(eq(schema.dinos.id, id), eq(schema.dinos.userId, userId))).get();
     if (!d) throw new TradeError(`You do not own dino #${id}.`);
-    if (!opts.skipLockCheck && d.locked) throw new TradeError(`Dino #${id} is already in a pending trade.`);
+    if (locks.dinos.has(id)) throw new TradeError(`Dino #${id} is already in a pending trade or breeding.`);
     if (d.escapedAt !== null) throw new TradeError(`Dino #${id} has escaped — rescue it first.`);
     if (getSpecies(d.speciesId).rarity === 'mythic') throw new TradeError('Mythics cannot be traded.');
   }
   for (const id of side.eggIds) {
     const e = ctx.db.select().from(schema.eggs).where(and(eq(schema.eggs.id, id), eq(schema.eggs.userId, userId))).get();
     if (!e) throw new TradeError(`You do not own egg #${id}.`);
-    if (!opts.skipLockCheck && e.locked) throw new TradeError(`Egg #${id} is already in a pending trade.`);
+    if (locks.eggs.has(id)) throw new TradeError(`Egg #${id} is already in a pending trade.`);
     if (e.rarity === 'mythic') throw new TradeError('Mythic eggs cannot be traded.');
     if (e.incubationStartedAt !== null) throw new TradeError(`Egg #${id} is incubating — it cannot be traded.`);
   }
@@ -60,24 +63,21 @@ export function createTrade(ctx: Ctx, fromUser: string, toUser: string, offer: T
   if (recent >= TRADE_DAILY_CAP) throw new TradeError(`You can only start ${TRADE_DAILY_CAP} trades per day.`);
   verifySide(ctx, fromUser, offer);
   verifySide(ctx, toUser, request);
-  return ctx.db.transaction(() => {
-    const trade = ctx.db.insert(schema.trades).values({
-      fromUser, toUser, offer, request, status: 'pending', createdAt: ctx.now(),
-    }).returning().get();
-    if (offer.dinoIds.length) ctx.db.update(schema.dinos).set({ locked: true }).where(inArray(schema.dinos.id, offer.dinoIds)).run();
-    if (offer.eggIds.length) ctx.db.update(schema.eggs).set({ locked: true }).where(inArray(schema.eggs.id, offer.eggIds)).run();
-    return trade;
-  });
+  // Inserting the pending row IS the lock: locksFor (src/core/locks.ts) derives escrow
+  // from this row, so there is nothing to flip on the dino/egg.
+  return ctx.db.insert(schema.trades).values({
+    fromUser, toUser, offer, request, status: 'pending', createdAt: ctx.now(),
+  }).returning().get();
 }
 
-// Move one side's dinos/eggs to their new owner: unassigned (no lot), unlocked, and flagged via_trade
+// Move one side's dinos/eggs to their new owner: unassigned (no lot) and flagged via_trade
 // (via_trade items sell for 0 shards — closes the sell-for-shards alt-funnel through trading).
 function moveItems(ctx: Ctx, side: TradeSide, toUser: string): void {
   if (side.dinoIds.length) ctx.db.update(schema.dinos)
-    .set({ userId: toUser, lotId: null, viaTrade: true, locked: false })
+    .set({ userId: toUser, lotId: null, viaTrade: true })
     .where(inArray(schema.dinos.id, side.dinoIds)).run();
   if (side.eggIds.length) ctx.db.update(schema.eggs)
-    .set({ userId: toUser, viaTrade: true, locked: false })
+    .set({ userId: toUser, viaTrade: true })
     .where(inArray(schema.eggs.id, side.eggIds)).run();
 }
 
@@ -116,16 +116,9 @@ export function acceptTrade(ctx: Ctx, userId: string, tradeId: number): Trade {
   return done;
 }
 
-function unlockSide(ctx: Ctx, side: TradeSide): void {
-  if (side.dinoIds.length) ctx.db.update(schema.dinos).set({ locked: false }).where(inArray(schema.dinos.id, side.dinoIds)).run();
-  if (side.eggIds.length) ctx.db.update(schema.eggs).set({ locked: false }).where(inArray(schema.eggs.id, side.eggIds)).run();
-}
-
+// Closing the trade IS the unlock: locksFor only counts pending, unexpired rows.
 function closeTrade(ctx: Ctx, trade: Trade, status: 'declined' | 'cancelled' | 'expired'): void {
-  ctx.db.transaction(() => {
-    unlockSide(ctx, trade.offer);   // only the offerer's items were ever locked
-    ctx.db.update(schema.trades).set({ status, resolvedAt: ctx.now() }).where(eq(schema.trades.id, trade.id)).run();
-  });
+  ctx.db.update(schema.trades).set({ status, resolvedAt: ctx.now() }).where(eq(schema.trades.id, trade.id)).run();
 }
 
 export function declineTrade(ctx: Ctx, userId: string, tradeId: number): void {
@@ -142,6 +135,9 @@ export function cancelTrade(ctx: Ctx, userId: string, tradeId: number): void {
   closeTrade(ctx, t, 'cancelled');
 }
 
+// No longer load-bearing for escrow: locksFor (src/core/locks.ts) evaluates expiry
+// at read time, so a stale lock cannot exist. This only flips status for /trade list
+// and history, and callers no longer have to sweep before reading a lock.
 export function expireStale(ctx: Ctx, userId: string): void {
   const cutoff = ctx.now() - TRADE_EXPIRY_MS;
   const stale = ctx.db.select().from(schema.trades).where(eq(schema.trades.status, 'pending')).all()

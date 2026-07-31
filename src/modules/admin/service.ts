@@ -1,4 +1,4 @@
-import { eq, or, and, isNull, isNotNull, sql, inArray } from 'drizzle-orm';
+import { eq, or, and, isNull, isNotNull, sql } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import type { Rarity } from '../../data/types.js';
@@ -40,17 +40,10 @@ export function adminGive(ctx: Ctx, targetId: string, displayName: string, args:
 // Reset a player to a fresh start: delete their content, restore new-player defaults. One transaction.
 export function adminReset(ctx: Ctx, targetId: string): void {
   ctx.db.transaction(() => {
-    // Trading escrow only locks the OFFER side of a pending trade. If targetId is the recipient
-    // (toUser), the offer belongs to a different player — deleting the trade row below without
-    // unlocking first would strand that player's items as permanently locked. Unlocking targetId's
-    // own about-to-be-deleted items here is a harmless no-op.
-    const pending = ctx.db.select().from(schema.trades)
-      .where(and(eq(schema.trades.status, 'pending'),
-                 or(eq(schema.trades.fromUser, targetId), eq(schema.trades.toUser, targetId)))).all();
-    for (const t of pending) {
-      if (t.offer.dinoIds.length) ctx.db.update(schema.dinos).set({ locked: false }).where(inArray(schema.dinos.id, t.offer.dinoIds)).run();
-      if (t.offer.eggIds.length) ctx.db.update(schema.eggs).set({ locked: false }).where(inArray(schema.eggs.id, t.offer.eggIds)).run();
-    }
+    // Deleting the trade rows below IS the unlock, including for the counterparty: escrow is
+    // derived from pending trades (src/core/locks.ts), never stored on the dino/egg. When
+    // targetId is the recipient (toUser) the offer belongs to a different player, and their
+    // items free up the moment the row is gone.
     ctx.db.delete(schema.dinos).where(eq(schema.dinos.userId, targetId)).run();
     ctx.db.delete(schema.eggs).where(eq(schema.eggs.userId, targetId)).run();
     ctx.db.delete(schema.lots).where(eq(schema.lots.userId, targetId)).run();

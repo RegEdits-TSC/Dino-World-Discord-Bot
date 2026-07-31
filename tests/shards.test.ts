@@ -36,9 +36,25 @@ describe('sellDino', () => {
     expect(res.shards).toBeGreaterThan(0);
   });
   it('a locked dino (pending trade) cannot be sold', () => {
-    const d = addDino('velociraptor', { locked: true });
+    const d = addDino('velociraptor');
+    // Escrow is derived from the pending trade row (src/core/locks.ts), never stored on the dino.
+    getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.insert(schema.trades).values({
+      fromUser: 'u1', toUser: 'u2', offer: { dinoIds: [d.id], eggIds: [], cash: 0, foods: {} },
+      request: { dinoIds: [], eggIds: [], cash: 0, foods: {} },
+      status: 'pending', createdAt: ctx.now(),
+    }).run();
     expect(() => sellDino(ctx, 'u1', d.id)).toThrow(ShardError);
     expect(ctx.db.select().from(schema.dinos).all()).toHaveLength(1);  // not deleted
+  });
+
+  it('a dino held by an unclaimed breeding cannot be sold either', () => {
+    const d = addDino('velociraptor');
+    ctx.db.insert(schema.breedings).values({
+      userId: 'u1', parentA: d.id, parentB: d.id, rarity: 'common', startedAt: 0, readyAt: 100,
+    }).run();
+    expect(() => sellDino(ctx, 'u1', d.id)).toThrow(ShardError);
+    expect(ctx.db.select().from(schema.dinos).all()).toHaveLength(1);
   });
   it('reports capped=true only when the shard grant was clamped by the cap', () => {
     // fill the window to 40 first

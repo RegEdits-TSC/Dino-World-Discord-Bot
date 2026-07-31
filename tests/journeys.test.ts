@@ -20,6 +20,7 @@ import { getSpecies } from '../src/data/species/index.js';
 import { battlesModule } from '../src/modules/battles/index.js';
 import { runFight, BattleError } from '../src/modules/battles/service.js';
 import { chapterUnlocked, STAGES, type ProgressMap } from '../src/data/battle/chapters/index.js';
+import { locksFor } from '../src/core/locks.js';
 import { ENERGY_CAP, ENERGY_REGEN_MS } from '../src/data/battle/constants.js';
 
 // This file is the regression net over six risky time/state couplings that
@@ -187,9 +188,10 @@ describe('journeys', () => {
   });
 
   it('trade expiry: /trade offer → +25h → /trade accept fails expired and the dino unlocks', async () => {
-    // Pins coupling #4 (audit): trade escrow (dino.locked) must be released by
-    // expireStale even when nobody ever explicitly declines/cancels — expireStale
-    // runs at the top of every /trade dispatch, so the accept path itself settles it.
+    // Pins coupling #4 (audit): trade escrow must lapse even when nobody ever explicitly
+    // declines or cancels. Escrow is now derived (src/core/locks.ts), so it is gone the
+    // moment the clock passes TRADE_EXPIRY_MS; expireStale only flips the row's status
+    // for /trade list, and it still runs at the top of every /trade dispatch.
     const ctx = makeCtx(); ctx.setNow(0);
     getOrCreateUser(ctx, 'a', 'a'); getOrCreateUser(ctx, 'b', 'b');
     ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both sides ≥ 2★ gate
@@ -202,9 +204,12 @@ describe('journeys', () => {
     });
     const offerEmbed = (offer.replies[0] as { embeds: Array<{ toJSON(): { title?: string } }> }).embeds[0].toJSON();
     expect(offerEmbed.title).toContain('Trade');
-    expect(ctx.db.select().from(schema.dinos).all()[0].locked).toBe(true);
+    expect(locksFor(ctx, 'a').dinos.has(dino.id)).toBe(true);
     const trade = ctx.db.select().from(schema.trades).all()[0];
     ctx.setNow(25 * H);
+    // Escrow is already gone here, BEFORE any command runs — nothing swept it.
+    expect(locksFor(ctx, 'a').dinos.has(dino.id)).toBe(false);
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('pending');
     const accept = await dispatch(ctx, tradingModule, 'trade', {
       name: 'trade', sub: 'accept', user: 'b', options: { id: trade.id },
     });
@@ -213,7 +218,7 @@ describe('journeys', () => {
     // valid pin; the DB assertions below are the real invariant.
     expect(replyText(accept.replies[0])).toMatch(/expired|no longer open/);
     expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
-    expect(ctx.db.select().from(schema.dinos).all()[0].locked).toBe(false);
+    expect(locksFor(ctx, 'a').dinos.has(dino.id)).toBe(false);
     expect(ctx.db.select().from(schema.dinos).all()[0].userId).toBe('a');
   });
 
@@ -236,7 +241,9 @@ describe('journeys', () => {
     const moved = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!;
     expect(moved.userId).toBe('b');
     expect(moved.viaTrade).toBe(true);
-    expect(moved.locked).toBe(false);            // accept unlocks, so 'b' can incubate it
+    // Accepting resolves the trade, so escrow lapses for both sides and 'b' can incubate it.
+    expect(locksFor(ctx, 'a').eggs.has(egg.id)).toBe(false);
+    expect(locksFor(ctx, 'b').eggs.has(egg.id)).toBe(false);
 
     await dispatch(ctx, hatcheryModule, 'incubate', { name: 'incubate', user: 'b', options: { egg: egg.id } });
     ctx.setNow(ctx.now() + RARITY.rare.incubationMs + 1);

@@ -4,6 +4,7 @@ import type { Ctx } from '../../core/context.js';
 import { RARITY } from '../../data/rarity.js';
 import { getSpecies, speciesByRarity } from '../../data/species/index.js';
 import { rollSellShards } from '../../core/rolls.js';
+import { locksFor } from '../../core/locks.js';
 import { mythicUnlocked, recomputeRating } from '../park/rating.js';
 import { SHARD_DAILY_CAP, SHARD_WINDOW_MS, MYTHIC_SHARD_COST, SELL_CASH } from '../../data/sell.js';
 export { SHARD_DAILY_CAP } from '../../data/sell.js';
@@ -16,7 +17,7 @@ export function sellDino(ctx: Ctx, userId: string, dinoId: number): { cash: numb
   const dino = ctx.db.select().from(schema.dinos)
     .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
   if (!dino) throw new ShardError('You do not own that dino.');
-  if (dino.locked) throw new ShardError('That dino is locked (in a pending trade).');
+  if (locksFor(ctx, userId).dinos.has(dinoId)) throw new ShardError('That dino is locked (pending trade or breeding).');
   const species = getSpecies(dino.speciesId);
   if (species.rarity === 'mythic') throw new ShardError('Mythics cannot be sold.');
   const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!;
@@ -50,7 +51,7 @@ export function previewSell(ctx: Ctx, userId: string, dinoId: number) {
   return {
     minShards: dino.viaTrade ? 0 : lo, maxShards: dino.viaTrade ? 0 : hi,
     cashValue: SELL_CASH[species.rarity],
-    sellable: species.rarity !== 'mythic' && !dino.locked,
+    sellable: species.rarity !== 'mythic' && !locksFor(ctx, userId).dinos.has(dinoId),
     capReached: earned >= SHARD_DAILY_CAP,
   };
 }
