@@ -80,6 +80,22 @@ describe('hatchery', () => {
     expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()).toBeDefined();
     expect(ctx.db.select().from(schema.dinos).all()).toHaveLength(0);
   });
+
+  it('a hatchling inherits the egg\'s via-trade flag, and only that', () => {
+    const traded = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0, viaTrade: true })
+      .returning().get();
+    incubateEgg(ctx, 'u1', traded.id, 'g1');
+    ctx.setNow(ctx.now() + 15 * M);
+    const fromTrade = hatchEgg(ctx, 'u1', traded.id);
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, fromTrade.dinoId)).get()!.viaTrade).toBe(true);
+
+    const own = addEgg('common');
+    incubateEgg(ctx, 'u1', own.id, 'g1');
+    ctx.setNow(ctx.now() + 15 * M);
+    const fromLoot = hatchEgg(ctx, 'u1', own.id);
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, fromLoot.dinoId)).get()!.viaTrade).toBe(false);
+  });
 });
 
 describe('hatchery module', () => {

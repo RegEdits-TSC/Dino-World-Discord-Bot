@@ -52,6 +52,10 @@ export function hatchEgg(ctx: Ctx, userId: string, eggId: number): { species: Sp
   const dinoId = ctx.db.transaction(() => {
     const dino = ctx.db.insert(schema.dinos).values({
       userId, lotId: null, speciesId: species.id, hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),
+      // Provenance survives the hatch: without this the dino takes the column default and a
+      // traded egg launders into a full-shard sale, reopening the alt-to-main funnel that
+      // moveItems (src/modules/trading/service.ts) closes for dinos.
+      viaTrade: egg.viaTrade,
     }).returning().get();
     ctx.db.delete(schema.eggs).where(eq(schema.eggs.id, eggId)).run();
     return dino.id;
