@@ -15,7 +15,11 @@ import { modProduct } from '../../data/traits.js';
 export class CareError extends Error {}
 
 // Feed cost in food units, after trait modifiers. Floored at 1: a discount must
-// never make feeding free.
+// never make feeding free. Forward-looking guard, not currently exercised: the lowest
+// pre-floor value reachable today is 3.75 (common's feedCost 5 * thrifty's 0.75 — the
+// one-trait-per-domain rule means no second care-domain discount can stack on top), so
+// the floor can't trigger yet. It exists so a future cheaper food tier or a stronger
+// discount trait can't make feeding free.
 export function feedCostFor(rarity: Rarity, traits: string[]): number {
   return Math.max(1, Math.round(RARITY[rarity].feedCost * modProduct(traits, 'feed')));
 }

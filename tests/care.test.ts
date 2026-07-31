@@ -61,8 +61,12 @@ describe('feedDino', () => {
     expect(feedCostFor('rare', ['gluttonous'])).toBe(25);
   });
 
-  it('never lets a feed cost round to zero', () => {
-    expect(feedCostFor('common', ['thrifty'])).toBeGreaterThanOrEqual(1);
+  it('discounts a common feed cost to a sensible positive amount', () => {
+    // Not a floor-guard test: common feedCost 5 * thrifty 0.75 = 3.75, well clear of the
+    // Math.max(1, ...) floor in feedCostFor. Under today's data (single care-domain trait,
+    // 5 the lowest feedCost) the floor is unreachable — see the comment at its definition —
+    // so this only pins the discounted value itself, not the floor.
+    expect(feedCostFor('common', ['thrifty'])).toBe(4);
   });
 
   it('charges the discounted amount when feeding a Thrifty dino', () => {
