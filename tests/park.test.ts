@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
-import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, upgradeLot, BASE_LOT_SLOTS } from '../src/modules/park/service.js';
+import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, BASE_LOT_SLOTS } from '../src/modules/park/service.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
@@ -71,6 +71,26 @@ describe('park service', () => {
     // one level-1 lot => park term (1+0)/40; rating round(500 * 0.35 * 0.025) = 4.
     expect(after.parkRating).toBeGreaterThan(0);
     expect(after.ratingHighWater).toBeGreaterThan(0);
+  });
+
+  it('allows one facility of each kind and refuses a second, while paddocks still stack', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'test:seed', 0);
+    buildLot(ctx, 'u1', 'visitor_center');
+    expect(() => buildLot(ctx, 'u1', 'visitor_center')).toThrow(DuplicateFacilityError);
+    buildLot(ctx, 'u1', 'herbivore_paddock');
+    buildLot(ctx, 'u1', 'herbivore_paddock');                          // paddocks are capacity, not upgrades
+    expect(ctx.db.select().from(schema.lots).all()).toHaveLength(3);
+  });
+
+  it('names the facility on the duplicate error and charges nothing', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'test:seed', 0);
+    buildLot(ctx, 'u1', 'food_court');
+    const before = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.cash;
+    expect(() => buildLot(ctx, 'u1', 'food_court')).toThrow('Food Court');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.cash).toBe(before);
+    expect(ctx.db.select().from(schema.lots).all()).toHaveLength(1);
   });
 
   it('rolls back the charge when the build insert fails (proves buildLot atomicity)', () => {
