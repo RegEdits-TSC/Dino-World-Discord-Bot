@@ -289,8 +289,16 @@
   Because `expireStale` is lazy — no timer sweeps expired trades, so a dead
   trade keeps its lock until something calls it — every entry point that reads
   escrowable rows must sweep first, or it rejects on a lock that no longer
-  exists. Both hatchery executes and both hatchery autocomplete providers do;
-  the trading module's own surfaces always did. `/sell` still does not, which
+  exists. Three of the four hatchery executes sweep — `/eggs`, `/incubate`,
+  `/hatch` — the fourth, `/mythic`, never reads an egg/dino row so there is
+  nothing for it to sweep; both hatchery autocomplete providers (`/incubate`,
+  `/hatch`) sweep too, and so does the `hatch:eggs` pagination branch. The
+  trading module sweeps in `/trade`'s own execute (every subcommand, both
+  sides of an `offer`) and in the `accept`/`decline`/`cancel` autocomplete
+  branch and the `list` pagination branch, but `/trade offer`'s own
+  dino/egg autocomplete (`tradeableDinos`/`tradeableEggs`) does not — a
+  stale lock can still shadow a tradeable item there. `/sell` still does
+  not sweep at all, in either its execute or its autocomplete, which
   leaves that staleness gap live for dinos.
 - Provenance survives the hatch: `hatchEgg` inserts the dino with
   `viaTrade: egg.viaTrade`. `eggs.viaTrade` had no reader before this; the three

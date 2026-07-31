@@ -63,6 +63,22 @@ describe('/incubate egg autocomplete', () => {
       name: `🥚 #${locked.id} Legendary — locked in a trade`, value: locked.id,
     });
   });
+
+  it('sweeps expired trades so a stale lock does not shadow an inventory egg', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    ctx.setNow(25 * 3_600_000);                                        // TRADE_EXPIRY_MS is 24h
+    const i = fakeAutocomplete({ name: 'incubate', user: 'u1', focused: { name: 'egg', value: '' } });
+    await cmd('incubate').autocomplete!(ctx, i.asAutocomplete());
+    const rows = i.replies[0] as Array<{ name: string; value: number }>;
+    expect(rows[0]).toEqual({ name: `🥚 #${egg.id} Common — in inventory`, value: egg.id });
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.locked).toBe(false);
+  });
 });
 
 describe('/hatch egg autocomplete', () => {

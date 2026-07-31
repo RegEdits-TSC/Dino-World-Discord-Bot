@@ -264,6 +264,21 @@ describe('egg list pagination', () => {
     await hatchComponent.execute(ctx, b.asInteraction() as never);
     expect((b.replies[0] as { content: string }).content).toContain('Not your');
   });
+
+  it('sweeps an expired trade first, so /eggs does not show a stale padlock', async () => {
+    getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    const egg = addEgg('common');
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    ctx.setNow(25 * 3_600_000);                                        // TRADE_EXPIRY_MS is 24h
+    const i = fakeCommand({ name: 'eggs', user: 'u1' });
+    await hatcheryModule.commands[0].execute(ctx, i.asChatInput());
+    const desc = (i.replies[0] as { embeds: Array<{ toJSON(): { description?: string } }> })
+      .embeds[0].toJSON().description!;
+    expect(desc).not.toContain('locked in a trade');
+    expect(desc).toContain(`#${egg.id} — common egg — in inventory`);
+  });
 });
 
 describe('/mythic confirm flow', () => {
@@ -396,6 +411,28 @@ describe('/hatch execute', () => {
     await cmd.execute(ctx, i.asChatInput());
     expect(replyText(i.replies[0])).toContain('locked in a pending trade');
     expect(JSON.stringify(i.replies[0])).not.toContain('hatch:crack');
+  });
+
+  it('sweeps an expired trade first, so a stale lock does not block hatching', async () => {
+    // A locked AND ready row cannot be built through services in either order —
+    // createTrade refuses an incubating egg, and incubateEgg refuses a locked one.
+    // Trade first, then set the timer fields directly.
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    ctx.db.update(schema.eggs).set({ incubationStartedAt: 0, hatchesAt: 1 })
+      .where(eq(schema.eggs.id, egg.id)).run();
+    ctx.setNow(25 * 3_600_000);                                        // TRADE_EXPIRY_MS is 24h
+    const cmd = hatcheryModule.commands.find((c) => c.data.name === 'hatch')!;
+    const i = fakeCommand({ name: 'hatch', user: 'u1', options: { egg: egg.id } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).not.toContain('locked in a pending trade');
+    const payload = i.replies[0] as { components?: unknown[] };
+    expect(JSON.stringify(payload.components ?? [])).toContain(`hatch:crack:${egg.id}`);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.locked).toBe(false);
   });
 });
 

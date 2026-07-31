@@ -21,6 +21,9 @@ export const hatcheryModule: ModuleManifest = {
     { data: new SlashCommandBuilder().setName('eggs').setDescription('Your eggs and incubator'),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        // Sweep before reading eggs, or an expired trade's padlock renders until the
+        // player happens to touch a different command.
+        expireStale(ctx, i.user.id);
         const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, i.user.id)).all();
         await i.reply(eggListPayload(eggs, ctx.now(), i.user.id));
       } },
@@ -88,6 +91,7 @@ export const hatcheryModule: ModuleManifest = {
         const [, action, a2, a3] = i.customId.split(':');
         if (action === 'eggs') {
           if (i.user.id !== a2) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
+          expireStale(ctx, i.user.id);
           const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, i.user.id)).all();
           await i.update({ ...eggListPayload(eggs, ctx.now(), i.user.id, Number(a3)), attachments: [] });
           return;
