@@ -3,7 +3,7 @@ import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import type { Rarity } from '../../data/types.js';
 import { getSpecies } from '../../data/species/index.js';
-import { locksFor } from '../../core/locks.js';
+import { locksFor, lockLabel } from '../../core/locks.js';
 import { hungerAt, drainMsFor } from '../../core/clock.js';
 import { breedingSlots } from '../park/service.js';
 import { modProduct, pickTrait, rollSlotCount, TRAITS, BRED_SLOT_ODDS, type TraitDomain, type TraitId } from '../../data/traits.js';
@@ -29,6 +29,10 @@ export function activeBreedings(ctx: Ctx, userId: string): Breeding[] {
 
 /**
  * dinoId -> epoch ms at which it may breed again. Derived from claimed rows; no column.
+ *
+ * User-scoped, so a cooldown does NOT follow a dino that changes hands: the new owner
+ * sees it as ready. Accepted — the alternative is a column on `dinos`, and the dino had
+ * to survive a whole trade negotiation to dodge at most one breed cycle.
  *
  * Scans this user's whole claim history rather than only the rows still in cooldown:
  * a claimed row is never deleted, so the scan grows with lifetime breeds. Negligible
@@ -59,6 +63,7 @@ export function startBreeding(
   ctx: Ctx, userId: string, aId: number, bId: number,
   guildId: string | null, opts: StartOpts = {},
 ): Breeding {
+  const now = ctx.now();
   if (aId === bId) throw new BreedError('Pick two different dinos.');
   const a = ownedDino(ctx, userId, aId);
   const b = ownedDino(ctx, userId, bId);
@@ -75,6 +80,15 @@ export function startBreeding(
   if (activeBreedings(ctx, userId).length >= slots)
     throw new BreedError('All Gene Lab breeding slots are busy. Upgrade the Gene Lab for more.');
 
+  // Affordability is checked HERE, in the shared block, not left to economy.apply inside the
+  // transaction below — otherwise a dry run passes cleanly and the confirm button then throws
+  // InsufficientFundsError, which is the one failure the preview exists to rule out, and a
+  // different error class for Task 9 to catch. economy.apply stays the backstop.
+  const fee = BREED_FEE[sa.rarity];
+  const cash = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!.cash;
+  if (cash < fee)
+    throw new BreedError(`Breeding a ${sa.rarity} pair costs ${fee.toLocaleString('en-US')} cash — you have ${cash.toLocaleString('en-US')}.`);
+
   const locks = locksFor(ctx, userId);
   const cooldowns = breedCooldowns(ctx, userId);
   for (const d of [a, b]) {
@@ -84,12 +98,13 @@ export function startBreeding(
     // under BREED_MIN_HUNGER. The column check just buys the clearer message.
     if (d.escapedAt !== null) throw new BreedError(`Dino #${d.id} has escaped — rescue it first.`);
     if (d.lotId === null) throw new BreedError(`Dino #${d.id} must be in a paddock to breed.`);
-    if (locks.dinos.has(d.id)) throw new BreedError(`Dino #${d.id} is busy — it is locked in a trade or already breeding.`);
+    const lock = locks.dinos.get(d.id);
+    if (lock) throw new BreedError(`Dino #${d.id} is ${lockLabel(lock)}.`);
     const until = cooldowns.get(d.id) ?? 0;
-    if (until > ctx.now()) throw new BreedError(`Dino #${d.id} is still cooling down from its last breeding.`);
+    if (until > now) throw new BreedError(`Dino #${d.id} is still cooling down from its last breeding.`);
     // Hunger is derived, never read off the column: a dino that has not been fed for
     // a day and a half still stores 100 while actually sitting near zero.
-    if (hungerAt(d.hunger, d.lastFedAt, ctx.now(), drainMsFor(d.traits)) < BREED_MIN_HUNGER)
+    if (hungerAt(d.hunger, d.lastFedAt, now, drainMsFor(d.traits)) < BREED_MIN_HUNGER)
       throw new BreedError(`Dino #${d.id} is too hungry to breed — feed it first.`);
   }
 
@@ -97,10 +112,15 @@ export function startBreeding(
   const timeMult = Math.min(modProduct(a.traits, 'breedTime'), modProduct(b.traits, 'breedTime'));
   // Rounded because readyAt lands in an integer column and drives a Discord timestamp;
   // every current multiplier is exact, but a future one need not be.
-  const readyAt = Math.round(ctx.now() + BREED_MS[sa.rarity] * timeMult);
-  // Provenance is snapshotted here, where both parents are guaranteed to exist and be
-  // owned by this user. viaTrade is only ever set true and never cleared, so the
-  // snapshot can only preserve provenance that a claim-time read might have lost.
+  const readyAt = Math.round(now + BREED_MS[sa.rarity] * timeMult);
+  // THE provenance write, and the only one — claimBreeding just reads this column back.
+  // Safe to freeze here because a parent cannot acquire viaTrade between start and claim:
+  // the sole writer is moveItems, reached only through acceptTrade, which re-runs
+  // verifySide against live locks on BOTH sides (the request side with no waiver at all,
+  // the offer side waiving only its own trade id) — and locksFor resolves breedings after
+  // trades, so a pending parent always reads back as kind 'breeding' and is refused. The
+  // flag is never cleared, and dinos.id is AUTOINCREMENT so an id cannot be recycled onto
+  // a different animal. See the fix report for the full reachability argument.
   const viaTrade = a.viaTrade || b.viaTrade;
 
   if (opts.dryRun) {
@@ -108,15 +128,15 @@ export function startBreeding(
     // confirm button cannot fail on a rule the preview already passed.
     return {
       id: 0, userId, parentA: a.id, parentB: b.id, rarity: sa.rarity,
-      speciesId: null, traits: [], viaTrade, startedAt: ctx.now(), readyAt, claimedAt: null,
+      speciesId: null, traits: [], viaTrade, startedAt: now, readyAt, claimedAt: null,
     };
   }
 
   return ctx.db.transaction(() => {
-    ctx.economy.apply(userId, { cash: -BREED_FEE[sa.rarity] }, `breed:${sa.rarity}`, ctx.now());
+    ctx.economy.apply(userId, { cash: -fee }, `breed:${sa.rarity}`, now);
     const row = ctx.db.insert(schema.breedings).values({
       userId, parentA: a.id, parentB: b.id, rarity: sa.rarity, viaTrade,
-      startedAt: ctx.now(), readyAt,
+      startedAt: now, readyAt,
     }).returning().get();
     // Inserting the pending row IS the parent lock — locksFor derives escrow from it,
     // so there is no flag to set and nothing to sweep.
@@ -156,11 +176,12 @@ export function inheritTraits(parentA: string[], parentB: string[], rng: () => n
 }
 
 export function claimBreeding(ctx: Ctx, userId: string, breedingId: number): { egg: Egg; upgraded: boolean } {
+  const now = ctx.now();
   const b = ctx.db.select().from(schema.breedings)
     .where(and(eq(schema.breedings.id, breedingId), eq(schema.breedings.userId, userId))).get();
   if (!b) throw new BreedError('No such breeding.');
   if (b.claimedAt !== null) throw new BreedError('That breeding has already been claimed.');
-  if (b.readyAt > ctx.now()) throw new BreedError('That breeding is not ready yet.');
+  if (b.readyAt > now) throw new BreedError('That breeding is not ready yet.');
 
   // Parents may have changed since the pairing started; read them fresh and
   // degrade gracefully if one is gone.
@@ -177,17 +198,20 @@ export function claimBreeding(ctx: Ctx, userId: string, breedingId: number): { e
   const traits = inheritTraits(traitsA, traitsB, ctx.rng);
   const sameSpecies = a && bb && a.speciesId === bb.speciesId && !reallyUpgraded;
   // Provenance survives breeding: without this, a traded-in parent launders into
-  // full-shard offspring, reopening the alt-to-main funnel. The snapshot taken at
-  // start is the floor, so a parent sold or reset away cannot wash the egg clean.
-  const viaTrade = b.viaTrade || (a?.viaTrade ?? false) || (bb?.viaTrade ?? false);
+  // full-shard offspring, reopening the alt-to-main funnel. Read straight off the row
+  // that startBreeding froze — deliberately NOT re-derived from the live parents, which
+  // cannot have changed (see the note at the write site) and which are nullable here, so
+  // a second source would only add a way for the two to disagree and would leave both
+  // sites individually unpinnable by any test.
+  const viaTrade = b.viaTrade;
 
   return ctx.db.transaction(() => {
     const egg = ctx.db.insert(schema.eggs).values({
       userId, rarity, speciesId: sameSpecies ? a!.speciesId : null,
-      source: 'breeding', obtainedAt: ctx.now(), viaTrade, traits,
+      source: 'breeding', obtainedAt: now, viaTrade, traits,
     }).returning().get();
     ctx.db.update(schema.breedings)
-      .set({ claimedAt: ctx.now(), traits, speciesId: egg.speciesId, viaTrade })
+      .set({ claimedAt: now, traits, speciesId: egg.speciesId })
       .where(eq(schema.breedings.id, breedingId)).run();
     return { egg, upgraded: reallyUpgraded };
   });

@@ -188,15 +188,28 @@ describe('startBreeding', () => {
     expect(startBreeding(ctx, 'u1', a.id, b.id, null).id).toBeGreaterThan(br.id);
   });
 
-  it('refuses when the fee cannot be paid, leaving no half-started pairing', () => {
+  it('refuses when the fee cannot be paid, as a BreedError and not an economy throw', () => {
     const ctx = makeCtx({ nowMs: 0 });
     const lot = park(ctx);
     const a = dino(ctx, { lotId: lot.id });
     const b = dino(ctx, { species: 'gallimimus', lotId: lot.id });
-    ctx.db.update(schema.users).set({ cash: 0 }).where(eq(schema.users.discordId, 'u1')).run();
-    expect(() => startBreeding(ctx, 'u1', a.id, b.id, null)).toThrow(/Insufficient cash/);
+    ctx.db.update(schema.users).set({ cash: BREED_FEE.common - 1 }).where(eq(schema.users.discordId, 'u1')).run();
+    // Not InsufficientFundsError: the check is in the shared block, so /breed has one
+    // error class to catch and the dry run refuses this pairing too.
+    expect(() => startBreeding(ctx, 'u1', a.id, b.id, null)).toThrow(BreedError);
+    expect(() => startBreeding(ctx, 'u1', a.id, b.id, null)).toThrow(/costs 200 cash — you have 199/);
     expect(ctx.db.select().from(schema.breedings).all()).toHaveLength(0);
     expect(ctx.db.select().from(schema.timers).all()).toHaveLength(0);
+  });
+
+  it('allows a pairing the player can exactly afford', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const lot = park(ctx);
+    const a = dino(ctx, { lotId: lot.id });
+    const b = dino(ctx, { species: 'gallimimus', lotId: lot.id });
+    ctx.db.update(schema.users).set({ cash: BREED_FEE.common }).where(eq(schema.users.discordId, 'u1')).run();
+    expect(() => startBreeding(ctx, 'u1', a.id, b.id, null)).not.toThrow();
+    expect(ctx.db.select().from(schema.users).all()[0].cash).toBe(0);
   });
 });
 
@@ -220,12 +233,24 @@ describe('startBreeding dryRun', () => {
     expect(startBreeding(ctx, 'u1', a.id, b.id, null).readyAt).toBe(preview.readyAt);
   });
 
-  it('still enforces every rule the real start does', () => {
+  it('refuses a pair the real start would refuse', () => {
     const ctx = makeCtx({ nowMs: 0 });
     const lot = park(ctx);
     const a = dino(ctx, { lotId: lot.id });
     const b = dino(ctx, { species: 'stegosaurus', lotId: lot.id });
     expect(() => startBreeding(ctx, 'u1', a.id, b.id, null, { dryRun: true })).toThrow(/same rarity/);
+  });
+
+  it('refuses a preview the player cannot afford — the confirm button never sees the fee fail', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const lot = park(ctx);
+    const a = dino(ctx, { species: 'tyrannosaurus', lotId: lot.id });
+    const b = dino(ctx, { species: 'mosasaurus', lotId: lot.id });
+    ctx.db.update(schema.users).set({ cash: 100 }).where(eq(schema.users.discordId, 'u1')).run();
+    // The exact case the preview exists for: a clean dry run followed by a confirm that
+    // throws InsufficientFundsError from inside the transaction.
+    expect(() => startBreeding(ctx, 'u1', a.id, b.id, null, { dryRun: true }))
+      .toThrow(/costs 40,000 cash — you have 100/);
   });
 });
 
