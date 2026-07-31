@@ -7,6 +7,7 @@ import { schema } from '../src/core/db/index.js';
 import { SHOP_EGG_PRICES } from '../src/data/shop.js';
 import type { Rarity } from '../src/data/types.js';
 import { eq } from 'drizzle-orm';
+import { createTrade } from '../src/modules/trading/service.js';
 
 const cmd = (name: string) => shopModule.commands.find((c) => c.data.name === name)!;
 
@@ -55,6 +56,24 @@ describe('/sell dino autocomplete', () => {
     expect(rows[1].name).toBe(`🦖 #${traded.id} Triceratops — 50 cash, 0 shards (via trade)`);
     expect(rows[2].name).toBe(`🦖 #${locked.id} Stegosaurus — locked in a trade`);
     expect(rows[3].name).toBe(`🦖 #${mythic.id} Indominus rex — MYTHIC, can't sell`);
+  });
+
+  it('sweeps an expired trade first, so a stale lock does not hide a sellable dino', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
+    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    const dino = ctx.db.insert(schema.dinos)
+      .values({ userId: 'u1', speciesId: 'velociraptor', lastFedAt: 0, hatchedAt: 0 }).returning().get();
+    createTrade(ctx, 'u1', 'u2', { dinoIds: [dino.id], eggIds: [], cash: 0, foods: {} },
+      { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    ctx.setNow(ctx.now() + 25 * 3_600_000);          // TRADE_EXPIRY_MS is 24h
+    const i = fakeAutocomplete({ name: 'sell', user: 'u1', focused: { name: 'dino', value: '' } });
+    await cmd('sell').autocomplete!(ctx, i.asAutocomplete());
+    const rows = i.replies[0] as Array<{ name: string; value: number }>;
+    expect(rows[0].name).toBe(`🦖 #${dino.id} Velociraptor — 500 cash`);
+    const after = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dino.id)).get()!;
+    expect(after.locked).toBe(false);
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
   });
 });
 

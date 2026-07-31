@@ -207,6 +207,7 @@ export const tradingModule: ModuleManifest = {
             if (typeof target !== 'string') { await i.respond([{ name: 'Pick the user option first', value: '-' }]); return; }
             ownerId = target;
           }
+          expireStale(ctx, ownerId);
           const candidates = isDino ? tradeableDinos(ctx, ownerId) : tradeableEggs(ctx, ownerId);
           const rows = listCompleter(String(focused.value), candidates, { maxItems: TRADE_MAX_ITEMS_PER_SIDE });
           await i.respond(rows.length ? rows
