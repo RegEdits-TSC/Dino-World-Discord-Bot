@@ -286,10 +286,12 @@
   `eggs.locked = true`, and its `verifySide` refuses an incubating egg, so a locked
   *and* incubating row can only be legacy data — `hatchEgg`'s guard is unreachable
   through the public API and its test must lock the row with a raw `ctx.db.update`.
-  Because `expireStale` is lazy (no timer sweeps it; its call sites are all in
-  `src/modules/trading/index.ts`), every hatchery entry point — both executes and both
-  autocomplete providers — calls it before reading eggs, or a dead trade would reject
-  with a lock that no longer exists. `/sell` still has that staleness gap for dinos.
+  Because `expireStale` is lazy — no timer sweeps expired trades, so a dead
+  trade keeps its lock until something calls it — every entry point that reads
+  escrowable rows must sweep first, or it rejects on a lock that no longer
+  exists. Both hatchery executes and both hatchery autocomplete providers do;
+  the trading module's own surfaces always did. `/sell` still does not, which
+  leaves that staleness gap live for dinos.
 - Provenance survives the hatch: `hatchEgg` inserts the dino with
   `viaTrade: egg.viaTrade`. `eggs.viaTrade` had no reader before this; the three
   readers of `dinos.viaTrade` are all in the shop module, so dropping it at the hatch
