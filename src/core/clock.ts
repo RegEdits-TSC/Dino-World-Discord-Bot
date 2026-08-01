@@ -1,5 +1,6 @@
 import { RARITY } from '../data/rarity.js';
 import { modProduct } from '../data/traits.js';
+import { DECOR } from '../data/decor.js';
 import type { Species, PaddockDef } from '../data/types.js';
 
 export const HUNGER_DRAIN_MS = 48 * 3_600_000;   // spec §3.4
@@ -29,9 +30,14 @@ export function hungerAt(hungerAtFed: number, lastFedAt: number, at: number, dra
   return Math.max(0, hungerAtFed - drained);
 }
 
+// `decor` holds the KIND SLUGS decorateLot actually wrote (e.g. 'grass_tuft'),
+// never biome tags directly — each slug's OWN biomeTags (from DECOR) must be
+// cross-referenced against the species' before a match counts. An unknown or
+// since-removed slug degrades to no match rather than throwing, the same
+// tolerance traitDefs gives a retired trait id.
 export function paddockFit(species: Species, paddock: PaddockDef, decor: string[]): number {
   if (paddock.diet !== species.diet) return 0.5;
-  const biomeMatch = decor.some((d) => species.biomeTags.includes(d));
+  const biomeMatch = decor.some((kind) => DECOR[kind]?.biomeTags.some((tag) => species.biomeTags.includes(tag)));
   return biomeMatch ? 1.0 : 0.75;
 }
 

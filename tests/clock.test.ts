@@ -8,8 +8,12 @@ import { PADDOCKS } from '../src/data/paddocks.js';
 const H = 3_600_000;
 const herb = PADDOCKS.herbivore_paddock;
 const carn = PADDOCKS.carnivore_paddock;
+// 'palm_tree' is a real decor KIND slug (the shape decorateLot actually stores,
+// src/modules/park/dinos.ts:59) whose own biomeTags ([forest]) matches triceratops's
+// — NOT the biome tag 'forest' itself. paddockFit maps kind -> biomeTags internally;
+// passing a raw biome tag here would silently fail to match after that fix.
 const fedTrike = (over: Partial<Parameters<typeof comfortAt>[0]> = {}) => ({
-  species: triceratops, paddock: herb, decor: ['forest'],
+  species: triceratops, paddock: herb, decor: ['palm_tree'],
   hungerAtFed: 100, lastFedAt: 0, escapedAt: null as number | null, traits: [] as string[], ...over,
 });
 
@@ -23,9 +27,14 @@ describe('hungerAt', () => {
 
 describe('paddockFit', () => {
   it('1.0 diet+biome, 0.75 diet only, 0.5 wrong diet', () => {
-    expect(paddockFit(triceratops, herb, ['forest'])).toBe(1.0);
+    // 'palm_tree' is a real decor kind (biomeTags: ['forest']), matching triceratops's
+    // own biomeTags — decor is always stored as kind slugs, never raw biome tags.
+    expect(paddockFit(triceratops, herb, ['palm_tree'])).toBe(1.0);
     expect(paddockFit(triceratops, herb, [])).toBe(0.75);
-    expect(paddockFit(triceratops, carn, ['forest'])).toBe(0.5);
+    expect(paddockFit(triceratops, carn, ['palm_tree'])).toBe(0.5);
+  });
+  it('an unknown or removed decor slug degrades to no match instead of throwing', () => {
+    expect(paddockFit(triceratops, herb, ['some_retired_decor'])).toBe(0.75);
   });
 });
 

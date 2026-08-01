@@ -86,7 +86,9 @@ describe('park service', () => {
       userId: 'u1', lotId: lot.id, speciesId: 'triceratops',
       hunger: 100, lastFedAt: 0, hatchedAt: 0,
     }).run();
-    ctx.db.update(schema.lots).set({ decor: ['forest'] }).run();
+    // 'palm_tree' is a real decor kind slug (biomeTags: ['forest']) matching
+    // triceratops's own biome — decor is stored as kind slugs, never raw biome tags.
+    ctx.db.update(schema.lots).set({ decor: ['palm_tree'] }).run();
     ctx.setNow(12 * H);
     const { amount } = collectIncome(ctx, 'u1');
     // no Visitor Center => 8h cap; window truncates to 0..8h of the 12h elapsed.
