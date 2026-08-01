@@ -4,10 +4,12 @@ import { makeCtx, fakeCommand, fakeAutocomplete, fakeButton, replyText } from '.
 import { schema } from '../src/core/db/index.js';
 import { geneLabModule } from '../src/modules/genelab/index.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
-import { BREED_FEE, BREED_MS } from '../src/data/breeding.js';
+import { BREED_FEE, BREED_MS, SPLICE_SHARD_COST } from '../src/data/breeding.js';
 
 const breedCmd = geneLabModule.commands.find((c) => c.data.name === 'breed')!;
 const breedBtn = geneLabModule.components.find((c) => c.prefix === 'breed')!;
+const spliceCmd = geneLabModule.commands.find((c) => c.data.name === 'splice')!;
+const spliceBtn = geneLabModule.components.find((c) => c.prefix === 'splice')!;
 
 function lab(ctx: ReturnType<typeof makeCtx>) {
   getOrCreateUser(ctx, 'u1', 'u1');
@@ -208,5 +210,114 @@ describe('/breed status and claim', () => {
     await breedCmd.execute(ctx, claim2.asChatInput());
     expect(ctx.db.select().from(schema.eggs).all()).toHaveLength(2);
     expect(JSON.stringify(claim2.replies[0])).not.toMatch(/more pairing/);
+  });
+});
+
+describe('/splice autocomplete', () => {
+  it('excludes a locked and an escaped dino outright, but keeps a Mythic visible', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const ok = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const escaped = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0, escapedAt: 0,
+    }).returning().get();
+    // spliceDino places no rarity gate (unlike breeding/trading), so a Mythic must
+    // stay listed — hiding it here would be a UI restriction the service itself
+    // does not enforce.
+    const mythic = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'indominus', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const locked = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    ctx.db.insert(schema.breedings).values({
+      userId: 'u1', parentA: locked.id, parentB: locked.id, rarity: 'common', startedAt: 0, readyAt: 999,
+    }).run();
+
+    const i = fakeAutocomplete({ name: 'splice', user: 'u1', focused: { name: 'dino', value: '' } });
+    await spliceCmd.autocomplete!(ctx, i.asAutocomplete());
+    const values = (i.replies[0] as Array<{ value: number }>).map((c) => c.value);
+    expect(values).toContain(ok.id);
+    expect(values).toContain(mythic.id);
+    expect(values).not.toContain(escaped.id);
+    expect(values).not.toContain(locked.id);
+  });
+
+  it('responds empty for an unknown player and creates no user row', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const i = fakeAutocomplete({ name: 'splice', user: 'ghost', focused: { name: 'dino', value: '' } });
+    await spliceCmd.autocomplete!(ctx, i.asAutocomplete());
+    expect(ctx.db.select().from(schema.users).all()).toHaveLength(0);
+    expect(i.replies[0]).toEqual([]);
+  });
+});
+
+describe('/splice', () => {
+  it('previews without charging, then the confirm button commits', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { shards: 100 }, 'test', 0);
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0, traits: ['prolific', 'savage'],
+    }).returning().get();
+
+    const i = fakeCommand({ name: 'splice', user: 'u1', options: { dino: d.id, slot: 1 } });
+    await spliceCmd.execute(ctx, i.asChatInput());
+    // Preview only — nothing charged, nothing mutated.
+    expect(ctx.db.select().from(schema.users).all()[0].shards).toBe(100);
+    expect(ctx.db.select().from(schema.dinos).all()[0].traits).toEqual(['prolific', 'savage']);
+
+    const btn = fakeButton({ customId: `splice:confirm:${d.id}:0`, user: 'u1' });
+    await spliceBtn.execute(ctx, btn.asChatInput() as never);
+    expect(ctx.db.select().from(schema.users).all()[0].shards).toBe(100 - SPLICE_SHARD_COST);
+    const after = ctx.db.select().from(schema.dinos).all()[0].traits;
+    expect(after[1]).toBe('savage');
+  });
+
+  it('rejects a confirm for a dino the clicker does not own', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { shards: 100 }, 'test', 0);
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0, traits: ['prolific'],
+    }).returning().get();
+    getOrCreateUser(ctx, 'u2', 'u2');
+
+    const btn = fakeButton({ customId: `splice:confirm:${d.id}:0`, user: 'u2' });
+    await spliceBtn.execute(ctx, btn.asChatInput() as never);
+    expect(replyText(btn.replies[0])).toMatch(/do not own/);
+    // Untouched: neither the trait nor u1's shards moved.
+    expect(ctx.db.select().from(schema.dinos).all()[0].traits).toEqual(['prolific']);
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.shards).toBe(100);
+  });
+
+  it('refuses in the preview when the dino is locked', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { shards: 100 }, 'test', 0);
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    ctx.db.insert(schema.breedings).values({
+      userId: 'u1', parentA: d.id, parentB: d.id, rarity: 'common', startedAt: 0, readyAt: 999,
+    }).run();
+
+    const i = fakeCommand({ name: 'splice', user: 'u1', options: { dino: d.id, slot: 1 } });
+    await spliceCmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toMatch(/busy|locked/i);
+  });
+
+  it('refuses in the preview without enough shards', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+
+    const i = fakeCommand({ name: 'splice', user: 'u1', options: { dino: d.id, slot: 1 } });
+    await spliceCmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toMatch(/shards/i);
   });
 });

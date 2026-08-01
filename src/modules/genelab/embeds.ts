@@ -64,3 +64,42 @@ export function claimPayload(opts: { rarity: string; traits: string[]; upgraded:
   attach(embed, payload, 'thumbnail', assetImage('eggs', opts.rarity));
   return payload;
 }
+
+export function splicePreviewPayload(opts: {
+  dinoId: number; speciesName: string; traits: string[]; slot: number; cost: number;
+}): Payload {
+  const embed = new EmbedBuilder().setColor(0x9b59b6)
+    .setTitle('🧬 Gene Lab — confirm splice')
+    .setDescription(`Re-roll trait slot **${opts.slot + 1}** on **#${opts.dinoId} ${opts.speciesName}**? The replacement is random.`)
+    .addFields(
+      { name: 'Current traits', value: traitLines(opts.traits) },
+      { name: `${emojiTag('dw_shard') || '💎'} Cost`, value: `${opts.cost.toLocaleString('en-US')} shards`, inline: true },
+    );
+  const payload: Payload = {
+    embeds: [embed],
+    components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`splice:confirm:${opts.dinoId}:${opts.slot}`)
+        .setLabel('Splice').setStyle(ButtonStyle.Danger),
+    )],
+  };
+  // Distinct basename from the /breed banner (gene_lab) — see docs/superpowers/specs/
+  // 2026-07-31-gene-lab-design.md §6. Neither file exists yet (art lands in a later
+  // task); assetImage degrades to no image until then, same as /breed today.
+  attach(embed, payload, 'image', assetImage('banners', 'gene_splice'));
+  return payload;
+}
+
+export function splicedPayload(opts: {
+  dinoId: number; speciesName: string; before: string[]; after: string[]; slot: number;
+}): Payload {
+  const embed = new EmbedBuilder().setColor(0x9b59b6)
+    .setTitle('🧬 Splice complete')
+    .setDescription(`**#${opts.dinoId} ${opts.speciesName}** — trait slot **${opts.slot + 1}** re-rolled.`)
+    .addFields(
+      { name: 'Before', value: traitLines(opts.before), inline: true },
+      { name: 'After', value: traitLines(opts.after), inline: true },
+    );
+  const payload: Payload = { embeds: [embed] };
+  attach(embed, payload, 'image', assetImage('banners', 'gene_splice'));
+  return payload;
+}

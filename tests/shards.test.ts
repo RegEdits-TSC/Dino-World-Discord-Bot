@@ -68,6 +68,10 @@ describe('sellDino', () => {
   });
 });
 
+it('caps sell shards at the raised daily ceiling', () => {
+  expect(SHARD_DAILY_CAP).toBe(60);
+});
+
 describe('buyMythicEgg', () => {
   it('requires 4★ high-water and 500 shards, then grants a preset Mythic egg', () => {
     ctx.db.update(schema.users).set({ ratingHighWater: 400, shards: 500 }).where(eq(schema.users.discordId, 'u1')).run();

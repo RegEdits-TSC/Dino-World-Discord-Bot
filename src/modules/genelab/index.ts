@@ -9,11 +9,11 @@ import { InsufficientFundsError } from '../../core/economy.js';
 import { matches, respondRanked } from '../../core/autocomplete.js';
 import { settleEscapes } from '../park/escapes.js';
 import { traitDefs } from '../../data/traits.js';
-import { BREED_FEE, BREED_UPGRADE_CHANCE, breedableRarity } from '../../data/breeding.js';
+import { BREED_FEE, BREED_UPGRADE_CHANCE, SPLICE_SHARD_COST, breedableRarity } from '../../data/breeding.js';
 import {
-  startBreeding, claimBreeding, activeBreedings, breedCooldowns, BreedError,
+  startBreeding, claimBreeding, activeBreedings, breedCooldowns, BreedError, spliceDino,
 } from './service.js';
-import { confirmPayload, statusPayload, claimPayload } from './embeds.js';
+import { confirmPayload, statusPayload, claimPayload, splicePreviewPayload, splicedPayload } from './embeds.js';
 
 // Autocomplete labels use TraitDef.fallback, never emojiTag — Discord renders a
 // custom tag as literal text in a suggestion list.
@@ -135,6 +135,71 @@ export const geneLabModule: ModuleManifest = {
         }
       },
     },
+    {
+      data: new SlashCommandBuilder().setName('splice').setDescription(`Re-roll one trait slot on a dino — costs ${SPLICE_SHARD_COST} shards`)
+        .addIntegerOption((o) => o.setName('dino').setDescription('Dino id from /dino list').setRequired(true).setAutocomplete(true))
+        .addIntegerOption((o) => o.setName('slot').setDescription('Which trait slot to re-roll').setRequired(true)
+          .addChoices({ name: '1', value: 1 }, { name: '2', value: 2 })),
+
+      async autocomplete(ctx, i) {
+        const userId = i.user.id;
+        // Read-only: no getOrCreateUser. settleEscapes is the one permitted write,
+        // and it crashes for an unknown user — so guard on the row existing first.
+        const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get();
+        if (!user) { await i.respond([]); return; }
+        settleEscapes(ctx, userId);
+
+        const locks = locksFor(ctx, userId);
+        const q = String(i.options.getFocused());
+        // /splice has no pair-relative state (unlike /breed start's rarity/diet match) —
+        // the hard filter IS the whole filter. Mirrors tradeableDinos (src/modules/
+        // trading/index.ts:37-44): locked and escaped are absolute disqualifiers, a
+        // dino that can never be spliced right now is noise, not a greyed-out option.
+        // Unlike tradeableDinos, Mythic stays IN the list: spliceDino places no rarity
+        // gate (see src/modules/genelab/service.ts), so hiding it here would be a UI
+        // restriction the service does not itself enforce.
+        await respondRanked(i, ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all()
+          .filter((d) => !locks.dinos.has(d.id) && d.escapedAt === null)
+          .map((d) => ({ d, s: getSpecies(d.speciesId) }))
+          .filter(({ d, s }) => matches(q, d.id, s.name, d.nickname))
+          .map(({ d, s }) => ({ value: d.id, valid: true, label: parentLabel(d.id, s.name, d.traits, '') })));
+      },
+
+      async execute(ctx, i) {
+        const user = getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        const dinoId = i.options.getInteger('dino', true);
+        const slot = i.options.getInteger('slot', true) - 1;   // 1/2 on the wire, 0-based for spliceTrait
+        const d = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dinoId)).get();
+        if (!d || d.userId !== i.user.id) {
+          await i.reply({ content: 'You do not own that dino.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        // Mirrors spliceDino's own checks (src/modules/genelab/service.ts) so the confirm
+        // button is never shown for a splice the real call is guaranteed to refuse — a UX
+        // preflight only. The button re-validates everything server-side regardless, since
+        // ownership/lock/escape state can change in the gap between preview and confirm.
+        if (locksFor(ctx, i.user.id).dinos.has(dinoId)) {
+          await i.reply({ content: 'That dino is busy — it is locked in a trade or breeding.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        if (d.escapedAt !== null) {
+          await i.reply({ content: 'That dino has escaped — rescue it first.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        if (slot < 0 || slot > Math.min(d.traits.length, 1)) {
+          await i.reply({ content: 'Pick trait slot 1 or 2.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        if (user.shards < SPLICE_SHARD_COST) {
+          await i.reply({ content: `Splicing costs ${SPLICE_SHARD_COST} shards — you have ${user.shards}.`, flags: MessageFlags.Ephemeral });
+          return;
+        }
+        const species = getSpecies(d.speciesId);
+        await i.reply(splicePreviewPayload({
+          dinoId, speciesName: species.name, traits: d.traits, slot, cost: SPLICE_SHARD_COST,
+        }));
+      },
+    },
   ],
   components: [
     {
@@ -156,6 +221,36 @@ export const geneLabModule: ModuleManifest = {
         } catch (e) {
           if (e instanceof BreedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
           else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash for that pairing.', flags: MessageFlags.Ephemeral });
+          else throw e;
+        }
+      },
+    },
+    {
+      prefix: 'splice',
+      async execute(ctx, i) {
+        const [, action, dinoIdRaw, slotRaw] = i.customId.split(':');
+        if (action !== 'confirm') return;
+        // The custom id is client-supplied: never trusted for ownership (spliceDino
+        // re-validates that below via ownedDino), and not even trusted to parse — a
+        // malformed id must not reach the DB lookup as NaN.
+        const dinoId = Number(dinoIdRaw), slot = Number(slotRaw);
+        if (!Number.isFinite(dinoId) || !Number.isFinite(slot)) {
+          await i.reply({ content: 'That splice link is invalid — run /splice again.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        try {
+          // spliceDino re-checks ownership, lock and escape state fresh, against
+          // i.user.id (the CLICKER, not the original preview's author) — the same
+          // re-validation shape as /breed's confirm button above.
+          const { before, after } = spliceDino(ctx, i.user.id, dinoId, slot);
+          const d = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dinoId)).get()!;
+          await i.update({
+            ...splicedPayload({ dinoId, speciesName: getSpecies(d.speciesId).name, before, after, slot }),
+            attachments: [],
+          });
+        } catch (e) {
+          if (e instanceof BreedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough shards for that splice.', flags: MessageFlags.Ephemeral });
           else throw e;
         }
       },

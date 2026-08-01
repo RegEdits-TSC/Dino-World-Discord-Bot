@@ -6,10 +6,12 @@ import { getSpecies } from '../../data/species/index.js';
 import { locksFor, lockLabel } from '../../core/locks.js';
 import { hungerAt, drainMsFor } from '../../core/clock.js';
 import { breedingSlots } from '../park/service.js';
-import { modProduct, pickTrait, rollSlotCount, TRAITS, BRED_SLOT_ODDS, type TraitDomain, type TraitId } from '../../data/traits.js';
+import {
+  modProduct, pickTrait, rollSlotCount, spliceTrait, TRAITS, BRED_SLOT_ODDS, type TraitDomain, type TraitId,
+} from '../../data/traits.js';
 import {
   BREED_MS, BREED_FEE, BREED_COOLDOWN_MS, BREED_UPGRADE_CHANCE,
-  BREED_MIN_HUNGER, breedableRarity, upgradeRarity,
+  BREED_MIN_HUNGER, SPLICE_SHARD_COST, breedableRarity, upgradeRarity,
 } from '../../data/breeding.js';
 
 export class BreedError extends Error {}
@@ -215,4 +217,29 @@ export function claimBreeding(ctx: Ctx, userId: string, breedingId: number): { e
       .where(eq(schema.breedings.id, breedingId)).run();
     return { egg, upgraded: reallyUpgraded };
   });
+}
+
+/**
+ * Repeatable shard sink: re-rolls one trait slot on a dino the player already
+ * owns. On a 0-trait dino, slot 0 ADDS a trait (see spliceTrait); otherwise it
+ * replaces the chosen slot, drawing from any domain the surviving trait is not
+ * using — the one-trait-per-domain rule holds without this function checking it.
+ */
+export function spliceDino(ctx: Ctx, userId: string, dinoId: number, slot: number): { before: string[]; after: string[] } {
+  const d = ownedDino(ctx, userId, dinoId);
+  if (locksFor(ctx, userId).dinos.has(dinoId))
+    throw new BreedError('That dino is busy — it is locked in a trade or breeding.');
+  if (d.escapedAt !== null) throw new BreedError('That dino has escaped — rescue it first.');
+  if (slot < 0 || slot > Math.min(d.traits.length, 1))
+    throw new BreedError('Pick trait slot 1 or 2.');
+
+  const before = d.traits;
+  const after = spliceTrait(before, slot, ctx.rng);
+  ctx.db.transaction(() => {
+    // Throws InsufficientFundsError if the player cannot pay; the outer transaction
+    // means a failed update can never leave them charged.
+    ctx.economy.apply(userId, { shards: -SPLICE_SHARD_COST }, `splice:${dinoId}`, ctx.now());
+    ctx.db.update(schema.dinos).set({ traits: after }).where(eq(schema.dinos.id, dinoId)).run();
+  });
+  return { before, after };
 }

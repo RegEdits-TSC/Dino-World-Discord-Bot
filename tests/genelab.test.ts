@@ -6,10 +6,10 @@ import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { incubateEgg, hatchEgg } from '../src/modules/hatchery/service.js';
 import { locksFor } from '../src/core/locks.js';
 import {
-  startBreeding, claimBreeding, inheritTraits, activeBreedings, breedCooldowns, BreedError,
+  startBreeding, claimBreeding, inheritTraits, activeBreedings, breedCooldowns, BreedError, spliceDino,
 } from '../src/modules/genelab/service.js';
 import { TRAITS } from '../src/data/traits.js';
-import { BREED_MS, BREED_FEE, BREED_COOLDOWN_MS } from '../src/data/breeding.js';
+import { BREED_MS, BREED_FEE, BREED_COOLDOWN_MS, SPLICE_SHARD_COST } from '../src/data/breeding.js';
 
 function park(ctx: ReturnType<typeof makeCtx>, id = 'u1') {
   getOrCreateUser(ctx, id, id);
@@ -466,5 +466,55 @@ describe('inheritTraits', () => {
   it('ignores trait ids that are no longer in the table', () => {
     const out = inheritTraits(['retired_trait'], [], () => 0.5);
     expect(out).toEqual(['savage']);   // pool empty after the filter, so slot 0 mutates
+  });
+});
+
+describe('spliceDino', () => {
+  it('charges shards and replaces the chosen slot', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { shards: 100 }, 'test', 0);
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+      traits: ['prolific', 'savage'],
+    }).returning().get();
+
+    const out = spliceDino(ctx, 'u1', d.id, 0);
+    expect(out.before).toEqual(['prolific', 'savage']);
+    expect(out.after[1]).toBe('savage');
+    expect(ctx.db.select().from(schema.users).all()[0].shards).toBe(100 - SPLICE_SHARD_COST);
+    expect(ctx.db.select().from(schema.dinos).all()[0].traits).toEqual(out.after);
+  });
+
+  it('adds a trait to a blank dino', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { shards: 100 }, 'test', 0);
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    expect(spliceDino(ctx, 'u1', d.id, 0).after).toHaveLength(1);
+  });
+
+  it('refuses without enough shards', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    expect(() => spliceDino(ctx, 'u1', d.id, 0)).toThrow();
+  });
+
+  it('refuses a locked dino', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { shards: 100 }, 'test', 0);
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    ctx.db.insert(schema.breedings).values({
+      userId: 'u1', parentA: d.id, parentB: d.id, rarity: 'common', startedAt: 0, readyAt: 10,
+    }).run();
+    expect(() => spliceDino(ctx, 'u1', d.id, 0)).toThrow(/busy|locked/i);
   });
 });
