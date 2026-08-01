@@ -324,7 +324,7 @@ shell with glowing orange cracks).
 
 ## Embed banners
 
-Thirteen wide banners for the surfaces that have no site or egg art of their own.
+Fifteen wide banners for the surfaces that have no site or egg art of their own.
 All generated with Higgsfield Nano Banana Pro at 3:2, then scaled to 1536×1024
 (the generator emits 1264×848; scaling to full width leaves ~6px of vertical
 excess, which is center-cropped).
@@ -344,6 +344,8 @@ excess, which is center-cropped).
 | `assets/images/banners/dino_roster.webp` | 1536×1024 | `/dino list` embed image |
 | `assets/images/banners/eggs_incubator.webp` | 1536×1024 | `/eggs` embed image |
 | `assets/images/banners/sell.webp` | 1536×1024 | `/sell` confirmation prompt embed image |
+| `assets/images/banners/gene_lab.webp` | 1536×1024 | `/breed` confirm/status/claim embed image |
+| `assets/images/banners/gene_splice.webp` | 1536×1024 | `/splice` preview/result embed image |
 
 These are the only prompts in this file whose subject is dinosaurs rather than
 scenery, so they drop the shared block's "no characters" clause and forbid only
@@ -534,6 +536,30 @@ proactively — a roster board, an incubation room with a dial, and a buyer's
 stall with a ledger are exactly the kind of scene a model will happily letter.
 All three generated clean on the first attempt with the strengthened clause,
 so no regeneration was needed.
+
+**Gene Lab (`gene_lab.webp`) and Gene Splice (`gene_splice.webp`):** generated
+with model `nano_banana_pro` (the API silently routes this to `nano_banana_2`)
+at aspect ratio `3:2`, source output 1264×848, then
+`node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024 WebP q95 — same
+pipeline as the rest of this section. These two use a painterly key-art phrasing
+rather than the shared cartoon style block above; that is deliberate, not a
+drift to fix on regeneration — the Gene Lab surfaces are the one part of the
+game leaning into a moodier lab aesthetic rather than the bright park-cartoon
+look everywhere else.
+
+> **gene_lab.webp:** A bright prehistoric genetics laboratory interior. Tall
+> glass incubation tanks glowing warm amber, each holding a dinosaur embryo
+> suspended in fluid. Brass fittings, dark timber workbenches, coiled copper
+> tubing and analogue dials. Warm cinematic lighting with soft god-rays from
+> high windows. Wide establishing shot, painterly digital illustration, rich
+> saturated colour, game key art. No text, no lettering, no people.
+
+> **gene_splice.webp:** Extreme close-up of a glowing DNA double helix being
+> rewritten inside a crystal vial. One strand segment detaching and a new
+> segment sliding into place, trailing violet and gold light. Dark laboratory
+> background thrown far out of focus into warm bokeh. Dramatic rim lighting,
+> volumetric glow, painterly digital illustration, game key art. No text, no
+> lettering, no people.
 
 ---
 
@@ -935,8 +961,9 @@ the light studio rim must be peeled, and all border pixels must end transparent.
 
 ## Emoji icons
 
-The 33 application emojis in `assets/emojis/` are **not** generated — they are
+The 38 application emojis in `assets/emojis/` are **not** generated — they are
 hand-authored SVG rendered by `npm run build-emojis`. That set includes the six
-`dw_dino_<rarity>` chips and the five `dw_lot_*` icons the park renderer reads
-as SVG at draw time. See the emoji bullets in the repo `CLAUDE.md` for the
-pipeline and its two rendering gotchas.
+`dw_dino_<rarity>` chips and the six `dw_lot_*` icons the park renderer reads
+as SVG at draw time, plus the four `dw_trait_<domain>` icons (income, care,
+combat, meta) used inline wherever a dino's traits are listed. See the emoji
+bullets in the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.

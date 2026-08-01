@@ -98,7 +98,7 @@ describe('emoji assets', () => {
 });
 
 describe('svg set parity', () => {
-  it('svg files exactly match the 33 fallback-table names', () => {
+  it('svg files exactly match the 38 fallback-table names', () => {
     const names = readdirSync(SVG_DIR).filter((f) => f.endsWith('.svg')).map((f) => f.replace('.svg', '')).sort();
     expect(names).toEqual(Object.keys(EMOJI_FALLBACK).sort());
   });
