@@ -28,6 +28,7 @@ const AUTOCOMPLETE_OPTIONS: Record<string, string[]> = {
   'trade cancel': ['id'],
   'admin give': ['dino-species'],
   'battle fight': ['stage', 'dino1', 'dino2', 'dino3'],
+  'breed start': ['parent-a', 'parent-b'],
 };
 
 function collect(name: string, opts: OptJson[] | undefined, out: Map<string, boolean>): void {
@@ -43,7 +44,7 @@ function collect(name: string, opts: OptJson[] | undefined, out: Map<string, boo
 describe('builder contract', () => {
   it('every builder serializes (Discord would accept the deploy body)', () => {
     const body = registry.commands().map((c) => c.data.toJSON());
-    expect(body).toHaveLength(20);
+    expect(body).toHaveLength(21);
     for (const b of body) expect(b.name).toMatch(/^[a-z-]+$/);
   });
 

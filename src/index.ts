@@ -6,7 +6,7 @@ import { EconomyService } from './core/economy.js';
 import { loadAppEmojis } from './core/emojis.js';
 import { logger } from './core/logger.js';
 import { ModuleRegistry } from './core/modules.js';
-import { clientSender, deliverNotification, eggHatchHandler, expeditionReturnHandler } from './core/notify.js';
+import { clientSender, deliverNotification, eggHatchHandler, expeditionReturnHandler, breedingReadyHandler } from './core/notify.js';
 import { routeInteraction } from './core/router.js';
 import { Scheduler } from './core/scheduler.js';
 import { ALL_MODULES } from './core/module-list.js';
@@ -28,6 +28,7 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const sender = clientSender(client);
 scheduler.register('egg_hatch', eggHatchHandler(sender, ctx));
 scheduler.register('expedition_return', expeditionReturnHandler(sender, ctx));
+scheduler.register('breeding_ready', breedingReadyHandler(sender, ctx));
 
 setInterval(() => { scheduler.tick(Date.now()).catch((e) => logger.error({ err: e }, 'scheduler tick failed')); }, 30_000);
 
