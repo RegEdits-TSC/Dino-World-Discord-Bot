@@ -123,4 +123,19 @@ describe('spliceTrait', () => {
   it('throws on an out-of-range slot', () => {
     expect(() => spliceTrait(['prolific'], 5, mulberry32(1))).toThrow(/slot/);
   });
+
+  // Splice is a "genuine gamble" (design doc §6) — the sink only works as a
+  // repeatable one if the replacement can land worse than what it replaced,
+  // not just better. pickTrait (src/data/traits.ts) samples uniformly across
+  // the domain-filtered pool with no polarity weighting, so a wide seed sweep
+  // must surface both positive- and negative-polarity outcomes.
+  it('can produce a worse trait, not just a better one', () => {
+    const polarities = new Set<string>();
+    for (let seed = 0; seed < 500; seed++) {
+      const out = spliceTrait(['prolific', 'savage'], 0, mulberry32(seed));
+      polarities.add(TRAITS[out[0]].polarity);
+    }
+    expect(polarities.has('positive')).toBe(true);
+    expect(polarities.has('negative')).toBe(true);
+  });
 });
