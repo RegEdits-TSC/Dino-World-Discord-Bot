@@ -4,7 +4,7 @@ import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
 import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, toClockDinos } from './service.js';
 import { settleEscapes } from './escapes.js';
-import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError } from './dinos.js';
+import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
 import { dashboardPayload, withParkImage } from './embeds.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
@@ -17,6 +17,7 @@ import { getSpecies } from '../../data/species/index.js';
 import { matches, respondRanked, emptyRow, dinoLabel } from '../../core/autocomplete.js';
 import { paginate, pageRow } from '../../core/paginate.js';
 import { emojiTag, foodEmoji } from '../../core/emojis.js';
+import { traitDefs } from '../../data/traits.js';
 import { FOODS, type FoodId } from '../../data/foods.js';
 import type { Ctx } from '../../core/context.js';
 import { assetImage, attach } from '../../core/images.js';
@@ -50,7 +51,13 @@ function dinoListPayload(ctx: Ctx, userId: string, page: number) {
           ? ` — ${emojiTag('dw_hunger')} escapes <t:${Math.floor(d.escapeAt / 1000)}:R>` : '';
         const loc = d.dino.lotId ? `lot ${d.dino.lotId}` : 'unassigned';
         const habitat = d.mismatch ? ' — ⚠️ wrong habitat' : '';
-        return `#${d.dino.id} ${d.species.name} — ${status}${warn}${habitat} — ${loc}`;
+        const title = d.dino.nickname ? `${d.dino.nickname} (${d.species.name})` : d.species.name;
+        // Compact one-line inline form — never traitLines(): the list is paginated at 10 rows
+        // and traitLines()'s one-line-per-trait-plus-blurb block would risk the embed limits
+        // that a single trait mark per row stays comfortably under.
+        const marks = traitDefs(d.dino.traits).map((t) => `${emojiTag(t.emoji) || t.fallback} ${t.name}`).join(' · ');
+        const marksLine = marks ? ` — ${marks}` : '';
+        return `#${d.dino.id} ${title} — ${status}${warn}${habitat} — ${loc}${marksLine}`;
       }).join('\n')
     : 'No dinos yet. Hatch one!';
   const embed = new EmbedBuilder().setTitle('🦕 Your dinos').setDescription(lines).setColor(0x3ba55c)
@@ -177,7 +184,10 @@ export const parkModule: ModuleManifest = {
           .addIntegerOption((o) => o.setName('dino').setDescription('Dino — type to search').setRequired(true).setAutocomplete(true))
           .addIntegerOption((o) => o.setName('lot').setDescription('Paddock — type to search').setRequired(true).setAutocomplete(true)))
         .addSubcommand((s) => s.setName('unassign').setDescription('Remove a dino from its paddock')
-          .addIntegerOption((o) => o.setName('dino').setDescription('Dino — type to search').setRequired(true).setAutocomplete(true))),
+          .addIntegerOption((o) => o.setName('dino').setDescription('Dino — type to search').setRequired(true).setAutocomplete(true)))
+        .addSubcommand((s) => s.setName('rename').setDescription('Give a dino a nickname')
+          .addIntegerOption((o) => o.setName('dino').setDescription('Dino — type to search').setRequired(true).setAutocomplete(true))
+          .addStringOption((o) => o.setName('nickname').setDescription('New nickname — leave blank to clear it').setRequired(false).setMaxLength(32))),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         settleEscapes(ctx, i.user.id);
@@ -200,6 +210,11 @@ export const parkModule: ModuleManifest = {
                   .setLabel('Cancel').setStyle(ButtonStyle.Secondary));
               await i.reply({ content: `⚠️ ${e.message}`, components: [row], flags: MessageFlags.Ephemeral });
             }
+          } else if (sub === 'rename') {
+            const nickname = i.options.getString('nickname');
+            renameDino(ctx, i.user.id, i.options.getInteger('dino', true), nickname);
+            const cleared = !nickname || !nickname.trim();
+            await i.reply({ content: cleared ? '🦕 Nickname cleared.' : `🦕 Renamed to **${nickname!.trim()}**.` });
           } else {
             unassignDino(ctx, i.user.id, i.options.getInteger('dino', true));
             await i.reply({ content: '🦕 Unassigned.' });
@@ -219,7 +234,9 @@ export const parkModule: ModuleManifest = {
             .filter(({ d, species }) => matches(q, d.id, species.name, species.rarity))
             .map(({ d, species }) => ({
               value: d.id, label: dinoLabel(d, species, now),
-              valid: sub === 'unassign' ? d.lotId !== null : d.escapedAt === null,
+              // renameDino has no lot/escape restriction (ownership + length only), so an
+              // escaped or unassigned dino is a fully valid rename target, unlike assign.
+              valid: sub === 'unassign' ? d.lotId !== null : sub === 'rename' ? true : d.escapedAt === null,
             })));
           return;
         }

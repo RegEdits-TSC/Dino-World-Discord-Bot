@@ -21,6 +21,7 @@ const AUTOCOMPLETE_OPTIONS: Record<string, string[]> = {
   'upgrade': ['lot'],
   'dino assign': ['dino', 'lot'],
   'dino unassign': ['dino'],
+  'dino rename': ['dino'],
   'decorate': ['lot'],
   'trade offer': ['give-dinos', 'give-eggs', 'give-food', 'want-dinos', 'want-eggs', 'want-food'],
   'trade accept': ['id'],

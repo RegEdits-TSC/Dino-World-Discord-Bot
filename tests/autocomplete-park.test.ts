@@ -82,6 +82,24 @@ describe('/dino unassign autocomplete', () => {
   });
 });
 
+describe('/dino rename autocomplete', () => {
+  it('does not demote an escaped dino — renameDino has no escape/lot restriction, unlike /dino assign', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1');
+    // Same seed shape as "/dino assign autocomplete > escaped dinos rank last": escaped
+    // inserted first (lower id), unassigned second. /dino assign flips that order because
+    // it marks the escaped one invalid; /dino rename must NOT, since respondRanked only
+    // reorders when validity differs — an unchanged [escaped, unassigned] order is the
+    // only way to observe both rows being marked valid.
+    const escaped = seedDino(ctx, { escapedAt: 1 });
+    const unassigned = seedDino(ctx, { speciesId: 'triceratops' });
+    const i = fakeAutocomplete({ name: 'dino', sub: 'rename', user: 'u1', focused: { name: 'dino', value: '' } });
+    await cmd('dino').autocomplete!(ctx, i.asAutocomplete());
+    const rows = i.replies[0] as Array<{ value: number }>;
+    expect(rows.map((r) => r.value)).toEqual([escaped.id, unassigned.id]);
+  });
+});
+
 describe('/decorate lot autocomplete', () => {
   it('lists only paddocks', async () => {
     const ctx = makeCtx();
