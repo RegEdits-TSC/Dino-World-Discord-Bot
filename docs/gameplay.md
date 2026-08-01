@@ -39,15 +39,17 @@ the note below.
 | Currency | What it is | How you earn it | What it's for |
 | --- | --- | --- | --- |
 | Cash | Main currency, never goes negative | Idle income from your dinos, expedition claims, selling dinos, winning battles | Building and upgrading lots, decor, food, expedition fees, shop eggs, rescue fees |
-| Shards | Premium currency | Selling dinos, and the first time you clear a battle stage | Exactly one thing: buying a Mythic egg (500 shards) |
+| Shards | Premium currency | Selling dinos, and the first time you clear a battle stage | Buying a Mythic egg (500 shards), or re-rolling a trait with `/splice` (15 shards) |
 | Food | Six named items, not a single number | Bought with cash, dropped by expeditions and battles, tradeable | Feeding your dinos to keep their hunger up |
 | Battle energy | Regenerates on its own, not really a currency | Regenerates over time (capped at 10) | Entering battle stages; cannot be bought, gifted, or refilled by any item |
 
 **There is no player-facing screen that shows your shard balance.** The park
 dashboard has five fields — Cash, Food, Rating, Dinos, Lots — and none of them
-is shards. The only place a shard total is ever displayed is in the
-confirmation message you get right after selling a dino. Do not go looking for
-a shard count on `/park view`; it isn't there.
+is shards. Your shard total surfaces only in passing: the confirmation
+message you get right after selling a dino, and — if you try to `/splice` a
+dino without enough shards to cover the fee — the error that names your
+current balance alongside the cost. Do not go looking for a running shard
+count on `/park view`; it isn't there.
 
 ## 3. Your park
 
@@ -70,7 +72,7 @@ if your current rating later drops. There is no way to buy a slot with cash.
 ### Lot types
 
 Every lot starts at level 1 with no decor. There are two kinds of paddock and
-three kinds of facility:
+four kinds of facility:
 
 | Lot | Type | Build cost | Max level |
 | --- | --- | --- | --- |
@@ -79,6 +81,7 @@ three kinds of facility:
 | Visitor Center | facility | 5,000 | 5 |
 | Food Court | facility | 8,000 | 3 |
 | Hatchery Lab | facility | 10,000 | 3 |
+| Gene Lab | facility | 20,000 | 3 |
 
 Dinos can only be assigned to paddocks — never to facilities. Each paddock
 holds 2 dinos per level, and upgrading roughly multiplies the previous cost by
@@ -121,8 +124,19 @@ one, so the real upgrades start at level 2:
 | 2 | 2 | 25,000 |
 | 3 | 3 | 150,000 |
 
-If you build more than one of the same facility, their income bonuses stack —
-there's nothing stopping you from doing that.
+The **Gene Lab** grants breeding slots and nothing else — no income bonus. See
+Breeding and the Gene Lab below for what a slot is for:
+
+| Gene Lab level | Breeding slots | Cost to reach |
+| --- | --- | --- |
+| 1 | 1 | 20,000 (build) |
+| 2 | 2 | 60,000 |
+| 3 | 3 | 250,000 |
+
+Only paddocks can be built more than once — that's how their capacity grows.
+Every facility, including the Gene Lab, is capped at **one per park**;
+trying to build a second Visitor Center, Food Court, Hatchery Lab, or Gene
+Lab is refused outright, naming the facility that's already built.
 
 ### Decor
 
@@ -280,9 +294,14 @@ Comfort is what actually matters for income and rating. It's hunger (counted
 only up to 100, so overfeeding doesn't help comfort) expressed as a
 percentage, multiplied by how well the paddock suits that dino:
 
-- A dino in the **correct-diet** paddock for its species keeps 75% of its
-  hunger-based comfort.
-- A dino in the **wrong-diet** paddock keeps only 50%.
+- A dino in the **wrong-diet** paddock keeps only 50% of its hunger-based
+  comfort, regardless of decor.
+- A dino in the **correct-diet** paddock keeps 75% — or **100%** if the
+  paddock also carries at least one piece of decor tagged to that species'
+  biome (see Decor above; a Gallimimus, tagged `plains`, gets the full bonus
+  from a Grass Tuft or a Boulder but not from a Palm Tree). Any decor beyond
+  the first matching piece raises rating through the park build-out term, but
+  does not push comfort past 100%.
 - A dino with **no paddock at all** has 0% comfort, full stop — it earns
   nothing and cannot escape, since escaping requires being somewhere to
   escape from.
@@ -605,10 +624,33 @@ sold either. A dino you received through a trade still sells for its full
 cash value, but always pays 0 shards. Selling always recomputes your park
 rating.
 
-Selling also has a shard cap: you can earn at most 40 shards from selling
+Selling also has a shard cap: you can earn at most 60 shards from selling
 dinos within any rolling 24-hour window. Sales past that cap still pay their
 full cash value — you simply stop earning extra shards from selling until
-your next sale more than 24 hours after the window opened.
+your next sale more than 24 hours after the window opened. The cap only
+throttles *earning* shards from `/sell`; it has no effect on *spending* them,
+so it doesn't limit how many times you can `/splice` in a day (see Splice,
+below) — it only sets how fast you can refill your balance by selling.
+
+### Splice
+
+`/splice` spends shards to re-roll a single trait slot on a dino you own —
+**a flat 15 shards, with no per-dino escalation**. Pick slot 1 or slot 2; on
+a dino that doesn't have a trait in that slot yet, splicing it *adds* one
+instead of replacing anything. The command shows a confirm preview naming
+the dino's current traits and the cost before anything is spent.
+
+The replacement is drawn at random from the same pool `/breed` and wild
+hatches use, and it obeys the same domain rule as every other trait roll
+(see Traits, below) — it can never land on a domain the dino's surviving
+trait already occupies. Critically, **the roll is not biased toward an
+upgrade**: splicing can hand you a strictly worse trait than the one it
+replaced. That randomness is the point — `/splice` is a shard sink, a way to
+keep chasing a better roster after you've capped out on Mythics, not a
+guaranteed purchase. A dino locked in a trade or a breeding pairing, or one
+that has escaped, can't be spliced until that state clears. Unlike `/sell`
+and `/trade`, **Mythic dinos can be spliced** — nothing about the trait
+system gates on rarity.
 
 ## 12. Trading
 
@@ -757,3 +799,179 @@ server. Running it again simply replaces the previous channel; there's no
 way to clear or unset it once set. There's no per-player notification
 preference anywhere in the game — no DM opt-out, no per-type toggle — the
 only thing stored is one channel per server.
+
+## 15. Traits
+
+Every dino can hold up to two traits — small stat modifiers rolled when it
+hatches, or, for a bred egg, partly inherited from its parents. Zero traits
+is a normal, common outcome, not a failed roll.
+
+### The domain rule
+
+The 14 traits are grouped into four domains — income, care, combat, and
+meta — and **a dino can never hold two traits from the same domain.** That
+rule is enforced everywhere a trait is picked: a fresh hatch, breeding
+inheritance, and a `/splice` re-roll all exclude every domain the dino's
+other trait already occupies before drawing a replacement. It's also what
+makes mutually-cancelling pairs like Prolific and Runt structurally
+impossible — they're both income-domain, so a dino can hold at most one of
+them at a time.
+
+| Domain | Traits |
+| --- | --- |
+| Income | Prolific, Runt, Grazer |
+| Care | Hardy, Thrifty, Skittish, Gluttonous |
+| Combat | Savage, Ironhide, Fleet, Glass Cannon, Frail |
+| Meta | Prodigy, Fertile |
+
+### The 14 traits
+
+| Trait | Domain | Effect |
+| --- | --- | --- |
+| Prolific | Income | +15% income |
+| Runt | Income | -10% income |
+| Grazer | Income | +20% income, +20% hunger drain |
+| Hardy | Care | -25% hunger drain |
+| Thrifty | Care | -25% feed cost |
+| Skittish | Care | +20% hunger drain |
+| Gluttonous | Care | +25% feed cost |
+| Savage | Combat | +12% attack |
+| Ironhide | Combat | +12% defence |
+| Fleet | Combat | +12% speed |
+| Glass Cannon | Combat | +25% attack, -15% HP |
+| Frail | Combat | -10% HP |
+| Prodigy | Meta | +20% battle XP |
+| Fertile | Meta | -25% breeding time |
+
+Every effect is a straight multiplier layered on top of the dino's base
+number — income, hunger drain rate, feed cost, the four battle stats,
+battle XP per fight, or breeding time. A dino holding two traits applies
+both multipliers. Eight of the fourteen are purely upside (Prolific, Hardy,
+Thrifty, Savage, Ironhide, Fleet, Prodigy, Fertile) and four are purely
+downside (Runt, Skittish, Gluttonous, Frail); the remaining two — Grazer and
+Glass Cannon — are double-edged, trading a real cost for a real gain. Not
+every roll is an upgrade, which is what makes `/splice` (see below) an
+actual gamble rather than a guaranteed improvement.
+
+### Wild hatch odds
+
+A freshly hatched egg — bought from the shop, found on an expedition, or a
+Mythic bought with shards — rolls its trait count independently of rarity:
+
+| Traits | Chance |
+| --- | --- |
+| 0 | 55% |
+| 1 | 35% |
+| 2 | 10% |
+
+A bred egg's odds are better — see Breeding and the Gene Lab, next.
+
+## 16. Breeding and the Gene Lab
+
+The **Gene Lab** is a fourth kind of facility (see Lot types, above): build
+it for 20,000 cash, then upgrade it for 60,000 and 250,000. Like every
+facility it grants no income bonus and is capped at one per park, and it
+competes for the same pool of up to 8 lot slots as every paddock and every
+other facility. Unlike the Hatchery Lab — which hands you one free incubator
+slot even before you build one — the Gene Lab gives you nothing until it's
+built: zero breeding slots with no Gene Lab at all.
+
+| Gene Lab level | Breeding slots |
+| --- | --- |
+| 1 | 1 |
+| 2 | 2 |
+| 3 | 3 |
+
+A breeding slot is occupied for as long as a pairing is in progress, from
+`/breed start` until you `/breed claim` it. A level-3 Gene Lab can run three
+pairings at once; starting a new one while every slot is already busy is
+refused.
+
+### Pairing rules
+
+`/breed start parent-a:<id> parent-b:<id>` pairs two of your own dinos.
+Every rule below must hold, or the pairing is refused before anything is
+charged:
+
+- Same rarity.
+- Same diet.
+- Not the same dino.
+- Both currently assigned to a paddock.
+- Neither has escaped.
+- Neither is locked in a pending trade or another breeding.
+- Neither is still cooling down from a breeding it was last claimed out of
+  (see Cooldown, below).
+- Neither is Mythic — **Mythics cannot breed at all.**
+- Both at hunger 50 or higher, checked live against how much has actually
+  drained since their last feed, not the stored value from that feed.
+
+The two parents do **not** need to be the same species — only the same
+rarity and the same diet.
+
+### Fees and times
+
+The fee is charged the moment you start the pairing, and both parents stay
+locked — and the Gene Lab slot occupied — until you claim it:
+
+| Rarity | Fee | Breeding time |
+| --- | --- | --- |
+| Common | 200 | 30 min |
+| Uncommon | 800 | 2 h |
+| Rare | 3,000 | 6 h |
+| Epic | 10,000 | 18 h |
+| Legendary | 40,000 | 36 h |
+
+Mythics can't be paired at all, so there's no Mythic row. If either parent
+carries the Fertile trait (-25% breeding time), the pairing gets the
+shorter of the two parents' times — Fertile on just one side is enough.
+
+### Cooldown
+
+Claiming a pairing puts both parents on cooldown before either can start a
+new one — the cooldown is the rarity's full breeding time from the table
+above (a Rare pairing cools down for 6 hours after claim, same as its base
+breeding time). This is the **un-shortened** time: if Fertile sped up the
+actual pairing, the cooldown afterward is still the full 6 hours — Fertile
+only makes the wait *to* the egg shorter, not the wait *between* pairings. A
+parent on cooldown is otherwise completely free to use — sell it, trade it,
+feed it, battle with it — cooldown only blocks starting another breeding
+with it. The cooldown belongs to the dino as it stood at claim time, not to
+the player: if a dino changes hands mid-cooldown, its new owner sees it as
+ready to breed again.
+
+### Claiming
+
+`/breed claim` claims your oldest ready pairing and reveals the egg it
+produced — rarity, inherited traits, and species where applicable. With
+more than one pairing ready at once, run it again for the next; the reply
+tells you how many are still waiting.
+
+**Upgrade chance.** Claiming rolls a flat **10% chance** to bump the egg's
+rarity up one tier from the parents' — capped at Legendary. **Breeding can
+never produce a Mythic egg**, no matter how the roll lands. Because of that
+cap, pairing two Legendaries shows a 0% upgrade chance up front — there is
+nowhere higher left for the roll to take it.
+
+**Species.** If both parents are the exact same species *and* the pairing
+did not upgrade, the egg's species is pinned to that species, skipping the
+usual hatch-time roll. Any other pairing — mixed species, or an upgraded
+rarity — hatches with its species rolled fresh, same as any other egg.
+
+**Traits.** A bred egg's trait count uses better odds than a wild hatch:
+
+| Traits | Chance |
+| --- | --- |
+| 0 | 25% |
+| 1 | 45% |
+| 2 | 30% |
+
+Each inherited slot is drawn 70% of the time from the parents' own traits,
+pooled together, and 30% of the time from a completely fresh random pick —
+a mutation — always respecting the one-trait-per-domain rule. A bred egg
+legitimately inherits zero traits a quarter of the time; that's not a failed
+roll, it's just the 25% row above.
+
+**Provenance.** If either parent was originally received through a trade,
+the offspring carries that forward: the resulting egg, and the dino it
+hatches into, always sell for 0 shards — though still for full cash — the
+same rule that applies to a dino received directly through a trade.

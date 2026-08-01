@@ -14,11 +14,15 @@
   `expireStale` survives in the `/trade accept|decline|cancel` provider only
   because that list's `status` filter is what hides a dead trade. Router-level
   errors degrade to an empty suggestion list.
-- Registering a new module touches 4 sites: modules.json, `src/core/module-list.ts`
+- Registering a new module touches 5 sites: modules.json, `src/core/module-list.ts`
   (the `ALL_MODULES` array), tests/registry-load.test.ts (command count),
-  tests/config.test.ts (expected modules). `src/index.ts` and
-  `src/deploy-commands.ts` both import `ALL_MODULES` from that one list rather
-  than declaring their own, so they no longer need a manual edit.
+  tests/config.test.ts (expected modules), and `tests/contract.test.ts:46`
+  (the top-level command count in "every builder serializes" — that same file
+  also enforces a bidirectional autocomplete manifest, so any option flagged
+  `.setAutocomplete(true)` needs a matching entry in `AUTOCOMPLETE_OPTIONS`
+  there too). `src/index.ts` and `src/deploy-commands.ts` both import
+  `ALL_MODULES` from that one list rather than declaring their own, so they no
+  longer need a manual edit.
 - Changing any command builder requires `npm run deploy-commands` and exactly
   one running bot instance per token. Example: `/sell`'s `dino` option now sets
   `.setAutocomplete(true)` — its autocomplete handler already existed but was
@@ -327,12 +331,36 @@
   boundary silently reopened the alt-to-main shard funnel. Breeding is the third
   boundary: `startBreeding` snapshots `parentA.viaTrade || parentB.viaTrade` onto the
   `breedings` row (both parents are guaranteed present there, and the flag is only ever
-  set, never cleared) and `claimBreeding` ORs that floor with a fresh read of both
-  parents. Any future path that MINTS an item from an existing one has to carry it too.
+  set, never cleared), and `claimBreeding` reads that frozen column back verbatim —
+  `startBreeding` is the column's sole writer. Deliberately NOT re-derived from a fresh
+  read of the live parents at claim time: they're nullable by then (a parent can be sold
+  or traded away between start and claim) and a second source would only give the two a
+  way to disagree. Any future path that MINTS an item from an existing one has to carry
+  it too.
 - `adminReset` must delete from every table `locksFor` reads — `trades` and now
   `breedings` — not only the tables holding the player's own items. The parents are
   deleted moments earlier, so a surviving pending breeding holds a Gene Lab slot busy
   forever and leaves a claimable pairing whose parents no longer exist.
+- Gene Lab: a dino holds 0–2 traits (`src/data/traits.ts`) and **never two from
+  one domain** — `TraitDomain` is `income | care | combat | meta`, and both
+  `pickTrait` (fresh rolls) and `spliceTrait` (re-rolls) exclude every domain
+  already occupied by the dino's surviving traits before drawing, so the rule
+  holds without any caller checking it. That's also what makes cancelling
+  pairs like `prolific` + `runt` structurally impossible — they share the
+  `income` domain. `hungerAt(hungerAtFed, lastFedAt, at, drainMs)`
+  (`src/core/clock.ts`) takes `drainMs` as a **required** parameter on
+  purpose: a default would let a call site silently keep the flat 48h global
+  rate instead of a trait-adjusted one (Hardy drains 25% slower, Grazer and
+  Skittish 20% faster), reintroducing exactly the bug the parameter exists to
+  prevent. Every production call site passes `drainMsFor(d.traits)` — never
+  the bare constant — including `startBreeding`'s hunger-≥50 gate
+  (`src/modules/genelab/service.ts`), `/feed all`'s hungriest-first sort, and
+  `comfortAt`. Breeding and splicing both hold a dino in escrow the same way
+  trading does: `locksFor` (`src/core/locks.ts`, documented in full above)
+  resolves a doubly-locked dino as `'breeding'` because it evaluates
+  `breedings` after `trades` — the fail-safe direction, since a breeding lock
+  can never be waived by a trade's `forTradeId` exemption. **Never swap those
+  two loops.**
 - One facility of each kind per park (`buildLot` throws `DuplicateFacilityError`,
   whose `message` is the facility's display name). Paddocks stay duplicable — more of
   one kind IS the capacity progression. `facilityLevel` (`src/modules/park/service.ts`)

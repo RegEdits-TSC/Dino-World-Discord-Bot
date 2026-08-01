@@ -84,6 +84,19 @@ ctx.db.update(schema.eggs).set({ hatchesAt: ctx.now() - 1 }).run();   // force-r
 // the /incubate case, which runs after hatch:crack frees the single incubator slot.
 const spareEgg = ctx.db.insert(schema.eggs).values({ userId: P1, rarity: 'epic', source: 'shop', obtainedAt: ctx.now() }).returning().get();
 const spareDino = ctx.db.select().from(schema.dinos).all()[1];
+// Gene Lab seed: build the facility, and a second Common/herbivore dino sharing
+// `dino` (triceratops)'s paddock to pair with it — same rarity, same diet, both
+// assigned, capacity 2 at level 1 so the pair fits without a second paddock. The
+// pairing itself is only STARTED later, inside the /breed status case (section 4)
+// — not here — so `dino` stays unlocked for every earlier case that touches it.
+buildLot(ctx, P1, 'gene_lab');
+ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'dryosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(), traits: ['hardy'] }).run();
+const mate = ctx.db.select().from(schema.dinos).all().find((d) => d.speciesId === 'dryosaurus')!;
+assignDino(ctx, P1, mate.id, lot.id);
+// A separate, never-locked dino for /splice, seeded with a real trait so its
+// preview shows something to re-roll instead of "_No traits_".
+ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'allosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(), traits: ['savage'] }).run();
+const spliceTarget = ctx.db.select().from(schema.dinos).all().find((d) => d.speciesId === 'allosaurus')!;
 // buildLot/assignDino above ran recomputeRating, which unconditionally overwrote parkRating below TRADE_MIN_RATING — restore it so createTrade's rating gate passes.
 ctx.db.update(schema.users).set({ parkRating: 200 }).run();
 createTrade(ctx, P1, P2, { dinoIds: [spareDino.id], eggIds: [], cash: 0, foods: {} }, { dinoIds: [], eggIds: [], cash: 1000, foods: {} });
@@ -189,6 +202,22 @@ const cases: Case[] = [
   { title: '/battle fight — amber_ridge boss: second portrait (edit off the coastal reference)', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'amber_ridge_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } }) },
   { title: 'park:collect — income embed (ephemeral in production)', run: () => button('park', 'park:collect', P1) },
   { title: '/rescue — recapture embed', run: () => slash('care', 'rescue', { name: 'rescue', user: P1, options: { dino: escapedDino.id } }) },
+  { title: '/breed start — confirm pairing', run: () => slash('genelab', 'breed', { name: 'breed', sub: 'start', user: P1, options: { 'parent-a': dino.id, 'parent-b': mate.id } }) },
+  { title: '/breed status — pairing in progress', run: async () => {
+      // The confirm case above is a dry run and locks nothing; clicking the real
+      // button is what charges the fee, locks both parents, and occupies the Gene
+      // Lab slot — mirrors how hatch:crack/battle:again exercise the button layer
+      // rather than calling the service directly.
+      await button('genelab', `breed:confirm:${dino.id}:${mate.id}`, P1);
+      return slash('genelab', 'breed', { name: 'breed', sub: 'status', user: P1 });
+    } },
+  { title: '/breed claim — reveal egg', run: () => {
+      // Same force-ready pattern as /expedition claim above: push the just-started
+      // pairing's timer into the past so there is something to collect.
+      ctx.db.update(schema.breedings).set({ readyAt: ctx.now() - 1 }).where(eq(schema.breedings.userId, P1)).run();
+      return slash('genelab', 'breed', { name: 'breed', sub: 'claim', user: P1 });
+    } },
+  { title: '/splice — confirm re-roll', run: () => slash('genelab', 'splice', { name: 'splice', user: P1, options: { dino: spliceTarget.id, slot: 1 } }) },
   { title: '/battle fight — DEFEAT: lone Lv.1 squad vs the coastal boss', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_boss', dino1: weakDino.id } }) },
 ];
 

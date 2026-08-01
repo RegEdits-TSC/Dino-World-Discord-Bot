@@ -51,7 +51,10 @@ describe('/help', () => {
     // fall to 0 alongside it and this test would pass with zero assertions run.
     // Naming every topic also fails a PARTIAL regression (art dropped from one).
     expect([...covered].sort()).toEqual(
-      ['battles', 'care', 'eggs', 'expeditions', 'getting-started', 'ranks', 'shop', 'trading']);
+      ['battles', 'care', 'eggs', 'expeditions', 'genelab', 'getting-started', 'ranks', 'shop', 'trading']);
+  });
+  it('carries a genelab topic', () => {
+    expect(Object.keys(HELP_TOPICS)).toContain('genelab');
   });
   it('the park topic defers and still renders one embed when the map render fails', async () => {
     // 'no-park' has no user row, so buildParkSnapshot throws inside the try —

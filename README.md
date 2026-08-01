@@ -28,6 +28,8 @@ bot is in.
   refusing each other's meals and hunger driving how much your park earns
 - 🤝 **Trade** — offer dinos, eggs, cash, and food to other players and settle it in
   Discord
+- 🧬 **Breed and splice** — pair matching dinos in the Gene Lab for eggs with
+  better trait odds than the wild, or gamble on a `/splice` re-roll
 - 🏆 **Climb leaderboards** — ranked by rating, cash, or collection, for your
   server or globally
 - ⌨️ **Play without memorising ids** — every id option autocompletes, and `/help`
@@ -101,7 +103,7 @@ other and every command fails.
 | [Contributing](CONTRIBUTING.md) | Setup, repository conventions, and how to send a change |
 
 In Discord, `/help` is the in-game version: run it with no topic for a
-first-ten-minutes walkthrough, or pass one of its nine topics for a focused guide.
+first-ten-minutes walkthrough, or pass one of its ten topics for a focused guide.
 
 ## 🧪 Development
 

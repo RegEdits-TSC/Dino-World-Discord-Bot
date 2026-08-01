@@ -4,7 +4,7 @@ The volcano/frozen banners and volcano thumb were generated with ChatGPT image
 generation; the remaining coastal/amber banners and the coastal/amber/frozen
 thumbs were generated with Higgsfield Nano Banana Pro. The six egg rarities were
 generated with Higgsfield Nano Banana Pro as a reference chain (see the Egg
-rarities section). The thirteen embed banners were generated with Higgsfield
+rarities section). The fifteen embed banners were generated with Higgsfield
 Nano Banana Pro, `care_neglect` as a reference chain off `care` and
 `battle_defeat` off `battle_victory`. The six hatch cracks were generated as
 reference-chain edits of their own egg icons. These prompts are the source of

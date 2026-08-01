@@ -363,12 +363,16 @@ Traits on a bred egg are rolled at claim and stored on `eggs.traits`, but never
 displayed until `/hatch`. At hatch:
 
 ```ts
-traits = egg.traits.length ? egg.traits : rollTraits(ctx)
+traits = egg.source === 'breeding' ? egg.traits : rollTraits(ctx.rng)
 ```
 
-Bred eggs use their stored inheritance; wild eggs roll fresh. `/hatch` now
-reveals species *and* traits in one press, which improves the existing reveal
-rather than adding a second one.
+Discriminating on `egg.source` rather than `egg.traits.length` is load-bearing:
+a bred egg legitimately inherits zero traits 25% of the time (the bred slot
+odds are 25/45/30 for 0/1/2 traits), so a length check would silently re-roll
+those on wild odds instead of keeping the stored — empty — inheritance. Bred
+eggs use their stored inheritance; wild eggs roll fresh. `/hatch` now reveals
+species *and* traits in one press, which improves the existing reveal rather
+than adding a second one.
 
 ### Autocomplete
 

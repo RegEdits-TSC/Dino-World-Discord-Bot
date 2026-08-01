@@ -83,8 +83,7 @@ export function splicePreviewPayload(opts: {
     )],
   };
   // Distinct basename from the /breed banner (gene_lab) — see docs/superpowers/specs/
-  // 2026-07-31-gene-lab-design.md §6. Neither file exists yet (art lands in a later
-  // task); assetImage degrades to no image until then, same as /breed today.
+  // 2026-07-31-gene-lab-design.md §6.
   attach(embed, payload, 'image', assetImage('banners', 'gene_splice'));
   return payload;
 }
