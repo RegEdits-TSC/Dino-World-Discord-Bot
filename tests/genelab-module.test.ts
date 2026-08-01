@@ -56,6 +56,30 @@ describe('/breed autocomplete', () => {
     expect(values).not.toContain(a.id);
   });
 
+  it('excludes an escaped dino and a mythic dino outright, not just as invalid', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const lot = lab(ctx);
+    const ok = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lotId: lot.id, lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const escaped = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lotId: lot.id, lastFedAt: 0, hatchedAt: 0, escapedAt: 0,
+    }).returning().get();
+    const mythic = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'indominus', lotId: lot.id, lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+
+    const i = fakeAutocomplete({
+      name: 'breed', sub: 'start', user: 'u1',
+      focused: { name: 'parent-a', value: '' },
+    });
+    await breedCmd.autocomplete!(ctx, i.asAutocomplete());
+    const values = (i.replies[0] as Array<{ value: number }>).map((c) => c.value);
+    expect(values).toContain(ok.id);
+    expect(values).not.toContain(escaped.id);
+    expect(values).not.toContain(mythic.id);
+  });
+
   it('never puts a custom emoji tag in a label', async () => {
     const ctx = makeCtx({ nowMs: 0 });
     const lot = lab(ctx);
@@ -146,5 +170,43 @@ describe('/breed status and claim', () => {
     const i = fakeCommand({ name: 'breed', sub: 'claim', user: 'u1' });
     await breedCmd.execute(ctx, i.asChatInput());
     expect(replyText(i.replies[0])).toMatch(/nothing|no breeding/i);
+  });
+
+  it('claims the oldest ready pairing first and reports how many remain', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const lot = lab(ctx);
+    // Level-3 Gene Lab -> 3 breeding slots, so two pairings can be active at once.
+    const geneLabLot = ctx.db.select().from(schema.lots).all().find((l) => l.kind === 'gene_lab')!;
+    ctx.db.update(schema.lots).set({ level: 3 }).where(eq(schema.lots.id, geneLabLot.id)).run();
+
+    const { a, b } = pair(ctx, lot.id);
+    const btn1 = fakeButton({ customId: `breed:confirm:${a.id}:${b.id}`, user: 'u1' });
+    await breedBtn.execute(ctx, btn1.asChatInput() as never);
+
+    // The second pairing starts 10s later, so its readyAt is strictly later than the first's.
+    ctx.setNow(10_000);
+    const c = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'dryosaurus', lotId: lot.id, lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'othnielia', lotId: lot.id, lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const btn2 = fakeButton({ customId: `breed:confirm:${c.id}:${d.id}`, user: 'u1' });
+    await breedBtn.execute(ctx, btn2.asChatInput() as never);
+    expect(ctx.db.select().from(schema.breedings).all()).toHaveLength(2);
+
+    // Past both readyAt values: both pairings are ready.
+    ctx.setNow(BREED_MS.common + 10_000);
+
+    const claim1 = fakeCommand({ name: 'breed', sub: 'claim', user: 'u1' });
+    await breedCmd.execute(ctx, claim1.asChatInput());
+    const claimedFirst = ctx.db.select().from(schema.breedings).all().find((r) => r.claimedAt !== null)!;
+    expect(claimedFirst.parentA).toBe(a.id);   // the OLDER pairing was claimed first
+    expect(JSON.stringify(claim1.replies[0])).toMatch(/1 more pairing/);
+
+    const claim2 = fakeCommand({ name: 'breed', sub: 'claim', user: 'u1' });
+    await breedCmd.execute(ctx, claim2.asChatInput());
+    expect(ctx.db.select().from(schema.eggs).all()).toHaveLength(2);
+    expect(JSON.stringify(claim2.replies[0])).not.toMatch(/more pairing/);
   });
 });

@@ -8,8 +8,8 @@ import { locksFor } from '../../core/locks.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { matches, respondRanked } from '../../core/autocomplete.js';
 import { settleEscapes } from '../park/escapes.js';
-import { traitDefs, modProduct } from '../../data/traits.js';
-import { BREED_FEE, BREED_MS, BREED_UPGRADE_CHANCE, breedableRarity } from '../../data/breeding.js';
+import { traitDefs } from '../../data/traits.js';
+import { BREED_FEE, BREED_UPGRADE_CHANCE, breedableRarity } from '../../data/breeding.js';
 import {
   startBreeding, claimBreeding, activeBreedings, breedCooldowns, BreedError,
 } from './service.js';
@@ -53,23 +53,24 @@ export const geneLabModule: ModuleManifest = {
         const otherSpecies = other ? getSpecies(other.speciesId) : null;
         const q = String(i.options.getFocused());
 
-        // Busy (locked in another breeding) and cooling-down dinos are excluded
-        // outright, not merely marked invalid — mirrors tradeableDinos
-        // (src/modules/trading/index.ts) and battle fight's `taken` filter: both
-        // are permanently unselectable for this pick, so listing them would only
-        // be clutter. Everything else below stays visible-but-invalid (AcEntry's
-        // documented contract) since it is either actionable (assign a paddock)
-        // or informative (why this dino doesn't match the other parent).
+        // Absolute disqualifiers — states that make a dino unbreedable no matter
+        // what the OTHER parent turns out to be — are excluded outright, not
+        // merely marked invalid: mirrors tradeableDinos (src/modules/trading/
+        // index.ts), which hard-filters locked, escaped AND mythic in one
+        // .filter(), and battle fight's separate `taken` + escaped filters.
+        // Rarity/diet mismatch against the other parent stays visible-but-invalid
+        // below — that state is relative to what's already picked, not an
+        // absolute property of the dino, so showing it tells the player why
+        // THIS pick is greyed out.
         await respondRanked(i, dinos
-          .filter((d) => !locks.dinos.has(d.id) && (cooldowns.get(d.id) ?? 0) <= now)
           .map((d) => ({ d, s: getSpecies(d.speciesId) }))
+          .filter(({ d, s }) => !locks.dinos.has(d.id) && (cooldowns.get(d.id) ?? 0) <= now
+            && d.escapedAt === null && breedableRarity(s.rarity))
           .filter(({ d, s }) => matches(q, d.id, s.name, d.nickname))
           .map(({ d, s }) => {
             let state = '';
             let valid = true;
             if (d.id === otherId) { state = ' — already picked'; valid = false; }
-            else if (d.escapedAt !== null) { state = ' — ESCAPED'; valid = false; }
-            else if (!breedableRarity(s.rarity)) { state = ' — Mythics cannot breed'; valid = false; }
             else if (d.lotId === null) { state = ' — needs a paddock'; valid = false; }
             else if (otherSpecies && (otherSpecies.rarity !== s.rarity || otherSpecies.diet !== s.diet)) {
               state = ' — does not match the other parent'; valid = false;
@@ -92,15 +93,18 @@ export const geneLabModule: ModuleManifest = {
               return;
             }
             // Dry-run every rule up front so the confirm button cannot fail on a
-            // condition the preview already knew about.
-            startBreeding(ctx, i.user.id, aId, bId, i.guildId, { dryRun: true });
+            // condition the preview already knew about. The displayed duration is
+            // read straight off the dry run's own readyAt — never recomputed here
+            // — so a future breedTime factor (a facility bonus, say) can't make
+            // this embed silently diverge from what the real start will schedule.
+            const now = ctx.now();
+            const preview = startBreeding(ctx, i.user.id, aId, bId, i.guildId, { dryRun: true });
             const sa = getSpecies(a.speciesId), sb = getSpecies(b.speciesId);
-            const timeMult = Math.min(modProduct(a.traits, 'breedTime'), modProduct(b.traits, 'breedTime'));
             await i.reply(confirmPayload({
               aId, bId, aName: sa.name, bName: sb.name,
               aTraits: a.traits, bTraits: b.traits,
               rarity: sa.rarity, fee: BREED_FEE[sa.rarity],
-              durationMs: BREED_MS[sa.rarity] * timeMult,
+              durationMs: preview.readyAt - now,
               upgradeChance: sa.rarity === 'legendary' ? 0 : BREED_UPGRADE_CHANCE,
             }));
           } else if (sub === 'status') {
@@ -138,9 +142,16 @@ export const geneLabModule: ModuleManifest = {
       async execute(ctx, i) {
         const [, action, aRaw, bRaw] = i.customId.split(':');
         if (action !== 'confirm') return;
+        // The custom id is client-supplied: never trusted for ownership (startBreeding
+        // re-validates that below), and not even trusted to parse — a malformed id
+        // must not reach the DB lookup as NaN.
+        const aId = Number(aRaw), bId = Number(bRaw);
+        if (!Number.isFinite(aId) || !Number.isFinite(bId)) {
+          await i.reply({ content: 'That pairing link is invalid — run /breed start again.', flags: MessageFlags.Ephemeral });
+          return;
+        }
         try {
-          // Re-validated server-side: the custom id is client-supplied.
-          startBreeding(ctx, i.user.id, Number(aRaw), Number(bRaw), i.guildId);
+          startBreeding(ctx, i.user.id, aId, bId, i.guildId);
           await i.update({ content: '🧬 Pairing started — check `/breed status`.', embeds: [], components: [] });
         } catch (e) {
           if (e instanceof BreedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
