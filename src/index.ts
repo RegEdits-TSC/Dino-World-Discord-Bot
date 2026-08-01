@@ -23,7 +23,11 @@ const ctx: Ctx = {
   notify: (userId, originGuildId, message) => deliverNotification(sender, ctx, userId, originGuildId, message),
 };
 const registry = new ModuleRegistry(ALL_MODULES, config.modules);
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+// parse: [] — nothing in a message ever pings from parsed text. Several commands echo
+// user-supplied strings into public content (/dino rename, /park rename); without this,
+// a name like "<@&123456789012345678>" would ping a role. Set once here so every current
+// and future send site is covered, rather than on individual reply/update payloads.
+const client = new Client({ intents: [GatewayIntentBits.Guilds], allowedMentions: { parse: [] } });
 
 const sender = clientSender(client);
 scheduler.register('egg_hatch', eggHatchHandler(sender, ctx));

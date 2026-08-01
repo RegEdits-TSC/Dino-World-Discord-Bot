@@ -187,7 +187,7 @@ export const geneLabModule: ModuleManifest = {
           return;
         }
         if (slot < 0 || slot > Math.min(d.traits.length, 1)) {
-          await i.reply({ content: 'Pick trait slot 1 or 2.', flags: MessageFlags.Ephemeral });
+          await i.reply({ content: 'That dino has no trait in slot 2 yet — splice slot 1 first.', flags: MessageFlags.Ephemeral });
           return;
         }
         if (user.shards < SPLICE_SHARD_COST) {
@@ -211,13 +211,13 @@ export const geneLabModule: ModuleManifest = {
         // re-validates that below), and not even trusted to parse — a malformed id
         // must not reach the DB lookup as NaN.
         const aId = Number(aRaw), bId = Number(bRaw);
-        if (!Number.isFinite(aId) || !Number.isFinite(bId)) {
+        if (!Number.isInteger(aId) || !Number.isInteger(bId)) {
           await i.reply({ content: 'That pairing link is invalid — run /breed start again.', flags: MessageFlags.Ephemeral });
           return;
         }
         try {
           startBreeding(ctx, i.user.id, aId, bId, i.guildId);
-          await i.update({ content: '🧬 Pairing started — check `/breed status`.', embeds: [], components: [] });
+          await i.update({ content: '🧬 Pairing started — check `/breed status`.', embeds: [], components: [], attachments: [] });
         } catch (e) {
           if (e instanceof BreedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
           else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash for that pairing.', flags: MessageFlags.Ephemeral });
@@ -234,7 +234,7 @@ export const geneLabModule: ModuleManifest = {
         // re-validates that below via ownedDino), and not even trusted to parse — a
         // malformed id must not reach the DB lookup as NaN.
         const dinoId = Number(dinoIdRaw), slot = Number(slotRaw);
-        if (!Number.isFinite(dinoId) || !Number.isFinite(slot)) {
+        if (!Number.isInteger(dinoId) || !Number.isInteger(slot)) {
           await i.reply({ content: 'That splice link is invalid — run /splice again.', flags: MessageFlags.Ephemeral });
           return;
         }

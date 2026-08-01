@@ -517,4 +517,25 @@ describe('spliceDino', () => {
     }).run();
     expect(() => spliceDino(ctx, 'u1', d.id, 0)).toThrow(/busy|locked/i);
   });
+
+  // A forged `splice:confirm:<id>:0.5` customId used to reach this far: 0.5 passes a
+  // Number.isFinite check and the old range check (0.5 <= Math.min(2, 1) = 1), then hit
+  // spliceTrait, where `out[0.5] = picked` sets a non-index property JSON.stringify drops
+  // silently — economy.apply had already debited shards inside the same transaction, so
+  // the net effect was shards destroyed with the trait array unchanged and no error. The
+  // guard must live in spliceDino itself, not just in the button handler's customId
+  // parsing, so the service stays safe regardless of what a caller validates.
+  it('refuses a fractional slot and debits no shards', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { shards: 100 }, 'test', 0);
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+      traits: ['prolific', 'savage'],
+    }).returning().get();
+
+    expect(() => spliceDino(ctx, 'u1', d.id, 0.5)).toThrow();
+    expect(ctx.db.select().from(schema.users).all()[0].shards).toBe(100);
+    expect(ctx.db.select().from(schema.dinos).all()[0].traits).toEqual(['prolific', 'savage']);
+  });
 });

@@ -230,8 +230,15 @@ export function spliceDino(ctx: Ctx, userId: string, dinoId: number, slot: numbe
   if (locksFor(ctx, userId).dinos.has(dinoId))
     throw new BreedError('That dino is busy — it is locked in a trade or breeding.');
   if (d.escapedAt !== null) throw new BreedError('That dino has escaped — rescue it first.');
+  // Number.isInteger, not isFinite: the custom id is client-supplied, and a fractional
+  // slot like 0.5 passes both a finite check AND the range check below (0.5 <= 1), then
+  // reaches spliceTrait, where `out[0.5] = picked` sets a non-index property that
+  // JSON.stringify silently drops — shards get debited for a trait write that never
+  // happens. This guard is what keeps spliceDino safe even if a caller's own
+  // parsing (e.g. the confirm button's Number.isInteger check) is ever bypassed or removed.
+  if (!Number.isInteger(slot)) throw new BreedError('Pick trait slot 1 or 2.');
   if (slot < 0 || slot > Math.min(d.traits.length, 1))
-    throw new BreedError('Pick trait slot 1 or 2.');
+    throw new BreedError('That dino has no trait in slot 2 yet — splice slot 1 first.');
 
   const before = d.traits;
   const after = spliceTrait(before, slot, ctx.rng);

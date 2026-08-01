@@ -95,6 +95,44 @@ describe('/breed autocomplete', () => {
       expect(c.name).not.toMatch(/<:\w+:\d+>/);
     }
   });
+
+  // The pair-relative branch (index.ts:50-53, :73-77) reads the OTHER option via
+  // i.options.get() and greys out a rarity/diet mismatch as visible-but-invalid, rather
+  // than hard-filtering it. None of the tests above pass `options`, so otherId/otherSpecies
+  // were always 0/null and this whole branch ran untested — the focusedName ternary could
+  // invert, or any of the three state labels could be wrong, with the suite still green.
+  it('marks a candidate that does not match the other, already-picked parent as invalid and sorts it after valid ones', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const lot = lab(ctx);
+    // triceratops: common/herbivore. Already picked as parent-b.
+    const partner = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lotId: lot.id, lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    // gallimimus: common/herbivore — matches the partner, stays valid.
+    const valid = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'gallimimus', lotId: lot.id, lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    // compsognathus: common/carnivore — diet mismatch against the herbivore partner.
+    const mismatched = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'compsognathus', lotId: lot.id, lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+
+    const i = fakeAutocomplete({
+      name: 'breed', sub: 'start', user: 'u1',
+      focused: { name: 'parent-a', value: '' },
+      options: { 'parent-b': partner.id },
+    });
+    await breedCmd.autocomplete!(ctx, i.asAutocomplete());
+    const choices = i.replies[0] as Array<{ value: number; name: string }>;
+
+    const mismatchedChoice = choices.find((c) => c.value === mismatched.id)!;
+    expect(mismatchedChoice.name).toMatch(/does not match the other parent/);
+    // Still present (visible-but-invalid), not hard-filtered like a lock/escape/mythic.
+    const validIndex = choices.findIndex((c) => c.value === valid.id);
+    const mismatchedIndex = choices.findIndex((c) => c.value === mismatched.id);
+    expect(validIndex).toBeGreaterThanOrEqual(0);
+    expect(validIndex).toBeLessThan(mismatchedIndex);
+  });
 });
 
 describe('/breed start', () => {

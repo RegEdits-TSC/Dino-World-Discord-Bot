@@ -637,8 +637,10 @@ below) — it only sets how fast you can refill your balance by selling.
 `/splice` spends shards to re-roll a single trait slot on a dino you own —
 **a flat 15 shards, with no per-dino escalation**. Pick slot 1 or slot 2; on
 a dino that doesn't have a trait in that slot yet, splicing it *adds* one
-instead of replacing anything. The command shows a confirm preview naming
-the dino's current traits and the cost before anything is spent.
+instead of replacing anything — except slot 2 on a dino with no traits at
+all, which is refused until slot 1 has been spliced first. The command
+shows a confirm preview naming the dino's current traits and the cost
+before anything is spent.
 
 The replacement is drawn at random from the same pool `/breed` and wild
 hatches use, and it obeys the same domain rule as every other trait roll
@@ -935,9 +937,8 @@ actual pairing, the cooldown afterward is still the full 6 hours — Fertile
 only makes the wait *to* the egg shorter, not the wait *between* pairings. A
 parent on cooldown is otherwise completely free to use — sell it, trade it,
 feed it, battle with it — cooldown only blocks starting another breeding
-with it. The cooldown belongs to the dino as it stood at claim time, not to
-the player: if a dino changes hands mid-cooldown, its new owner sees it as
-ready to breed again.
+with it. The cooldown belongs to the player, not the dino: if a dino
+changes hands mid-cooldown, its new owner sees it as ready to breed again.
 
 ### Claiming
 
