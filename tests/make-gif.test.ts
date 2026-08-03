@@ -85,12 +85,15 @@ describe('encodeGif', () => {
   }, 120_000);
 
   it('walks the frame-rate ladder down when the budget is tiny, keeping dimensions fixed', async () => {
+    // A hardcoded budget is platform-fragile: the exact byte count for this
+    // synthetic clip depends on the ffmpeg build doing the encoding. Instead,
+    // measure this platform's actual 12 fps size first (default budget, so the
+    // ladder can't engage), then constrain the real run to just under it — that
+    // guarantees the first rung always exceeds budget and the ladder must step
+    // down, whatever the platform produces.
+    const full = await encodeGif({ src, dest: join(dir, 'tight-full.gif'), width: 128, height: 128, fps: 12 });
     const dest = join(dir, 'tight.gif');
-    // testsrc's scrolling gradient touches nearly the whole frame every tick, so
-    // diff_mode=rectangle buys little on this clip: 128x128 measures ~42 KB at 12
-    // fps down to ~31 KB at the 8 fps floor. The budget below is picked under that
-    // floor so the ladder must walk all the way down and still land successfully.
-    const res = await encodeGif({ src, dest, width: 128, height: 128, fps: 12, maxBytes: 35_000 });
+    const res = await encodeGif({ src, dest, width: 128, height: 128, fps: 12, maxBytes: full.bytes - 1 });
     expect(res.fps).toBeLessThan(12);
     expect(gifInfo(readFileSync(dest)).width).toBe(128);
   }, 180_000);
