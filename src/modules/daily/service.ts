@@ -4,6 +4,7 @@ import type { Ctx } from '../../core/context.js';
 import { dayKeyUTC, DAY_MS } from '../../core/clock.js';
 import { readStat, readStats, type StatId } from '../../core/stats.js';
 import { QUESTS, CHURN_STATS, chestFor, type QuestDef, type ChestDef } from '../../data/quests.js';
+import { ACHIEVEMENTS, TIER_REWARDS, type AchievementTrack } from '../../data/achievements.js';
 import { mulberry32 } from '../../core/rolls.js';
 import { facilityLevel, capHours } from '../park/service.js';
 import { RARITY } from '../../data/rarity.js';
@@ -190,4 +191,65 @@ export function claimQuests(ctx: Ctx, userId: string): ClaimResult {
     }).where(eq(schema.users.discordId, userId)).run();
   });
   return { claimed: claimable, rewards, chest: chestDef ? { ...chestDef, streak } : null, streak, ticked };
+}
+
+export interface TrackView {
+  def: AchievementTrack; value: number; claimedTiers: Set<number>; claimable: number[];
+}
+
+// Tier state is DERIVED, never stored: a tier is claimable iff the stat total has
+// crossed its threshold AND no achievement_claims row exists for (userId, trackId,
+// tier) yet — same philosophy as quest progress and escrow locks elsewhere in this
+// file. Tier indices are 0-based, aligned with `tiers[i]`/`TIER_REWARDS[i]`/
+// `TIER_NAMES[i]` everywhere a tier index is consumed. Batches with one readStats
+// call and one claims query, never a per-track or per-tier query.
+export function achievementsView(ctx: Ctx, userId: string): TrackView[] {
+  const stats = readStats(ctx, userId);
+  const claims = ctx.db.select().from(schema.achievementClaims)
+    .where(eq(schema.achievementClaims.userId, userId)).all();
+  const claimedByTrack = new Map<string, Set<number>>();
+  for (const c of claims) {
+    if (!claimedByTrack.has(c.trackId)) claimedByTrack.set(c.trackId, new Set());
+    claimedByTrack.get(c.trackId)!.add(c.tier);
+  }
+  return ACHIEVEMENTS.map((def) => {
+    const value = stats[def.stat] ?? 0;
+    const claimedTiers = claimedByTrack.get(def.id) ?? new Set<number>();
+    const claimable = def.tiers
+      .map((threshold, tier) => ({ threshold, tier }))
+      .filter(({ threshold, tier }) => value >= threshold && !claimedTiers.has(tier))
+      .map(({ tier }) => tier);
+    return { def, value, claimedTiers, claimable };
+  });
+}
+
+// Pays every claimable tier across every track in ONE transaction with a single
+// summed economy.apply — never one apply per tier or per track, so 'quest:achievements'
+// tx_log stays exactly one row per claim-all regardless of how many tiers it covers.
+// An empty claim writes nothing: no economy.apply, no claim rows, no tx_log entry.
+export function claimAchievements(
+  ctx: Ctx, userId: string,
+): { claimed: Array<{ trackId: string; tier: number }>; cash: number; shards: number } {
+  const now = ctx.now();
+  const claimed = achievementsView(ctx, userId)
+    .flatMap((v) => v.claimable.map((tier) => ({ trackId: v.def.id, tier })));
+  if (!claimed.length) return { claimed: [], cash: 0, shards: 0 };
+
+  const cash = claimed.reduce((sum, c) => sum + TIER_REWARDS[c.tier].cash, 0);
+  const shards = claimed.reduce((sum, c) => sum + TIER_REWARDS[c.tier].shards, 0);
+  ctx.db.transaction(() => {
+    ctx.economy.apply(userId, { cash, shards }, 'quest:achievements', now);
+    for (const c of claimed) {
+      ctx.db.insert(schema.achievementClaims)
+        .values({ userId, trackId: c.trackId, tier: c.tier, claimedAt: now }).run();
+    }
+  });
+  return { claimed, cash, shards };
+}
+
+// Counts CLAIMED tiers, not claimable ones — the park badge shows progress already
+// banked, not what is currently sitting ready to claim.
+export function earnedTierCount(ctx: Ctx, userId: string): number {
+  return ctx.db.select().from(schema.achievementClaims)
+    .where(eq(schema.achievementClaims.userId, userId)).all().length;
 }
