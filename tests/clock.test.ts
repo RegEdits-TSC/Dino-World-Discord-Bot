@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hungerAt, paddockFit, comfortAt, escapeMoment, accruedIncome, HUNGER_DRAIN_MS, GRACE_MS, escapeAt, ESCAPE_WARN_MS, drainMsFor } from '../src/core/clock.js';
+import { hungerAt, paddockFit, comfortAt, escapeMoment, accruedIncome, HUNGER_DRAIN_MS, GRACE_MS, escapeAt, ESCAPE_WARN_MS, drainMsFor, dayKeyUTC, DAY_MS } from '../src/core/clock.js';
 import { triceratops } from '../src/data/species/triceratops.js';
 import { velociraptor } from '../src/data/species/velociraptor.js';
 import { getSpecies } from '../src/data/species/index.js';
@@ -183,5 +183,20 @@ describe('trait-modified income', () => {
     // fit 1.0: comfort 0.10 -> 0 over 6.4h = 0.32 comfort-hours * 60/hr = 19.2 -> 19.
     // Truncating at 4.8h instead pays 18.
     expect(accruedIncome([fedTrike({ hungerAtFed: 10, traits: ['hardy'] })], 0, 24, 0, 8 * H)).toBe(19);
+  });
+});
+
+describe('dayKeyUTC', () => {
+  it('formats an epoch ms as a UTC YYYY-MM-DD key', () => {
+    expect(dayKeyUTC(0)).toBe('1970-01-01');
+    expect(dayKeyUTC(Date.UTC(2026, 7, 3, 15, 30))).toBe('2026-08-03');
+  });
+  it('midnight instant belongs to the new day', () => {
+    const midnight = Date.UTC(2026, 7, 4);
+    expect(dayKeyUTC(midnight - 1)).toBe('2026-08-03');
+    expect(dayKeyUTC(midnight)).toBe('2026-08-04');
+  });
+  it('DAY_MS steps exactly one key', () => {
+    expect(dayKeyUTC(Date.UTC(2026, 7, 3, 12) + DAY_MS)).toBe('2026-08-04');
   });
 });

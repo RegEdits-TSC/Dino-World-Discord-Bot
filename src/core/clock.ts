@@ -30,6 +30,13 @@ export function hungerAt(hungerAtFed: number, lastFedAt: number, at: number, dra
   return Math.max(0, hungerAtFed - drained);
 }
 
+export const DAY_MS = 86_400_000;
+
+/** UTC calendar-day key ('YYYY-MM-DD') for an epoch-ms instant. 00:00:00.000 belongs to the new day. */
+export function dayKeyUTC(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
 // `decor` holds the KIND SLUGS decorateLot actually wrote (e.g. 'grass_tuft'),
 // never biome tags directly — each slug's OWN biomeTags (from DECOR) must be
 // cross-referenced against the species' before a match counts. An unknown or
