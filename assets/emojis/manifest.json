@@ -31,5 +31,10 @@
   "dw_dino_legendary": "848c17b50b332b8b76bda634566b0f39fd83ba2cd7e11dce9dd8b1673cb983b4",
   "dw_dino_mythic": "725f8e207d3668975d6c077415331a6077ba2516a2e3b468c0f1ec953c5dfdc7",
   "dw_dino_rare": "281fd8f6ccd0f6f90244f51be1cdbf9cd09fc751b30e2d5c74e87aca92f5d02c",
-  "dw_dino_uncommon": "e0aec36ba1ee5e1772db9018bef77784cfde15d90be0b5418f9d56316019c357"
+  "dw_dino_uncommon": "e0aec36ba1ee5e1772db9018bef77784cfde15d90be0b5418f9d56316019c357",
+  "dw_lot_genelab": "05ec3f004d4790093aed2a7024490834dfd0cbb8185fff4e83795bfd5c26ee44",
+  "dw_trait_care": "314e6c7e2cecc07e6abf28ea01aaf1cb41414f5cada5d34fabc34b30a4439410",
+  "dw_trait_combat": "f354eb79a2ade0740876817e7319409efd6a452cf63eb79d07a3310aae351ea9",
+  "dw_trait_income": "175aeee3cdcbdf478a254750596807cbcd64f61fd128484dface42bc36214c23",
+  "dw_trait_meta": "3c7058880e5f8bdaba04854fb7cda1a92c055671815fdb130a0f32f5e5393c66"
 }
