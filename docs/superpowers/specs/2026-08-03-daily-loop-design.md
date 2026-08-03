@@ -115,9 +115,11 @@ One drizzle migration (`npx drizzle-kit generate`, next index 0006):
   `stages_first_cleared` (battle_progress rows with `firstClearedAt` set),
   `lots_built` (lot rows), `trades_completed` (accepted trades, credited to
   both parties; the non-empty rule below is not applied to history),
-  `breedings_started` (breedings rows), `breedings_claimed` (claimed ones).
-  Everything else (`eggs_hatched`, `dinos_fed`, …) starts at zero: the data
-  was never recorded and is not derivable.
+  `breedings_started` (breedings rows), `breedings_claimed` (claimed ones),
+  `expeditions_claimed` (expedition rows with `claimedAt` set — the rows
+  persist forever, same shape as breedings). Everything else (`eggs_hatched`,
+  `dinos_fed`, …) starts at zero: the data was never recorded and is not
+  derivable.
 
 `dayKeyUTC(ms): string` joins the pure helpers in `src/core/clock.ts`. The
 streak anchor is epoch ms — never a day string — so `/admin fast-forward`'s
@@ -349,8 +351,11 @@ New `daily` module — 12 → 13 modules, 22 → 24 top-level commands.
 - **Emojis**: `dw_quest`, `dw_streak`, `dw_chest` — SVG → `build-emojis` →
   `deploy-emojis`, unicode fallbacks (🎯 🔥 🎁) in `EMOJI_FALLBACK`. Never in
   module-level constants, never in autocomplete labels, never in `setEmoji`.
-- **Help**: new `daily` topic in `HELP_TOPICS` (builder change → redeploy),
-  lazy art descriptor `{ kind: 'banners', name: 'daily' }`.
+- **Help**: new `daily` topic in `HELP_TOPICS` (builder change → redeploy).
+  The topic ships **art-less** at first — the help test requires any declared
+  art to ship its file, and the banner is generated post-merge — and gains
+  the lazy descriptor `{ kind: 'banners', name: 'daily' }` together with the
+  committed banner (the art-less `park` topic is the precedent).
 
 ## 8. Admin integration
 
