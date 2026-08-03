@@ -20,7 +20,7 @@
 - Discord hard limits: 10 MB per profile asset; profile edits are rate-limited to roughly 2/hour.
 - Output dimensions are contract values: avatar **512×512**, banner **680×240**. The over-budget ladder lowers frame rate only, never dimensions.
 - Never log the Discord token, request headers, or a raw API error body.
-- TDD: every task writes the failing test first and runs it to watch it fail before implementing.
+- TDD: every task that writes code writes the failing test first and runs it to watch it fail before implementing. Task 3 is the one exception — it produces art from a paid API, its gates are human review, and the machine-checkable properties of its output are asserted in Task 4.
 - `npm run typecheck` (not `npm run build`) is the gate that typechecks `tests/` and `scripts/`. Run it before every commit that touches those directories.
 - Intermediates (the Seedance MP4s, any downloaded still before cropping) go in the session scratchpad, never in the repo. This session's is `C:\Users\Claude\AppData\Local\Temp\claude\C--Users-Claude-Documents-GitHub-Dino-World-Discord-Bot\e947f12c-f7d5-45f0-97ff-88d28dbddf47\scratchpad`; a later session substitutes its own. The plan refers to it as `$SCRATCH`.
 
