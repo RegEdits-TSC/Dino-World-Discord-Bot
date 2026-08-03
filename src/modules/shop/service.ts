@@ -5,6 +5,7 @@ import { mulberry32 } from '../../core/rolls.js';
 import { shopCeiling } from '../park/rating.js';
 import { SHOP_EGG_PRICES, LEGENDARY_DAY_CHANCE } from '../../data/shop.js';
 import { FOODS, type FoodDef } from '../../data/foods.js';
+import { track } from '../../core/stats.js';
 
 export class ShopError extends Error {}
 type Egg = typeof schema.eggs.$inferSelect;
@@ -28,9 +29,11 @@ export function buyEgg(ctx: Ctx, userId: string, rarity: Rarity): Egg {
   const price = SHOP_EGG_PRICES[rarity];
   return ctx.db.transaction(() => {
     ctx.economy.apply(userId, { cash: -price }, `shop-egg:${rarity}`, ctx.now());
-    return ctx.db.insert(schema.eggs).values({
+    const egg = ctx.db.insert(schema.eggs).values({
       userId, rarity, speciesId: null, source: 'shop', obtainedAt: ctx.now(),
     }).returning().get();
+    track(ctx, userId, 'shop_purchases', 1);
+    return egg;
   });
 }
 
@@ -40,5 +43,6 @@ export function buyFood(ctx: Ctx, userId: string, foodId: string, units: number)
   if (!food) throw new ShopError('Unknown food.');
   const total = units * food.unitCost;
   ctx.economy.apply(userId, { cash: -total, foods: { [food.id]: units } }, `shop-food:${food.id}:${units}`, ctx.now());
+  track(ctx, userId, 'shop_purchases', 1);   // one purchase transaction, never scaled by units
   return { food, total };
 }

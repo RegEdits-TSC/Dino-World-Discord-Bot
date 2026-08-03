@@ -12,6 +12,7 @@ import { resolveBattle, starsFor, type BattleResult, type Combatant } from '../.
 import { STAGES, chapterUnlocked, stageUnlocked, rosterFor, type ProgressMap } from '../../data/battle/chapters/index.js';
 import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
+import { track } from '../../core/stats.js';
 
 export class BattleError extends Error {}
 
@@ -139,6 +140,9 @@ export function runFight(ctx: Ctx, userId: string, stageId: string, dinoIds: num
         userId, stageId, stars, firstClearedAt: won ? now : null, attempts: 1,
       }).run();
     }
+    track(ctx, userId, 'battles_fought', 1);
+    if (won) track(ctx, userId, 'battles_won', 1);
+    if (firstClear) track(ctx, userId, 'stages_first_cleared', 1);
     squadRows.forEach((d, k) => {
       ctx.db.update(schema.dinos).set({ battleXp: d.battleXp + xpPerDino[k] })
         .where(eq(schema.dinos.id, d.id)).run();
