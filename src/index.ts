@@ -10,6 +10,7 @@ import { clientSender, deliverNotification, eggHatchHandler, expeditionReturnHan
 import { routeInteraction } from './core/router.js';
 import { Scheduler } from './core/scheduler.js';
 import { ALL_MODULES } from './core/module-list.js';
+import { dailyRouterHooks } from './modules/daily/hooks.js';
 import type { Ctx } from './core/context.js';
 
 const config = loadConfig();
@@ -37,7 +38,7 @@ scheduler.register('breeding_ready', breedingReadyHandler(sender, ctx));
 setInterval(() => { scheduler.tick(Date.now()).catch((e) => logger.error({ err: e }, 'scheduler tick failed')); }, 30_000);
 
 client.on(Events.InteractionCreate, (i) => {
-  routeInteraction(ctx, registry, i).catch((e) => logger.error({ err: e }, 'route failed'));
+  routeInteraction(ctx, registry, i, dailyRouterHooks).catch((e) => logger.error({ err: e }, 'route failed'));
 });
 client.on('error', (e) => logger.error({ err: e }, 'discord client error'));
 client.once(Events.ClientReady, (c) => {
