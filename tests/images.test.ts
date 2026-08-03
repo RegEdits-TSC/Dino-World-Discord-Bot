@@ -9,7 +9,8 @@ import { allSpecies } from '../src/data/species/index.js';
 import type { Archetype, Diet } from '../src/data/types.js';
 
 const BANNERS = ['trading', 'leaderboards', 'help', 'care', 'care_neglect', 'shop_food_market',
-  'battle_victory', 'battle_defeat', 'collect', 'rescue', 'dino_roster', 'eggs_incubator', 'sell'];
+  'battle_victory', 'battle_defeat', 'collect', 'rescue', 'dino_roster', 'eggs_incubator', 'sell',
+  'gene_lab', 'gene_splice'];
 
 describe('assetImage', () => {
   it('returns an attachment ref for a present file', () => {
@@ -113,6 +114,18 @@ describe('banner art', () => {
     await img.decode();
     expect(img.width).toBe(1536);
     expect(img.height).toBe(1024);
+  });
+});
+
+describe('gene lab banner prompts', () => {
+  // Same precedent as the dino archetype prompts test below: prompts.md is the
+  // regeneration source of truth, so a shipped banner with no prompt row is
+  // unreproducible.
+  it('documents a regeneration prompt for both Gene Lab banners', () => {
+    const prompts = readFileSync(new URL('../docs/assets/prompts.md', import.meta.url), 'utf8');
+    for (const name of ['banners/gene_lab.webp', 'banners/gene_splice.webp']) {
+      expect(prompts, name).toContain(name);
+    }
   });
 });
 

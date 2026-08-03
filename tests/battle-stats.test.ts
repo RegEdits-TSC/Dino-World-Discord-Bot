@@ -102,4 +102,28 @@ describe('statsFor', () => {
   it('throws on unknown species (getSpecies boundary)', () => {
     expect(() => statsFor('barney', 1)).toThrow(/Unknown species/);
   });
+
+  it('applies combat traits to a player dino', () => {
+    const plain = statsFor('tyrannosaurus', 1);
+    const savage = statsFor('tyrannosaurus', 1, ['savage']);
+    expect(savage.atk).toBe(Math.floor(plain.atk * 1.12));
+    expect(savage.hp).toBe(plain.hp);
+  });
+
+  it('applies both halves of a mixed trait', () => {
+    const plain = statsFor('tyrannosaurus', 1);
+    const gc = statsFor('tyrannosaurus', 1, ['glass_cannon']);
+    // legendary bruiser: base atk 52 * archetype mult 1.3 * glass_cannon 1.25 = 84.500...01,
+    // floors to 84 under the single-floor formula (mirrors the "floors, never rounds"
+    // convention above). Math.floor(plain.atk * 1.25) would give 83 instead: plain.atk is
+    // already floored to 67, and re-flooring after re-multiplying diverges by 1 at this
+    // exact species/trait boundary, so pin the real formula's result rather than recompute
+    // through a lossy intermediate.
+    expect(gc.atk).toBe(84);
+    expect(gc.hp).toBe(Math.floor(plain.hp * 0.85));
+  });
+
+  it('is unchanged when no traits are passed, so enemies keep base stats', () => {
+    expect(statsFor('tyrannosaurus', 3)).toEqual(statsFor('tyrannosaurus', 3, []));
+  });
 });

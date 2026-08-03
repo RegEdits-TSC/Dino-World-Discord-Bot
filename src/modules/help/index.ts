@@ -4,6 +4,7 @@ import { assetImage, attach } from '../../core/images.js';
 import { renderPark } from '../../core/render/client.js';
 import { buildParkSnapshot } from '../park/snapshot.js';
 import { withParkImage } from '../park/embeds.js';
+import { SPLICE_SHARD_COST } from '../../data/breeding.js';
 
 // Art is a LAZY descriptor, never a built ImageRef: assetImage returns a fresh
 // AttachmentBuilder per call and this map is module-level.
@@ -71,6 +72,14 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Squads: escaped dinos can\'t fight — rescue them first. Power comes from rarity, archetype (bruiser / tank / swift / support), and battle level: every fight pays battle XP, up to Lv.10.',
     'Stars: ★★★ win with no knockouts · ★★ win with ≤1 knockout or a fast finish · ★ any other win. Higher stars scale the cash/food payout; beating a stage for the first time also pays shards, once.',
     'Bosses: clear a chapter\'s boss for the first time to earn a high-rarity egg and open the next chapter — its expedition site\'s rating gate applies too.',
+  ].join('\n') },
+  genelab: { title: '🧬 Gene Lab', art: { kind: 'banners', name: 'gene_lab' }, body: [
+    'A dino holds up to 2 traits — small permanent boosts (or drawbacks) to income, hunger drain, feed cost, battle stats, battle XP, or breeding time. Never two traits from the same domain on one dino.',
+    '`/build kind:gene_lab` — a facility like any other; one per park, and it upgrades for more breeding slots.',
+    '`/breed start parent-a:<id> parent-b:<id>` — pair two dinos of the same rarity and diet, both in a paddock and well-fed. Shows cost and time, then confirm.',
+    '`/breed status` — check your pairings; `/breed claim` — collect a finished one and reveal its egg.',
+    'Bred eggs roll better trait odds than a wild hatch, and there\'s a small chance of a rarity upgrade (never past Legendary — breeding can never produce a Mythic).',
+    `\`/splice dino:<id> slot:<1|2>\` — spend ${SPLICE_SHARD_COST} shards to re-roll one trait slot. The replacement is random and can be worse than what you had.`,
   ].join('\n') },
 };
 

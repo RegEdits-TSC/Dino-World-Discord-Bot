@@ -3,11 +3,13 @@ import { MessageFlags } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
-import { getOrCreateUser, pendingIncome } from '../src/modules/park/service.js';
+import { getOrCreateUser, pendingIncome, buildLot } from '../src/modules/park/service.js';
+import { startBreeding } from '../src/modules/genelab/service.js';
 import { requireOwner } from '../src/modules/admin/guard.js';
 import { adminGive, adminReset, adminFastForward, AdminError } from '../src/modules/admin/service.js';
 import { adminModule } from '../src/modules/admin/index.js';
 import { createTrade } from '../src/modules/trading/service.js';
+import { locksFor } from '../src/core/locks.js';
 import { ENERGY_CAP } from '../src/data/battle/constants.js';
 import { settleEnergy } from '../src/data/battle/energy.js';
 
@@ -82,11 +84,32 @@ describe('adminReset + trades', () => {
     ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both 2★ so createTrade passes
     const dino = ctx.db.insert(schema.dinos).values({ userId: 'o', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
     createTrade(ctx, 'o', 't', { dinoIds: [dino.id], eggIds: [], cash: 0, foods: {} }, { dinoIds: [], eggIds: [], cash: 0, foods: {} });
-    // dino now locked, owned by o, in a pending o->t trade
+    // dino now escrowed, owned by o, in a pending o->t trade
+    expect(locksFor(ctx, 'o').dinos.has(dino.id)).toBe(true);
     adminReset(ctx, 't');   // t is the RECIPIENT
     const d = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dino.id)).get()!;
-    expect(d.userId).toBe('o');     // still o's
-    expect(d.locked).toBe(false);   // unlocked, not stranded
+    expect(d.userId).toBe('o');                             // still o's
+    expect(locksFor(ctx, 'o').dinos.has(dino.id)).toBe(false);   // freed, not stranded
+  });
+});
+
+describe('adminReset + breedings', () => {
+  it('clears pending breedings so no lock outlives the dinos it named', () => {
+    getOrCreateUser(ctx, 'p', 'P');
+    ctx.economy.apply('p', { cash: 500_000 }, 'test', 0);
+    buildLot(ctx, 'p', 'gene_lab');
+    const pen = buildLot(ctx, 'p', 'herbivore_paddock');
+    const mk = (speciesId: string) => ctx.db.insert(schema.dinos).values({
+      userId: 'p', lotId: pen.id, speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const a = mk('triceratops'), b = mk('gallimimus');
+    startBreeding(ctx, 'p', a.id, b.id, null);
+    expect(locksFor(ctx, 'p').dinos.size).toBe(2);
+
+    adminReset(ctx, 'p');
+
+    expect(ctx.db.select().from(schema.breedings).where(eq(schema.breedings.userId, 'p')).all()).toHaveLength(0);
+    expect(locksFor(ctx, 'p').dinos.size).toBe(0);
   });
 });
 

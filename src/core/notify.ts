@@ -65,6 +65,20 @@ export function eggHatchHandler(sender: Sender, ctx: Ctx) {
     } catch (e) { logger.warn({ err: e }, 'notify handler failed'); }
   };
 }
+export function breedingReadyHandler(sender: Sender, ctx: Ctx) {
+  return async (t: { userId: string; refId: number; originGuildId: string | null }) => {
+    try {
+      const b = ctx.db.select().from(schema.breedings).where(eq(schema.breedings.id, t.refId)).get();
+      if (!b || b.claimedAt) return;
+      const embed = new EmbedBuilder().setColor(0x9b59b6)
+        .setTitle('🧬 Breeding complete')
+        .setDescription('Your pairing has produced an egg! Use `/breed claim` to collect it.');
+      const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+      attach(embed, payload, 'image', assetImage('banners', 'gene_lab'));
+      await deliverNotification(sender, ctx, t.userId, t.originGuildId, payload);
+    } catch (e) { logger.warn({ err: e }, 'notify handler failed'); }
+  };
+}
 export function expeditionReturnHandler(sender: Sender, ctx: Ctx) {
   return async (t: { userId: string; refId: number; originGuildId: string | null }) => {
     try {

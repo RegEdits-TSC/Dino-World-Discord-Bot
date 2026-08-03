@@ -62,6 +62,18 @@ export function decorateLot(ctx: Ctx, userId: string, lotId: number, decorKind: 
   recomputeRating(ctx, userId);
 }
 
+export const MAX_NICKNAME = 32;
+
+export function renameDino(ctx: Ctx, userId: string, dinoId: number, nickname: string | null): void {
+  const dino = ctx.db.select().from(schema.dinos)
+    .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
+  if (!dino) throw new AssignError('You do not own that dino.');
+  const trimmed = nickname?.trim() ?? '';
+  if (trimmed.length > MAX_NICKNAME) throw new AssignError(`Nicknames are at most ${MAX_NICKNAME} characters.`);
+  ctx.db.update(schema.dinos).set({ nickname: trimmed === '' ? null : trimmed })
+    .where(eq(schema.dinos.id, dinoId)).run();
+}
+
 export function listDinos(ctx: Ctx, userId: string) {
   const { clockDinos, dinos } = toClockDinos(ctx, userId);
   return dinos.map((d, i) => ({

@@ -13,6 +13,7 @@ export interface FacilityDef {
   incomeBonusPct: number[];        // index = level-1
   capHours?: number[];             // Visitor Center only
   incubatorSlots?: number[];       // Hatchery Lab only
+  breedingSlots?: number[];        // Gene Lab only
   buildCost: number; upgradeCosts: number[];  // cost to reach level 2..maxLevel
 }
 export interface PaddockDef { kind: string; name: string; diet: Diet; buildCost: number }

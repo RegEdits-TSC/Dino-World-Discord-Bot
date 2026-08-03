@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ButtonInteraction } from 'discord.js';
 import { MessageFlags } from 'discord.js';
-import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, replyText, mulberry32 } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { incubateEgg, hatchEgg, incubatorSlots, HatcheryError } from '../src/modules/hatchery/service.js';
 import { hatcheryModule } from '../src/modules/hatchery/index.js';
@@ -13,6 +13,8 @@ import { mythicSpeciesChoices } from '../src/modules/shop/shards.js';
 import { RARITY } from '../src/data/rarity.js';
 import { assetImage } from '../src/core/images.js';
 import { createTrade } from '../src/modules/trading/service.js';
+import { locksFor } from '../src/core/locks.js';
+import { traitLines } from '../src/core/trait-display.js';
 
 // assetImage is a pass-through spy by default (calls the real implementation),
 // so every test in this file except the two degrade-path tests below is
@@ -28,6 +30,16 @@ let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); });
 const addEgg = (rarity: string, speciesId: string | null = null) =>
   ctx.db.insert(schema.eggs).values({ userId: 'u1', rarity: rarity as never, speciesId, source: 'expedition', obtainedAt: 0 }).returning().get();
+// A pending u1->u2 trade offering the given eggs. Escrow is derived from this row now,
+// so it is the only way to put an egg in escrow without going through createTrade's gates.
+const escrowEggs = (c: ReturnType<typeof makeCtx>, eggIds: number[]) => {
+  getOrCreateUser(c, 'u2', 'u2');
+  c.db.insert(schema.trades).values({
+    fromUser: 'u1', toUser: 'u2', offer: { dinoIds: [], eggIds, cash: 0, foods: {} },
+    request: { dinoIds: [], eggIds: [], cash: 0, foods: {} },
+    status: 'pending', createdAt: c.now(),
+  }).run();
+};
 
 describe('hatchery', () => {
   it('incubates an egg, sets hatchesAt by rarity, enqueues a hatch timer', () => {
@@ -69,20 +81,21 @@ describe('hatchery', () => {
 
   it('refuses to incubate an egg escrowed in a pending trade', () => {
     const egg = ctx.db.insert(schema.eggs)
-      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0, locked: true })
-      .returning().get();
+      .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
+    escrowEggs(ctx, [egg.id]);
     expect(() => incubateEgg(ctx, 'u1', egg.id, 'g1')).toThrow(HatcheryError);
     expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.incubationStartedAt).toBeNull();
     expect(ctx.db.select().from(schema.timers).all()).toHaveLength(0);
   });
 
   it('refuses to hatch an egg that was locked after incubation started', () => {
-    // Unreachable through services — createTrade refuses an incubating egg and is the
-    // only writer of eggs.locked — so the belt guard is exercised by locking the row
-    // directly, which is exactly the pre-existing state bug 1 could leave behind.
+    // Unreachable through services — createTrade refuses an incubating egg — so the belt
+    // guard is exercised by inserting the pending trade row directly. Escrow is derived
+    // from that row (src/core/locks.ts), so this is what a legacy locked-and-incubating
+    // state looks like now.
     const egg = addEgg('common');
     incubateEgg(ctx, 'u1', egg.id, 'g1');
-    ctx.db.update(schema.eggs).set({ locked: true }).where(eq(schema.eggs.id, egg.id)).run();
+    escrowEggs(ctx, [egg.id]);
     ctx.setNow(ctx.now() + 15 * M);
     expect(() => hatchEgg(ctx, 'u1', egg.id)).toThrow(HatcheryError);
     expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()).toBeDefined();
@@ -103,6 +116,68 @@ describe('hatchery', () => {
     ctx.setNow(ctx.now() + 15 * M);
     const fromLoot = hatchEgg(ctx, 'u1', own.id);
     expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, fromLoot.dinoId)).get()!.viaTrade).toBe(false);
+  });
+
+  it('rolls fresh traits for a wild egg and stores them on the dino', () => {
+    // Seed 10 is pinned deliberately: hatchEgg draws the species roll (no
+    // speciesId on this egg) before the trait roll, and this seed's stream
+    // is verified (via a standalone rollSpeciesInRarity + rollTraits replay)
+    // to land on a non-empty, two-trait result — so this test can actually
+    // fail if the rollTraits(ctx.rng) call in hatchEgg were ever dropped in
+    // favor of a hardcoded []. Seed 11 (the original pin) happens to roll
+    // zero traits for a wild common egg, which made the old assertions
+    // (toEqual + length <= 2) pass identically whether or not the roll ran.
+    const ctx = makeCtx({ nowMs: 0, rng: mulberry32(10) });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const egg = ctx.db.insert(schema.eggs).values({
+      userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0,
+      incubationStartedAt: 0, hatchesAt: 1,
+    }).returning().get();
+    ctx.setNow(2);
+
+    const out = hatchEgg(ctx, 'u1', egg.id);
+    const dino = ctx.db.select().from(schema.dinos).all()[0];
+    expect(dino.traits).toEqual(out.traits);
+    expect(out.traits).toEqual(['fleet', 'prodigy']);
+  });
+
+  it('uses the stored inheritance for a bred egg instead of rolling', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const egg = ctx.db.insert(schema.eggs).values({
+      userId: 'u1', rarity: 'rare', source: 'breeding', obtainedAt: 0,
+      traits: ['hardy', 'savage'], incubationStartedAt: 0, hatchesAt: 1,
+    }).returning().get();
+    ctx.setNow(2);
+
+    const out = hatchEgg(ctx, 'u1', egg.id);
+    expect(out.traits).toEqual(['hardy', 'savage']);
+    expect(ctx.db.select().from(schema.dinos).all()[0].traits).toEqual(['hardy', 'savage']);
+  });
+
+  it('keeps an EMPTY inheritance on a bred egg instead of re-rolling it', () => {
+    // BRED_SLOT_ODDS rolls zero traits 25% of the time and that outcome is
+    // authoritative, so `source` is the discriminator, not `traits.length`.
+    // Same rarity, seed and null speciesId as the wild-egg test above, whose
+    // pinned result is ['fleet', 'prodigy'] — so a re-roll here cannot come
+    // back empty and this test cannot pass by accident.
+    const ctx = makeCtx({ nowMs: 0, rng: mulberry32(10) });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const egg = ctx.db.insert(schema.eggs).values({
+      userId: 'u1', rarity: 'common', source: 'breeding', obtainedAt: 0,
+      traits: [], incubationStartedAt: 0, hatchesAt: 1,
+    }).returning().get();
+    ctx.setNow(2);
+
+    const out = hatchEgg(ctx, 'u1', egg.id);
+    expect(out.traits).toEqual([]);
+    expect(ctx.db.select().from(schema.dinos).all()[0].traits).toEqual([]);
+  });
+});
+
+describe('traitLines', () => {
+  it('degrades to a placeholder for a dino with no traits, never an empty field value', () => {
+    expect(traitLines([])).toBe('_No traits_');
   });
 });
 
@@ -218,9 +293,9 @@ describe('hatchery visuals', () => {
     expect(p.files!.map((f) => f.name)).toEqual(['epic.webp']);
   });
   it('eggListPayload marks a trade-locked egg with a padlock, ahead of its timer state', () => {
-    const locked = { ...addEgg('epic'), locked: true, hatchesAt: 5, incubationStartedAt: 1 };
+    const locked = { ...addEgg('epic'), hatchesAt: 5, incubationStartedAt: 1 };
     const free = addEgg('common');
-    const p = eggListPayload([locked, free], 10, 'u1');
+    const p = eggListPayload([locked, free], 10, 'u1', 1, new Map([[locked.id, { kind: 'trade', tradeId: 1 }]]));
     const desc = p.embeds[0].toJSON().description!;
     expect(desc).toContain(`#${locked.id} — epic egg — 🔒 locked in a trade`);
     expect(desc).toContain(`#${free.id} — common egg — in inventory`);
@@ -265,7 +340,7 @@ describe('egg list pagination', () => {
     expect((b.replies[0] as { content: string }).content).toContain('Not your');
   });
 
-  it('sweeps an expired trade first, so /eggs does not show a stale padlock', async () => {
+  it('an expired trade stops showing a padlock on /eggs, with no sweep', async () => {
     getOrCreateUser(ctx, 'u2', 'u2');
     ctx.db.update(schema.users).set({ parkRating: 200 }).run();
     const egg = addEgg('common');
@@ -278,12 +353,13 @@ describe('egg list pagination', () => {
       .embeds[0].toJSON().description!;
     expect(desc).not.toContain('locked in a trade');
     expect(desc).toContain(`#${egg.id} — common egg — in inventory`);
+    // Nothing swept: the padlock lapsed on the clock, not on a status flip.
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('pending');
   });
 
-  it('the page button sweeps too, so a stale padlock does not survive on page 2', async () => {
-    // Same lazy-expiry hazard as /eggs, one surface further in: paging is its own
-    // read of the egg rows, so it needs its own sweep or page 2 keeps rendering
-    // a lock that no longer exists.
+  it('page 2 shows no stale padlock either, and still writes nothing', async () => {
+    // Same expiry question as /eggs, one surface further in: paging is its own read of
+    // the egg rows, and it must resolve the lock the same derived way.
     getOrCreateUser(ctx, 'u2', 'u2');
     ctx.db.update(schema.users).set({ parkRating: 200 }).run();
     for (let n = 0; n < 10; n++) addEgg('common');
@@ -296,10 +372,10 @@ describe('egg list pagination', () => {
     await hatchComponent.execute(ctx, b.asInteraction() as never);
     const embed = (b.replies[0] as { embeds: Array<{ toJSON(): { description?: string; footer?: { text: string } } }> })
       .embeds[0].toJSON();
-    expect(embed.footer?.text).toBe('Page 2/2');         // the swept egg really is on the page we rendered
+    expect(embed.footer?.text).toBe('Page 2/2');         // the egg really is on the page we rendered
     expect(embed.description).toBe(`#${locked.id} — epic egg — in inventory`);
-    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, locked.id)).get()!.locked).toBe(false);
-    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
+    expect(locksFor(ctx, 'u1').eggs.has(locked.id)).toBe(false);
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('pending');
   });
 });
 
@@ -373,9 +449,9 @@ describe('/incubate execute', () => {
     expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
 
-  it('sweeps an expired trade first, so a stale lock does not block incubation', async () => {
-    // expireStale is lazy and only ever ran from /trade surfaces, so without the sweep
-    // a dead trade would hold the lock — and reject with a statement that is false.
+  it('an expired trade stops blocking incubation, with no sweep', async () => {
+    // The lock lapses on the clock: a dead trade can no longer reject with a
+    // statement that is false, and no surface has to sweep to make that true.
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
     ctx.db.update(schema.users).set({ parkRating: 200 }).run();
     const egg = ctx.db.insert(schema.eggs)
@@ -387,9 +463,9 @@ describe('/incubate execute', () => {
     const i = fakeCommand({ name: 'incubate', user: 'u1', options: { egg: egg.id } });
     await cmd.execute(ctx, i.asChatInput());
     const after = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!;
-    expect(after.locked).toBe(false);
+    expect(locksFor(ctx, 'u1').eggs.has(egg.id)).toBe(false);
     expect(after.incubationStartedAt).not.toBeNull();
-    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('expired');
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('pending');
   });
 });
 
@@ -426,7 +502,7 @@ describe('/hatch execute', () => {
     const egg = ctx.db.insert(schema.eggs)
       .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
     incubateEgg(ctx, 'u1', egg.id, null);
-    ctx.db.update(schema.eggs).set({ locked: true }).where(eq(schema.eggs.id, egg.id)).run();
+    escrowEggs(ctx, [egg.id]);
     ctx.setNow(RARITY.common.incubationMs + 1);
     const cmd = hatcheryModule.commands.find((c) => c.data.name === 'hatch')!;
     const i = fakeCommand({ name: 'hatch', user: 'u1', options: { egg: egg.id } });
@@ -435,7 +511,7 @@ describe('/hatch execute', () => {
     expect(JSON.stringify(i.replies[0])).not.toContain('hatch:crack');
   });
 
-  it('sweeps an expired trade first, so a stale lock does not block hatching', async () => {
+  it('an expired trade stops blocking hatching, with no sweep', async () => {
     // A locked AND ready row cannot be built through services in either order —
     // createTrade refuses an incubating egg, and incubateEgg refuses a locked one.
     // Trade first, then set the timer fields directly.
@@ -454,7 +530,8 @@ describe('/hatch execute', () => {
     expect(replyText(i.replies[0])).not.toContain('locked in a pending trade');
     const payload = i.replies[0] as { components?: unknown[] };
     expect(JSON.stringify(payload.components ?? [])).toContain(`hatch:crack:${egg.id}`);
-    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.locked).toBe(false);
+    expect(locksFor(ctx, 'u1').eggs.has(egg.id)).toBe(false);
+    expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('pending');
   });
 });
 

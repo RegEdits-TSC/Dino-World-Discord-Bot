@@ -6,7 +6,7 @@ describe('full module registry', () => {
   it('loads all modules without a name/prefix collision', () => {
     const flags = Object.fromEntries(ALL_MODULES.map((m) => [m.name, true]));
     const r = new ModuleRegistry(ALL_MODULES, flags);
-    expect(ALL_MODULES).toHaveLength(11);
-    expect(r.commands().length).toBe(20);
+    expect(ALL_MODULES).toHaveLength(12);
+    expect(r.commands().length).toBe(22);
   });
 });

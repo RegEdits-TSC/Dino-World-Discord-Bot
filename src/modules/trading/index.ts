@@ -9,6 +9,7 @@ import { createTrade, acceptTrade, declineTrade, cancelTrade, expireStale, listT
 import { parseIdList } from './validate.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, listCompleter, type ListCandidate } from '../../core/autocomplete.js';
+import { locksFor } from '../../core/locks.js';
 import { getSpecies } from '../../data/species/index.js';
 import { FOODS, type FoodId } from '../../data/foods.js';
 import { TRADE_MAX_ITEMS_PER_SIDE } from '../../data/trade.js';
@@ -34,8 +35,9 @@ function summarize(side: TradeSide, e: (name: string) => string = (n) => EMOJI_F
 }
 
 function tradeableDinos(ctx: Ctx, userId: string): ListCandidate[] {
+  const locks = locksFor(ctx, userId);   // one batched read, not one per row
   return ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all()
-    .filter((d) => !d.locked && d.escapedAt === null && getSpecies(d.speciesId).rarity !== 'mythic')
+    .filter((d) => !locks.dinos.has(d.id) && d.escapedAt === null && getSpecies(d.speciesId).rarity !== 'mythic')
     .map((d) => {
       const s = getSpecies(d.speciesId);
       return { id: d.id, label: `🦖 ${s.name} (${s.rarity})` };
@@ -43,8 +45,9 @@ function tradeableDinos(ctx: Ctx, userId: string): ListCandidate[] {
 }
 
 function tradeableEggs(ctx: Ctx, userId: string): ListCandidate[] {
+  const locks = locksFor(ctx, userId);   // one batched read, not one per row
   return ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, userId)).all()
-    .filter((e) => !e.locked && e.rarity !== 'mythic' && e.incubationStartedAt === null)
+    .filter((e) => !locks.eggs.has(e.id) && e.rarity !== 'mythic' && e.incubationStartedAt === null)
     .map((e) => ({ id: e.id, label: `🥚 ${e.rarity} egg` }));
 }
 
@@ -95,7 +98,6 @@ export const tradingModule: ModuleManifest = {
             const target = i.options.getUser('user', true);
             if (target.bot) { await i.reply({ content: 'You cannot trade with a bot.', flags: MessageFlags.Ephemeral }); return; }
             getOrCreateUser(ctx, target.id, target.displayName);   // ensure the recipient has a park row
-            expireStale(ctx, target.id);
             const sideFoods = (item: string | null, qty: number | null): Record<string, number> => {
               if (!item && !qty) return {};
               if (!item || !qty) throw new TradeError('Set both the food item and its qty, or neither.');
@@ -207,7 +209,6 @@ export const tradingModule: ModuleManifest = {
             if (typeof target !== 'string') { await i.respond([{ name: 'Pick the user option first', value: '-' }]); return; }
             ownerId = target;
           }
-          expireStale(ctx, ownerId);
           const candidates = isDino ? tradeableDinos(ctx, ownerId) : tradeableEggs(ctx, ownerId);
           const rows = listCompleter(String(focused.value), candidates, { maxItems: TRADE_MAX_ITEMS_PER_SIDE });
           await i.respond(rows.length ? rows

@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { MessageFlags } from 'discord.js';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
-import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, BASE_LOT_SLOTS } from '../src/modules/park/service.js';
+import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, BASE_LOT_SLOTS, breedingSlots } from '../src/modules/park/service.js';
+import { renameDino } from '../src/modules/park/dinos.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
@@ -85,7 +86,9 @@ describe('park service', () => {
       userId: 'u1', lotId: lot.id, speciesId: 'triceratops',
       hunger: 100, lastFedAt: 0, hatchedAt: 0,
     }).run();
-    ctx.db.update(schema.lots).set({ decor: ['forest'] }).run();
+    // 'palm_tree' is a real decor kind slug (biomeTags: ['forest']) matching
+    // triceratops's own biome — decor is stored as kind slugs, never raw biome tags.
+    ctx.db.update(schema.lots).set({ decor: ['palm_tree'] }).run();
     ctx.setNow(12 * H);
     const { amount } = collectIncome(ctx, 'u1');
     // no Visitor Center => 8h cap; window truncates to 0..8h of the 12h elapsed.
@@ -355,5 +358,226 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     await cmd.execute(ctx, i.asChatInput());
     expect(replyText(i.replies[0])).toBe('You already have a Visitor Center — upgrade it instead.');
     expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+});
+
+describe('gene lab', () => {
+  it('grants no breeding slots without one', () => {
+    expect(breedingSlots([])).toBe(0);
+  });
+
+  it('grants 1/2/3 slots by level', () => {
+    const lot = (level: number) => ([{ id: 1, userId: 'u', type: 'facility', kind: 'gene_lab', name: 'Gene Lab', level, decor: [] }] as never);
+    expect(breedingSlots(lot(1))).toBe(1);
+    expect(breedingSlots(lot(2))).toBe(2);
+    expect(breedingSlots(lot(3))).toBe(3);
+  });
+
+  it('adds no income bonus', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'test', 0);
+    buildLot(ctx, 'u1', 'gene_lab');
+    const lots = ctx.db.select().from(schema.lots).all();
+    expect(facilityBonusPct(lots)).toBe(0);
+  });
+
+  it('allows only one per park', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'test', 0);
+    buildLot(ctx, 'u1', 'gene_lab');
+    expect(() => buildLot(ctx, 'u1', 'gene_lab')).toThrow(DuplicateFacilityError);
+  });
+
+  // Task 12 shipped dw_lot_genelab.svg and its EMOJI_FALLBACK entry, so emojiTag()
+  // now resolves to the 🧬 unicode fallback even in tests (no map loaded). This pins
+  // the dashboard row's format now that the emoji is live, replacing the Task 7
+  // interim assertion that pinned the plain-text degrade while the SVG was pending.
+  it('renders with its 🧬 emoji on the dashboard', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const user = getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'test', 0);
+    const lot = buildLot(ctx, 'u1', 'gene_lab');
+    const lots = ctx.db.select().from(schema.lots).all();
+    const p = dashboardPayload(user, lots, 0, 0, 0, {});
+    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏗️ Lots')!;
+    expect(field.value).toBe(`#${lot.id} 🧬 Gene Lab (lvl 1)`);
+  });
+});
+
+describe('renameDino', () => {
+  it('sets and clears a nickname', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+
+    renameDino(ctx, 'u1', d.id, 'Sharpwing');
+    expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBe('Sharpwing');
+
+    renameDino(ctx, 'u1', d.id, null);
+    expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBeNull();
+  });
+
+  it('rejects a nickname over 32 characters', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    expect(() => renameDino(ctx, 'u1', d.id, 'x'.repeat(33))).toThrow(/32/);
+  });
+
+  it('refuses a dino you do not own', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    expect(() => renameDino(ctx, 'u1', 999, 'x')).toThrow(/own/);
+  });
+
+  it('refuses a dino that exists but belongs to another user, and never touches its row', () => {
+    // Distinct from the previous case: dinoId 999 above never exists at all, so a lookup
+    // that drops the userId filter would still hit the `!dino` branch and pass by accident.
+    // This dino is real — owned by u2 — so only an actual ownership check can catch it.
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    getOrCreateUser(ctx, 'u2', 'u2');
+    const theirs = ctx.db.insert(schema.dinos).values({
+      userId: 'u2', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    expect(() => renameDino(ctx, 'u1', theirs.id, 'Stolen')).toThrow(/own/);
+    expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBeNull();
+  });
+
+  it('trims surrounding whitespace and clears when the trimmed result is empty', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+
+    renameDino(ctx, 'u1', d.id, '  Rex  ');
+    expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBe('Rex');
+
+    renameDino(ctx, 'u1', d.id, '   ');
+    expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBeNull();
+  });
+});
+
+describe('/dino rename subcommand', () => {
+  it('sets a nickname and confirms it in the reply', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const i = fakeCommand({ name: 'dino', sub: 'rename', user: 'u1', options: { dino: d.id, nickname: 'Sharpwing' } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('Sharpwing');
+    expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBe('Sharpwing');
+  });
+
+  it('clears a nickname when left blank', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', nickname: 'Sharpwing', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const i = fakeCommand({ name: 'dino', sub: 'rename', user: 'u1', options: { dino: d.id } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('cleared');
+    expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBeNull();
+  });
+
+  it('replies ephemerally with the ownership error for a foreign dino', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const cmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const i = fakeCommand({ name: 'dino', sub: 'rename', user: 'u1', options: { dino: 999, nickname: 'Nope' } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('do not own');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+
+  it('replies ephemerally when the nickname is over 32 characters', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const i = fakeCommand({ name: 'dino', sub: 'rename', user: 'u1', options: { dino: d.id, nickname: 'x'.repeat(33) } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toContain('32');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+});
+
+describe('/dino list shows nickname and trait marks', () => {
+  it('titles the row with the nickname and appends one-line trait marks', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+      nickname: 'Sharpwing', traits: ['gluttonous', 'glass_cannon'],
+    }).run();
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'velociraptor', lastFedAt: 0, hatchedAt: 0,
+    }).run();
+    const i = fakeCommand({ name: 'dino', sub: 'list', user: 'u1' });
+    await parkModule.commands.find((c) => c.data.name === 'dino')!.execute(ctx, i.asChatInput());
+    const desc = (i.replies[0] as { embeds: Array<{ toJSON(): { description?: string } }> }).embeds[0].toJSON().description!;
+    const lines = desc.split('\n');
+
+    const namedRow = lines.find((l) => l.includes('Sharpwing'))!;
+    expect(namedRow).toContain('Sharpwing (Triceratops)');
+    expect(namedRow).toContain('Gluttonous');
+    expect(namedRow).toContain('Glass Cannon');
+    // one line per dino — the compact inline form, never traitLines()'s per-trait blurb block
+    expect(namedRow.split('\n')).toHaveLength(1);
+
+    const unnamedRow = lines.find((l) => l.includes('Velociraptor'))!;
+    expect(unnamedRow).not.toContain('(');   // no nickname => bare species name, no parens
+    expect(unnamedRow).not.toMatch(/ — $/);  // no traits => no dangling separator
+  });
+});
+
+describe('/dino list full page stays within Discord embed limits', () => {
+  it('renders 10 dinos each with 2 traits and a 32-char nickname without tripping validateMessagePayload', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.economy.apply('u1', { cash: 1_000_000 }, 'test', 0);
+    // quetzalcoatlus is a carnivore (and, at 14 chars, ties for the longest species name)
+    // placed in a herbivore paddock — the habitat-mismatch suffix pads every row further.
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    for (let n = 0; n < 10; n++) {
+      ctx.db.insert(schema.dinos).values({
+        userId: 'u1', speciesId: 'quetzalcoatlus', lotId: lot.id, hunger: 100,
+        lastFedAt: 0, hatchedAt: 0,
+        nickname: `Nickname-Number-${n}-XXXXXXXXXXXXXXX`.slice(0, 32),
+        traits: ['gluttonous', 'glass_cannon'],   // longest names in two distinct domains
+      }).run();
+    }
+    const i = fakeCommand({ name: 'dino', sub: 'list', user: 'u1' });
+    // fakeCommand's reply() runs validateMessagePayload internally (see tests/harness.ts) —
+    // reaching the assertions below already proves the payload cleared Discord's real limits.
+    await parkModule.commands.find((c) => c.data.name === 'dino')!.execute(ctx, i.asChatInput());
+    const embed = (i.replies[0] as {
+      embeds: Array<{ toJSON(): { title?: string; description?: string; footer?: { text: string } } }>;
+    }).embeds[0].toJSON();
+    const rows = embed.description!.split('\n');
+    expect(rows).toHaveLength(10);
+    const longestRow = Math.max(...rows.map((r) => r.length));
+    const totalEmbedText = (embed.title?.length ?? 0) + (embed.description?.length ?? 0) + (embed.footer?.text.length ?? 0);
+    // Measured on this fixture: description 1,280 chars, combined embed text 1,301, longest
+    // single row 128 chars — well under both limits that actually apply to this payload
+    // (description <= 4096, combined embed text <= 6000; there is no per-field 1024 cap in
+    // play here, since this embed carries one description, not fields).
+    expect(embed.description!.length).toBeLessThanOrEqual(4096);
+    expect(totalEmbedText).toBeLessThanOrEqual(6000);
+    expect(longestRow).toBeLessThan(300);
   });
 });

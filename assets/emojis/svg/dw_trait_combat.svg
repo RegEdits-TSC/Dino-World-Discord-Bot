@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f0908a"/><stop offset="1" stop-color="#c0271a"/></linearGradient></defs>
+  <circle cx="32" cy="32" r="27" fill="url(#g)" stroke="#6e130b" stroke-width="3"/>
+  <g transform="rotate(-45 32 32)">
+    <polygon points="32,8 36,33 32,36 28,33" fill="#eef2f5" stroke="#4a2e22" stroke-width="1.8" stroke-linejoin="round"/>
+    <rect x="24" y="35" width="16" height="4" rx="1.5" fill="#c9971f" stroke="#4a2e22" stroke-width="1.5"/>
+    <rect x="30" y="39" width="4" height="10" rx="1.5" fill="#4a2e22"/>
+    <circle cx="32" cy="51.5" r="3.5" fill="#c9971f" stroke="#4a2e22" stroke-width="1.5"/>
+  </g>
+  <g transform="rotate(45 32 32)">
+    <polygon points="32,8 36,33 32,36 28,33" fill="#eef2f5" stroke="#4a2e22" stroke-width="1.8" stroke-linejoin="round"/>
+    <rect x="24" y="35" width="16" height="4" rx="1.5" fill="#c9971f" stroke="#4a2e22" stroke-width="1.5"/>
+    <rect x="30" y="39" width="4" height="10" rx="1.5" fill="#4a2e22"/>
+    <circle cx="32" cy="51.5" r="3.5" fill="#c9971f" stroke="#4a2e22" stroke-width="1.5"/>
+  </g>
+</svg>

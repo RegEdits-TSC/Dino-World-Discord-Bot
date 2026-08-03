@@ -52,7 +52,7 @@ This guide covers deploying Dino World to production, running it as a system ser
    ```bash
    npm run deploy-emojis
    ```
-   This uploads the 33 custom emojis to the bot's Discord application and writes `assets/emojis/manifest.json` (emoji name → sha256 of the uploaded PNG). **Commit that file right away.** If it goes missing, the next `deploy-emojis` run sees every hash as changed and deletes + recreates all 33 emojis with new snowflake IDs — every message already posted with an old `<:dw_cash:ID>` tag then renders as a broken emoji, silently and with no way to recover it by rerunning. This is the only irreversible live write in the deploy; run it once, after the code is built, before starting the bot.
+   This uploads the 38 custom emojis to the bot's Discord application and writes `assets/emojis/manifest.json` (emoji name → sha256 of the uploaded PNG). **Commit that file right away.** If it goes missing, the next `deploy-emojis` run sees every hash as changed and deletes + recreates all 38 emojis with new snowflake IDs — every message already posted with an old `<:dw_cash:ID>` tag then renders as a broken emoji, silently and with no way to recover it by rerunning. This is the only irreversible live write in the deploy; run it once, after the code is built, before starting the bot.
 
 7. **Start the bot**:
    - **Direct**: `node dist/index.js`
@@ -318,7 +318,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    ```bash
    npm run deploy-commands
    ```
-   Should report `17` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, and leaderboards modules combined).
+   Should report `22` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, leaderboards, admin, help, battles, and genelab modules combined).
 
 2. **Start the bot**:
    ```bash
@@ -383,7 +383,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    **k) `/shop view`**
    - Should show today's egg, food, and decor rotation.
    - `/shop egg rarity:common` — should buy a common egg and deduct cash.
-   - `/sell dino:<id>` — should show a confirm button; confirming should pay out cash and shards (watch the 40-shard/day cap; sales past the cap still pay cash but no more shards for the day).
+   - `/sell dino:<id>` — should show a confirm button; confirming should pay out cash and shards (watch the 60-shard/day cap; sales past the cap still pay cash but no more shards for the day).
 
    **l) `/decorate lot:<id> item:Palm Tree`**
    - Should add the decoration to the paddock and raise its comfort/rating.
@@ -420,7 +420,7 @@ If any step fails, check the bot's logs for the error and debug before merging /
 ### Known Limitations
 
 - **Dino collection income**: The `/park view` Collect button yields 0 cash until a dino has been hatched (or won from an expedition) and assigned to a paddock via `/dino assign`. This is expected on a brand-new park. Income logic is covered by automated unit tests in `tests/`.
-- **Shard cap**: `/sell` stops awarding shards once the 40-shard daily cap is hit; cash payout continues regardless. This is expected, not a bug.
+- **Shard cap**: `/sell` stops awarding shards once the 60-shard daily cap is hit; cash payout continues regardless. This is expected, not a bug. (Raised from 40 so a 15-shard `/splice` doesn't starve the 500-shard Mythic purchase — see `docs/gameplay.md` §11.)
 - **Slash command registration**: If commands don't appear in your Discord server, ensure the bot has the `applications.commands` scope and `chat_input` permission in your OAuth application settings.
 
 ## GitHub Repository

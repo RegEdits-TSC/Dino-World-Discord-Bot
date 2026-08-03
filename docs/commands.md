@@ -18,9 +18,10 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/build` | Build on an empty lot | |
 | `/upgrade` | Upgrade a lot to the next level | Autocomplete: lot |
 | `/decorate` | Add decor to a paddock | Autocomplete: lot |
-| `/dino list` | List every dino you own | Paginated, 10 per page |
+| `/dino list` | List every dino you own, with nickname and trait line | Paginated, 10 per page |
 | `/dino assign` | Put a dino in a paddock so it starts earning | Autocomplete: dino, lot |
 | `/dino unassign` | Take a dino out of its paddock | Autocomplete: dino |
+| `/dino rename` | Give a dino a nickname | Autocomplete: dino. Up to 32 characters; leave the nickname blank to clear it |
 
 ## 🥚 Eggs and hatching
 
@@ -38,6 +39,15 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/feed one` | Feed a single dino | Autocomplete: dino, food. Food must match the dino's diet |
 | `/feed all` | Feed every hungry dino, hungriest first | |
 | `/rescue` | Recapture a dino that escaped | Autocomplete: dino |
+
+## 🧬 Gene Lab
+
+| Command | What it does | Notes |
+| --- | --- | --- |
+| `/breed start` | Pair two dinos in the Gene Lab | Autocomplete: parent-a, parent-b. Both must be in a paddock, same rarity, same diet — shows a confirm button with the fee and time before anything happens |
+| `/breed status` | Check your pairings in progress | Shows each pairing's remaining time, or that it's ready to claim |
+| `/breed claim` | Claim the oldest finished pairing | Reveals the egg's rarity and inherited traits; reports how many more pairings are still waiting if you have several ready at once |
+| `/splice` | Re-roll one trait slot on a dino | Autocomplete: dino. Costs 15 shards; shows a confirm button — the replacement is random and can be worse than what you had |
 
 ## 🗺️ Expeditions
 
@@ -78,7 +88,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | Command | What it does | Notes |
 | --- | --- | --- |
 | `/top` | Leaderboards by rating, cash, or collection | Server or global scope |
-| `/help` | How to play, across nine topics | Run with no topic for a first-ten-minutes walkthrough |
+| `/help` | How to play, across ten topics | Run with no topic for a first-ten-minutes walkthrough |
 
 ## ⚙️ Server settings and admin
 

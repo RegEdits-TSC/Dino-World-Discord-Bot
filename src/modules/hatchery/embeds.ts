@@ -5,6 +5,7 @@ import { assetImage, attach } from '../../core/images.js';
 import { rarityEmoji } from '../../core/emojis.js';
 import { paginate, pageRow } from '../../core/paginate.js';
 import type { Egg } from './service.js';
+import type { Locks } from '../../core/locks.js';
 
 export const RARITY_COLOR: Record<string, number> = {
   common: 0x95a5a6, uncommon: 0x2ecc71, rare: 0x3498db, epic: 0x9b59b6, legendary: 0xf1c40f, mythic: 0xe74c3c,
@@ -60,11 +61,14 @@ function featuredEgg(eggs: Egg[], now: number): Egg | undefined {
     ?? [...eggs].sort((a, b) => b.obtainedAt - a.obtainedAt)[0];
 }
 
-export function eggListPayload(eggs: Egg[], now: number, userId: string, page = 1) {
+// `locks` is the caller's already-built egg lock map (locksFor, src/core/locks.ts): escrow is
+// derived per user and this formatter has no ctx, so membership comes in rather than being
+// re-queried per row. Defaults to empty — an unlocked render is always a valid one.
+export function eggListPayload(eggs: Egg[], now: number, userId: string, page = 1, locks: Locks['eggs'] = new Map()) {
   const { items, page: p, pages } = paginate(eggs, page);
   const lines = items.length ? items.map((e) => {
     // Lock first: it outranks every timer state, because a locked egg cannot be acted on.
-    const status = e.locked ? '🔒 locked in a trade'
+    const status = locks.has(e.id) ? '🔒 locked in a trade'
       : e.hatchesAt === null ? 'in inventory'
       : e.hatchesAt <= now ? 'READY — /hatch' : `hatching (ready <t:${Math.floor(e.hatchesAt / 1000)}:R>)`;
     return `#${e.id} — ${rarityEmoji(e.rarity)}${e.rarity} egg — ${status}`;

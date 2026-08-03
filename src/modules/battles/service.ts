@@ -6,6 +6,7 @@ import type { FoodId } from '../../data/foods.js';
 import { getSpecies } from '../../data/species/index.js';
 import { ENERGY_REGEN_MS, STAR_REWARD_MULT, STAR_XP_MULT } from '../../data/battle/constants.js';
 import { battleLevel, statsFor } from '../../data/battle/stats.js';
+import { modProduct } from '../../data/traits.js';
 import { settleEnergy } from '../../data/battle/energy.js';
 import { resolveBattle, starsFor, type BattleResult, type Combatant } from '../../data/battle/resolve.js';
 import { STAGES, chapterUnlocked, stageUnlocked, rosterFor, type ProgressMap } from '../../data/battle/chapters/index.js';
@@ -48,9 +49,10 @@ export function runFight(ctx: Ctx, userId: string, stageId: string, dinoIds: num
   const owned = ctx.db.select().from(schema.dinos)
     .where(and(eq(schema.dinos.userId, userId), inArray(schema.dinos.id, dinoIds))).all();
   const byId = new Map(owned.map((d) => [d.id, d]));
-  // Unlike sellDino (src/modules/shop/shards.ts), `locked` dinos are deliberately NOT
-  // rejected here: battling neither consumes nor transfers a dino, so it can't violate
-  // a pending trade's escrow the way a sale would. Only escaped dinos are unfit to fight.
+  // Unlike sellDino (src/modules/shop/shards.ts), escrowed dinos (locksFor,
+  // src/core/locks.ts) are deliberately NOT rejected here: battling neither consumes nor
+  // transfers a dino, so it can't violate a pending trade's escrow the way a sale would.
+  // Only escaped dinos are unfit to fight.
   const squadRows = dinoIds.map((id) => {
     const d = byId.get(id);
     if (!d) throw new BattleError('You can only field dinos you own.');
@@ -70,7 +72,7 @@ export function runFight(ctx: Ctx, userId: string, stageId: string, dinoIds: num
 
   const squad: Combatant[] = squadRows.map((d) => {
     const sp = getSpecies(d.speciesId);
-    const s = statsFor(d.speciesId, battleLevel(d.battleXp));
+    const s = statsFor(d.speciesId, battleLevel(d.battleXp), d.traits);
     return {
       key: `d${d.id}`, name: d.nickname ?? sp.name, speciesId: d.speciesId, archetype: sp.archetype,
       maxHp: s.hp, hp: s.hp, atk: s.atk, def: s.def, spd: s.spd, side: 0,
@@ -99,10 +101,15 @@ export function runFight(ctx: Ctx, userId: string, stageId: string, dinoIds: num
   const prev = progress.get(stageId);
   const firstClear = won && (prev?.firstClearedAt ?? null) === null;
   // Spec: total stage XP splits evenly across the squad — floor share each,
-  // remainder to slot 1 (the first dino in the squad array).
+  // remainder to slot 1 (the first dino in the squad array) — THEN each dino's
+  // own xp trait scales its individual share. Scaling the pool before the split
+  // would let one dino's trait bleed into every other dino's share.
   const totalXp = Math.round(stage.rewards.xp * STAR_XP_MULT[stars]);
   const baseXp = Math.floor(totalXp / n);
-  const xpPerDino = squadRows.map((_, k) => (k === 0 ? baseXp + (totalXp % n) : baseXp));
+  const xpPerDino = squadRows.map((d, k) => {
+    const baseShare = k === 0 ? baseXp + (totalXp % n) : baseXp;
+    return Math.floor(baseShare * modProduct(d.traits, 'xp'));
+  });
   const cash = won ? Math.round(stage.rewards.cash * STAR_REWARD_MULT[stars]) : 0;
   const food = won && stage.rewards.food
     ? { foodId: stage.rewards.food.foodId, qty: Math.round(stage.rewards.food.qty * STAR_REWARD_MULT[stars]) }

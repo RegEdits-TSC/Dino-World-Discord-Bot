@@ -4,6 +4,7 @@ import { getOrCreateUser } from '../src/modules/park/service.js';
 import { createTrade, acceptTrade, TradeError } from '../src/modules/trading/service.js';
 import { declineTrade, cancelTrade, expireStale, listTrades } from '../src/modules/trading/service.js';
 import { schema } from '../src/core/db/index.js';
+import { locksFor } from '../src/core/locks.js';
 import { eq } from 'drizzle-orm';
 import { tradingModule } from '../src/modules/trading/index.js';
 import { fakeCommand } from './harness.js';
@@ -37,7 +38,7 @@ describe('createTrade', () => {
     const d = addDino('a');
     const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, { ...empty, cash: 1_000 });
     expect(t.status).toBe('pending');
-    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.locked).toBe(true);
+    expect(locksFor(ctx, 'a').dinos.get(d.id)).toEqual({ kind: 'trade', tradeId: t.id });
   });
   it('rejects a Mythic in the offer', () => {
     const m = addDino('a', 'indominus');
@@ -74,6 +75,18 @@ describe('createTrade', () => {
     createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty);      // locks d
     expect(() => createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty)).toThrow(TradeError);
   });
+  it('rejects offering a dino held by an unclaimed breeding', () => {
+    // The second lock reason: escrow is one map, so a Gene Lab parent is untradeable
+    // on exactly the same code path as a trade-escrowed dino.
+    const d = addDino('a');
+    ctx.db.insert(schema.breedings).values({
+      userId: 'a', parentA: d.id, parentB: d.id, rarity: 'common', startedAt: 0, readyAt: 100,
+    }).run();
+    expect(() => createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty)).toThrow(TradeError);
+    // ...and claiming it releases the parent.
+    ctx.db.update(schema.breedings).set({ claimedAt: 200 }).run();
+    expect(createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty).status).toBe('pending');
+  });
   it('rejects offering more cash than you have', () => {
     // a has 500 by default
     expect(() => createTrade(ctx, 'a', 'b', { ...empty, cash: 10_000 }, empty)).toThrow(TradeError);
@@ -105,8 +118,9 @@ describe('acceptTrade', () => {
     const moved = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, da.id)).get()!;
     expect(moved.userId).toBe('b');
     expect(moved.viaTrade).toBe(true);
-    expect(moved.locked).toBe(false);
     expect(moved.lotId).toBeNull();
+    expect(locksFor(ctx, 'a').dinos.size).toBe(0);   // trade no longer pending → escrow gone
+    expect(locksFor(ctx, 'b').dinos.size).toBe(0);   // and the new owner inherits no lock
     const a = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'a')).get()!;
     expect(a.cash).toBe(500 + 1_000);                 // A received B's 1,000 (A started 500)
     expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('accepted');
@@ -122,6 +136,20 @@ describe('acceptTrade', () => {
     const da = addDino('a');
     const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [da.id] }, empty);
     expect(() => acceptTrade(ctx, 'a', t.id)).toThrow(TradeError);
+  });
+  it('refuses to transfer an offered dino that a breeding also holds', () => {
+    // The accept-time lock waiver is scoped to THIS trade's own escrow, nothing wider. A Gene
+    // Lab breeding started after the offer must still block the transfer, or the parents vanish
+    // mid-flight — which src/core/db/schema.ts's `breedings` note relies on being impossible.
+    const d = addDino('a');
+    const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty);
+    ctx.db.insert(schema.breedings).values({
+      userId: 'a', parentA: d.id, parentB: d.id, rarity: 'common', startedAt: 0, readyAt: 100,
+    }).run();
+    expect(() => acceptTrade(ctx, 'b', t.id)).toThrow(TradeError);
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.userId).toBe('a');
+    // Failed verify leaves the offer open, so the sender can still /trade cancel.
+    expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('pending');
   });
   it('cannot accept an already-resolved trade twice', () => {
     const da = addDino('a');
@@ -149,8 +177,9 @@ describe('trade lifecycle', () => {
   it('decline unlocks the offered items and marks declined', () => {
     const d = addDino('a');
     const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty);
+    expect(locksFor(ctx, 'a').dinos.has(d.id)).toBe(true);
     declineTrade(ctx, 'b', t.id);
-    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.locked).toBe(false);
+    expect(locksFor(ctx, 'a').dinos.has(d.id)).toBe(false);
     expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('declined');
   });
   it('only the sender can cancel, only the recipient can decline', () => {
@@ -161,13 +190,15 @@ describe('trade lifecycle', () => {
     cancelTrade(ctx, 'a', t.id);                                     // sender cancels — ok
     expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('cancelled');
   });
-  it('expireStale marks an overdue pending trade expired and unlocks', () => {
+  it('expireStale flips an overdue pending trade to expired — after escrow has already lapsed', () => {
     const d = addDino('a');
     const t = createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty);
     ctx.setNow(ctx.now() + 25 * 3_600_000);                          // 25h later
+    // Escrow lapses on the clock, with no sweep: expireStale is display/history only now.
+    expect(locksFor(ctx, 'a').dinos.has(d.id)).toBe(false);
+    expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('pending');
     expireStale(ctx, 'a');
     expect(ctx.db.select().from(schema.trades).where(eq(schema.trades.id, t.id)).get()!.status).toBe('expired');
-    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, d.id)).get()!.locked).toBe(false);
   });
   it('listTrades returns the user\'s pending trades', () => {
     const d = addDino('a');
@@ -243,7 +274,7 @@ describe('trading module', () => {
     // '🚫 Trade cancelled.' — src/modules/trading/index.ts:136
     expect(replyText(i.replies[0])).toContain('cancelled');
     expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('cancelled');
-    expect(ctx.db.select().from(schema.dinos).all().find((d) => d.id === dinoId)?.locked).toBe(false);
+    expect(locksFor(ctx, 'a').dinos.has(dinoId)).toBe(false);
   });
 });
 

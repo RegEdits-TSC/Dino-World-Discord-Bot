@@ -48,6 +48,31 @@ describe('dino assignment', () => {
     decorateLot(ctx, 'u1', lot.id, 'palm_tree');
     expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.id, lot.id)).get()!.decor).toEqual(['palm_tree']);
   });
+  // Regression for a bug that shipped invisibly: decorateLot stores the decor KIND
+  // slug ('grass_tuft', 'palm_tree', ...), and paddockFit must map each slug through
+  // DECOR to its own biomeTags before comparing against the species' — comparing the
+  // stored slug directly against biomeTags (the old, broken comparison) can never
+  // match, since decor kinds and biome tags are disjoint vocabularies. Goes through
+  // decorateLot's real storage shape end-to-end via listDinos, not a hand-built
+  // ClockDino, so it would have caught the original bug.
+  it('decor matching the species biome raises comfort to fit 1.0, via decorateLot\'s real storage shape', () => {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', lotId: lot.id, speciesId: 'gallimimus', hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    decorateLot(ctx, 'u1', lot.id, 'grass_tuft');   // Grass Tuft is tagged 'plains', matching Gallimimus
+    const row = listDinos(ctx, 'u1').find((x) => x.dino.id === d.id)!;
+    expect(row.comfort).toBeCloseTo(1.0);
+  });
+  it('non-biome-matching decor leaves comfort at fit 0.75, via decorateLot\'s real storage shape', () => {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', lotId: lot.id, speciesId: 'gallimimus', hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    decorateLot(ctx, 'u1', lot.id, 'palm_tree');    // Palm Tree is tagged 'forest' — Gallimimus is 'plains'
+    const row = listDinos(ctx, 'u1').find((x) => x.dino.id === d.id)!;
+    expect(row.comfort).toBeCloseTo(0.75);
+  });
   it('listDinos returns each dino paired with species and comfort', () => {
     const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
     const d = addDino(); assignDino(ctx, 'u1', d.id, lot.id);

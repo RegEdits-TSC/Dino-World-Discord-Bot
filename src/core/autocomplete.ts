@@ -45,11 +45,14 @@ export function capitalize(s: string): string {
 type EggRow = typeof schema.eggs.$inferSelect;
 type DinoRow = typeof schema.dinos.$inferSelect;
 
-export function eggLabel(egg: EggRow, now: number): string {
+// `locked` is an argument, not a row field: escrow is derived per user
+// (locksFor, src/core/locks.ts) and this formatter has no ctx. Callers build the
+// lock map ONCE and pass membership — never one query per row.
+export function eggLabel(egg: EggRow, now: number, locked = false): string {
   const base = `🥚 #${egg.id} ${capitalize(egg.rarity)}`;
   // Checked first: a locked egg cannot be incubated or hatched, so the lock is the
   // state the player needs, whatever the timer says.
-  if (egg.locked) return `${base} — locked in a trade`;
+  if (locked) return `${base} — locked in a trade`;
   if (egg.hatchesAt === null) return `${base} — in inventory`;
   if (egg.hatchesAt <= now) return `${base} — READY`;
   return `${base} — hatching, ${fmtDuration(egg.hatchesAt - now)} left`;

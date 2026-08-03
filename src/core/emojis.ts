@@ -17,6 +17,9 @@ export const EMOJI_FALLBACK: Record<string, string> = {
   dw_dino_epic: '🦕', dw_dino_legendary: '🦖', dw_dino_mythic: '🦖',
   dw_ferns: '🌿', dw_fruit_basket: '🍎', dw_royal_greens: '🥬',
   dw_fish: '🐟', dw_goat: '🍖', dw_prime_steak: '🥩',
+  dw_lot_genelab: '🧬',
+  dw_trait_income: '💰', dw_trait_care: '🌿',
+  dw_trait_combat: '⚔️', dw_trait_meta: '🧬',
 };
 
 let tags = new Map<string, string>();
