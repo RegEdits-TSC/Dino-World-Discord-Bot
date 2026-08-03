@@ -222,6 +222,10 @@ Thirteen modules ship today:
 - `trading` — player-to-player dino/egg/currency trades with escrow.
 - `leaderboards` — server and global rankings by rating, cash, and collection.
 - `admin` — owner-only tools: grant resources, inspect/reset a player, fast-forward a player's clock (QA).
+- `help` — in-game command reference and getting-started guide.
+- `battles` — the PvE campaign: fight chapter stages with a squad for cash, shards, and eggs.
+- `genelab` — pair or splice dinos for traits in the Gene Lab.
+- `daily` — daily quest board, streaks, chests, and lifetime achievements.
 
 Admin commands are gated to the OWNER_ID user and hidden from non-admins in the Discord UI. Set OWNER_ID in .env.
 

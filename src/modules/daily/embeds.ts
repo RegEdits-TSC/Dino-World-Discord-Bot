@@ -46,7 +46,7 @@ export function hubPayload(ctx: Ctx, userId: string): Payload {
   const nextChest = nextChestAt(user.questStreak, user.questStreakBest);
   const embed = new EmbedBuilder().setColor(0xf1c40f)
     .setTitle('📅 Daily Quests')
-    .setDescription(lines.join('\n'))
+    .setDescription(lines.length ? lines.join('\n') : 'New quests at UTC midnight.')
     .addFields({
       name: `${emojiTag('dw_streak')} Streak: ${user.questStreak} day${user.questStreak === 1 ? '' : 's'}`,
       value: `Next chest at day ${nextChest}.`,
@@ -64,8 +64,8 @@ export function hubPayload(ctx: Ctx, userId: string): Payload {
 export function claimPayload(result: ClaimResult): Payload {
   const lines = result.claimed.map((v) => `✅ ${v.def.description}`);
   const rewardParts: string[] = [];
-  if (result.rewards.cash) rewardParts.push(`${emojiTag('dw_cash') || '💰'} ${result.rewards.cash.toLocaleString('en-US')} cash`);
-  if (result.rewards.shards) rewardParts.push(`${emojiTag('dw_shard') || '💎'} ${result.rewards.shards.toLocaleString('en-US')} shards`);
+  if (result.rewards.cash) rewardParts.push(`${emojiTag('dw_cash')} ${result.rewards.cash.toLocaleString('en-US')} cash`);
+  if (result.rewards.shards) rewardParts.push(`${emojiTag('dw_shard')} ${result.rewards.shards.toLocaleString('en-US')} shards`);
   for (const [id, qty] of Object.entries(result.rewards.foods) as [FoodId, number][]) {
     rewardParts.push(`${FOODS[id].fallback} ${FOODS[id].name} ×${qty}`);
   }
@@ -115,8 +115,8 @@ export function claimAllPayload(result: ReturnType<typeof claimAchievements>): P
     return `✅ ${def.name} — ${TIER_NAMES[c.tier]}`;
   });
   const rewardParts: string[] = [];
-  if (result.cash) rewardParts.push(`${emojiTag('dw_cash') || '💰'} ${result.cash.toLocaleString('en-US')} cash`);
-  if (result.shards) rewardParts.push(`${emojiTag('dw_shard') || '💎'} ${result.shards.toLocaleString('en-US')} shards`);
+  if (result.cash) rewardParts.push(`${emojiTag('dw_cash')} ${result.cash.toLocaleString('en-US')} cash`);
+  if (result.shards) rewardParts.push(`${emojiTag('dw_shard')} ${result.shards.toLocaleString('en-US')} shards`);
   const embed = new EmbedBuilder().setColor(0xf1c40f)
     .setTitle('🏆 Achievements claimed')
     .setDescription(lines.join('\n'))

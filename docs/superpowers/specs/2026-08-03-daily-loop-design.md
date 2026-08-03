@@ -233,7 +233,7 @@ play.
 - **Rewards per quest**: 300–800 cash + 3–8 shards, with two exceptions:
   the sell-dinos def pays cash only (no shard top-up on a shard faucet),
   and two defs pay a food item instead of shards. With roller rule (c),
-  a claimed board pays 900–2,400 cash and roughly 6–24 shards
+  a claimed board pays 1,050–2,200 cash and roughly 3–22 shards
   (typical ~12–16).
 - **Shard faucet ruling**: quest shards **bypass** the 60/day sell window —
   the battle first-clear precedent (`economy.apply` without touching

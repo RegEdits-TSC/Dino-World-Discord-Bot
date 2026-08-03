@@ -78,6 +78,22 @@ describe('/daily hub', () => {
     await dailyCmd.execute(ctx, i.asChatInput());
     expect((i.replies[0] as EmbedPayload).files).toBeUndefined();
   });
+
+  it('falls back to placeholder text instead of throwing when every rolled quest\'s def has been retired', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const dayKey = dayKeyUTC(ctx.now());
+    for (let slot = 0; slot < 3; slot++) {
+      ctx.db.insert(schema.dailyQuests)
+        .values({ userId: 'u1', dayKey, slot, questId: `retired_${slot}`, baseline: 0, target: 10 })
+        .run();
+    }
+
+    const i = fakeCommand({ name: 'daily', user: 'u1' });
+    await expect(dailyCmd.execute(ctx, i.asChatInput())).resolves.not.toThrow();
+    const embed = (i.replies[0] as EmbedPayload).embeds[0].toJSON();
+    expect(embed.description).toBe('New quests at UTC midnight.');
+  });
 });
 
 describe('/daily claim button', () => {
