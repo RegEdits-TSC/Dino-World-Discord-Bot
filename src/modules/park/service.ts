@@ -8,6 +8,7 @@ import { PADDOCKS } from '../../data/paddocks.js';
 import { lotSlots } from '../../data/progression.js';
 import { STARTER_FOOD } from '../../data/foods.js';
 import { recomputeRating } from './rating.js';
+import { track } from '../../core/stats.js';
 
 export const BASE_LOT_SLOTS = 3;
 export class LotLimitError extends Error {}
@@ -82,10 +83,12 @@ export function buildLot(ctx: Ctx, userId: string, kind: string): Lot {
   // leave the user debited with no lot to show for it.
   const lot = ctx.db.transaction(() => {
     ctx.economy.apply(userId, { cash: -cost }, `build:${kind}`, ctx.now());
-    return ctx.db.insert(schema.lots).values({
+    const built = ctx.db.insert(schema.lots).values({
       userId, type: paddock ? 'paddock' : 'facility', kind,
       name: paddock ? paddock.name : facility!.name,
     }).returning().get();
+    track(ctx, userId, 'lots_built', 1);
+    return built;
   });
   // Lots are 35% of park rating (see rating.ts); recompute so the dashboard and
   // ratingHighWater (which gates lot slots / sites / shop / mythic) stay current.
@@ -105,8 +108,10 @@ export function upgradeLot(ctx: Ctx, userId: string, lotId: number): Lot {
   // See buildLot: charge + level bump must be atomic against a failed update.
   const updated = ctx.db.transaction(() => {
     ctx.economy.apply(userId, { cash: -cost }, `upgrade:${lot.kind}:${lot.level + 1}`, ctx.now());
-    return ctx.db.update(schema.lots).set({ level: lot.level + 1 })
+    const bumped = ctx.db.update(schema.lots).set({ level: lot.level + 1 })
       .where(eq(schema.lots.id, lotId)).returning().get();
+    track(ctx, userId, 'lots_upgraded', 1);
+    return bumped;
   });
   // See buildLot: lot level is part of park rating, so recompute after mutating it.
   recomputeRating(ctx, userId);
@@ -149,6 +154,8 @@ export function collectIncome(ctx: Ctx, userId: string): { amount: number } {
       ctx.economy.apply(userId, { cash: amount }, 'collect', ctx.now());
       ctx.db.update(schema.users).set({ lastCollectAt: ctx.now() })
         .where(eq(schema.users.discordId, userId)).run();
+      track(ctx, userId, 'income_collected', amount);
+      track(ctx, userId, 'income_collections', 1);
     });
   }
   return { amount };
