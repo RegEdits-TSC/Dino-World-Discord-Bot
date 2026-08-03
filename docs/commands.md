@@ -87,7 +87,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/daily` | Your daily quest board, streak, and Claim button | Rolls a fresh board on first use each day (UTC); unclaimed quests expire at reset |
+| `/daily` | Your daily quest board, streak, and Claim button | Rolls a fresh board the first time you do anything each day (UTC); unclaimed quests expire at reset |
 | `/achievements` | Your lifetime achievement tracks, with a Claim all button | Paginated, 10 per page |
 
 ## 🏆 Progress

@@ -1014,7 +1014,7 @@ open `/daily` to look at it.
 
 Each day's three are drawn so no two share the same underlying stat, at most
 one of Incubate 2 eggs / Sell 2 dinos appears (never both), and at most one
-food-paying quest appears. A claimed board pays 900–2,400 cash and 6–24
+food-paying quest appears. A claimed board pays 1,050–2,200 cash and 3–22
 shards depending on the roll, typically around 12–16 shards, and quest
 shards are never subject to `/sell`'s 60-shard daily cap (see Selling dinos,
 above) — they're on top of it.

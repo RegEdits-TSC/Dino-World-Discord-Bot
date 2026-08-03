@@ -211,7 +211,7 @@ Example `modules.json`:
 }
 ```
 
-Nine modules ship today:
+Thirteen modules ship today:
 
 - `park` — paddocks, upgrades, park rating, decorations.
 - `hatchery` — eggs, incubation, hatching, Mythic purchases.

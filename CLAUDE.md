@@ -383,10 +383,11 @@
   progress. The roller (`pickBoard`) enforces three hard rules when it draws the day's
   3 quests from `QUESTS` (`src/data/quests.ts`): (a) no two slots share a stat; (b) at
   most one churn-stat quest (`CHURN_STATS`: `eggs_incubated`, `dinos_sold`) per board;
-  (c) at most one food-paying quest per board. The roll itself is deterministic —
-  seeded from `hash(userId + dayKey)` via a local mulberry32, never `ctx.rng()` — so
-  concurrent first-interactions land on the same board and the unique
-  `(userId, dayKey, slot)` constraint backstops the race with `INSERT OR IGNORE`.
+  (c) at most one food-paying quest per board. The roll itself is deterministic — the
+  local `hashSeed` (FNV-1a-style) turns `` `${userId}:${dayKey}` `` into a seed for
+  `mulberry32` (`src/core/rolls.ts`), never `ctx.rng()` — so concurrent
+  first-interactions land on the same board and the unique `(userId, dayKey, slot)`
+  constraint backstops the race with `INSERT OR IGNORE`.
   Streak chests (`chestFor`, `src/data/quests.ts`) pay on **personal bests only**:
   `claimQuests` only grants one when the post-tick streak exceeds `questStreakBest`,
   which is monotonic — deliberately breaking and re-climbing a streak re-pays nothing
