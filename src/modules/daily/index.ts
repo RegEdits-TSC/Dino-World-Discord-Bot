@@ -2,8 +2,8 @@ import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
-import { rollDailyQuests, claimQuests, achievementsView } from './service.js';
-import { hubPayload, claimPayload } from './embeds.js';
+import { rollDailyQuests, claimQuests, claimAchievements } from './service.js';
+import { hubPayload, claimPayload, achievementsPayload, claimAllPayload } from './embeds.js';
 
 export const dailyModule: ModuleManifest = {
   name: 'daily',
@@ -19,12 +19,9 @@ export const dailyModule: ModuleManifest = {
     },
     {
       data: new SlashCommandBuilder().setName('achievements').setDescription('Your lifetime achievement tracks'),
-      // Interim /achievements handler — Task 11 replaces this with the paginated embed.
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
-        const lines = achievementsView(ctx, i.user.id)
-          .map((t) => `${t.def.name}: ${t.value}`).join('\n');
-        await i.reply({ content: lines, flags: MessageFlags.Ephemeral });
+        await i.reply(achievementsPayload(ctx, i.user.id, 1));
       },
     },
   ],
@@ -44,6 +41,27 @@ export const dailyModule: ModuleManifest = {
           return;
         }
         await i.reply({ ...claimPayload(result), flags: MessageFlags.Ephemeral });
+      },
+    },
+    {
+      prefix: 'ach',
+      async execute(ctx, i) {
+        // Same owner-lock discipline as the 'daily' prefix above: the customId's uid
+        // segment is checked against the clicker before any read or write, and an
+        // unrecognized action degrades to deferUpdate rather than erroring.
+        const [, action, uid, pageStr] = i.customId.split(':');
+        if (action !== 'page' && action !== 'claimall') { await i.deferUpdate(); return; }
+        if (i.user.id !== uid) { await i.reply({ content: 'Not your achievements.', flags: MessageFlags.Ephemeral }); return; }
+        if (action === 'page') {
+          await i.update({ ...achievementsPayload(ctx, i.user.id, Number(pageStr)), attachments: [] });
+          return;
+        }
+        const result = claimAchievements(ctx, i.user.id);
+        if (!result.claimed.length) {
+          await i.reply({ content: 'Nothing to claim yet.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        await i.reply({ ...claimAllPayload(result), flags: MessageFlags.Ephemeral });
       },
     },
   ],

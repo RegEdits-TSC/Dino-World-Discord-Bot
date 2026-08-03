@@ -3,17 +3,24 @@ import { eq, and } from 'drizzle-orm';
 import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { dailyModule } from '../src/modules/daily/index.js';
+import { getOrCreateUser } from '../src/modules/park/service.js';
 import { track } from '../src/core/stats.js';
 import { dayKeyUTC, DAY_MS } from '../src/core/clock.js';
 import { QUESTS } from '../src/data/quests.js';
+import { ACHIEVEMENTS, TIER_REWARDS, TIER_NAMES } from '../src/data/achievements.js';
 
 type TestCtx = ReturnType<typeof makeCtx>;
 type EmbedJson = { description?: string; fields?: Array<{ name: string; value: string }> };
 type EmbedPayload = { embeds: Array<{ toJSON(): EmbedJson }>; flags?: number; files?: Array<{ name?: string | null }> };
+type ButtonRow = { toJSON(): { components: Array<{ custom_id: string }> } };
+type PagedPayload = EmbedPayload & { components: ButtonRow[]; attachments?: unknown[] };
 
 const dailyCmd = dailyModule.commands.find((c) => c.data.name === 'daily')!;
 const achievementsCmd = dailyModule.commands.find((c) => c.data.name === 'achievements')!;
 const dailyBtn = dailyModule.components.find((c) => c.prefix === 'daily')!;
+const achBtn = dailyModule.components.find((c) => c.prefix === 'ach')!;
+const eggsDef = ACHIEVEMENTS.find((a) => a.id === 'eggs_hatched')!;
+const explorerDef = ACHIEVEMENTS.find((a) => a.id === 'stages_first_cleared')!;
 
 function rowsFor(ctx: TestCtx, userId: string) {
   return ctx.db.select().from(schema.dailyQuests)
@@ -149,13 +156,126 @@ describe('/daily claim button', () => {
   });
 });
 
-describe('/achievements (interim handler)', () => {
-  it('replies ephemeral with 12 lines', async () => {
+describe('/achievements', () => {
+  it('renders one field per track on page 1 with a progress bar and tier markers, plus a pageRow (12 tracks = 2 pages)', async () => {
     const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    track(ctx, 'u1', 'eggs_hatched', 45); // clears bronze(10), short of silver(50)
+
     const i = fakeCommand({ name: 'achievements', user: 'u1' });
     await achievementsCmd.execute(ctx, i.asChatInput());
-    const payload = i.replies[0] as { content: string; flags?: number };
+    const payload = i.replies[0] as PagedPayload;
+    const fields = payload.embeds[0].toJSON().fields!;
+    expect(fields).toHaveLength(10);
+    expect(fields[0].name).toBe(eggsDef.name);
+    // nothing claimed yet => no medal glyphs; bar/fraction track toward the next uncrossed tier (silver, 50)
+    expect(fields[0].value).toBe(`▰▰▰▰▱ 45/${eggsDef.tiers[1]}`);
+
+    const pageButtons = payload.components[0].toJSON().components;
+    expect(pageButtons[0].custom_id).toBe('ach:page:u1:0');
+    expect(pageButtons[1].custom_id).toBe('ach:page:u1:2');
+    const claimRow = payload.components[1].toJSON().components;
+    expect(claimRow[0].custom_id).toBe('ach:claimall:u1');
+    expect(payload.files).toBeUndefined(); // no achievements banner shipped yet — null-degrade
+  });
+
+  it('shows claimed tier glyphs and MAXED once the stat has crossed every tier', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    track(ctx, 'u1', 'stages_first_cleared', explorerDef.tiers[3]);
+    const claimBtn = fakeButton({ customId: 'ach:claimall:u1', user: 'u1' });
+    await achBtn.execute(ctx, claimBtn.asChatInput() as never);
+
+    const i = fakeCommand({ name: 'achievements', user: 'u1' });
+    await achievementsCmd.execute(ctx, i.asChatInput());
+    const fields = (i.replies[0] as EmbedPayload).embeds[0].toJSON().fields!;
+    const line = fields.find((f) => f.name === explorerDef.name)!;
+    expect(line.value).toBe('🥉🥈🥇🏆 MAXED');
+  });
+});
+
+describe('ach:page button', () => {
+  it('rebuilds the requested page for the owner, with attachments cleared', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    await achievementsCmd.execute(ctx, fakeCommand({ name: 'achievements', user: 'u1' }).asChatInput());
+
+    const btn = fakeButton({ customId: 'ach:page:u1:2', user: 'u1' });
+    await achBtn.execute(ctx, btn.asChatInput() as never);
+    const payload = btn.replies[0] as PagedPayload;
+    const fields = payload.embeds[0].toJSON().fields!;
+    expect(fields).toHaveLength(2);
+    expect(fields[0].name).toBe(ACHIEVEMENTS[10].name);
+    expect(fields[1].name).toBe(ACHIEVEMENTS[11].name);
+    // Matches the /dino list precedent: the page flip re-renders a fresh payload, and the
+    // explicit empty attachments array is what sheds page 1's (would-be) banner upload.
+    expect(payload.attachments).toEqual([]);
+  });
+
+  it('clamps an out-of-range page back into range', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const btn = fakeButton({ customId: 'ach:page:u1:99', user: 'u1' });
+    await achBtn.execute(ctx, btn.asChatInput() as never);
+    const fields = (btn.replies[0] as EmbedPayload).embeds[0].toJSON().fields!;
+    expect(fields).toHaveLength(2); // clamped to the last real page (2 of 2)
+  });
+
+  it('rejects another user\'s click, ephemeral, with no reply carrying page data', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const btn = fakeButton({ customId: 'ach:page:u1:2', user: 'u2' });
+    await achBtn.execute(ctx, btn.asChatInput() as never);
+    expect(replyText(btn.replies[0])).toMatch(/not your/i);
+    expect((btn.replies[0] as { flags?: number }).flags).toBeDefined();
+  });
+});
+
+describe('ach:claimall button', () => {
+  it('rejects another user\'s click, ephemeral, with no writes', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    track(ctx, 'u1', 'stages_first_cleared', explorerDef.tiers[3]);
+    const btn = fakeButton({ customId: 'ach:claimall:u1', user: 'u2' });
+    await achBtn.execute(ctx, btn.asChatInput() as never);
+    expect(replyText(btn.replies[0])).toMatch(/not your/i);
+    expect((btn.replies[0] as { flags?: number }).flags).toBeDefined();
+    expect(txRows(ctx, 'u1', 'quest:achievements')).toHaveLength(0);
+    expect(ctx.db.select().from(schema.achievementClaims).where(eq(schema.achievementClaims.userId, 'u1')).all()).toHaveLength(0);
+  });
+
+  it('replies "Nothing to claim yet." ephemeral when nothing is claimable', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const btn = fakeButton({ customId: 'ach:claimall:u1', user: 'u1' });
+    await achBtn.execute(ctx, btn.asChatInput() as never);
+    expect(replyText(btn.replies[0])).toBe('Nothing to claim yet.');
+    expect((btn.replies[0] as { flags?: number }).flags).toBeDefined();
+  });
+
+  it('pays every claimable tier in one transaction and lists them', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    track(ctx, 'u1', 'stages_first_cleared', explorerDef.tiers[3]);
+    const btn = fakeButton({ customId: 'ach:claimall:u1', user: 'u1' });
+    await achBtn.execute(ctx, btn.asChatInput() as never);
+    const payload = btn.replies[0] as EmbedPayload;
     expect(payload.flags).toBeDefined();
-    expect(payload.content.split('\n')).toHaveLength(12);
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.description).toContain(explorerDef.name);
+    for (const name of TIER_NAMES) expect(embed.description).toContain(name);
+
+    const totalCash = TIER_REWARDS.reduce((s, r) => s + r.cash, 0);
+    const totalShards = TIER_REWARDS.reduce((s, r) => s + r.shards, 0);
+    const rewardsField = embed.fields!.find((f) => f.name === 'Rewards')!;
+    expect(rewardsField.value).toContain(`${totalCash.toLocaleString('en-US')} cash`);
+    expect(rewardsField.value).toContain(`${totalShards} shards`);
+
+    expect(txRows(ctx, 'u1', 'quest:achievements')).toHaveLength(1);
+    expect(ctx.db.select().from(schema.achievementClaims).where(eq(schema.achievementClaims.userId, 'u1')).all()).toHaveLength(4);
+  });
+
+  it('acknowledges an unknown ach action without replying (deferUpdate)', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const btn = fakeButton({ customId: 'ach:bogus:u1', user: 'u1' });
+    await achBtn.execute(ctx, btn.asChatInput() as never);
+    expect(btn.deferOpts).toHaveLength(1);
+    expect(btn.replies).toHaveLength(0);
   });
 });

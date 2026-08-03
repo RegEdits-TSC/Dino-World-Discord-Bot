@@ -5,15 +5,37 @@ import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { assetImage, attach } from '../../core/images.js';
 import { emojiTag } from '../../core/emojis.js';
+import { paginate, pageRow } from '../../core/paginate.js';
 import { FOODS, type FoodId } from '../../data/foods.js';
 import { nextChestAt } from '../../data/quests.js';
-import { questProgress, type ClaimResult } from './service.js';
+import { ACHIEVEMENTS, TIER_NAMES } from '../../data/achievements.js';
+import { questProgress, achievementsView, claimAchievements, type ClaimResult, type TrackView } from './service.js';
 
 export interface Payload { embeds: EmbedBuilder[]; components?: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[] }
 
 export function bar(cur: number, target: number): string {
   const filled = Math.max(0, Math.min(5, Math.floor((cur / target) * 5)));
   return '▰'.repeat(filled) + '▱'.repeat(5 - filled);
+}
+
+// Bronze/silver/gold/platinum, index-aligned with `def.tiers[i]` — 0-based
+// throughout the module (achievementsView, claimAchievements, TIER_NAMES).
+const TIER_GLYPHS = ['🥉', '🥈', '🥇', '🏆'];
+
+function tierGlyphs(claimedTiers: Set<number>): string {
+  return TIER_GLYPHS.filter((_, tier) => claimedTiers.has(tier)).join('');
+}
+
+// The bar/fraction track RAW STAT PROGRESS toward the next tier the value hasn't
+// crossed yet — independent of claim status, so a crossed-but-unclaimed tier still
+// reads as "MAXED"/full rather than looking stuck behind a lower threshold. The medal
+// glyphs are the separate, permanent record of what's actually been claimed.
+function trackLine(v: TrackView): string {
+  const glyphs = tierGlyphs(v.claimedTiers);
+  const nextTier = v.def.tiers.findIndex((threshold) => v.value < threshold);
+  if (nextTier === -1) return `${glyphs} MAXED`.trim();
+  const nextThreshold = v.def.tiers[nextTier];
+  return `${glyphs} ${bar(v.value, nextThreshold)} ${v.value}/${nextThreshold}`.trim();
 }
 
 export function hubPayload(ctx: Ctx, userId: string): Payload {
@@ -61,5 +83,43 @@ export function claimPayload(result: ClaimResult): Payload {
       value: `${emojiTag('dw_chest')} ${result.chest.streak}-day chest: ${chestParts.join(', ')}`,
     });
   }
+  return { embeds: [embed] };
+}
+
+// Follows the /dino list pagination idiom exactly (src/modules/park/index.ts,
+// dinoListPayload): the payload builder calls the read service itself, paginate()
+// clamps the page, and the page row only renders once there's more than one page.
+export function achievementsPayload(ctx: Ctx, userId: string, page: number): Payload {
+  const all = achievementsView(ctx, userId);
+  const { items, page: p, pages } = paginate(all, page);
+  const embed = new EmbedBuilder().setColor(0xf1c40f)
+    .setTitle('🏆 Achievements')
+    .addFields(items.map((v) => ({ name: v.def.name, value: trackLine(v) })))
+    .setFooter({ text: `Page ${p}/${pages}` });
+  const payload: Payload = {
+    embeds: [embed],
+    components: [
+      ...(pages > 1 ? [pageRow('ach', 'page', userId, p, pages)] : []),
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(`ach:claimall:${userId}`).setLabel('Claim all').setStyle(ButtonStyle.Success),
+      ),
+    ],
+  };
+  attach(embed, payload, 'image', assetImage('banners', 'achievements'));
+  return payload;
+}
+
+export function claimAllPayload(result: ReturnType<typeof claimAchievements>): Payload {
+  const lines = result.claimed.map((c) => {
+    const def = ACHIEVEMENTS.find((a) => a.id === c.trackId)!;
+    return `✅ ${def.name} — ${TIER_NAMES[c.tier]}`;
+  });
+  const rewardParts: string[] = [];
+  if (result.cash) rewardParts.push(`${emojiTag('dw_cash') || '💰'} ${result.cash.toLocaleString('en-US')} cash`);
+  if (result.shards) rewardParts.push(`${emojiTag('dw_shard') || '💎'} ${result.shards.toLocaleString('en-US')} shards`);
+  const embed = new EmbedBuilder().setColor(0xf1c40f)
+    .setTitle('🏆 Achievements claimed')
+    .setDescription(lines.join('\n'))
+    .addFields({ name: 'Rewards', value: rewardParts.join(', ') });
   return { embeds: [embed] };
 }

@@ -10,7 +10,7 @@ const LOT_EMOJI: Record<string, string> = {
 
 export function dashboardPayload(
   user: User, lots: Lot[], dinoCount: number, pending: number, escapedCount = 0,
-  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string } = {},
+  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number } = {},
 ) {
   const extras: string[] = [];
   if (escapedCount > 0) extras.push(`${escapedCount} ${emojiTag('dw_alert')} escaped`);
@@ -30,6 +30,10 @@ export function dashboardPayload(
         return `#${l.id} ${e ? `${e} ` : ''}${l.name} (lvl ${l.level})`;
       }).join('\n') || 'None — /build', inline: false },
     );
+  const earnedTiers = opts.earnedTiers ?? 0;
+  if (earnedTiers > 0) {
+    embed.addFields({ name: '🏆 Achievements', value: `${earnedTiers} tier${earnedTiers === 1 ? '' : 's'} earned`, inline: true });
+  }
   if (opts.capped) {
     embed.addFields({ name: '⛔ Income capped', value: 'Idle earnings hit the Visitor Center cap — collect now to restart them.' });
   }
