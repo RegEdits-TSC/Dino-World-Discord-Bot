@@ -20,6 +20,7 @@ export const EMOJI_FALLBACK: Record<string, string> = {
   dw_lot_genelab: '🧬',
   dw_trait_income: '💰', dw_trait_care: '🌿',
   dw_trait_combat: '⚔️', dw_trait_meta: '🧬',
+  dw_quest: '🎯', dw_streak: '🔥', dw_chest: '🎁',
 };
 
 let tags = new Map<string, string>();

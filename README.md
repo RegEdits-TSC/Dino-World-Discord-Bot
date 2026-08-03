@@ -32,6 +32,9 @@ bot is in.
   better trait odds than the wild, or gamble on a `/splice` re-roll
 - 🏆 **Climb leaderboards** — ranked by rating, cash, or collection, for your
   server or globally
+- 📅 **Keep a daily streak** — roll a fresh quest board every day, claim
+  milestone chests for consecutive claims, and work through twelve lifetime
+  achievement tracks
 - ⌨️ **Play without memorising ids** — every id option autocompletes, and `/help`
   walks you through your first ten minutes
 

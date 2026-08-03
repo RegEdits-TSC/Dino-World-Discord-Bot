@@ -9,7 +9,8 @@ Nano Banana Pro, `care_neglect` as a reference chain off `care` and
 `battle_defeat` off `battle_victory`. The six hatch cracks were generated as
 reference-chain edits of their own egg icons. These prompts are the source of
 truth for regenerating or extending the set — keep them in sync with any new
-assets.
+assets. Two more banners, `daily.webp` and `achievements.webp`, have prompts
+recorded below but are not generated yet — see the Embed banners section.
 
 Note on thumbs: some models render a "square cartoon game icon of …" prompt as
 a rounded-rectangle app-icon tile with a border. To force a full-bleed square
@@ -346,6 +347,13 @@ excess, which is center-cropped).
 | `assets/images/banners/sell.webp` | 1536×1024 | `/sell` confirmation prompt embed image |
 | `assets/images/banners/gene_lab.webp` | 1536×1024 | `/breed` confirm/status/claim embed image |
 | `assets/images/banners/gene_splice.webp` | 1536×1024 | `/splice` preview/result embed image |
+| `assets/images/banners/daily.webp` *(not yet generated)* | 1536×1024 | `/daily` hub embed image |
+| `assets/images/banners/achievements.webp` *(not yet generated)* | 1536×1024 | `/achievements` embed image |
+
+The last two rows have prompts below but no committed file yet — `assetImage`
+null-degrades until they land, which is why the `/daily` hub and `/help
+topic:daily` ship art-less at first (see the Daily loop entry in the repo
+`CLAUDE.md`).
 
 These are the only prompts in this file whose subject is dinosaurs rather than
 scenery, so they drop the shared block's "no characters" clause and forbid only
@@ -536,6 +544,36 @@ proactively — a roster board, an incubation room with a dial, and a buyer's
 stall with a ledger are exactly the kind of scene a model will happily letter.
 All three generated clean on the first attempt with the strengthened clause,
 so no regeneration was needed.
+
+**Daily (`daily.webp`) and Achievements (`achievements.webp`):** prompts
+recorded ahead of generation, not generated yet. Once generated, follow the
+same pipeline as the rest of this section — Higgsfield Nano Banana Pro at
+3:2, then `node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024 WebP
+q95. Until then `assetImage` null-degrades both embeds and the `daily` `/help`
+topic ships with no `art` descriptor at all (see the Daily loop entry in the
+repo `CLAUDE.md`).
+
+> **daily.webp:** A wide cartoon scene of a dinosaur park quest board beside a
+> well-trodden path: a warm timber signpost holding a chalkboard-style board
+> with three blank scroll-shaped tags hanging from little hooks, a lit
+> lantern and a small hourglass resting on the ledge below it, a friendly
+> cartoon dinosaur pausing to look up at the board with its head tilted, lush
+> ferns and a dirt path behind, soft early-morning daylight. Glossy cartoon
+> mobile-game art style, bold dark outlines, vibrant saturated colors, strong
+> glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no human characters, no UI elements.
+
+> **achievements.webp:** A wide cartoon scene of a dinosaur park trophy
+> alcove: a long wooden shelf lined with a row of gleaming bronze, silver,
+> gold, and platinum medals hanging on ribbons, a tall ornate trophy cup on a
+> pedestal at the center, warm spotlight beams falling from above, a proud
+> cartoon dinosaur standing beside the shelf with its head held high, polished
+> stone floor and soft draped banners behind, warm celebratory lighting.
+> Glossy cartoon mobile-game art style, bold dark outlines, vibrant saturated
+> colors, strong glossy highlights, clean cel shading with smooth gradients,
+> polished game-asset look. No text, no lettering, no words, no numbers, no
+> signage writing anywhere in the scene, no human characters, no UI elements.
 
 **Gene Lab (`gene_lab.webp`) and Gene Splice (`gene_splice.webp`):** generated
 with model `nano_banana_pro` (the API silently routes this to `nano_banana_2`)
@@ -961,9 +999,17 @@ the light studio rim must be peeled, and all border pixels must end transparent.
 
 ## Emoji icons
 
-The 38 application emojis in `assets/emojis/` are **not** generated — they are
+The 41 application emojis in `assets/emojis/` are **not** generated — they are
 hand-authored SVG rendered by `npm run build-emojis`. That set includes the six
 `dw_dino_<rarity>` chips and the six `dw_lot_*` icons the park renderer reads
 as SVG at draw time, plus the four `dw_trait_<domain>` icons (income, care,
 combat, meta) used inline wherever a dino's traits are listed. See the emoji
 bullets in the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.
+
+**Daily loop trio** — used inline on the `/daily` hub and reward embeds:
+
+| File | Design intent | Unicode fallback |
+| --- | --- | --- |
+| `dw_quest.svg` | A dartboard-style target (gold outer ring, cream middle ring, red bullseye) with a dart stuck dead center, gold-brown palette matching `dw_cash`/`dw_star` | 🎯 |
+| `dw_streak.svg` | A two-tone stylized flame — a red-orange outer silhouette with a brighter yellow-orange inner flame layered on top | 🔥 |
+| `dw_chest.svg` | A wooden treasure chest: domed lid and body in a warm wood-brown gradient, gold trim bands across the seam and down the front, a small gold lock plate at the seam | 🎁 |
