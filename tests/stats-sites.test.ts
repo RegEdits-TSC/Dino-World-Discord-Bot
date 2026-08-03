@@ -40,7 +40,11 @@ describe('feedDino stat tracking', () => {
     expect(readStat(ctx, 'u1', 'dinos_fed')).toBe(1);
   });
 
-  it('leaves dinos_fed at 0 when the feed throws (no matching food)', () => {
+  // This throws on the pre-transaction "no matching food" guard (before ctx.db.transaction
+  // is ever entered), so it only proves the guard runs before any counter write — not
+  // rollback. Rollback itself is proven at the substrate level by "a rolled-back
+  // transaction leaves no trace" in tests/stats.test.ts.
+  it('counts nothing when the feed is rejected before its transaction (no matching food)', () => {
     const d = addDino({ hunger: 100, lastFedAt: 0 });
     ctx.setNow(24 * H);
     ctx.db.delete(schema.foodInventory).run();
@@ -141,7 +145,11 @@ describe('claimExpedition stat tracking', () => {
     expect(readStat(ctx, 'u1', 'expeditions_claimed')).toBe(1);
   });
 
-  it('leaves expeditions_claimed at 0 when claiming an un-returned expedition throws', () => {
+  // This throws on the pre-transaction "not returned yet" guard (nine lines before the
+  // transaction), so it only proves the guard runs before any counter write — not
+  // rollback. Rollback itself is proven at the substrate level by "a rolled-back
+  // transaction leaves no trace" in tests/stats.test.ts.
+  it('counts nothing when claiming an un-returned expedition is rejected before its transaction', () => {
     ctx.economy.apply('u1', { cash: 1_000 }, 'seed', 0);
     startExpedition(ctx, 'u1', 'coastal_dig', 'g1');
     expect(() => claimExpedition(ctx, 'u1')).toThrow(ExpeditionError);
