@@ -1,15 +1,16 @@
 import { and, eq, isNotNull, ne } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
-import { dayKeyUTC } from '../../core/clock.js';
+import { dayKeyUTC, DAY_MS } from '../../core/clock.js';
 import { readStat, readStats, type StatId } from '../../core/stats.js';
-import { QUESTS, CHURN_STATS, type QuestDef } from '../../data/quests.js';
+import { QUESTS, CHURN_STATS, chestFor, type QuestDef, type ChestDef } from '../../data/quests.js';
 import { mulberry32 } from '../../core/rolls.js';
 import { facilityLevel, capHours } from '../park/service.js';
 import { RARITY } from '../../data/rarity.js';
 import { getSpecies } from '../../data/species/index.js';
 import { modProduct } from '../../data/traits.js';
 import { TRADE_MIN_RATING } from '../../data/trade.js';
+import type { FoodId } from '../../data/foods.js';
 
 function hashSeed(s: string): number {
   let h = 2166136261;
@@ -125,4 +126,68 @@ export function questProgress(ctx: Ctx, userId: string): QuestView[] {
     out.push({ row, def, progress, complete: progress >= row.target });
   }
   return out;
+}
+
+export interface ClaimResult {
+  claimed: QuestView[];
+  rewards: { cash: number; shards: number; foods: Partial<Record<FoodId, number>> };
+  chest: (ChestDef & { streak: number }) | null;
+  streak: number;
+  ticked: boolean;
+}
+
+// Reads TODAY's dayKey only (via questProgress, which already scopes its query to
+// dayKeyUTC(ctx.now())) — a board completed after midnight without being claimed is
+// simply invisible here, forfeited by design, and this function must not roll a new
+// board or touch the streak/user row in that case.
+export function claimQuests(ctx: Ctx, userId: string): ClaimResult {
+  const now = ctx.now();
+  const dayKey = dayKeyUTC(now);
+  const claimable = questProgress(ctx, userId)
+    .filter((v) => v.row.dayKey === dayKey && v.row.claimedAt === null && v.complete);
+  const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!;
+  if (!claimable.length)
+    return { claimed: [], rewards: { cash: 0, shards: 0, foods: {} }, chest: null, streak: user.questStreak, ticked: false };
+
+  const rewards = { cash: 0, shards: 0, foods: {} as Partial<Record<FoodId, number>> };
+  for (const v of claimable) {
+    rewards.cash += v.def.rewards.cash;
+    rewards.shards += v.def.rewards.shards ?? 0;
+    if (v.def.rewards.food) {
+      const { foodId, qty } = v.def.rewards.food;
+      rewards.foods[foodId] = (rewards.foods[foodId] ?? 0) + qty;
+    }
+  }
+
+  // dayKey comparison, never an elapsed-ms window: two claims on adjacent calendar days
+  // more than 24h apart (e.g. day1 09:00 -> day2 10:00) must still tick as consecutive.
+  const lastKey = user.lastQuestClaimAt > 0 ? dayKeyUTC(user.lastQuestClaimAt) : null;
+  const ticked = lastKey !== dayKey;
+  const streak = !ticked ? user.questStreak
+    : lastKey === dayKeyUTC(now - DAY_MS) ? user.questStreak + 1 : 1;
+  // Chests pay on new personal bests only — this single comparison is what makes
+  // deliberately breaking a streak strictly worse than keeping it.
+  const chestDef = ticked && streak > user.questStreakBest ? chestFor(streak) : null;
+
+  ctx.db.transaction(() => {
+    ctx.economy.apply(userId, rewards, 'quest:daily', now);
+    for (const v of claimable) {
+      ctx.db.update(schema.dailyQuests).set({ claimedAt: now })
+        .where(eq(schema.dailyQuests.id, v.row.id)).run();
+    }
+    if (chestDef) {
+      ctx.economy.apply(userId, { cash: chestDef.cash, shards: chestDef.shards }, 'quest:chest', now);
+      if (chestDef.eggRarity) {
+        ctx.db.insert(schema.eggs).values({
+          userId, rarity: chestDef.eggRarity, speciesId: null, source: 'quest', obtainedAt: now,
+        }).run();
+      }
+    }
+    ctx.db.update(schema.users).set({
+      questStreak: streak,
+      questStreakBest: Math.max(user.questStreakBest, streak),
+      lastQuestClaimAt: now,
+    }).where(eq(schema.users.discordId, userId)).run();
+  });
+  return { claimed: claimable, rewards, chest: chestDef ? { ...chestDef, streak } : null, streak, ticked };
 }
