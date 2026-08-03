@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MessageFlags } from 'discord.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, pendingIncome, buildLot } from '../src/modules/park/service.js';
@@ -12,6 +12,10 @@ import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
 import { ENERGY_CAP } from '../src/data/battle/constants.js';
 import { settleEnergy } from '../src/data/battle/energy.js';
+import { track } from '../src/core/stats.js';
+import { dayKeyUTC, DAY_MS } from '../src/core/clock.js';
+import { QUESTS } from '../src/data/quests.js';
+import { rollDailyQuests, claimQuests } from '../src/modules/daily/service.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });   // config.ownerId === 'owner'
@@ -214,5 +218,118 @@ describe('adminReset + battles', () => {
     expect(u.energyUpdatedAt).toBe(50_000);
     expect(ctx.db.select().from(schema.battleProgress)
       .where(eq(schema.battleProgress.userId, 'p')).all()).toHaveLength(0);
+  });
+});
+
+describe('adminReset + daily loop', () => {
+  it('wipes stats, quest board and achievement claims, zeroes streak columns, and leaves other users untouched', () => {
+    getOrCreateUser(ctx, 'p', 'P');
+    getOrCreateUser(ctx, 'other', 'O');
+    const dayKey = dayKeyUTC(ctx.now());
+
+    ctx.db.insert(schema.userStats).values({ userId: 'p', stat: 'dinos_fed', value: 5 }).run();
+    ctx.db.insert(schema.dailyQuests)
+      .values({ userId: 'p', dayKey, slot: 0, questId: 'feed_3', baseline: 0, target: 3 }).run();
+    ctx.db.insert(schema.achievementClaims)
+      .values({ userId: 'p', trackId: 'dinos_fed', tier: 0, claimedAt: ctx.now() }).run();
+    ctx.db.update(schema.users)
+      .set({ questStreak: 5, questStreakBest: 14, lastQuestClaimAt: 12_345 })
+      .where(eq(schema.users.discordId, 'p')).run();
+
+    // Same fixtures for a second user, to prove reset never crosses accounts.
+    ctx.db.insert(schema.userStats).values({ userId: 'other', stat: 'dinos_fed', value: 9 }).run();
+    ctx.db.insert(schema.dailyQuests)
+      .values({ userId: 'other', dayKey, slot: 0, questId: 'feed_3', baseline: 0, target: 3 }).run();
+    ctx.db.insert(schema.achievementClaims)
+      .values({ userId: 'other', trackId: 'dinos_fed', tier: 0, claimedAt: ctx.now() }).run();
+    ctx.db.update(schema.users)
+      .set({ questStreak: 2, questStreakBest: 7, lastQuestClaimAt: 999 })
+      .where(eq(schema.users.discordId, 'other')).run();
+
+    adminReset(ctx, 'p');
+
+    expect(ctx.db.select().from(schema.userStats).where(eq(schema.userStats.userId, 'p')).all()).toHaveLength(0);
+    expect(ctx.db.select().from(schema.dailyQuests).where(eq(schema.dailyQuests.userId, 'p')).all()).toHaveLength(0);
+    expect(ctx.db.select().from(schema.achievementClaims).where(eq(schema.achievementClaims.userId, 'p')).all()).toHaveLength(0);
+    const p = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'p')).get()!;
+    expect(p.questStreak).toBe(0);
+    expect(p.questStreakBest).toBe(0);
+    expect(p.lastQuestClaimAt).toBe(0);
+
+    // Other user's rows and streak columns are provably untouched.
+    expect(ctx.db.select().from(schema.userStats).where(eq(schema.userStats.userId, 'other')).all()).toHaveLength(1);
+    expect(ctx.db.select().from(schema.dailyQuests).where(eq(schema.dailyQuests.userId, 'other')).all()).toHaveLength(1);
+    expect(ctx.db.select().from(schema.achievementClaims).where(eq(schema.achievementClaims.userId, 'other')).all()).toHaveLength(1);
+    const other = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'other')).get()!;
+    expect(other.questStreak).toBe(2);
+    expect(other.questStreakBest).toBe(7);
+    expect(other.lastQuestClaimAt).toBe(999);
+  });
+});
+
+describe('adminFastForward + daily loop', () => {
+  it('shifts a claimed lastQuestClaimAt back by the elapsed time', () => {
+    getOrCreateUser(ctx, 'p', 'P');
+    ctx.db.update(schema.users).set({ lastQuestClaimAt: 30 * 3_600_000 })
+      .where(eq(schema.users.discordId, 'p')).run();
+    adminFastForward(ctx, 'p', 26);
+    const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'p')).get()!;
+    expect(u.lastQuestClaimAt).toBe(4 * 3_600_000);   // 30h - 26h
+  });
+
+  it('leaves a never-claimed lastQuestClaimAt at 0 while the other users columns still shift', () => {
+    getOrCreateUser(ctx, 'p', 'P');   // lastQuestClaimAt defaults to 0; lastCollectAt = ctx.now() = 0
+    adminFastForward(ctx, 'p', 26);
+    const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'p')).get()!;
+    expect(u.lastQuestClaimAt).toBe(0);
+    expect(u.lastCollectAt).toBe(-26 * 3_600_000);   // unrelated column still shifts unguarded
+  });
+
+  it('never touches daily_quests rows: dayKey stays exactly what it was', () => {
+    getOrCreateUser(ctx, 'p', 'P');
+    const dayKey = dayKeyUTC(ctx.now());
+    ctx.db.insert(schema.dailyQuests)
+      .values({ userId: 'p', dayKey, slot: 0, questId: 'feed_3', baseline: 0, target: 3 }).run();
+    adminFastForward(ctx, 'p', 26);
+    const row = ctx.db.select().from(schema.dailyQuests).where(eq(schema.dailyQuests.userId, 'p')).get()!;
+    expect(row.dayKey).toBe(dayKey);
+  });
+
+  it('streak continuity: a claim, a 24h fast-forward, and a second claim on the same board tick the streak to 2', () => {
+    // nowMs starts an hour into day 1 (not exactly DAY_MS, and not 0): lastQuestClaimAt's
+    // "never claimed" sentinel is literal 0 (see tests/daily-claim.test.ts), and a claim
+    // exactly at ms=0 OR a fast-forward that lands exactly back on 0 would both collide
+    // with it and read as "never claimed" instead of "claimed yesterday".
+    const ctx = makeCtx({ nowMs: DAY_MS + 3_600_000 });
+    getOrCreateUser(ctx, 'p', 'P');
+    rollDailyQuests(ctx, 'p');
+    const dayKey = dayKeyUTC(ctx.now());
+    const rows = ctx.db.select().from(schema.dailyQuests)
+      .where(and(eq(schema.dailyQuests.userId, 'p'), eq(schema.dailyQuests.dayKey, dayKey))).all();
+    expect(rows).toHaveLength(3);   // fresh account only rolls 'none'-requirement quests
+
+    const [first, second] = rows;
+    const firstDef = QUESTS.find((q) => q.id === first.questId)!;
+    track(ctx, 'p', firstDef.stat, (first.target as number) - first.baseline);   // complete only 1 of 3
+
+    const claim1 = claimQuests(ctx, 'p');
+    expect(claim1.claimed).toHaveLength(1);
+    expect(claim1.streak).toBe(1);
+    expect(claim1.ticked).toBe(true);
+
+    adminFastForward(ctx, 'p', 24);   // same dayKey -> no re-roll, still today's board
+
+    const rowsAfterShift = ctx.db.select().from(schema.dailyQuests)
+      .where(and(eq(schema.dailyQuests.userId, 'p'), eq(schema.dailyQuests.dayKey, dayKey))).all();
+    expect(rowsAfterShift).toHaveLength(3);
+
+    const secondDef = QUESTS.find((q) => q.id === second.questId)!;
+    track(ctx, 'p', secondDef.stat, (second.target as number) - second.baseline);   // complete a second quest
+
+    const claim2 = claimQuests(ctx, 'p');
+    expect(claim2.claimed).toHaveLength(1);
+    expect(claim2.claimed[0].def.id).toBe(second.questId);
+    expect(claim2.ticked).toBe(true);
+    expect(claim2.streak).toBe(2);   // the shifted anchor reads as yesterday
   });
 });
