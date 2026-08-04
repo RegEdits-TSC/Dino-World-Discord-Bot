@@ -136,7 +136,11 @@ describe('0002 battle columns via the real drizzle migrator (production path)', 
       ).get() as { cash: number; park_name: string; rating_high_water: number; shards: number };
       expect(preserved.cash).toBe(1234);
       expect(preserved.park_name).toBe('Jurassic Pocket');
-      expect(preserved.rating_high_water).toBe(210);
+      // 0007 (the rating rescale) also runs on this path — migrateDb always applies the
+      // full folder — so the preserved value comes back doubled. The assertion's purpose
+      // is unchanged: it proves the 0002 users rebuild copies unrelated columns through
+      // rather than resetting them to defaults.
+      expect(preserved.rating_high_water).toBe(210 * 2);
       expect(preserved.shards).toBe(7);
 
       // Existing user rows pick up the new NOT NULL defaults.
@@ -322,6 +326,44 @@ describe('0006 daily loop via the real drizzle migrator (production path)', () =
       expect(otherStats).toEqual([{ stat: 'trades_completed', value: 1 }]);
 
       // migrateDb must leave FK enforcement ON — runtime integrity depends on it.
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('0007 rating rescale via the real drizzle migrator (production path)', () => {
+  it('doubles both stored rating columns on a populated database', () => {
+    // Reach the 0006 schema via a scratch folder holding migrations 0000-0006, seed a
+    // parent user AND a child dino row, then let the real migrateDb apply 0007 exactly
+    // as the bot does at startup. An empty-DB run or a raw-SQL replay would pass even
+    // if the journal entry were missing, which is the failure this test exists to catch.
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig7-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^000[0-6].*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 6);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });          // apply 0000-0006 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, park_rating, rating_high_water, last_collect_at_ms, created_at_ms)
+                    VALUES ('u1', 300, 410, 0, 0), ('u2', 0, 0, 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO dinos (user_id, species_id, hunger, last_fed_at_ms, hatched_at_ms)
+                    VALUES ('u1', 'triceratops', 100, 0, 0)`).run();
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+      const rows = sqlite.prepare(`SELECT discord_id, park_rating, rating_high_water FROM users ORDER BY discord_id`).all() as
+        Array<{ discord_id: string; park_rating: number; rating_high_water: number }>;
+      expect(rows[0]).toEqual({ discord_id: 'u1', park_rating: 600, rating_high_water: 820 });
+      expect(rows[1]).toEqual({ discord_id: 'u2', park_rating: 0, rating_high_water: 0 });
       expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
     } finally {
       rmSync(scratch, { recursive: true, force: true });
