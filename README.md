@@ -9,7 +9,7 @@
 ![Dino World](assets/images/banners/help.webp)
 
 A dinosaur park tycoon game played entirely inside Discord. Build a park, hatch
-eggs into a collection of 30 species, send dig crews out on expeditions, fight a
+eggs into a collection of 40 species, send dig crews out on expeditions, fight a
 PvE campaign, and trade with other players — all through slash commands. Each
 park belongs to one Discord user and travels with them across every server the
 bot is in.
@@ -18,11 +18,11 @@ bot is in.
 
 - 🏞️ **Build a park** — paddocks, facilities, and decor across lots you unlock as
   your rating grows, with `/park view` rendering your layout as a map image
-- 🥚 **Hatch and collect** — 30 species across six rarities, from Common up to
+- 🥚 **Hatch and collect** — 40 species across six rarities, from Common up to
   Mythic, each egg incubating on its own timer and hatching into illustrated art
 - 🗺️ **Run expeditions** — send a dig crew out to themed sites and claim what they
   bring back
-- ⚔️ **Fight a campaign** — four chapters of five stages, each ending in a boss,
+- ⚔️ **Fight a campaign** — six chapters of five stages, each ending in a boss,
   played out as a cinematic with star ratings and first-clear rewards
 - 🍖 **Keep them fed** — six diet-typed foods, with herbivores and carnivores
   refusing each other's meals and hunger driving how much your park earns

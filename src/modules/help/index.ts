@@ -40,7 +40,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '`/expedition start site:<site>` — pay cash, wait, get loot. Higher sites need higher rating.',
     '`/expedition status` — check the timer.',
     '`/expedition claim` — collect the egg + cash + food.',
-    'Sites: Coastal Dig (15m) → Amber Ridge (1h) → Frozen Cliffs (4h) → Volcano Core (8h).',
+    'Sites: Coastal Dig (15m) → Amber Ridge (1h) → Frozen Cliffs (4h) → Volcano Core (8h) → Abyssal Trench (12h) → Containment Site (24h).',
   ].join('\n') },
   shop: { title: '🏪 Shop', art: { kind: 'banners', name: 'shop_food_market' }, body: [
     '`/shop view` — today\'s egg rotation (changes daily), food, decor.',
@@ -66,7 +66,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Rating grows with dinos, lots, and comfort; it gates expeditions, shop tiers, and Mythics.',
   ].join('\n') },
   battles: { title: '⚔️ Battles', art: { kind: 'sites', name: 'coastal_dig-banner' }, body: [
-    '`/battle chapters` — the campaign map: 4 chapters themed to the expedition sites, 5 stages each, the 5th a boss.',
+    '`/battle chapters` — the campaign map: 6 chapters themed to the expedition sites, 5 stages each, the 5th a boss.',
     '`/battle fight stage:<stage> dino1:<id> [dino2] [dino3]` — send a squad of 1–3 dinos; the fight auto-resolves and plays back as a short cinematic (press Skip to jump to the result).',
     'Energy: every attempt costs ⚡ 1–3 by stage, win or lose. You hold up to 10 and regain 1 every 10 minutes.',
     'Squads: escaped dinos can\'t fight — rescue them first. Power comes from rarity, archetype (bruiser / tank / swift / support), and battle level: every fight pays battle XP, up to Lv.10.',
