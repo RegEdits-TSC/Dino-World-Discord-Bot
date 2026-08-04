@@ -13,7 +13,7 @@ describe('/admin give dino-species autocomplete', () => {
     expect(i.replies[0]).toEqual([]);
   });
 
-  it('filters the 30-species registry by query for the owner', async () => {
+  it('filters the species registry by query for the owner', async () => {
     const ctx = makeCtx();
     const i = fakeAutocomplete({ name: 'admin', sub: 'give', user: 'owner', focused: { name: 'dino-species', value: 'velo' } });
     await cmd().autocomplete!(ctx, i.asAutocomplete());

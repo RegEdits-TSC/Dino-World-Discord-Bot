@@ -319,8 +319,9 @@ describe('dino archetype art', () => {
   it.each(DINO_ART_KEYS)('%s is a 1024×1024 transparent cutout',
     (key) => expectTransparentCutout('dinos', key));
   // The whole point of keying on archetype×diet: every species resolves without
-  // new art. support-carnivore has no species today and still ships, so adding
-  // one stays a data-only change.
+  // new art. Archelon is the first species to use support-carnivore, which
+  // shipped unused until this round — it needed zero new art, same as any
+  // other species landing on an already-used combination.
   it('every species resolves to a shipped archetype image', () => {
     for (const s of allSpecies()) {
       expect(assetImage('dinos', `${s.archetype}-${s.diet}`), s.id).not.toBeNull();
