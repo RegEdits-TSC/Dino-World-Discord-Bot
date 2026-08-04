@@ -8,10 +8,14 @@ let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
 
 describe('gating helpers (re-exported from rating.ts)', () => {
-  it('lotSlots grows 3→10 across thresholds', () => {
+  it('lotSlots grows 3→10 across all thresholds', () => {
     expect(lotSlots(0)).toBe(3);
     expect(lotSlots(100)).toBe(4);
+    expect(lotSlots(200)).toBe(5);
+    expect(lotSlots(400)).toBe(6);
+    expect(lotSlots(600)).toBe(7);
     expect(lotSlots(800)).toBe(8);
+    expect(lotSlots(880)).toBe(9);
     expect(lotSlots(950)).toBe(10);
     expect(lotSlots(9999)).toBe(10);
   });
@@ -25,14 +29,15 @@ describe('gating helpers (re-exported from rating.ts)', () => {
     expect(mythicUnlocked(799)).toBe(false);
     expect(mythicUnlocked(800)).toBe(true);
   });
-  it('rating is scaled to 1000 and never exceeds it', () => {
+  it('rating is scaled to 1000 — a known collection pins the exact score', () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
+    // tyrannosaurus + mosasaurus (legendary, 16 each) + indominus + indoraptor (mythic, 32 each)
+    // = 96 weight / 190 target × 0.40 collection weight × 1000 scale = 202
     for (const s of ['tyrannosaurus', 'mosasaurus', 'indominus', 'indoraptor']) {
       ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: s, hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
     }
     const { rating } = recomputeRating(ctx, 'u1');
-    expect(rating).toBeGreaterThan(0);
-    expect(rating).toBeLessThanOrEqual(1000);
+    expect(rating).toBe(202);
   });
 });
 
