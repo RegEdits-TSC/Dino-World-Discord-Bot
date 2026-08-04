@@ -321,6 +321,49 @@ shell with glowing orange cracks).
 > colors, strong glossy highlights, clean cel shading with smooth gradients,
 > polished game-asset look. No text, no characters, no UI elements.
 
+## Abyssal Trench (`abyssal_trench`)
+
+Generated at 2528×1696 (3:2, resolution `2k`), fitted to 1536×1024 for the
+banner; the thumb is a centered square crop of the same source, resized to
+1024×1024 (not a squash).
+
+**Banner (1536×1024) and Thumb (1024×1024), same source:**
+
+> A deep-ocean abyssal trench, dominated by deep blue and blue-black water filling
+> the whole frame edge to edge with no letterboxing and no black bars. Steep dark
+> basalt walls on both sides falling away into a narrow black chasm, drifting
+> marine snow and pale cyan particulate suspended in the water, a small cluster of
+> dim amber hydrothermal vents low in the scene venting dark mineral smoke, tall
+> kelp-like tube worms clinging to the rock, a distant submersible's pale lamp beam
+> raking across the far wall. Cold blue palette overall, the amber vents small and
+> secondary, never lava-like. Wide cinematic establishing shot filling the entire
+> canvas. Glossy cartoon mobile-game art style, bold dark outlines, vibrant
+> saturated colors, strong glossy highlights, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no characters, no UI elements.
+
+Note for future regeneration: the first attempt at 1k came back letterboxed with
+baked-in black bars, and its orange vent chimneys read as lava, colliding with
+Volcano Core's identity. The "filling the whole frame edge to edge with no
+letterboxing", the explicit blue dominance, and "never lava-like" are the three
+clauses that fixed it.
+
+## Containment Site (`containment_site`)
+
+Generated at 1264×848, upscaled to 3216×2160 (`bytedance_image_upscale`, 2k),
+fitted to 1536×1024 for the banner; the thumb is a centered square crop of the
+same upscaled source, resized to 1024×1024 (not a squash).
+
+**Banner (1536×1024) and Thumb (1024×1024), same source:**
+
+> A rain-slick dinosaur research compound at night behind heavy electrified fencing,
+> tall floodlight towers cutting bright cones through drifting mist, a breached inner
+> paddock gate hanging open with bent steel bars, yellow warning chevrons painted on
+> wet concrete, puddles reflecting the lights, cold teal and sodium-amber palette,
+> wide cinematic establishing shot. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel shading
+> with smooth gradients, polished game-asset look. No text, no characters, no UI
+> elements.
+
 ---
 
 ## Embed banners
@@ -603,7 +646,7 @@ look everywhere else.
 
 ## Battle bosses
 
-Four boss portraits for the PvE campaign (`/battle`), used as `setThumbnail`
+Six boss portraits for the PvE campaign (`/battle`), used as `setThumbnail`
 on frames F3/F4 of boss stages. Null-degrade everywhere: the campaign ships
 fully playable with zero battle art.
 
@@ -613,6 +656,8 @@ fully playable with zero battle art.
 | `assets/images/battles/boss-amber_ridge-portrait.webp` | 1024×1024, transparent | Ridgeback Alpha (Allosaurus), Amber Ridge boss frames |
 | `assets/images/battles/boss-frozen_cliffs-portrait.webp` | 1024×1024, transparent | Stormwing (Quetzalcoatlus), Frozen Cliffs boss frames |
 | `assets/images/battles/boss-volcano_core-portrait.webp` | 1024×1024, transparent | The Tyrant King (Tyrannosaurus), Volcano Core boss frames |
+| `assets/images/battles/boss-abyssal_trench-portrait.webp` | 1024×1024, transparent | The Trench Sovereign (Mosasaurus), Abyssal Trench boss frames |
+| `assets/images/battles/boss-containment_site-portrait.webp` | 1024×1024, transparent | Asset 47 (Spinoraptor), Containment Site boss frames |
 
 **Hard no-glow rule:** no glow, rays, embers, sparkles, or light effects may
 extend beyond the dinosaur silhouette — off-silhouette glow survives
@@ -696,6 +741,56 @@ margin the four committed portraits measure at.
   with jet-black obsidian-dark scales veined by glowing orange lava-crack
   markings on the scale surfaces only, an ember-orange eye, and a roaring
   open jaw.
+
+**boss-abyssal_trench — The Trench Sovereign (Mosasaurus):** generated as a
+standalone prompt (not an image-edit of the coastal reference), background
+removed, fitted to a 24px margin.
+
+> A fierce cartoon Mosasaurus boss portrait, head and shoulders in three-quarter
+> view, massive blunt reptilian skull with a jagged toothy snarl, deep-blue scales
+> over a pale cream underbelly, wet glossy sheen with seawater sheeting off the hide,
+> pale cyan bioluminescent speckling along the jawline, one old pale scar across the
+> brow. The complete head and shoulders sit fully inside the image with an even
+> margin of empty background on all four sides, nothing touching or cropped by any
+> edge. Plain flat light-gray studio background, completely empty, no scenery, no
+> ground shadow, no drawn border, no frame, no panel edge, no letterboxing. No glow,
+> rays, embers, sparkles, or light effects extending beyond the creature silhouette;
+> glowing details may appear only on the surfaces themselves. Glossy cartoon
+> mobile-game art style, bold dark outlines, vibrant saturated colors, strong glossy
+> highlights, clean cel shading with smooth gradients, polished game-asset look. No
+> text, no numbers, no lettering, no human characters, no UI elements.
+
+**boss-containment_site — Asset 47 (Spinoraptor):** generated as a standalone
+prompt (not an image-edit of the coastal reference), background removed,
+fitted to a 24px margin.
+
+> A fierce cartoon hybrid dinosaur boss portrait, head and shoulders in three-quarter
+> view, a raptor's narrow toothy skull with a tall spined sail rising behind the
+> shoulders, charcoal-black and acid-yellow banded scales with a wet glossy sheen,
+> old surgical scarring along the jaw, a small blank unmarked metal tag clipped to
+> the neck, snarling with intelligent menace. The complete head, neck and sail sit
+> fully inside the image with an even margin of empty background on all four sides,
+> nothing touching or cropped by any edge. Plain flat light-gray studio background,
+> completely empty, no scenery, no ground shadow, no drawn border, no frame, no panel
+> edge, no letterboxing. No glow, rays, embers, sparkles, or light effects extending
+> beyond the creature silhouette; glowing details may appear only on the surfaces
+> themselves. Glossy cartoon mobile-game art style, bold dark outlines, vibrant
+> saturated colors, strong glossy highlights, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no numbers, no lettering, no human
+> characters, no UI elements.
+
+**Two prompt clauses worth keeping for any future portrait.** The first pass
+of both portraits above failed for reasons the existing prompt frame did not
+cover, and these two clauses are what fixed them:
+
+- **"no drawn border, no frame, no panel edge"** — the first Mosasaurus came
+  back with a painted rectangular border around the whole image. On a
+  portrait destined for background removal that is fatal: the frame survives
+  matting, and a largest-connected-region step can keep the frame and discard
+  the animal.
+- **"no text, no numbers, no lettering"** — the first Spinoraptor rendered a
+  legible "#042" on its neck tag, which both violates the no-text house rule
+  and contradicts the boss's name, Asset 47.
 
 ## Dino archetypes
 
