@@ -215,6 +215,56 @@ describe('dashboard warnings', () => {
   });
 });
 
+describe('dashboard achievements badge', () => {
+  it('shows the earned tier count when greater than zero', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 0, 0, { earnedTiers: 3 });
+    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏆 Achievements');
+    expect(field).toBeTruthy();
+    expect(field!.value).toContain('3');
+  });
+  it('omits the achievements field entirely at zero', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 0, 0, {});
+    const names = p.embeds[0].toJSON().fields!.map((f) => f.name);
+    expect(names).not.toContain('🏆 Achievements');
+  });
+  it('also omits it when earnedTiers is left unset entirely', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 0, 0);
+    const names = p.embeds[0].toJSON().fields!.map((f) => f.name);
+    expect(names).not.toContain('🏆 Achievements');
+  });
+});
+
+describe('/park view achievements badge wiring', () => {
+  it('passes earnedTierCount into the own-park dashboard', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.db.insert(schema.achievementClaims).values([
+      { userId: 'u1', trackId: 'eggs_hatched', tier: 0, claimedAt: 0 },
+      { userId: 'u1', trackId: 'eggs_hatched', tier: 1, claimedAt: 0 },
+    ]).run();
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
+    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field = fields.find((f) => f.name === '🏆 Achievements')!;
+    expect(field.value).toContain('2');
+  });
+
+  it('passes earnedTierCount into the read-only other-user dashboard', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    getOrCreateUser(ctx, 'other', 'Other');
+    ctx.db.insert(schema.achievementClaims).values([
+      { userId: 'other', trackId: 'eggs_hatched', tier: 0, claimedAt: 0 },
+    ]).run();
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1', options: { user: 'other' } });
+    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
+    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field = fields.find((f) => f.name === '🏆 Achievements')!;
+    expect(field.value).toContain('1');
+  });
+});
+
 describe('/park view cap warning condition', () => {
   const viewFields = async () => {
     const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });

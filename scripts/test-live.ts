@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { REST, Routes, MessageFlags } from 'discord.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { readFileSync } from 'node:fs';
 import { loadConfig } from '../src/core/config.js';
 import { ALL_MODULES } from '../src/core/module-list.js';
@@ -17,6 +17,10 @@ import { startExpedition } from '../src/modules/expeditions/service.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
 import { ENERGY_CAP } from '../src/data/battle/constants.js';
+import { rollDailyQuests } from '../src/modules/daily/service.js';
+import { track } from '../src/core/stats.js';
+import { dayKeyUTC } from '../src/core/clock.js';
+import { QUESTS } from '../src/data/quests.js';
 import { makeCtx, fakeCommand, fakeButton, type FakeInteraction } from '../tests/harness.js';
 import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
 import type { Ctx } from '../src/core/context.js';
@@ -132,6 +136,18 @@ const escapedDino = ctx.db.select().from(schema.dinos).all().at(-1)!;
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'compsognathus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
 const weakDino = ctx.db.select().from(schema.dinos).all().at(-1)!;
 
+// Daily loop seed: roll P1's board LAST, after every other eligibility precondition
+// above is already true (income lot assigned, gene lab built, battle progress rows
+// exist, ratingHighWater raised for trading) so the roll draws from the full 17-quest
+// pool rather than a requirement-filtered subset. track() one of the three quests up
+// to its target so the hub case shows one checkmark line and two still in progress;
+// the claim-reply case then claims that single quest.
+rollDailyQuests(ctx, P1);
+const dailyRows = ctx.db.select().from(schema.dailyQuests)
+  .where(and(eq(schema.dailyQuests.userId, P1), eq(schema.dailyQuests.dayKey, dayKeyUTC(ctx.now())))).all();
+const firstQuestDef = QUESTS.find((q) => q.id === dailyRows[0].questId)!;
+track(ctx, P1, firstQuestDef.stat, dailyRows[0].target);
+
 // If any service signature above disagrees with the source, match the source —
 // tests/*.test.ts show every call shape.
 
@@ -156,6 +172,8 @@ const cases: Case[] = [
   { title: '/help topic:park — own-park canvas render', run: () => slash('help', 'help', { name: 'help', user: P1, options: { topic: 'park' } }) },
   { title: '/help topic:eggs — egg art', run: () => slash('help', 'help', { name: 'help', user: P1, options: { topic: 'eggs' } }) },
   { title: '/help topic:battles — chapter banner', run: () => slash('help', 'help', { name: 'help', user: P1, options: { topic: 'battles' } }) },
+  { title: '/daily — hub, one quest complete', run: () => slash('daily', 'daily', { name: 'daily', user: P1 }) },
+  { title: 'daily:claim — claim reply (ephemeral in production)', run: () => button('daily', `daily:claim:${P1}`, P1) },
   { title: '/park view — dashboard + render', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P1 }) },
   { title: '/eggs — list', run: () => slash('hatchery', 'eggs', { name: 'eggs', user: P1 }) },
   { title: '/hatch — pre-hatch embed', run: () => slash('hatchery', 'hatch', { name: 'hatch', user: P1, options: { egg: readyEgg.id } }) },
@@ -219,6 +237,11 @@ const cases: Case[] = [
     } },
   { title: '/splice — confirm re-roll', run: () => slash('genelab', 'splice', { name: 'splice', user: P1, options: { dino: spliceTarget.id, slot: 1 } }) },
   { title: '/battle fight — DEFEAT: lone Lv.1 squad vs the coastal boss', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_boss', dino1: weakDino.id } }) },
+  // Run last so every stat this sweep can move (hatch, expedition claim, trade,
+  // battles, breeding claim) has already been tracked by the real service calls
+  // above — page 1 shows real, non-zero progress on several tracks rather than a
+  // freshly-seeded zero board.
+  { title: '/achievements — page 1', run: () => slash('daily', 'achievements', { name: 'achievements', user: P1 }) },
 ];
 
 type RawFilePayload = { data: Buffer; name: string };

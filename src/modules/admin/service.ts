@@ -1,4 +1,4 @@
-import { eq, or, and, isNull, isNotNull, sql } from 'drizzle-orm';
+import { eq, or, and, gt, isNull, isNotNull, sql } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import type { Rarity } from '../../data/types.js';
@@ -56,10 +56,18 @@ export function adminReset(ctx: Ctx, targetId: string): void {
     // and the dinos it names were just deleted. Leaving the row behind holds a Gene Lab
     // slot busy forever and leaves a claimable pairing whose parents no longer exist.
     ctx.db.delete(schema.breedings).where(eq(schema.breedings.userId, targetId)).run();
+    // Same rule the breedings fix above already learned: reset must delete from every
+    // table the daily-loop feature reads, not just the player's own dinos/eggs — a
+    // stray daily_quests/user_stats/achievement_claims row would otherwise survive a
+    // reset and resurface against a "fresh" account.
+    ctx.db.delete(schema.userStats).where(eq(schema.userStats.userId, targetId)).run();
+    ctx.db.delete(schema.dailyQuests).where(eq(schema.dailyQuests.userId, targetId)).run();
+    ctx.db.delete(schema.achievementClaims).where(eq(schema.achievementClaims.userId, targetId)).run();
     ctx.db.update(schema.users).set({
       cash: 500, shards: 0, parkRating: 0, ratingHighWater: 0, parkName: 'New Park',
       shardsWindowStart: 0, shardsWindowEarned: 0, lastCollectAt: ctx.now(),
       energy: ENERGY_CAP, energyUpdatedAt: ctx.now(),
+      questStreak: 0, questStreakBest: 0, lastQuestClaimAt: 0,
     }).where(eq(schema.users.discordId, targetId)).run();
     ctx.db.delete(schema.foodInventory).where(eq(schema.foodInventory.userId, targetId)).run();
     for (const [foodId, qty] of Object.entries(STARTER_FOOD)) {
@@ -82,6 +90,15 @@ export function adminFastForward(ctx: Ctx, targetId: string, hours: number): num
       shardsWindowStart: sql`${schema.users.shardsWindowStart} - ${shift}`,
       energyUpdatedAt: sql`${schema.users.energyUpdatedAt} - ${shift}`,
     }).where(eq(schema.users.discordId, targetId)).run();
+    // lastQuestClaimAt cannot ride the combined shift above: 0 is its "never claimed"
+    // sentinel, and an unguarded shift would drive it negative and invent a claim
+    // history for a player who has never claimed a quest.
+    // daily_quests.dayKey is deliberately NOT shifted: fast-forward cannot move the UTC
+    // calendar, so today's board stays today's. Shifting the claim anchor is what lets a
+    // streak gap or continuation be simulated.
+    ctx.db.update(schema.users)
+      .set({ lastQuestClaimAt: sql`${schema.users.lastQuestClaimAt} - ${shift}` })
+      .where(and(eq(schema.users.discordId, targetId), gt(schema.users.lastQuestClaimAt, 0))).run();
     ctx.db.update(schema.dinos).set({ lastFedAt: sql`${schema.dinos.lastFedAt} - ${shift}` })
       .where(eq(schema.dinos.userId, targetId)).run();
     ctx.db.update(schema.eggs).set({

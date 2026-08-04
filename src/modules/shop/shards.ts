@@ -7,6 +7,7 @@ import { rollSellShards } from '../../core/rolls.js';
 import { locksFor } from '../../core/locks.js';
 import { mythicUnlocked, recomputeRating } from '../park/rating.js';
 import { SHARD_DAILY_CAP, SHARD_WINDOW_MS, MYTHIC_SHARD_COST, SELL_CASH } from '../../data/sell.js';
+import { track } from '../../core/stats.js';
 export { SHARD_DAILY_CAP } from '../../data/sell.js';
 
 export class ShardError extends Error {}
@@ -34,6 +35,7 @@ export function sellDino(ctx: Ctx, userId: string, dinoId: number): { cash: numb
       .set({ shardsWindowStart: windowStart, shardsWindowEarned: windowEarned + shards })
       .where(eq(schema.users.discordId, userId)).run();
     ctx.db.delete(schema.dinos).where(eq(schema.dinos.id, dinoId)).run();
+    track(ctx, userId, 'dinos_sold', 1);
   });
   recomputeRating(ctx, userId);
   return { cash, shards, capped: shards < rolled };
@@ -63,9 +65,11 @@ export function buyMythicEgg(ctx: Ctx, userId: string, speciesId: string): Egg {
   if (species.rarity !== 'mythic') throw new ShardError('That is not a Mythic species.');
   return ctx.db.transaction(() => {
     ctx.economy.apply(userId, { shards: -MYTHIC_SHARD_COST }, `mythic:${speciesId}`, ctx.now());
-    return ctx.db.insert(schema.eggs).values({
+    const egg = ctx.db.insert(schema.eggs).values({
       userId, rarity: 'mythic', speciesId, source: 'shop', obtainedAt: ctx.now(),
     }).returning().get();
+    track(ctx, userId, 'shop_purchases', 1);
+    return egg;
   });
 }
 

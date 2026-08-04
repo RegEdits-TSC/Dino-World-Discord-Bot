@@ -8,6 +8,7 @@ import { TradeError, sideItemCount } from './validate.js';
 import { FOODS, type FoodId } from '../../data/foods.js';
 import { TRADE_MIN_RATING, TRADE_DAILY_CAP, TRADE_MAX_ITEMS_PER_SIDE, TRADE_EXPIRY_MS } from '../../data/trade.js';
 import { recomputeRating } from '../park/rating.js';
+import { track } from '../../core/stats.js';
 
 export { TradeError } from './validate.js';
 export type Trade = typeof schema.trades.$inferSelect;
@@ -103,6 +104,11 @@ export function acceptTrade(ctx: Ctx, userId: string, tradeId: number): Trade {
   verifySide(ctx, trade.toUser, trade.request);
   if (liveRating(ctx, trade.fromUser) < TRADE_MIN_RATING || liveRating(ctx, trade.toUser) < TRADE_MIN_RATING)
     throw new TradeError('Both players must be at 2★ to complete the trade.');
+  // An empty-for-empty trade is legal at creation (no minimum content is enforced), so
+  // credit trades_completed only when something real actually moves — otherwise two
+  // players could farm the daily quest with no-op trades.
+  const moves = sideItemCount(trade.offer) + sideItemCount(trade.request)
+    + trade.offer.cash + trade.request.cash > 0;
   const done = ctx.db.transaction(() => {
     moveItems(ctx, trade.offer, trade.toUser);      // offer → recipient
     moveItems(ctx, trade.request, trade.fromUser);  // request → sender
@@ -116,6 +122,10 @@ export function acceptTrade(ctx: Ctx, userId: string, tradeId: number): Trade {
     };
     ctx.economy.apply(trade.fromUser, { cash: trade.request.cash - trade.offer.cash, foods: foodNet(trade.request, trade.offer) }, `trade:${trade.id}`, ctx.now());
     ctx.economy.apply(trade.toUser, { cash: trade.offer.cash - trade.request.cash, foods: foodNet(trade.offer, trade.request) }, `trade:${trade.id}`, ctx.now());
+    if (moves) {
+      track(ctx, trade.fromUser, 'trades_completed', 1);
+      track(ctx, trade.toUser, 'trades_completed', 1);
+    }
     return ctx.db.update(schema.trades).set({ status: 'accepted', resolvedAt: ctx.now() })
       .where(eq(schema.trades.id, tradeId)).returning().get();
   });

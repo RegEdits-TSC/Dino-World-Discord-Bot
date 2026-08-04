@@ -10,6 +10,7 @@ import { rollTraits } from '../../data/traits.js';
 import { locksFor } from '../../core/locks.js';
 import { recomputeRating } from '../park/rating.js';
 import { facilityLevel, type Lot } from '../park/service.js';
+import { track } from '../../core/stats.js';
 
 export class HatcheryError extends Error {}
 export type Egg = typeof schema.eggs.$inferSelect;
@@ -39,6 +40,7 @@ export function incubateEgg(ctx: Ctx, userId: string, eggId: number, guildId: st
   const hatchesAt = now + RARITY[egg.rarity].incubationMs;
   ctx.db.update(schema.eggs).set({ incubationStartedAt: now, hatchesAt })
     .where(eq(schema.eggs.id, eggId)).run();
+  track(ctx, userId, 'eggs_incubated', 1);
   ctx.scheduler.enqueue({ kind: 'egg_hatch', userId, refId: eggId, originGuildId: guildId, firesAt: hatchesAt });
   return { ...egg, incubationStartedAt: now, hatchesAt };
 }
@@ -68,6 +70,7 @@ export function hatchEgg(ctx: Ctx, userId: string, eggId: number): { species: Sp
       traits,
     }).returning().get();
     ctx.db.delete(schema.eggs).where(eq(schema.eggs.id, eggId)).run();
+    track(ctx, userId, 'eggs_hatched', 1);
     return dino.id;
   });
   recomputeRating(ctx, userId);

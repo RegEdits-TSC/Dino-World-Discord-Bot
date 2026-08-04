@@ -976,3 +976,114 @@ roll, it's just the 25% row above.
 the offspring carries that forward: the resulting egg, and the dino it
 hatches into, always sell for 0 shards — though still for full cash — the
 same rule that applies to a dino received directly through a trade.
+
+## 17. The daily loop
+
+`/daily` and `/achievements` give you a reason to come back every day and a
+running record of what you've built over the long run. Both read the same
+lifetime counters the game already keeps for every other system — no extra
+setup, nothing to opt into.
+
+### Quests
+
+Every day (the reset is UTC midnight) you get a fresh board of 3 quests. The
+board is rolled the first time you do anything that day and stays the same
+until the next reset — reopening `/daily` never rerolls it. Progress on all
+three starts accruing the moment the board is rolled, even before you first
+open `/daily` to look at it.
+
+| Quest | Target | Reward | Needs |
+| --- | --- | --- | --- |
+| Feed 3 dinos | 3 | 400 cash + 4 shards | — |
+| Feed 8 dinos | 8 | 700 cash + 7 shards | — |
+| Collect park income twice | 2 | 400 cash + 4 shards | a dino assigned to a lot |
+| Collect half a day's worth of income | rolled from your park's current earning rate | 600 cash + 6 shards | a dino assigned to a lot |
+| Hatch an egg | 1 | 300 cash + 3 shards | — |
+| Hatch 3 eggs | 3 | 700 cash + 7 shards | — |
+| Incubate 2 eggs | 2 | 400 cash + 3 Ferns | — |
+| Claim an expedition reward | 1 | 350 cash + 3 Fish | — |
+| Claim 2 expedition rewards | 2 | 650 cash + 7 shards | — |
+| Fight 5 battles | 5 | 500 cash + 5 shards | you've fought at least one battle before |
+| Win a battle | 1 | 400 cash + 4 shards | you've fought at least one battle before |
+| Win 3 battles | 3 | 800 cash + 8 shards | you've fought at least one battle before |
+| Complete a trade | 1 | 500 cash + 5 shards | best-ever rating at or above 2.0★ (the trading minimum) |
+| Start a breeding | 1 | 400 cash + 4 shards | Gene Lab built |
+| Claim a breeding | 1 | 500 cash + 5 shards | Gene Lab built |
+| Splice a trait | 1 | 600 cash + 6 shards | Gene Lab built |
+| Sell 2 dinos | 2 | 500 cash (no shards) | — |
+
+Each day's three are drawn so no two share the same underlying stat, at most
+one of Incubate 2 eggs / Sell 2 dinos appears (never both), and at most one
+food-paying quest appears. A claimed board pays 1,050–2,200 cash and 3–22
+shards depending on the roll, typically around 12–16 shards, and quest
+shards are never subject to `/sell`'s 60-shard daily cap (see Selling dinos,
+above) — they're on top of it.
+
+The hub shows a checkmark for each finished quest and a progress bar for the
+rest. Press **Claim** to bank every finished quest at once in one ephemeral
+reply — nothing is paid out until you press it, and quests left unclaimed
+when the next reset hits are forfeited, no grace period. If nothing is
+finished yet, Claim simply tells you so and changes nothing.
+
+### Streak and chests
+
+Claiming ticks your streak once per day: your first claim of a new UTC day
+either continues yesterday's streak (+1) or, if you missed a day, resets it
+to 1 — there's no grace day. A second claim on the same day never ticks it
+again.
+
+| Streak (days) | Chest |
+| --- | --- |
+| 3 | 1,500 cash |
+| 7 | 3,000 cash + 20 shards |
+| 14 | rare egg + 2,500 cash |
+| 30 | epic egg + 40 shards |
+| 60 | epic egg + 50 shards |
+| 90 | epic egg + 60 shards |
+| every further 30 | epic egg + 10 more shards, capped at 100 |
+
+**Chests pay on personal bests only.** Reaching a milestone you've already
+banked a chest for — even by deliberately breaking your streak and building
+it back up — pays nothing; only a streak longer than your best-ever pays a
+new chest. That makes breaking a streak on purpose strictly worse than
+keeping it, and the hub's "next chest" line always reflects your best, not
+your current streak, so it never tells you a replay is worth it.
+
+### Achievements
+
+`/achievements` tracks twelve lifetime stats, each with four tiers —
+bronze, silver, gold, platinum — that pay once and stay paid:
+
+| Track | Bronze | Silver | Gold | Platinum |
+| --- | --- | --- | --- | --- |
+| Hatchling Handler (eggs hatched) | 10 | 50 | 200 | 500 |
+| Feeding Time (dinos fed) | 25 | 150 | 500 | 1,500 |
+| Park Tycoon (income collected) | 10,000 | 100,000 | 1,000,000 | 10,000,000 |
+| Expedition Leader (expeditions claimed) | 5 | 25 | 100 | 300 |
+| Battle Tested (battles fought) | 10 | 50 | 200 | 500 |
+| Champion (battles won) | 5 | 25 | 100 | 250 |
+| Explorer (stages first-cleared) | 5 | 10 | 15 | 20 |
+| Trader (trades completed) | 1 | 5 | 25 | 100 |
+| Breeder (breedings claimed) | 1 | 5 | 25 | 100 |
+| Gene Splicer (splices done) | 1 | 10 | 50 | 200 |
+| Dealmaker (dinos sold) | 5 | 25 | 100 | 300 |
+| Park Architect (lots built) | 3 | 6 | 10 | 15 |
+
+Every track pays the same rewards at a given tier, regardless of which stat
+it's tracking:
+
+| Tier | Reward |
+| --- | --- |
+| Bronze | 500 cash |
+| Silver | 1,250 cash |
+| Gold | 2,500 cash + 5 shards |
+| Platinum | 5,000 cash + 20 shards |
+
+Sweeping every tier of all twelve tracks pays 111,000 cash and 300 shards in
+total, spread across however long it takes to hit platinum on all of them —
+achievement shards, like quest and chest shards, are never subject to
+`/sell`'s daily cap. A tier becomes claimable the moment your lifetime total
+crosses its threshold, whether or not you've opened `/achievements` since;
+the page shows a medal for every tier you've already claimed and a progress
+bar toward the next one you haven't. **Claim all** pays every claimable tier
+across every track in one reply.

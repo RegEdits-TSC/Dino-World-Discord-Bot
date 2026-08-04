@@ -52,7 +52,7 @@ This guide covers deploying Dino World to production, running it as a system ser
    ```bash
    npm run deploy-emojis
    ```
-   This uploads the 38 custom emojis to the bot's Discord application and writes `assets/emojis/manifest.json` (emoji name → sha256 of the uploaded PNG). **Commit that file right away.** If it goes missing, the next `deploy-emojis` run sees every hash as changed and deletes + recreates all 38 emojis with new snowflake IDs — every message already posted with an old `<:dw_cash:ID>` tag then renders as a broken emoji, silently and with no way to recover it by rerunning. This is the only irreversible live write in the deploy; run it once, after the code is built, before starting the bot.
+   This uploads the 41 custom emojis to the bot's Discord application and writes `assets/emojis/manifest.json` (emoji name → sha256 of the uploaded PNG). **Commit that file right away.** If it goes missing, the next `deploy-emojis` run sees every hash as changed and deletes + recreates all 41 emojis with new snowflake IDs — every message already posted with an old `<:dw_cash:ID>` tag then renders as a broken emoji, silently and with no way to recover it by rerunning. This is the only irreversible live write in the deploy; run it once, after the code is built, before starting the bot.
 
 7. **Start the bot**:
    - **Direct**: `node dist/index.js`
@@ -211,7 +211,7 @@ Example `modules.json`:
 }
 ```
 
-Nine modules ship today:
+Thirteen modules ship today:
 
 - `park` — paddocks, upgrades, park rating, decorations.
 - `hatchery` — eggs, incubation, hatching, Mythic purchases.
@@ -222,6 +222,10 @@ Nine modules ship today:
 - `trading` — player-to-player dino/egg/currency trades with escrow.
 - `leaderboards` — server and global rankings by rating, cash, and collection.
 - `admin` — owner-only tools: grant resources, inspect/reset a player, fast-forward a player's clock (QA).
+- `help` — in-game command reference and getting-started guide.
+- `battles` — the PvE campaign: fight chapter stages with a squad for cash, shards, and eggs.
+- `genelab` — pair or splice dinos for traits in the Gene Lab.
+- `daily` — daily quest board, streaks, chests, and lifetime achievements.
 
 Admin commands are gated to the OWNER_ID user and hidden from non-admins in the Discord UI. Set OWNER_ID in .env.
 
@@ -318,7 +322,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    ```bash
    npm run deploy-commands
    ```
-   Should report `22` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, leaderboards, admin, help, battles, and genelab modules combined).
+   Should report `24` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, leaderboards, admin, help, battles, genelab, and daily modules combined).
 
 2. **Start the bot**:
    ```bash

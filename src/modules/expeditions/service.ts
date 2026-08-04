@@ -6,6 +6,7 @@ import { EXPEDITION_SITES, type SiteDef } from '../../data/sites.js';
 import { siteUnlocked } from '../park/rating.js';
 import { rollRarityFromOdds, rollIntInclusive } from '../../core/rolls.js';
 import { foodsForDiet, type FoodId } from '../../data/foods.js';
+import { track } from '../../core/stats.js';
 
 export class ExpeditionError extends Error {}
 export type Expedition = typeof schema.expeditions.$inferSelect;
@@ -56,6 +57,7 @@ export function claimExpedition(ctx: Ctx, userId: string): { loot: Loot; site: S
     }).run();
     ctx.db.update(schema.expeditions).set({ claimedAt: ctx.now(), loot })
       .where(eq(schema.expeditions.id, exp.id)).run();
+    track(ctx, userId, 'expeditions_claimed', 1);
     return { loot, site };
   });
 }

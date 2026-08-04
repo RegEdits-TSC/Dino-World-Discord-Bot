@@ -83,6 +83,13 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/trade decline` | Decline a trade offered to you | Autocomplete: id |
 | `/trade cancel` | Withdraw a trade you sent | Autocomplete: id |
 
+## 📅 Daily loop
+
+| Command | What it does | Notes |
+| --- | --- | --- |
+| `/daily` | Your daily quest board, streak, and Claim button | Rolls a fresh board the first time you do anything each day (UTC); unclaimed quests expire at reset |
+| `/achievements` | Your lifetime achievement tracks, with a Claim all button | Paginated, 10 per page |
+
 ## 🏆 Progress
 
 | Command | What it does | Notes |

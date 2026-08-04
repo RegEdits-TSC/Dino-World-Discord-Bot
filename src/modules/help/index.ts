@@ -81,6 +81,13 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Bred eggs roll better trait odds than a wild hatch, and there\'s a small chance of a rarity upgrade (never past Legendary — breeding can never produce a Mythic).',
     `\`/splice dino:<id> slot:<1|2>\` — spend ${SPLICE_SHARD_COST} shards to re-roll one trait slot. The replacement is random and can be worse than what you had.`,
   ].join('\n') },
+  daily: { title: 'Daily quests', body: [
+    '`/daily` — see today\'s 3 quests, your streak, and claim any that are complete.',
+    'Quests reset every day at UTC midnight; anything left unclaimed is forfeited, not carried over.',
+    'Claiming on consecutive days builds a streak — milestones at 3, 7, 14 days, then every 30 days after, pay a bonus chest of cash, shards, or an egg.',
+    'Breaking your streak resets it to 1. Chests only ever pay once, the first time a streak passes a new personal-best milestone.',
+    '`/achievements` — lifetime progress across 12 tracks, each with 4 tiers (bronze/silver/gold/platinum) paying cash and shards as you cross them.',
+  ].join('\n') },
 };
 
 const topicChoices = Object.keys(HELP_TOPICS).map((t) => ({ name: t, value: t }));

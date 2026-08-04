@@ -27,7 +27,11 @@ export function breedableRarity(r: Rarity): boolean {
 }
 
 // Caps at legendary. Allowing legendary -> mythic would cost ~2.2 hours of endgame
-// income against 500 shards (~8.3 days of capped supply) and destroy the shard sink.
+// income against 500 shards — cheaper than ever now that the daily loop's quest,
+// chest, and one-time achievement shards (all bypassing the sell cap) sit on top of
+// selling: a max-selling active player reaches 500 shards in roughly 6.5 days (about
+// 28-30 days from those faucets alone with no selling), so the shortcut would
+// destroy the shard sink even faster than the old sell-only ~8.3-day figure implied.
 export function upgradeRarity(r: Rarity): Rarity {
   if (r === 'legendary' || r === 'mythic') return 'legendary';
   return RARITY_LADDER[RARITY_LADDER.indexOf(r) + 1];

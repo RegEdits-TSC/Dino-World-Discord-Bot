@@ -13,6 +13,7 @@ import {
   BREED_MS, BREED_FEE, BREED_COOLDOWN_MS, BREED_UPGRADE_CHANCE,
   BREED_MIN_HUNGER, SPLICE_SHARD_COST, breedableRarity, upgradeRarity,
 } from '../../data/breeding.js';
+import { track } from '../../core/stats.js';
 
 export class BreedError extends Error {}
 export type Breeding = typeof schema.breedings.$inferSelect;
@@ -140,6 +141,7 @@ export function startBreeding(
       userId, parentA: a.id, parentB: b.id, rarity: sa.rarity, viaTrade,
       startedAt: now, readyAt,
     }).returning().get();
+    track(ctx, userId, 'breedings_started', 1);
     // Inserting the pending row IS the parent lock — locksFor derives escrow from it,
     // so there is no flag to set and nothing to sweep.
     ctx.scheduler.enqueue({ kind: 'breeding_ready', userId, refId: row.id, originGuildId: guildId, firesAt: readyAt });
@@ -215,6 +217,7 @@ export function claimBreeding(ctx: Ctx, userId: string, breedingId: number): { e
     ctx.db.update(schema.breedings)
       .set({ claimedAt: now, traits, speciesId: egg.speciesId })
       .where(eq(schema.breedings.id, breedingId)).run();
+    track(ctx, userId, 'breedings_claimed', 1);
     return { egg, upgraded: reallyUpgraded };
   });
 }
@@ -247,6 +250,7 @@ export function spliceDino(ctx: Ctx, userId: string, dinoId: number, slot: numbe
     // means a failed update can never leave them charged.
     ctx.economy.apply(userId, { shards: -SPLICE_SHARD_COST }, `splice:${dinoId}`, ctx.now());
     ctx.db.update(schema.dinos).set({ traits: after }).where(eq(schema.dinos.id, dinoId)).run();
+    track(ctx, userId, 'splices_done', 1);
   });
   return { before, after };
 }

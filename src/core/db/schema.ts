@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, check } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey, check, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 export const users = sqliteTable('users', {
@@ -13,6 +13,9 @@ export const users = sqliteTable('users', {
   shardsWindowEarned: integer('shards_window_earned').notNull().default(0),
   energy: integer('energy').notNull().default(10),
   energyUpdatedAt: integer('energy_updated_at_ms').notNull().default(0),
+  questStreak: integer('quest_streak').notNull().default(0),
+  questStreakBest: integer('quest_streak_best').notNull().default(0),
+  lastQuestClaimAt: integer('last_quest_claim_at_ms').notNull().default(0),
   lastCollectAt: integer('last_collect_at_ms').notNull(),
   createdAt: integer('created_at_ms').notNull(),
 }, (t) => [
@@ -60,7 +63,7 @@ export const eggs = sqliteTable('eggs', {
   userId: text('user_id').notNull().references(() => users.discordId),
   rarity: text('rarity', { enum: ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] }).notNull(),
   speciesId: text('species_id'),
-  source: text('source', { enum: ['expedition', 'shop', 'trade', 'admin', 'battle', 'breeding'] }).notNull(),
+  source: text('source', { enum: ['expedition', 'shop', 'trade', 'admin', 'battle', 'breeding', 'quest'] }).notNull(),
   viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
   // Bred eggs carry their rolled inheritance here; wild eggs stay [] and roll at hatch.
   // An empty array on a BRED egg is a real result (25% under BRED_SLOT_ODDS), not "unset",
@@ -154,3 +157,31 @@ export const guildSettings = sqliteTable('guild_settings', {
   guildId: text('guild_id').primaryKey(),
   notifyChannelId: text('notify_channel_id'),
 });
+
+export const userStats = sqliteTable('user_stats', {
+  userId: text('user_id').notNull().references(() => users.discordId),
+  stat: text('stat').notNull(),
+  value: integer('value').notNull().default(0),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.stat] }),
+  check('stat_value_nonneg', sql`${t.value} >= 0`),
+]);
+
+export const dailyQuests = sqliteTable('daily_quests', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull().references(() => users.discordId),
+  dayKey: text('day_key').notNull(),
+  slot: integer('slot').notNull(),
+  questId: text('quest_id').notNull(),
+  baseline: integer('baseline').notNull(),
+  target: integer('target').notNull(),
+  claimedAt: integer('claimed_at_ms'),
+  notifiedAt: integer('notified_at_ms'),
+}, (t) => [uniqueIndex('daily_quests_user_day_slot').on(t.userId, t.dayKey, t.slot)]);
+
+export const achievementClaims = sqliteTable('achievement_claims', {
+  userId: text('user_id').notNull().references(() => users.discordId),
+  trackId: text('track_id').notNull(),
+  tier: integer('tier').notNull(),
+  claimedAt: integer('claimed_at_ms').notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.trackId, t.tier] })]);

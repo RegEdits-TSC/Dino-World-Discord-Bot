@@ -11,6 +11,7 @@ import { recomputeRating } from '../park/rating.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { RECAPTURE_FEE_HOURS } from '../../data/care.js';
 import { modProduct } from '../../data/traits.js';
+import { track } from '../../core/stats.js';
 
 export class CareError extends Error {}
 
@@ -50,10 +51,12 @@ export function feedDino(ctx: Ctx, userId: string, dinoId: number, foodId?: stri
       `You have no ${species.diet} food — buy ${foodsForDiet(species.diet)[0].name} with /shop food.`);
     food = picked;
   }
+  const wasHungry = hungerAt(dino.hunger, dino.lastFedAt, ctx.now(), drainMsFor(dino.traits)) < 100;
   ctx.db.transaction(() => {
     ctx.economy.apply(userId, { foods: { [food.id]: -cost } }, `feed:${species.id}`, ctx.now());
     ctx.db.update(schema.dinos).set({ hunger: food.fillTo, lastFedAt: ctx.now() })
       .where(eq(schema.dinos.id, dinoId)).run();
+    if (wasHungry) track(ctx, userId, 'dinos_fed', 1);   // re-feeding a full dino is not care
   });
   recomputeRating(ctx, userId);
   return { species, food, cost };
@@ -79,6 +82,7 @@ export function feedAll(ctx: Ctx, userId: string):
       ctx.economy.apply(userId, { foods: { [food.id]: -cost } }, `feed:${c.species.id}`, ctx.now());
       ctx.db.update(schema.dinos).set({ hunger: food.fillTo, lastFedAt: ctx.now() })
         .where(eq(schema.dinos.id, c.id)).run();
+      track(ctx, userId, 'dinos_fed', 1);
     });
     fed.push(c.id);
     spent[food.id] = (spent[food.id] ?? 0) + cost;
@@ -104,6 +108,7 @@ export function rescueDino(ctx: Ctx, userId: string, dinoId: number): { fee: num
     ctx.economy.apply(userId, { cash: -fee }, `rescue:${species.id}`, ctx.now());
     ctx.db.update(schema.dinos).set({ hunger: newHunger, lastFedAt: ctx.now(), escapedAt: null })
       .where(eq(schema.dinos.id, dinoId)).run();
+    track(ctx, userId, 'dinos_rescued', 1);
   });
   recomputeRating(ctx, userId);
   return { fee, species };

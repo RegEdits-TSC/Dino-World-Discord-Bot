@@ -43,6 +43,13 @@
       "when": 1785525840067,
       "tag": "0005_daffy_sprite",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1785767489975,
+      "tag": "0006_daily_loop",
+      "breakpoints": true
     }
   ]
 }

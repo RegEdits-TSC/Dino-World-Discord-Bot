@@ -371,3 +371,42 @@
   is `-Infinity` and neither level table guards its index, so a bare reduce would
   return `undefined` and poison `accruedIncome` with `NaN`. There is no cleanup
   migration and no way to delete a duplicate lot short of `adminReset`.
+- Daily loop: one substrate, `track(ctx, userId, stat, delta)` (`src/core/stats.ts`),
+  upserts a lifetime `user_stats` counter. Every call site sits inside the action's own
+  existing transaction (or, where there isn't one already, is atomic on its own) — a
+  rolled-back action must never count, so never call `track` outside the write it's
+  measuring. Quest progress is **derived, never stored**: a `daily_quests` row freezes
+  `baseline` (the counter's value at roll time) and `target`; `questProgress`
+  (`src/modules/daily/service.ts`) computes `clamp(current - baseline, 0, target)` at
+  read time, same philosophy as the Gene Lab's derived escrow locks above — nothing
+  sweeps, nothing drifts, a missing `user_stats` row reads 0 at both baseline and
+  progress. The roller (`pickBoard`) enforces three hard rules when it draws the day's
+  3 quests from `QUESTS` (`src/data/quests.ts`): (a) no two slots share a stat; (b) at
+  most one churn-stat quest (`CHURN_STATS`: `eggs_incubated`, `dinos_sold`) per board;
+  (c) at most one food-paying quest per board. The roll itself is deterministic — the
+  local `hashSeed` (FNV-1a-style) turns `` `${userId}:${dayKey}` `` into a seed for
+  `mulberry32` (`src/core/rolls.ts`), never `ctx.rng()` — so concurrent
+  first-interactions land on the same board and the unique `(userId, dayKey, slot)`
+  constraint backstops the race with `INSERT OR IGNORE`.
+  Streak chests (`chestFor`, `src/data/quests.ts`) pay on **personal bests only**:
+  `claimQuests` only grants one when the post-tick streak exceeds `questStreakBest`,
+  which is monotonic — deliberately breaking and re-climbing a streak re-pays nothing
+  until the old best is exceeded, and `nextChestAt` advertises the next milestone above
+  `max(streak, best)` so the hub never suggests a replay is worth it. The quest-complete
+  hint (`dailyRouterHooks.postDispatch`, `src/modules/daily/hooks.ts`) fires one combined
+  followUp after any successful dispatch, with four exemptions: autocomplete never
+  reaches it at all (the router's autocomplete branch returns before hooks run); the
+  `/daily`/`/achievements` commands and the `daily`/`ach` component prefixes are
+  exempted by name (`EXEMPT_COMMANDS`/`EXEMPT_PREFIXES`) so there's no hint about the
+  screen the user is already looking at; and an interaction that never replied (the
+  errored path) is skipped, since `followUp` on an unreplied interaction throws.
+  `adminReset` and `adminFastForward` (`src/modules/admin/service.ts`) both had to grow
+  to cover the new tables: reset deletes `user_stats`, `daily_quests`, and
+  `achievement_claims` rows and zeroes `questStreak`/`questStreakBest`/
+  `lastQuestClaimAt`, the same "reset must cover every table the feature reads" lesson
+  the Gene Lab's `breedings` fix taught; fast-forward shifts `lastQuestClaimAt` with the
+  other time columns (guarded to rows where it's `> 0`, since 0 is its "never claimed"
+  sentinel and an unguarded shift would invent a claim history) but deliberately leaves
+  `daily_quests.dayKey` alone — fast-forward can't move the UTC calendar, so today's
+  board stays today's, and shifting only the claim anchor is what lets a streak gap or
+  continuation be simulated.

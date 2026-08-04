@@ -244,3 +244,87 @@ describe('0005 locked-column drop via the real drizzle migrator (production path
     }
   });
 });
+
+describe('0006 daily loop via the real drizzle migrator (production path)', () => {
+  it('backfills veteran user_stats from existing history and defaults the new streak columns', () => {
+    // Reach the 0005 schema via a scratch folder holding migrations 0000-0005, seed a parent
+    // 'vet' user AND an 'other' user (trades carries FKs to both sides) plus rows across every
+    // table the backfill reads from, then let the real migrateDb apply 0006 exactly as the bot
+    // does at startup — this is the only path that exercises the hand-appended INSERT ... SELECT
+    // backfill statements against real data, not just the additive DDL.
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig6-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^000[0-5].*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 5);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');                   // production createDb sets this
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });           // apply 0000-0005 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, last_collect_at_ms, created_at_ms) VALUES ('vet', 0, 0), ('other', 0, 0)`).run();
+
+    // battle_progress: two cleared stages for 'vet', one not-yet-cleared (NULL excluded).
+    sqlite.prepare(`INSERT INTO battle_progress (user_id, stage_id, stars, first_cleared_at_ms, attempts)
+                    VALUES ('vet', 'coastal_dig_1', 3, 100, 1)`).run();
+    sqlite.prepare(`INSERT INTO battle_progress (user_id, stage_id, stars, first_cleared_at_ms, attempts)
+                    VALUES ('vet', 'coastal_dig_2', 2, 200, 3)`).run();
+    sqlite.prepare(`INSERT INTO battle_progress (user_id, stage_id, stars, first_cleared_at_ms, attempts)
+                    VALUES ('vet', 'coastal_dig_3', 0, NULL, 2)`).run();
+
+    // lots: three facilities/paddocks built by 'vet'.
+    sqlite.prepare(`INSERT INTO lots (user_id, type, kind, name) VALUES ('vet', 'paddock', 'herbivore_paddock', 'Fern Hollow')`).run();
+    sqlite.prepare(`INSERT INTO lots (user_id, type, kind, name) VALUES ('vet', 'paddock', 'carnivore_paddock', 'Meat Yard')`).run();
+    sqlite.prepare(`INSERT INTO lots (user_id, type, kind, name) VALUES ('vet', 'facility', 'incubator', 'Egg Room')`).run();
+
+    // trades: one accepted (counts for both sides), one pending (does not count).
+    const side = (cash: number) => JSON.stringify({ dinoIds: [], eggIds: [], cash, foods: {} });
+    sqlite.prepare(`INSERT INTO trades (from_user, to_user, offer, request, status, created_at_ms)
+                    VALUES ('vet', 'other', ?, ?, 'accepted', 0)`).run(side(0), side(0));
+    sqlite.prepare(`INSERT INTO trades (from_user, to_user, offer, request, status, created_at_ms)
+                    VALUES ('vet', 'other', ?, ?, 'pending', 0)`).run(side(0), side(0));
+
+    // breedings: one claimed, one still pending.
+    sqlite.prepare(`INSERT INTO breedings (user_id, parent_a, parent_b, rarity, started_at_ms, ready_at_ms, claimed_at_ms)
+                    VALUES ('vet', 1, 2, 'common', 0, 100, 150)`).run();
+    sqlite.prepare(`INSERT INTO breedings (user_id, parent_a, parent_b, rarity, started_at_ms, ready_at_ms, claimed_at_ms)
+                    VALUES ('vet', 3, 4, 'rare', 0, 100, NULL)`).run();
+
+    // expeditions: one claimed, one still out.
+    sqlite.prepare(`INSERT INTO expeditions (user_id, site_id, departed_at_ms, returns_at_ms, claimed_at_ms)
+                    VALUES ('vet', 'coastal_dig', 0, 100, 100)`).run();
+    sqlite.prepare(`INSERT INTO expeditions (user_id, site_id, departed_at_ms, returns_at_ms, claimed_at_ms)
+                    VALUES ('vet', 'coastal_dig', 0, 100, NULL)`).run();
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+
+      const stats = sqlite.prepare(
+        "SELECT stat, value FROM user_stats WHERE user_id = 'vet' ORDER BY stat").all() as Array<{ stat: string; value: number }>;
+      expect(stats).toEqual([
+        { stat: 'breedings_claimed', value: 1 },
+        { stat: 'breedings_started', value: 2 },
+        { stat: 'expeditions_claimed', value: 1 },
+        { stat: 'lots_built', value: 3 },
+        { stat: 'stages_first_cleared', value: 2 },
+        { stat: 'trades_completed', value: 1 },
+      ]);
+      const u = sqlite.prepare("SELECT quest_streak, quest_streak_best, last_quest_claim_at_ms FROM users WHERE discord_id = 'vet'").get() as Record<string, number>;
+      expect(u).toEqual({ quest_streak: 0, quest_streak_best: 0, last_quest_claim_at_ms: 0 });
+
+      // Both parties to the accepted trade get credited, not just the sender.
+      const otherStats = sqlite.prepare(
+        "SELECT stat, value FROM user_stats WHERE user_id = 'other' ORDER BY stat").all() as Array<{ stat: string; value: number }>;
+      expect(otherStats).toEqual([{ stat: 'trades_completed', value: 1 }]);
+
+      // migrateDb must leave FK enforcement ON — runtime integrity depends on it.
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});
