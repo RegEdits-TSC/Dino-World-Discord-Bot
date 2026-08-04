@@ -40,7 +40,8 @@
     "deploy-commands": "tsx src/deploy-commands.ts",
     "build-emojis": "tsx src/build-emojis.ts",
     "deploy-emojis": "tsx src/deploy-emojis.ts",
-    "make-gif": "tsx scripts/make-gif.ts"
+    "make-gif": "tsx scripts/make-gif.ts",
+    "deploy-branding": "tsx src/deploy-branding.ts"
   },
   "type": "module",
   "dependencies": {

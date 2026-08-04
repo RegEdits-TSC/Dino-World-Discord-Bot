@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import {
   BRANDING, gifInfo, nextStep, toDataUri, assertUploadable, assertAnimatedAccepted,
 } from '../src/core/branding.js';
+import { selectAssets } from '../src/deploy-branding.js';
 
 // Hand-built GIF89a bytes. Assembling them here rather than committing a fixture
 // keeps the parser honest: the test knows exactly which bytes mean what.
@@ -137,5 +138,22 @@ describe('the committed branding assets', () => {
       const buf = readFileSync(resolve(process.cwd(), 'assets/branding', file));
       expect(() => assertUploadable(buf, 'png'), file).not.toThrow();
     }
+  });
+});
+
+describe('selectAssets', () => {
+  // Profile edits are rate-limited to roughly 2/hour, so re-uploading one asset
+  // must not spend the budget for both.
+  it('sends both by default', () => {
+    expect(selectAssets([])).toEqual(['avatar', 'banner']);
+  });
+
+  it('honours --avatar-only and --banner-only', () => {
+    expect(selectAssets(['--avatar-only'])).toEqual(['avatar']);
+    expect(selectAssets(['--banner-only'])).toEqual(['banner']);
+  });
+
+  it('rejects both flags at once rather than silently picking one', () => {
+    expect(() => selectAssets(['--avatar-only', '--banner-only'])).toThrow(/both/i);
   });
 });
