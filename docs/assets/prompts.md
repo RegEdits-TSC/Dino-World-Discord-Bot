@@ -744,7 +744,14 @@ margin all six committed portraits measure at.
 
 **boss-abyssal_trench — The Trench Sovereign (Mosasaurus):** generated as a
 standalone prompt (not an image-edit of the coastal reference), background
-removed, fitted to a 24px margin.
+removed, fitted to a 24px margin. The generated source faced left — this
+prompt states no facing direction, and with no reference image attached
+there was nothing to inherit the house right-facing convention from — so the
+committed file is that same generation horizontally flipped in post to face
+right, matching every other boss portrait. A future regeneration from this
+prompt is not guaranteed to land right-facing either; check orientation
+against the other bosses before shipping, and either flip in post again or
+add an explicit "facing right" clause to the prompt.
 
 > A fierce cartoon Mosasaurus boss portrait, head and shoulders in three-quarter
 > view, massive blunt reptilian skull with a jagged toothy snarl, deep-blue scales
@@ -839,15 +846,11 @@ extend beyond the dinosaur silhouette — off-silhouette glow survives backgroun
 removal as floating islands or a light halo on transparency. Emissive detail is
 allowed only ON surfaces. Every prompt carries this rule verbatim.
 
-**Facing right:** five of the six committed boss portraits face right, snout
-pointing right — the shared convention set by the coastal reference — and one
-of those five (Frozen Cliffs) came back mirrored on generation and had to be
-flipped in post to match it (see Battle bosses). The sixth, Abyssal Trench,
-ships facing left: it was generated as a standalone prompt with no facing
-direction stated and no reference image attached, so it never inherited the
-convention and was never corrected. The prompt frame below states the
-direction up front for exactly this reason — still check every generation
-against the reference before shipping it.
+**Facing right:** all six committed boss portraits face right, snout pointing
+right, and two boss generations came back mirrored and had to be flipped in
+post (Frozen Cliffs and Abyssal Trench — see Battle bosses). The prompt frame
+below states the direction up front — still check every generation against
+the reference before shipping it.
 
 **Workflow (reference chain):** all eight are generated as image-edits of the
 committed `assets/images/battles/boss-coastal_dig-portrait.webp` (Nano Banana
