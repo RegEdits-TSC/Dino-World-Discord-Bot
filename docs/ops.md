@@ -33,6 +33,15 @@ This guide covers deploying Dino World to production, running it as a system ser
    npm ci
    ```
    Use `npm ci` (not `npm install`) for reproducible, production-ready installs.
+   This pulls in `devDependencies` too, because step 4 below (`npm run build`)
+   needs the TypeScript compiler — one of them. Another, `ffmpeg-static`, is a
+   dev-only asset-pipeline dependency (used only by `make-gif`/`deploy-branding`,
+   never at runtime) whose install script downloads an ~83 MB ffmpeg binary from
+   a GitHub release, so this step needs network access to GitHub even though the
+   running bot never touches ffmpeg. If you build in CI or on a separate machine
+   and deploy only the compiled `dist/` here, prefer `npm ci --omit=dev` for
+   *this* machine's install instead — it skips `ffmpeg-static` and every other
+   `devDependency`, since none of them are needed to run `node dist/index.js`.
 
 4. **Build the TypeScript**:
    ```bash
@@ -281,6 +290,9 @@ Then:
    ```bash
    npm ci
    ```
+   See step 3 of **Deployment Steps** above — this still needs `devDependencies`
+   for the rebuild in the next step, so it also still pulls down the
+   `ffmpeg-static` binary the asset pipeline needs and the running bot does not.
 
 3. **Rebuild**:
    ```bash
@@ -298,13 +310,24 @@ Then:
    ```
    Then commit the updated `assets/emojis/manifest.json` — see step 6 of **Deployment Steps** above for why losing that file is costly. Do this before restarting the service in the next step.
 
-6. **Restart the service**:
+6. **Redeploy branding** (rare — only if `assets/branding/*` changed in this release):
+   ```bash
+   npm run deploy-branding -- --dry-run
+   npm run deploy-branding
+   ```
+   This is a live write to the bot's Discord profile and is rate-limited to
+   roughly two edits per hour, so it has no place in the routine checklist —
+   run it only when the avatar or banner art actually changed, and run the
+   `--dry-run` pass first. There is no automated check for the result; confirm
+   it visually in a Discord client afterward.
+
+7. **Restart the service**:
    ```bash
    sudo systemctl restart dino-world
    ```
    Restart **after** `deploy-emojis`, not before — the runtime emoji map is fetched once at `ClientReady`, so an already-running process won't see new emoji IDs until it restarts.
 
-7. **Verify** it started: Check logs and confirm the bot is online in your test server.
+8. **Verify** it started: Check logs and confirm the bot is online in your test server.
 
 ## Release Smoke Test
 
