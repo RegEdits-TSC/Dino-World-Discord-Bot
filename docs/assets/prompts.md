@@ -1018,8 +1018,8 @@ bullets in the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.
 
 | File | Design intent | Unicode fallback |
 | --- | --- | --- |
-| `dw_site_abyssal_trench.svg` | A V-shaped trench cleft between two dark shelves (a blue-to-navy gradient panel), with a pale orange vent glow pooled at the bottom of the cleft and a light cyan current line curling above it, dark navy (`#0b2233`) outlines throughout | 🌊 |
-| `dw_site_containment_site.svg` | A fenced enclosure: a slate-blue outer frame around a pale interior panel, a gold warning chevron centered on the panel with a dark exclamation mark, dark slate (`#1b2530`) outlines throughout | 🧪 |
+| `dw_site_abyssal_trench.svg` | Two dark blue-to-navy gradient rock walls (no background panel — floating on transparency like every other site icon), each tapering from a wide top edge down to a narrow point near center, framing a V-shaped cleft between them; a small amber vent glow sits at the tip of the cleft, faint pale-cyan current streaks highlight each wall's upper edge, dark navy (`#0b2233`) outlines throughout | 🌊 |
+| `dw_site_containment_site.svg` | A short fence — four vertical slate posts crossed by two horizontal rails, no enclosing frame — with a yellow warning triangle mounted centered over it bearing a dark exclamation mark, dark slate (`#1b2530`) outlines throughout | 🧪 |
 
 ## Bot branding (animated avatar and banner)
 
