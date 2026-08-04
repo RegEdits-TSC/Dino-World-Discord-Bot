@@ -59,4 +59,21 @@ describe('recomputeRating', () => {
     expect(dropped.rating).toBe(0);
     expect(dropped.highWater).toBe(high);
   });
+  it('collection is clamped at the frozen target, so extra species never overflow it', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    // 296 points of rarity weight now exist against a COLLECTION_TARGET of 190,
+    // so a deep collection must saturate the term rather than exceeding it.
+    for (const s of ['indominus', 'indoraptor', 'ultimasaurus', 'tyrannosaurus', 'mosasaurus',
+      'quetzalcoatlus', 'liopleurodon', 'spinoraptor']) {
+      ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: s, hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    }
+    // 3 mythic (96) + 5 legendary (80) = 176 … add two epics to cross 190.
+    for (const s of ['kronosaurus', 'scorpios_rex']) {
+      ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: s, hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    }
+    const { rating } = recomputeRating(ctx, 'u1');
+    // collection saturated at 1.0 → 0.40 × 1000 = 400 from that term alone, and the
+    // park and comfort terms are unassigned/zero here.
+    expect(rating).toBe(400);
+  });
 });
