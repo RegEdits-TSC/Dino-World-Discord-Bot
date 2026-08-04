@@ -8,22 +8,23 @@ import { locksFor } from '../src/core/locks.js';
 import { eq } from 'drizzle-orm';
 import { tradingModule } from '../src/modules/trading/index.js';
 import { fakeCommand } from './harness.js';
+import { TRADE_MIN_RATING } from '../src/data/trade.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx();
   getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
-  ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both at 2★ so the gate passes
+  ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();   // both at 4★ so the gate passes
 });
 const empty = { dinoIds: [] as number[], eggIds: [] as number[], cash: 0, foods: {} as Record<string, number> };
 const addDino = (user: string, speciesId = 'triceratops', over: Record<string, unknown> = {}) =>
   ctx.db.insert(schema.dinos).values({ userId: user, speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0, ...over }).returning().get();
 
 // Local seed idiom, reused (as its own copy — not a shared import) by
-// tests/autocomplete-trading.test.ts: two users at 2★ so createTrade's rating
+// tests/autocomplete-trading.test.ts: two users at 4★ so createTrade's rating
 // gate passes, a tradeable dino owned by 'a', locked into a pending a->b trade.
 function seedPendingTrade(c: ReturnType<typeof makeCtx>): { tradeId: number; dinoId: number } {
   getOrCreateUser(c, 'a', 'A'); getOrCreateUser(c, 'b', 'B');
-  c.db.update(schema.users).set({ parkRating: 200 }).run();
+  c.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
   const d = c.db.insert(schema.dinos).values({
     userId: 'a', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
   }).returning().get();
@@ -44,7 +45,7 @@ describe('createTrade', () => {
     const m = addDino('a', 'indominus');
     expect(() => createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [m.id] }, empty)).toThrow(TradeError);
   });
-  it('rejects when the offerer is below 2★', () => {
+  it('rejects when the offerer is below 4★', () => {
     ctx.db.update(schema.users).set({ parkRating: 150 }).where(eq(schema.users.discordId, 'a')).run();
     const d = addDino('a');
     expect(() => createTrade(ctx, 'a', 'b', { ...empty, dinoIds: [d.id] }, empty)).toThrow(TradeError);
@@ -211,7 +212,7 @@ describe('trade lifecycle', () => {
 
 describe('trading module', () => {
   it('/trade offer then /trade accept moves the dino', async () => {
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both 2★ (beforeEach may already do this)
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();   // both 4★ (beforeEach may already do this)
     const d = addDino('a');
     const offerCmd = fakeCommand({ name: 'trade', sub: 'offer', user: 'a', options: { user: 'b', 'give-dinos': String(d.id) } });
     await tradingModule.commands[0].execute(ctx, offerCmd.asChatInput());

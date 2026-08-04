@@ -16,6 +16,8 @@ import { incubateEgg } from '../src/modules/hatchery/service.js';
 import { startExpedition } from '../src/modules/expeditions/service.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
+import { TRADE_MIN_RATING } from '../src/data/trade.js';
+import { MYTHIC_UNLOCK_RATING } from '../src/data/progression.js';
 import { ENERGY_CAP } from '../src/data/battle/constants.js';
 import { rollDailyQuests } from '../src/modules/daily/service.js';
 import { track } from '../src/core/stats.js';
@@ -74,7 +76,7 @@ ctx.setNow(Date.now());   // real wall time so <t:...> timestamps render sensibl
 const P1 = 'live-p1', P2 = 'live-p2';
 getOrCreateUser(ctx, P1, 'LiveTester');
 getOrCreateUser(ctx, P2, 'Counterparty');
-ctx.db.update(schema.users).set({ cash: 500_000, parkRating: 200, ratingHighWater: 400, shards: 600 }).run();
+ctx.db.update(schema.users).set({ cash: 500_000, parkRating: TRADE_MIN_RATING, ratingHighWater: MYTHIC_UNLOCK_RATING, shards: 600 }).run();
 const herb = Object.keys(PADDOCKS).find((k) => PADDOCKS[k].diet === 'herbivore')!;
 const lot = buildLot(ctx, P1, herb);
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'triceratops', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
@@ -102,14 +104,14 @@ assignDino(ctx, P1, mate.id, lot.id);
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'allosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(), traits: ['savage'] }).run();
 const spliceTarget = ctx.db.select().from(schema.dinos).all().find((d) => d.speciesId === 'allosaurus')!;
 // buildLot/assignDino above ran recomputeRating, which unconditionally overwrote parkRating below TRADE_MIN_RATING — restore it so createTrade's rating gate passes.
-ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
 createTrade(ctx, P1, P2, { dinoIds: [spareDino.id], eggIds: [], cash: 0, foods: {} }, { dinoIds: [], eggIds: [], cash: 1000, foods: {} });
 startExpedition(ctx, P1, 'coastal_dig', devGuildId);
 
 // Battles seed: max-level squad + chapter 1 cleared to (not including) the boss,
 // so one sweep shows the chapters overview, a normal 4-frame win, and a boss
-// FIRST clear whose F4 carries the egg line. ratingHighWater 400 (set above)
-// clears every site co-gate. ctx.sleep is makeCtx's instant stub, so the four
+// FIRST clear whose F4 carries the egg line. ratingHighWater MYTHIC_UNLOCK_RATING
+// (set above) clears every site co-gate. ctx.sleep is makeCtx's instant stub, so the four
 // editReply frames land immediately — the gallery posts them as four messages.
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'tyrannosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'spinosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
@@ -194,7 +196,7 @@ const cases: Case[] = [
   { title: '/trade offer — new offer', run: () => {
       // hatchEgg/claimExpedition above run recomputeRating, which can drop parkRating
       // below TRADE_MIN_RATING — same restore the seed does at the top of this file.
-      ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+      ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
       return slash('trading', 'trade', { name: 'trade', sub: 'offer', user: P1, options: { user: P2, 'give-cash': 250, 'want-cash': 100 } });
     } },
   { title: '/trade accept — completed', run: () => {

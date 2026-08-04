@@ -4,6 +4,7 @@ import { getOrCreateUser } from '../src/modules/park/service.js';
 import { sellDino, buyMythicEgg, ShardError, SHARD_DAILY_CAP } from '../src/modules/shop/shards.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
+import { MYTHIC_UNLOCK_RATING } from '../src/data/progression.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); });
@@ -74,14 +75,14 @@ it('caps sell shards at the raised daily ceiling', () => {
 
 describe('buyMythicEgg', () => {
   it('requires 4★ high-water and 500 shards, then grants a preset Mythic egg', () => {
-    ctx.db.update(schema.users).set({ ratingHighWater: 400, shards: 500 }).where(eq(schema.users.discordId, 'u1')).run();
+    ctx.db.update(schema.users).set({ ratingHighWater: MYTHIC_UNLOCK_RATING, shards: 500 }).where(eq(schema.users.discordId, 'u1')).run();
     const egg = buyMythicEgg(ctx, 'u1', 'indoraptor');
     expect(egg.rarity).toBe('mythic');
     expect(egg.speciesId).toBe('indoraptor');
     expect(bal().shards).toBe(0);
   });
   it('rejects when high-water < 4★', () => {
-    ctx.db.update(schema.users).set({ ratingHighWater: 399, shards: 500 }).where(eq(schema.users.discordId, 'u1')).run();
+    ctx.db.update(schema.users).set({ ratingHighWater: 799, shards: 500 }).where(eq(schema.users.discordId, 'u1')).run();
     expect(() => buyMythicEgg(ctx, 'u1', 'indoraptor')).toThrow(ShardError);
   });
 });

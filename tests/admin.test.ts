@@ -10,6 +10,7 @@ import { adminGive, adminReset, adminFastForward, AdminError } from '../src/modu
 import { adminModule } from '../src/modules/admin/index.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
+import { TRADE_MIN_RATING } from '../src/data/trade.js';
 import { ENERGY_CAP } from '../src/data/battle/constants.js';
 import { settleEnergy } from '../src/data/battle/energy.js';
 import { track } from '../src/core/stats.js';
@@ -85,7 +86,7 @@ describe('adminReset + trades', () => {
   it('unlocks a counterparty’s escrowed items when the reset target is the recipient', () => {
     getOrCreateUser(ctx, 'o', 'O');
     getOrCreateUser(ctx, 't', 'T');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both 2★ so createTrade passes
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();   // both 4★ so createTrade passes
     const dino = ctx.db.insert(schema.dinos).values({ userId: 'o', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
     createTrade(ctx, 'o', 't', { dinoIds: [dino.id], eggIds: [], cash: 0, foods: {} }, { dinoIds: [], eggIds: [], cash: 0, foods: {} });
     // dino now escrowed, owned by o, in a pending o->t trade

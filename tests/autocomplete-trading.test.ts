@@ -5,6 +5,7 @@ import { getOrCreateUser } from '../src/modules/park/service.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { schema } from '../src/core/db/index.js';
 import { locksFor } from '../src/core/locks.js';
+import { TRADE_MIN_RATING } from '../src/data/trade.js';
 
 const cmd = () => tradingModule.commands[0];
 const H = 3_600_000;
@@ -18,12 +19,12 @@ function seedTrade(ctx: ReturnType<typeof makeCtx>, over: Partial<typeof schema.
   }).returning().get();
 }
 
-// Local copy of the seed idiom in tests/trading.test.ts (two users at 2★, a
+// Local copy of the seed idiom in tests/trading.test.ts (two users at 4★, a
 // tradeable dino owned by 'a', locked into a pending a->b trade) — not a
 // shared import, per the task-6 brief.
 function seedPendingTrade(ctx: ReturnType<typeof makeCtx>): { tradeId: number; dinoId: number } {
   getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
-  ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+  ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
   const d = ctx.db.insert(schema.dinos).values({
     userId: 'a', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
   }).returning().get();
@@ -151,7 +152,7 @@ describe('/trade offer id-list autocomplete', () => {
     seedInventory(ctx, 'u1');
     const theirs = seedInventory(ctx, 'u2');
     getOrCreateUser(ctx, 'u3', 'u3');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
     const target = theirs.dino({});
     createTrade(ctx, 'u2', 'u3', { dinoIds: [target.id], eggIds: [], cash: 0, foods: {} },
       { dinoIds: [], eggIds: [], cash: 0, foods: {} });
