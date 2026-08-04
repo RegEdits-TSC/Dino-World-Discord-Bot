@@ -1013,3 +1013,179 @@ bullets in the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.
 | `dw_quest.svg` | A dartboard-style target (gold outer ring, cream middle ring, red bullseye) with a dart stuck dead center, gold-brown palette matching `dw_cash`/`dw_star` | 🎯 |
 | `dw_streak.svg` | A two-tone stylized flame — a red-orange outer silhouette with a brighter yellow-orange inner flame layered on top | 🔥 |
 | `dw_chest.svg` | A wooden treasure chest: domed lid and body in a warm wood-brown gradient, gold trim bands across the seam and down the front, a small gold lock plate at the seam | 🎁 |
+
+## Bot branding (animated avatar and banner)
+
+The bot's Discord profile art (`assets/branding/`) is generated with Higgsfield
+Nano Banana Pro for the two stills and Seedance 2.0 for the two motion clips,
+then encoded to looping GIF by `scripts/make-gif.ts` (ffmpeg, via
+`npm run make-gif`) and applied with `npm run deploy-branding`
+(`src/deploy-branding.ts`). `assets/branding/` is a deliberately separate tree
+from `assets/images/` — see the branding bullet in the repo `CLAUDE.md` for why.
+
+### File targets
+
+| File | Size | Use |
+|---|---|---|
+| `assets/branding/icon.png` | 1024×1024 | Developer Portal App Icon (static-only field, distinct from the bot user's avatar) |
+| `assets/branding/banner-still.png` | 1360×480 | static fallback / future App Directory cover |
+| `assets/branding/avatar.gif` | 512×512, GIF89a, loop forever | bot avatar (animated) |
+| `assets/branding/banner.gif` | 680×240, GIF89a, loop forever | bot profile banner (animated) |
+
+Discord's hard ceiling is 10 MB per file (`BRANDING.discordMaxBytes`); the
+encoder budgets **8 MB** (`BRANDING.maxBytes`) and fails loudly rather than
+shipping something Discord would reject at upload. Both committed GIFs land
+well under that: `avatar.gif` is 6.21 MB (50 frames, 10 fps), `banner.gif` is
+1.72 MB (61 frames, 12 fps).
+
+### Stills (`nano_banana_pro`)
+
+The avatar still is generated with the shipped
+`assets/images/dinos/bruiser-carnivore.webp` cutout uploaded as a real
+reference (`media_upload` → presigned PUT → `media_confirm` → `media_id`),
+Nano Banana Pro `medias` role **`image`** — not `image_references`.
+`models_explore(action: "get", model_id: "nano_banana_pro")` declares the
+model's only accepted role as `image`; the generated avatar visibly picked up
+the reference character, confirming it. The banner still carries no reference.
+
+**Avatar still**, `aspect_ratio: "1:1"`, reference = `bruiser-carnivore.webp`:
+
+> Keep the exact character from the reference image — same crimson-red T-rex, charcoal dorsal ridge, cream underbelly, amber-orange eye, same bold dark outlines and glossy cel shading. Head-and-shoulders close-up, three-quarter view facing right, head filling the center of a square frame. Volcanic setting: dark basalt rock, molten lava-orange rim light along the jaw and crest, embers floating upward, deep charcoal-to-ember-red radial background, soft heat haze. Head fully inside the central circle; only embers and glow in the corners. Glossy cartoon mobile-game art style, bold dark outlines, vibrant saturated colors, strong glossy highlights, clean cel shading with smooth gradients, polished game-asset look. No text, no UI elements.
+
+**Banner still**, `aspect_ratio: "21:9"`, no reference:
+
+> A single continuous panoramic dinosaur park landscape at golden-hour sunset, one unbroken scene with one continuous horizon line. Toward the left of frame it is quiet and open: warm sky, soft clouds, distant birds, a low canopy silhouette, no focal subject. Through the middle of the scene, a lush valley with a winding dirt path, palms and ferns, and a wooden park gate with lit torches. Toward the right, sauropods grazing beside a lake, a pterosaur gliding, and a smoking volcano cone on the far horizon with a faint ember glow. Generous empty sky above and open ground below so the image can be cropped to a short wide strip. Glossy cartoon mobile-game art style, bold dark outlines, vibrant saturated colors, strong glossy highlights, clean cel shading with smooth gradients, polished game-asset look. NOT a triptych, NOT a diptych — no panel divisions, no vertical seams, no borders, no split-screen, no collage. No text, no UI elements.
+
+A first attempt phrased the composition as "Left third quiet … Center: … Right
+third: …" — the same "third" shorthand this file uses elsewhere for two-image
+edits. The model read it literally and rendered a three-panel triptych with
+hard vertical seams and independent horizons at the 1/3 and 2/3 marks, not one
+continuous scene; content and palette were correct, only the framing was
+wrong. The fix, above, drops "thirds" language for "toward the left / through
+the middle / toward the right" of *one* continuous horizon, and adds an
+explicit ban on panel/seam/collage composition. Regenerating from the
+literal-thirds phrasing will reproduce the triptych.
+
+**Post-processing:** `icon.png` is a direct copy of the approved avatar still
+(already 1024×1024 — Nano Banana Pro's square output at this aspect, no
+re-encode needed). `banner-still.png` is built from the banner still (1584×672
+native at `21:9`) with `-vf "crop=1584:560,scale=1360:480:flags=lanczos"` — a
+56px top/bottom trim to the 2.83:1 centre crop, then Lanczos-scaled to the
+1360×480 contract size.
+
+### Motion (`seedance_2_0`)
+
+Both clips loop by construction: `medias` sets `start_image` **and**
+`end_image` to the same stills `job_id`, so the clip is constrained to end
+where it began, and stage-1 output chains natively by id — no re-upload
+between stages.
+
+| | aspect | resolution / mode | duration | audio | cost |
+|---|---|---|---|---|---|
+| avatar | `1:1` | 720p / std | 5 s | off | 22.5 credits |
+| banner | `21:9` | 720p / std | 5 s | off | 22.5 credits |
+
+Banner resolution is **720p**, not the 1080p originally planned: the delivered
+banner asset is 680×240, and 21:9 at 720p is already 1280×548 — more than
+double the delivered size — so 1080p would have been discarded at encode for
+no benefit. Both delivered clips also came back larger than the resolution
+requested (avatar: 960×960 against a 720×720 request; banner: 1470×630 against
+a 1344×576 request) — `job_status` echoes the *requested* dimensions, not the
+delivered ones; trust a probe of the downloaded file over the echo.
+
+`use_unlim: true` was **rejected** for both clips ("Unlimited generations
+aren't supported for seedance_2_0"), even though `models_explore` shows the
+model itself declaring `supports_unlim: true` — the account-level `unlim`
+allowance was simply unavailable at generation time. No credits are spent on a
+rejection; both clips ran on credits only after that was reported and
+approved, 22.5 each.
+
+**Avatar motion**, unchanged from the first attempt — approved as-is:
+
+> Subtle ambient loop. The T-rex breathes slowly once, blinks once, slight jaw shift. Embers drift upward, lava glow flickers. Camera locked — no zoom, no pan, no push-in. Nothing enters or leaves frame. Ends exactly as it began.
+
+**Banner motion**, accepted version after one reroll:
+
+> Subtle ambient loop, five seconds, ending in exactly the same state it began. Torch flames flicker, palm fronds sway gently in a light breeze, water ripples softly, volcano smoke curls upward. Every animal stays fully inside the frame the entire time and returns to its exact starting position and pose by the end: the pterosaur hovers and banks in place in the upper left sky without ever crossing or leaving the frame edge, and the sauropods shift their weight gently in place without lowering or raising their heads. Nothing enters the frame, nothing leaves the frame, nothing appears, nothing disappears. Camera locked — no pan, no zoom, no parallax, no drift. The final frame must match the first frame exactly.
+
+The first banner clip used the shorter prompt ("Subtle ambient loop. Torch
+flames flicker, fronds sway … one pterosaur glides across the sky, a distant
+sauropod dips its head to drink and lifts it … Ends exactly as it began.").
+Camera lock and framing were correct, but comparing first and last frame
+showed the pterosaur had left the frame entirely by the last frame — it would
+pop back into existence at the loop point — and the sauropod ended head-down
+at the water when it started head-up, so it would snap upright on restart.
+"Ends exactly as it began" states the intent but gives the model nothing to
+hold each individual subject to — it is not sufficient on its own. The fix
+names every animal, pins each to staying fully in frame, and states its
+required starting *and* ending pose explicitly. Regenerating from the shorter
+prompt is not guaranteed to avoid the same drift.
+
+One operational note: the first `generate_video` call with the accepted
+banner prompt above did not start a job at all — the tool intercepted it with
+a preset-recommendation notice (it guessed the prompt matched a Higgsfield
+preset) and asked for confirmation before generating literally. Nothing is
+charged for that call. Resending the identical prompt with
+`declined_preset_id` set to the offered preset id starts the job with the
+literal prompt, which is what actually ran.
+
+Total spend across the whole pipeline: 2 (avatar still) + 2 (banner still,
+rejected triptych) + 2 (banner still, accepted reroll) + 22.5 (avatar clip) +
+22.5 (banner clip, rejected loop-seam) + 22.5 (banner clip, accepted reroll) =
+**73.5 credits**.
+
+### Encode (`scripts/make-gif.ts`)
+
+Filter chain (`buildFilter` in `scripts/make-gif.ts`):
+
+```
+fps=<fps>,[crop=in_w:in_w/<cropAspect>,]scale=<width>:<height>:flags=lanczos,split[a][b];
+[b]palettegen=stats_mode=diff[p];[a][p]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle
+```
+
+with `-loop 0`. Why these flags, since they are the whole reason the file fits
+in budget:
+
+- `palettegen=stats_mode=diff` spends the 256-colour palette on pixels that
+  actually change between frames, instead of averaging over the whole static
+  scene — an ambient loop is mostly static, so this is where most of the
+  palette budget goes.
+- `paletteuse=diff_mode=rectangle` leaves unchanged regions byte-identical
+  frame to frame, which is where nearly all of the actual file-size
+  compression comes from on a loop like this.
+- `dither=bayer` (ordered dithering) instead of the default Floyd-Steinberg
+  error diffusion: error diffusion re-dithers the static background
+  differently on every single frame, which both destroys the redundancy
+  `diff_mode=rectangle` is counting on and visibly shimmers on flat gradients
+  (the volcano backdrop, the sky). Ordered dithering is stable frame to frame.
+
+**Budget and frame-rate ladder:** the encoder budgets 8 MB (`BRANDING.maxBytes`)
+against Discord's 10 MB hard ceiling (`BRANDING.discordMaxBytes`). Over budget,
+it steps frame rate down the ladder `12 → 10 → 8` (`nextStep`,
+`BRANDING.fpsFloor = 8`) and re-encodes, logging each attempt; it hard-fails
+below 8 fps rather than shipping something over budget — that failure is a
+signal about the *clip* (the motion is broader than "subtle ambient" calls
+for), not the encoder, and the fix is a reroll. Dimensions never move on this
+ladder — 512×512 and 680×240 are contract values `tests/branding.test.ts`
+asserts exactly, and a ladder that shrank the canvas instead would make the
+committed asset's size depend on how much the clip happened to move.
+
+The ladder never actually fired for either committed file — both cleared 8 MB
+on the first rung. `banner.gif` shipped at its first-attempt 12 fps (1.72 MB).
+`avatar.gif` was deliberately re-encoded from 12 fps (7.33 MB) down to 10 fps
+(6.21 MB) after review — a size-on-disk choice, not the ladder engaging (7.33
+MB was already under the 8 MB budget): the avatar renders at ~40 px in a
+Discord chat list, where 10 fps and 12 fps are visually indistinguishable.
+
+Both GIFs are reproducible from a regenerated `avatar.mp4` / `banner.mp4` (the
+Higgsfield clip downloads — not committed to the repo) with:
+
+```
+npm run make-gif -- avatar.mp4 assets/branding/avatar.gif --width 512 --height 512 --fps 10
+npm run make-gif -- banner.mp4 assets/branding/banner.gif --width 680 --height 240 --fps 12 --crop-aspect 2.8333
+```
+
+The banner's `--crop-aspect 2.8333` trims the source clip's native `21:9`
+(2.33:1) down to the 680:240 (2.83:1) target before scaling — the same crop
+ratio the banner still was composed with dead headroom for. The avatar needs
+no crop: its source clip is already `1:1`.

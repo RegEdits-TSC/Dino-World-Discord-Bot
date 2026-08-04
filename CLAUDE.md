@@ -410,3 +410,13 @@
   `daily_quests.dayKey` alone — fast-forward can't move the UTC calendar, so today's
   board stays today's, and shifting only the claim anchor is what lets a streak gap or
   continuation be simulated.
+- Bot profile branding lives in `assets/branding/` — **not** `assets/images/`, whose
+  every file must be WebP (`tests/images.test.ts`). Discord takes GIF only for an
+  animated avatar or banner, at 512×512 and 680×240; those dimensions are contract
+  values asserted in `tests/branding.test.ts`, so `scripts/make-gif.ts`'s over-budget
+  ladder lowers frame rate (12 → 10 → 8) and never the canvas. `npm run deploy-branding`
+  is an operator step, not part of any build: Discord rate-limits profile edits to
+  roughly 2/hour, hence `--avatar-only` / `--banner-only`. It asserts the returned
+  asset hash starts with `a_` — Discord's own confirmation that it stored the
+  animation rather than a single static frame, which is otherwise a silent failure.
+  Regeneration prompts and the ffmpeg flag reasoning are in `docs/assets/prompts.md`.

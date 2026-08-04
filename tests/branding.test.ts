@@ -1,0 +1,196 @@
+import { describe, it, expect } from 'vitest';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { Image } from '@napi-rs/canvas';
+import {
+  BRANDING, gifInfo, nextStep, toDataUri, assertUploadable, assertAnimatedAccepted,
+} from '../src/core/branding.js';
+import { selectAssets, isDryRun } from '../src/deploy-branding.js';
+
+// Hand-built GIF89a bytes. Assembling them here rather than committing a fixture
+// keeps the parser honest: the test knows exactly which bytes mean what.
+function buildGif(opts: { width: number; height: number; frames: number; loop?: number | null }): Buffer {
+  const parts: number[] = [];
+  parts.push(...Buffer.from('GIF89a', 'ascii'));
+  parts.push(opts.width & 0xff, opts.width >> 8, opts.height & 0xff, opts.height >> 8);
+  parts.push(0x80, 0x00, 0x00);                      // GCT present, 2 entries
+  parts.push(0x00, 0x00, 0x00, 0xff, 0xff, 0xff);    // the 2-entry GCT itself
+  if (opts.loop !== null && opts.loop !== undefined) {
+    parts.push(0x21, 0xff, 0x0b, ...Buffer.from('NETSCAPE2.0', 'ascii'));
+    parts.push(0x03, 0x01, opts.loop & 0xff, opts.loop >> 8, 0x00);
+  }
+  for (let i = 0; i < opts.frames; i++) {
+    parts.push(0x21, 0xf9, 0x04, 0x00, 0x08, 0x00, 0x00, 0x00);   // graphic control ext
+    parts.push(0x2c, 0, 0, 0, 0, opts.width & 0xff, opts.width >> 8, opts.height & 0xff, opts.height >> 8, 0x00);
+    parts.push(0x02, 0x02, 0x44, 0x01, 0x00);                     // LZW min code size + 1 sub-block + terminator
+  }
+  parts.push(0x3b);
+  return Buffer.from(parts);
+}
+
+describe('gifInfo', () => {
+  it('reads dimensions, frame count and loop count', () => {
+    const info = gifInfo(buildGif({ width: 512, height: 512, frames: 3, loop: 0 }));
+    expect(info).toEqual({ width: 512, height: 512, frames: 3, loopCount: 0 });
+  });
+
+  it('reports a null loop count when no NETSCAPE block is present', () => {
+    expect(gifInfo(buildGif({ width: 8, height: 8, frames: 2, loop: null })).loopCount).toBeNull();
+  });
+
+  it('counts a single-frame GIF as one frame — this is the silent-static failure mode', () => {
+    expect(gifInfo(buildGif({ width: 680, height: 240, frames: 1, loop: 0 })).frames).toBe(1);
+  });
+
+  it('throws on a buffer that is not a GIF', () => {
+    expect(() => gifInfo(Buffer.from('not a gif at all'))).toThrow(/not a GIF/i);
+  });
+
+  it('throws on a truncated GIF rather than returning a partial read', () => {
+    const truncated = buildGif({ width: 64, height: 64, frames: 2, loop: 0 }).subarray(0, 9);
+    expect(() => gifInfo(truncated)).toThrow();
+  });
+});
+
+describe('nextStep', () => {
+  it('steps 12 down to 10 and 10 down to 8', () => {
+    expect(nextStep(12)).toBe(10);
+    expect(nextStep(10)).toBe(8);
+  });
+
+  it('returns null at the floor so the ladder terminates', () => {
+    expect(nextStep(BRANDING.fpsFloor)).toBeNull();
+    expect(nextStep(4)).toBeNull();
+  });
+
+  it('terminates from any starting rate', () => {
+    let fps: number | null = 12;
+    const seen: number[] = [];
+    while (fps !== null) { seen.push(fps); fps = nextStep(fps); }
+    expect(seen).toEqual([12, 10, 8]);
+  });
+});
+
+describe('toDataUri', () => {
+  it('prefixes the mime type and base64-encodes the body', () => {
+    expect(toDataUri(Buffer.from([0x00, 0x01]), 'image/gif')).toBe('data:image/gif;base64,AAE=');
+  });
+});
+
+describe('assertUploadable', () => {
+  const gif = buildGif({ width: 512, height: 512, frames: 2, loop: 0 });
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16)]);
+
+  it('accepts a valid GIF and a valid PNG', () => {
+    expect(() => assertUploadable(gif, 'gif')).not.toThrow();
+    expect(() => assertUploadable(png, 'png')).not.toThrow();
+  });
+
+  it('rejects a buffer whose magic bytes do not match the declared kind', () => {
+    expect(() => assertUploadable(png, 'gif')).toThrow(/magic/i);
+    expect(() => assertUploadable(gif, 'png')).toThrow(/magic/i);
+  });
+
+  it("rejects a file over Discord's 10 MB ceiling", () => {
+    const huge = Buffer.concat([gif, Buffer.alloc(BRANDING.discordMaxBytes)]);
+    // Both numbers in the message are decimal MB, derived from the same
+    // constant the check compares against — not a hardcoded "10 MB" that can
+    // drift from the actual (binary) ceiling.
+    expect(() => assertUploadable(huge, 'gif')).toThrow(/MB ceiling|too large/i);
+  });
+});
+
+describe('assertAnimatedAccepted', () => {
+  it('accepts a hash carrying the a_ animated prefix', () => {
+    expect(() => assertAnimatedAccepted('a_1234abcd', 'avatar')).not.toThrow();
+  });
+
+  it('rejects a static hash — Discord kept one frame', () => {
+    expect(() => assertAnimatedAccepted('1234abcd', 'avatar')).toThrow(/static/i);
+  });
+
+  it('rejects a missing hash', () => {
+    expect(() => assertAnimatedAccepted(null, 'banner')).toThrow(/banner/);
+  });
+});
+
+describe('the committed branding assets', () => {
+  // These are the properties a visual review cannot catch: a GIF that Discord
+  // will reject at upload, or one that silently exported a single static frame.
+  const cases = [
+    { file: 'avatar.gif', spec: BRANDING.avatar },
+    { file: 'banner.gif', spec: BRANDING.banner },
+  ] as const;
+
+  it.each(cases)('$file is a looping multi-frame GIF at its contract size', ({ file, spec }) => {
+    const path = resolve(process.cwd(), 'assets/branding', file);
+    const info = gifInfo(readFileSync(path));
+    expect(info.width).toBe(spec.width);
+    expect(info.height).toBe(spec.height);
+    expect(info.frames, 'a single frame means the export silently lost its animation').toBeGreaterThan(1);
+    expect(info.loopCount, 'must loop forever').toBe(0);
+  });
+
+  it.each(cases)('$file is within budget and under the Discord ceiling', ({ file }) => {
+    const bytes = statSync(resolve(process.cwd(), 'assets/branding', file)).size;
+    expect(bytes).toBeLessThanOrEqual(BRANDING.maxBytes);
+    expect(bytes).toBeLessThan(BRANDING.discordMaxBytes);
+  });
+
+  it('ships the static fallbacks alongside them', () => {
+    for (const file of ['icon.png', 'banner-still.png']) {
+      const buf = readFileSync(resolve(process.cwd(), 'assets/branding', file));
+      expect(() => assertUploadable(buf, 'png'), file).not.toThrow();
+    }
+  });
+
+  // The docs claim 1024×1024 and 1360×480; nothing pinned the actual pixel
+  // dimensions before this, so a re-encode that shipped the wrong crop would
+  // pass every other check here.
+  it.each([
+    { file: 'icon.png', width: 1024, height: 1024 },
+    { file: 'banner-still.png', width: 1360, height: 480 },
+  ])('$file is $width×$height', async ({ file, width, height }) => {
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/branding', file));
+    await img.decode();
+    expect(img.width).toBe(width);
+    expect(img.height).toBe(height);
+  });
+
+  // Pins the file set itself: a stray intermediate (a leftover .tmp from a
+  // failed encode, an extra reroll) landing in this directory would otherwise
+  // go unnoticed since nothing else enumerates it.
+  it('ships exactly the four expected files and nothing else', () => {
+    const files = readdirSync(resolve(process.cwd(), 'assets/branding')).sort();
+    expect(files).toEqual(['avatar.gif', 'banner-still.png', 'banner.gif', 'icon.png']);
+  });
+});
+
+describe('selectAssets', () => {
+  // Profile edits are rate-limited to roughly 2/hour, so re-uploading one asset
+  // must not spend the budget for both.
+  it('sends both by default', () => {
+    expect(selectAssets([])).toEqual(['avatar', 'banner']);
+  });
+
+  it('honours --avatar-only and --banner-only', () => {
+    expect(selectAssets(['--avatar-only'])).toEqual(['avatar']);
+    expect(selectAssets(['--banner-only'])).toEqual(['banner']);
+  });
+
+  it('rejects both flags at once rather than silently picking one', () => {
+    expect(() => selectAssets(['--avatar-only', '--banner-only'])).toThrow(/both/i);
+  });
+});
+
+describe('isDryRun', () => {
+  it('is false with no flags', () => {
+    expect(isDryRun([])).toBe(false);
+  });
+
+  it('is true when --dry-run is present, alongside other flags', () => {
+    expect(isDryRun(['--dry-run'])).toBe(true);
+    expect(isDryRun(['--avatar-only', '--dry-run'])).toBe(true);
+  });
+});

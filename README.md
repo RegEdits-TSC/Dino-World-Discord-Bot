@@ -87,6 +87,18 @@ npm run deploy-emojis
 `assets/emojis/manifest.json`, **which must be committed afterward** — see the
 [operations runbook](docs/ops.md) for why.
 
+The bot's Discord profile art (avatar, banner) lives in `assets/branding/` and
+is applied with `npm run deploy-branding`. This is a rare, live write — Discord
+rate-limits profile edits to roughly two per hour — so it is not part of the
+usual setup flow; run it only when the branding assets change, and pass
+`--dry-run` first to validate both files (size and format) without sending the
+request. Use `--avatar-only` or `--banner-only` to spend the rate-limit budget
+on a single asset. `npm run make-gif` (`scripts/make-gif.ts`) is the encoder
+that produces `assets/branding/*.gif` from source clips; see
+`docs/assets/prompts.md` for the full pipeline. There is no automated check
+for how the result looks in a client — verify it by eye in Discord after
+deploying.
+
 Start the bot, restarting on file changes:
 
 ```bash
