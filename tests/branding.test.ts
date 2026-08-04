@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   BRANDING, gifInfo, nextStep, toDataUri, assertUploadable, assertAnimatedAccepted,
 } from '../src/core/branding.js';
@@ -104,5 +106,36 @@ describe('assertAnimatedAccepted', () => {
 
   it('rejects a missing hash', () => {
     expect(() => assertAnimatedAccepted(null, 'banner')).toThrow(/banner/);
+  });
+});
+
+describe('the committed branding assets', () => {
+  // These are the properties a visual review cannot catch: a GIF that Discord
+  // will reject at upload, or one that silently exported a single static frame.
+  const cases = [
+    { file: 'avatar.gif', spec: BRANDING.avatar },
+    { file: 'banner.gif', spec: BRANDING.banner },
+  ] as const;
+
+  it.each(cases)('$file is a looping multi-frame GIF at its contract size', ({ file, spec }) => {
+    const path = resolve(process.cwd(), 'assets/branding', file);
+    const info = gifInfo(readFileSync(path));
+    expect(info.width).toBe(spec.width);
+    expect(info.height).toBe(spec.height);
+    expect(info.frames, 'a single frame means the export silently lost its animation').toBeGreaterThan(1);
+    expect(info.loopCount, 'must loop forever').toBe(0);
+  });
+
+  it.each(cases)('$file is within budget and under the Discord ceiling', ({ file }) => {
+    const bytes = statSync(resolve(process.cwd(), 'assets/branding', file)).size;
+    expect(bytes).toBeLessThanOrEqual(BRANDING.maxBytes);
+    expect(bytes).toBeLessThan(BRANDING.discordMaxBytes);
+  });
+
+  it('ships the static fallbacks alongside them', () => {
+    for (const file of ['icon.png', 'banner-still.png']) {
+      const buf = readFileSync(resolve(process.cwd(), 'assets/branding', file));
+      expect(() => assertUploadable(buf, 'png'), file).not.toThrow();
+    }
   });
 });
