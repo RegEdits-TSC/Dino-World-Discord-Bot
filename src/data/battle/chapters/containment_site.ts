@@ -33,8 +33,14 @@ export const containmentSite: ChapterDef = {
       enemies: [{ speciesId: 'scorpios_rex' }, { speciesId: 'stegoceratops' }, { speciesId: 'spinoraptor' }],
       rewards: { cash: 1_400, food: { foodId: 'prime_steak', qty: 5 }, xp: 370 }, firstClearShards: 16,
       boss: {
+        // hpMult tuned down from an original 3.0 (tests/battle-balance.test.ts). atkMult
+        // stays at its originally authored 1.2, same rationale as the Abyssal Trench
+        // boss: atkMult must never drop below 1.0 (a boss hitting softer than an
+        // ordinary same-level enemy is incoherent), so hpMult alone carries the retune.
+        // This is the campaign's current finale (CAMPAIGN's last chapter), so its
+        // traited win rate also has an upper bound — see tests/battle-balance.test.ts.
         bossId: 'boss-containment_site', title: 'Asset 47', speciesId: 'spinoraptor',
-        levelBonus: 1, hpMult: 3.0, atkMult: 1.2, eggRarity: 'legendary', eggSpeciesId: 'spinoraptor',
+        levelBonus: 1, hpMult: 2.0, atkMult: 1.2, eggRarity: 'legendary', eggSpeciesId: 'spinoraptor',
       },
     },
   ],
