@@ -5,15 +5,21 @@ export const RARITY_WEIGHT: Record<Rarity, number> = {
 };
 export const RATING_WEIGHTS = { collection: 0.40, park: 0.35, comfort: 0.25 };
 export const PARK_TARGET = 40;
+// Frozen at the rarity-weight sum of the 30-species roster this shipped with.
+// Deliberately NOT a live sum over allSpecies(): a live denominator taxes every
+// existing player's rating each time a species ships. New species are alternate
+// paths to the same target, which is why the caller clamps at 1.
+export const COLLECTION_TARGET = 190;
+export const RATING_SCALE = 1000;
 export const BASE_LOT_SLOTS_FALLBACK = 3;
-export const LOT_SLOT_THRESHOLDS = [50, 100, 200, 300, 400];   // high-water (stars*100) for slots 4..8
+export const LOT_SLOT_THRESHOLDS = [100, 200, 400, 600, 800, 880, 950];   // high-water for slots 4..10
 export const SHOP_CEILING: Array<{ atLeast: number; ceiling: Rarity }> = [
-  { atLeast: 350, ceiling: 'legendary' },
-  { atLeast: 200, ceiling: 'epic' },
-  { atLeast: 100, ceiling: 'rare' },
+  { atLeast: 700, ceiling: 'legendary' },
+  { atLeast: 400, ceiling: 'epic' },
+  { atLeast: 200, ceiling: 'rare' },
   { atLeast: 0, ceiling: 'uncommon' },
 ];
-export const MYTHIC_UNLOCK_RATING = 400;
+export const MYTHIC_UNLOCK_RATING = 800;
 
 export function siteUnlocked(unlockRating: number, highWater: number): boolean { return highWater >= unlockRating; }
 export function lotSlots(highWater: number): number {

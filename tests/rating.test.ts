@@ -8,20 +8,31 @@ let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
 
 describe('gating helpers (re-exported from rating.ts)', () => {
-  it('lotSlots grows 3→8 across thresholds', () => {
+  it('lotSlots grows 3→10 across thresholds', () => {
     expect(lotSlots(0)).toBe(3);
-    expect(lotSlots(50)).toBe(4);
-    expect(lotSlots(400)).toBe(8);
-    expect(lotSlots(999)).toBe(8);
+    expect(lotSlots(100)).toBe(4);
+    expect(lotSlots(800)).toBe(8);
+    expect(lotSlots(950)).toBe(10);
+    expect(lotSlots(9999)).toBe(10);
   });
   it('siteUnlocked / shopCeiling / mythicUnlocked read high-water', () => {
-    expect(siteUnlocked(150, 149)).toBe(false);
-    expect(siteUnlocked(150, 150)).toBe(true);
+    expect(siteUnlocked(300, 299)).toBe(false);
+    expect(siteUnlocked(300, 300)).toBe(true);
     expect(shopCeiling(0)).toBe('uncommon');
-    expect(shopCeiling(250)).toBe('epic');
-    expect(shopCeiling(400)).toBe('legendary');
-    expect(mythicUnlocked(399)).toBe(false);
-    expect(mythicUnlocked(400)).toBe(true);
+    expect(shopCeiling(250)).toBe('rare');
+    expect(shopCeiling(400)).toBe('epic');
+    expect(shopCeiling(700)).toBe('legendary');
+    expect(mythicUnlocked(799)).toBe(false);
+    expect(mythicUnlocked(800)).toBe(true);
+  });
+  it('rating is scaled to 1000 and never exceeds it', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    for (const s of ['tyrannosaurus', 'mosasaurus', 'indominus', 'indoraptor']) {
+      ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: s, hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    }
+    const { rating } = recomputeRating(ctx, 'u1');
+    expect(rating).toBeGreaterThan(0);
+    expect(rating).toBeLessThanOrEqual(1000);
   });
 });
 
