@@ -418,9 +418,9 @@ one expedition can be out at a time.
 | Site | Unlocks at | Cost | Duration | Cash bonus | Food bonus |
 | --- | --- | --- | --- | --- | --- |
 | Coastal Dig | 0.0★ | 200 | 15 min | 50–200 | 2–6 |
-| Amber Ridge | 1.5★ | 1,000 | 1 h | 200–800 | 4–10 |
-| Frozen Cliffs | 2.5★ | 4,000 | 4 h | 800–2,500 | 8–20 |
-| Volcano Core | 4.0★ | 15,000 | 8 h | 3,000–9,000 | 20–50 |
+| Amber Ridge | 3.0★ | 1,000 | 1 h | 200–800 | 4–10 |
+| Frozen Cliffs | 5.0★ | 4,000 | 4 h | 800–2,500 | 8–20 |
+| Volcano Core | 8.0★ | 15,000 | 8 h | 3,000–9,000 | 20–50 |
 
 Site unlocks are gated on your **best-ever** rating, so a site never
 re-locks even if your current rating later drops. No site's maximum cash
@@ -469,7 +469,7 @@ you've earned at least 1 star on the stage before it. Chapter 1 is always
 open too. Every later chapter needs **both** a recorded first clear of the
 previous chapter's boss **and** a best-ever park rating at or above that
 chapter's gate — the same thresholds as the identically named expedition
-sites: 0.0★, 1.5★, 2.5★, and 4.0★.
+sites: 0.0★, 3.0★, 5.0★, and 8.0★.
 
 ### Energy
 

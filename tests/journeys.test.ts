@@ -331,8 +331,8 @@ describe('journeys', () => {
     await dispatch(ctx, parkModule, 'build', { name: 'build', user: 'p1', options: { kind: paddockKindFor('carnivore') } });
     const decayed = ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!;
     expect(decayed.ratingHighWater).toBeGreaterThanOrEqual(played.ratingHighWater);
-    // Gate: volcano_core needs ★4.0 (unlock 400) — far above this park.
-    expect(decayed.ratingHighWater).toBeLessThan(400);
+    // Gate: volcano_core needs ★8.0 (unlock 800) — far above this park.
+    expect(decayed.ratingHighWater).toBeLessThan(800);
     const gated = await dispatch(ctx, expeditionsModule, 'expedition', {
       name: 'expedition', sub: 'start', user: 'p1', options: { site: 'volcano_core' },
     });
@@ -355,8 +355,8 @@ describe('journeys', () => {
     const ids = ctx.db.select().from(schema.dinos).all().map((d) => d.id);
     expect(ids).toHaveLength(3);
     ctx.db.update(schema.dinos).set({ battleXp: 10_000 }).run();
-    // Rating high-water clears amber_ridge's site gate (150) but not frozen_cliffs' (250).
-    ctx.db.update(schema.users).set({ ratingHighWater: 150 }).where(eq(schema.users.discordId, 'p1')).run();
+    // Rating high-water clears amber_ridge's site gate (300) but not frozen_cliffs' (500).
+    ctx.db.update(schema.users).set({ ratingHighWater: 300 }).where(eq(schema.users.discordId, 'p1')).run();
 
     // Chapters overview renders; page 2 (amber_ridge) reads locked — its boss precondition is unmet.
     const overview = await dispatch(ctx, battlesModule, 'battle', { name: 'battle', sub: 'chapters', user: 'p1' });
@@ -467,7 +467,7 @@ describe('journeys', () => {
     expect(ch1Stages).not.toContain('🔒');
 
     // Chapter 3 (frozen_cliffs) still reads locked through the real command
-    // path — its own rating gate (250) is untouched at ratingHighWater 150.
+    // path — its own rating gate (500) is untouched at ratingHighWater 300.
     const ch3 = embedJson((await click(ctx, battlesModule, 'battle:chapter:p1:2', 'p1')).replies[0]);
     expect(ch3.title).toMatch(/🔒/);
     expect(ch3.description).toMatch(/Locked — beat/);
@@ -475,9 +475,9 @@ describe('journeys', () => {
     // Gates: ch.2 unlocked; ch.3 locked by the RATING co-gate even with its boss precondition force-met.
     const progress: ProgressMap = new Map(ctx.db.select().from(schema.battleProgress).all()
       .map((r) => [r.stageId, { stars: r.stars, firstClearedAt: r.firstClearedAt }]));
-    expect(chapterUnlocked('amber_ridge', progress, 150)).toBe(true);
+    expect(chapterUnlocked('amber_ridge', progress, 300)).toBe(true);
     progress.set('amber_ridge_boss', { stars: 3, firstClearedAt: ctx.now() });
-    expect(chapterUnlocked('frozen_cliffs', progress, 150)).toBe(false);      // 150 < unlockRating 250
+    expect(chapterUnlocked('frozen_cliffs', progress, 300)).toBe(false);      // 300 < unlockRating 500
 
     // Drain: refight coastal_dig_1 (cost 1) until the pool refuses.
     let threw: unknown = null;

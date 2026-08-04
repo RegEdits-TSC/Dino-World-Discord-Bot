@@ -166,8 +166,8 @@ describe('battle gating', () => {
   it('later chapters require prior boss first-clear AND the site unlockRating high-water', () => {
     const bossCleared = prog({ coastal_dig_boss: { stars: 1, firstClearedAt: 1_000 } });
     expect(chapterUnlocked('amber_ridge', prog({}), 999)).toBe(false);    // rating alone is not enough
-    expect(chapterUnlocked('amber_ridge', bossCleared, 149)).toBe(false); // boss clear alone is not enough
-    expect(chapterUnlocked('amber_ridge', bossCleared, 150)).toBe(true);  // both gates satisfied
+    expect(chapterUnlocked('amber_ridge', bossCleared, 299)).toBe(false); // boss clear alone is not enough
+    expect(chapterUnlocked('amber_ridge', bossCleared, 300)).toBe(true);  // both gates satisfied
   });
 
   it('a boss row with stars but no firstClearedAt does not unlock the next chapter', () => {
