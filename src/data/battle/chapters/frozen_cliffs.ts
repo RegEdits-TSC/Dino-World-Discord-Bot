@@ -1,6 +1,6 @@
 import type { ChapterDef } from './index.js';
 
-// Chapter 3 — Frozen Cliffs (unlockRating 250). Rare packs escalating into
+// Chapter 3 — Frozen Cliffs (unlockRating 500). Rare packs escalating into
 // epics; the boss is a legendary-egg Quetzalcoatlus nesting on the cliffs.
 export const frozenCliffs: ChapterDef = {
   id: 'frozen_cliffs',

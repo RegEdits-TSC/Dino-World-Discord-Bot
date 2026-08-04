@@ -1,6 +1,6 @@
 import type { ChapterDef } from './index.js';
 
-// Chapter 2 — Amber Ridge (unlockRating 150). Uncommon herbivore herds give
+// Chapter 2 — Amber Ridge (unlockRating 300). Uncommon herbivore herds give
 // way to rare theropods; the boss is an epic-egg Allosaurus pack leader.
 export const amberRidge: ChapterDef = {
   id: 'amber_ridge',
