@@ -34,7 +34,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '`/incubate egg:<id>` — start the timer (slots grow with the Hatchery Lab).',
     '`/hatch egg:<id>` — crack a ready egg and meet your dino.',
     'An egg you have offered in a trade is locked 🔒 — incubate and hatch are blocked until the trade resolves.',
-    '`/mythic species:<name>` — spend 500 shards on a Mythic egg (needs 4★ rating).',
+    '`/mythic species:<name>` — spend 500 shards on a Mythic egg (needs 8★ rating).',
   ].join('\n') },
   expeditions: { title: '🧭 Expeditions', art: { kind: 'sites', name: 'coastal_dig-banner' }, body: [
     '`/expedition start site:<site>` — pay cash, wait, get loot. Higher sites need higher rating.',

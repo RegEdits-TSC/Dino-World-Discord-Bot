@@ -70,7 +70,7 @@ export const hatcheryModule: ModuleManifest = {
           .map((e) => ({ value: e.id, label: eggLabel(e, ctx.now(), locks.eggs.has(e.id)),
             valid: e.hatchesAt !== null && e.hatchesAt <= ctx.now() && !locks.eggs.has(e.id) })));
       } },
-    { data: new SlashCommandBuilder().setName('mythic').setDescription('Spend 500 shards on a Mythic egg (needs 4★)')
+    { data: new SlashCommandBuilder().setName('mythic').setDescription('Spend 500 shards on a Mythic egg (needs 8★)')
         .addStringOption((o) => o.setName('species').setDescription('Which Mythic').setRequired(true).addChoices(...mythicChoices)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);

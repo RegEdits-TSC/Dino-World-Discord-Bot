@@ -543,7 +543,7 @@ describe('mythic:confirm and hatch:crack error branches', () => {
     const comp = hatcheryModule.components.find((c) => c.prefix === 'mythic')!;
     const gated = fakeButton({ customId: 'mythic:confirm:indominus', user: 'u1' });
     await comp.execute(ctx, gated.asInteraction() as unknown as ButtonInteraction);
-    expect(replyText(gated.replies[0])).toContain('4★');
+    expect(replyText(gated.replies[0])).toContain('8★');
     ctx.db.update(schema.users).set({ ratingHighWater: MYTHIC_UNLOCK_RATING, shards: 0 }).run();
     const broke = fakeButton({ customId: 'mythic:confirm:indominus', user: 'u1' });
     await comp.execute(ctx, broke.asInteraction() as unknown as ButtonInteraction);
