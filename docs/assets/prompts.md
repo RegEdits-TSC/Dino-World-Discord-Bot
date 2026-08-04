@@ -1018,7 +1018,7 @@ bullets in the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.
 
 | File | Design intent | Unicode fallback |
 | --- | --- | --- |
-| `dw_site_abyssal_trench.svg` | Two dark blue-to-navy gradient rock walls (no background panel — floating on transparency like every other site icon), each tapering from a wide top edge down to a narrow point near center, framing a V-shaped cleft between them; a small amber vent glow sits at the tip of the cleft, faint pale-cyan current streaks highlight each wall's upper edge, dark navy (`#0b2233`) outlines throughout | 🌊 |
+| `dw_site_abyssal_trench.svg` | A deep-sea submersible, side-on, floating on transparency: a rounded blue-to-navy gradient hull (stadium shape), a small conning tower on top, a pointed tail fin at the rear, one large pale-cyan porthole toward the front, and a small amber lamp at the nose with a short amber light cone reaching forward, dark navy (`#0b2233`) outlines throughout — a trench is negative space, so the site is represented by the vehicle you'd find exploring one, the same way Coastal Dig is represented by a shell rather than a hole in the sand | 🌊 |
 | `dw_site_containment_site.svg` | A short fence — four vertical slate posts crossed by two horizontal rails, no enclosing frame — with a yellow warning triangle mounted centered over it bearing a dark exclamation mark, dark slate (`#1b2530`) outlines throughout | 🧪 |
 
 ## Bot branding (animated avatar and banner)
