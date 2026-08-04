@@ -34,7 +34,7 @@ describe('emojiTag', () => {
     expect(emojiTag('constructor')).toBe('');
     expect(emojiTag('toString')).toBe('');
   });
-  it('fallback table covers exactly the 41 spec names', () => {
+  it('fallback table covers exactly the 43 spec names', () => {
     expect(Object.keys(EMOJI_FALLBACK).sort()).toEqual([
       'dw_alert', 'dw_cash', 'dw_chest',
       'dw_dino_common', 'dw_dino_epic', 'dw_dino_legendary', 'dw_dino_mythic', 'dw_dino_rare', 'dw_dino_uncommon',
@@ -42,7 +42,8 @@ describe('emojiTag', () => {
       'dw_lot_carnivore', 'dw_lot_food_court', 'dw_lot_genelab', 'dw_lot_hatchery', 'dw_lot_herbivore', 'dw_lot_visitor',
       'dw_prime_steak', 'dw_quest',
       'dw_rarity_common', 'dw_rarity_epic', 'dw_rarity_legendary', 'dw_rarity_mythic', 'dw_rarity_rare', 'dw_rarity_uncommon',
-      'dw_royal_greens', 'dw_shard', 'dw_site_amber_ridge', 'dw_site_coastal_dig', 'dw_site_frozen_cliffs', 'dw_site_volcano_core',
+      'dw_royal_greens', 'dw_shard', 'dw_site_abyssal_trench', 'dw_site_amber_ridge', 'dw_site_coastal_dig',
+      'dw_site_containment_site', 'dw_site_frozen_cliffs', 'dw_site_volcano_core',
       'dw_star', 'dw_streak',
       'dw_trait_care', 'dw_trait_combat', 'dw_trait_income', 'dw_trait_meta',
     ]);

@@ -999,7 +999,7 @@ the light studio rim must be peeled, and all border pixels must end transparent.
 
 ## Emoji icons
 
-The 41 application emojis in `assets/emojis/` are **not** generated — they are
+The 43 application emojis in `assets/emojis/` are **not** generated — they are
 hand-authored SVG rendered by `npm run build-emojis`. That set includes the six
 `dw_dino_<rarity>` chips and the six `dw_lot_*` icons the park renderer reads
 as SVG at draw time, plus the four `dw_trait_<domain>` icons (income, care,
@@ -1013,6 +1013,13 @@ bullets in the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.
 | `dw_quest.svg` | A dartboard-style target (gold outer ring, cream middle ring, red bullseye) with a dart stuck dead center, gold-brown palette matching `dw_cash`/`dw_star` | 🎯 |
 | `dw_streak.svg` | A two-tone stylized flame — a red-orange outer silhouette with a brighter yellow-orange inner flame layered on top | 🔥 |
 | `dw_chest.svg` | A wooden treasure chest: domed lid and body in a warm wood-brown gradient, gold trim bands across the seam and down the front, a small gold lock plate at the seam | 🎁 |
+
+**Endgame site markers** — used inline in expedition embed titles for the two endgame sites:
+
+| File | Design intent | Unicode fallback |
+| --- | --- | --- |
+| `dw_site_abyssal_trench.svg` | A V-shaped trench cleft between two dark shelves (a blue-to-navy gradient panel), with a pale orange vent glow pooled at the bottom of the cleft and a light cyan current line curling above it, dark navy (`#0b2233`) outlines throughout | 🌊 |
+| `dw_site_containment_site.svg` | A fenced enclosure: a slate-blue outer frame around a pale interior panel, a gold warning chevron centered on the panel with a dark exclamation mark, dark slate (`#1b2530`) outlines throughout | 🧪 |
 
 ## Bot branding (animated avatar and banner)
 
