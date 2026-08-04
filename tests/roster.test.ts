@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { allSpecies, speciesByRarity, getSpecies } from '../src/data/species/index.js';
+import { DECOR } from '../src/data/decor.js';
 
 const EXPECTED = { common: 8, uncommon: 7, rare: 6, epic: 4, legendary: 3, mythic: 2 } as const;
 
@@ -28,5 +29,20 @@ describe('roster', () => {
   it('getSpecies round-trips the seed species', () => {
     expect(getSpecies('tyrannosaurus').rarity).toBe('legendary');
     expect(getSpecies('indominus').rarity).toBe('mythic');
+  });
+});
+
+describe('biome vocabulary', () => {
+  // paddockFit (src/core/clock.ts:47) reaches 1.0 only when a decor kind on the lot
+  // shares a biomeTag with the species, so a species carrying a tag no decor offers
+  // is capped at 0.75 comfort forever — and a typo ('Marine' for 'marine') ships
+  // exactly that with every other test still green.
+  it('every species biome tag is offered by at least one decor kind', () => {
+    const offered = new Set(Object.values(DECOR).flatMap((d) => d.biomeTags));
+    for (const s of allSpecies()) {
+      for (const tag of s.biomeTags) {
+        expect(offered, `${s.id} wants biome '${tag}' but no decor offers it`).toContain(tag);
+      }
+    }
   });
 });
