@@ -17,12 +17,12 @@ export const ACHIEVEMENTS: AchievementTrack[] = [
   { id: 'expeditions_claimed', stat: 'expeditions_claimed', name: 'Expedition Leader', tiers: [5, 25, 100, 300] },
   { id: 'battles_fought', stat: 'battles_fought', name: 'Battle Tested', tiers: [10, 50, 200, 500] },
   { id: 'battles_won', stat: 'battles_won', name: 'Champion', tiers: [5, 25, 100, 250] },
-  { id: 'stages_first_cleared', stat: 'stages_first_cleared', name: 'Explorer', tiers: [5, 10, 15, 20] },
+  { id: 'stages_first_cleared', stat: 'stages_first_cleared', name: 'Explorer', tiers: [5, 10, 20, 30] },
   { id: 'trades_completed', stat: 'trades_completed', name: 'Trader', tiers: [1, 5, 25, 100] },
   { id: 'breedings_claimed', stat: 'breedings_claimed', name: 'Breeder', tiers: [1, 5, 25, 100] },
   { id: 'splices_done', stat: 'splices_done', name: 'Gene Splicer', tiers: [1, 10, 50, 200] },
   { id: 'dinos_sold', stat: 'dinos_sold', name: 'Dealmaker', tiers: [5, 25, 100, 300] },
-  { id: 'lots_built', stat: 'lots_built', name: 'Park Architect', tiers: [3, 6, 10, 15] },
+  { id: 'lots_built', stat: 'lots_built', name: 'Park Architect', tiers: [3, 5, 8, 10] },
 ];
 
 export const TIER_REWARDS: Array<{ cash: number; shards: number }> = [
