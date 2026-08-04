@@ -17,4 +17,8 @@ export const EXPEDITION_SITES: Record<string, SiteDef> = {
     eggOdds: [{ rarity: 'uncommon', weight: 40 }, { rarity: 'rare', weight: 40 }, { rarity: 'epic', weight: 20 }], bonusCash: [800, 2_500], bonusFood: [8, 20] },
   volcano_core: { id: 'volcano_core', name: 'Volcano Core', unlockRating: 800, durationMs: 8 * H, cost: 15_000,
     eggOdds: [{ rarity: 'rare', weight: 40 }, { rarity: 'epic', weight: 40 }, { rarity: 'legendary', weight: 19.8 }, { rarity: 'mythic', weight: 0.2 }], bonusCash: [3_000, 9_000], bonusFood: [20, 50] },
+  abyssal_trench: { id: 'abyssal_trench', name: 'Abyssal Trench', unlockRating: 880, durationMs: 12 * H, cost: 40_000,
+    eggOdds: [{ rarity: 'rare', weight: 25 }, { rarity: 'epic', weight: 45 }, { rarity: 'legendary', weight: 29 }, { rarity: 'mythic', weight: 1 }], bonusCash: [8_000, 20_000], bonusFood: [40, 90] },
+  containment_site: { id: 'containment_site', name: 'Containment Site', unlockRating: 950, durationMs: 24 * H, cost: 100_000,
+    eggOdds: [{ rarity: 'epic', weight: 35 }, { rarity: 'legendary', weight: 63 }, { rarity: 'mythic', weight: 2 }], bonusCash: [20_000, 50_000], bonusFood: [80, 180] },
 };

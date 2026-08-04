@@ -411,7 +411,7 @@ skip and keeps going for the rest.
 
 ## 9. Expeditions
 
-Expeditions don't use any dinos — you send a dig crew to one of four sites,
+Expeditions don't use any dinos — you send a dig crew to one of six sites,
 pay a cash fee up front, wait out the duration, and claim the results. Only
 one expedition can be out at a time.
 
@@ -421,6 +421,8 @@ one expedition can be out at a time.
 | Amber Ridge | 3.0★ | 1,000 | 1 h | 200–800 | 4–10 |
 | Frozen Cliffs | 5.0★ | 4,000 | 4 h | 800–2,500 | 8–20 |
 | Volcano Core | 8.0★ | 15,000 | 8 h | 3,000–9,000 | 20–50 |
+| Abyssal Trench | 8.8★ | 40,000 | 12 h | 8,000–20,000 | 40–90 |
+| Containment Site | 9.5★ | 100,000 | 24 h | 20,000–50,000 | 80–180 |
 
 Site unlocks are gated on your **best-ever** rating, so a site never
 re-locks even if your current rating later drops. No site's maximum cash
