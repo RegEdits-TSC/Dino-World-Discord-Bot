@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { Image } from '@napi-rs/canvas';
 import {
   BRANDING, gifInfo, nextStep, toDataUri, assertUploadable, assertAnimatedAccepted,
 } from '../src/core/branding.js';
-import { selectAssets } from '../src/deploy-branding.js';
+import { selectAssets, isDryRun } from '../src/deploy-branding.js';
 
 // Hand-built GIF89a bytes. Assembling them here rather than committing a fixture
 // keeps the parser honest: the test knows exactly which bytes mean what.
@@ -92,7 +93,10 @@ describe('assertUploadable', () => {
 
   it("rejects a file over Discord's 10 MB ceiling", () => {
     const huge = Buffer.concat([gif, Buffer.alloc(BRANDING.discordMaxBytes)]);
-    expect(() => assertUploadable(huge, 'gif')).toThrow(/10 MB|too large/i);
+    // Both numbers in the message are decimal MB, derived from the same
+    // constant the check compares against — not a hardcoded "10 MB" that can
+    // drift from the actual (binary) ceiling.
+    expect(() => assertUploadable(huge, 'gif')).toThrow(/MB ceiling|too large/i);
   });
 });
 
@@ -139,6 +143,28 @@ describe('the committed branding assets', () => {
       expect(() => assertUploadable(buf, 'png'), file).not.toThrow();
     }
   });
+
+  // The docs claim 1024×1024 and 1360×480; nothing pinned the actual pixel
+  // dimensions before this, so a re-encode that shipped the wrong crop would
+  // pass every other check here.
+  it.each([
+    { file: 'icon.png', width: 1024, height: 1024 },
+    { file: 'banner-still.png', width: 1360, height: 480 },
+  ])('$file is $width×$height', async ({ file, width, height }) => {
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/branding', file));
+    await img.decode();
+    expect(img.width).toBe(width);
+    expect(img.height).toBe(height);
+  });
+
+  // Pins the file set itself: a stray intermediate (a leftover .tmp from a
+  // failed encode, an extra reroll) landing in this directory would otherwise
+  // go unnoticed since nothing else enumerates it.
+  it('ships exactly the four expected files and nothing else', () => {
+    const files = readdirSync(resolve(process.cwd(), 'assets/branding')).sort();
+    expect(files).toEqual(['avatar.gif', 'banner-still.png', 'banner.gif', 'icon.png']);
+  });
 });
 
 describe('selectAssets', () => {
@@ -155,5 +181,16 @@ describe('selectAssets', () => {
 
   it('rejects both flags at once rather than silently picking one', () => {
     expect(() => selectAssets(['--avatar-only', '--banner-only'])).toThrow(/both/i);
+  });
+});
+
+describe('isDryRun', () => {
+  it('is false with no flags', () => {
+    expect(isDryRun([])).toBe(false);
+  });
+
+  it('is true when --dry-run is present, alongside other flags', () => {
+    expect(isDryRun(['--dry-run'])).toBe(true);
+    expect(isDryRun(['--avatar-only', '--dry-run'])).toBe(true);
   });
 });

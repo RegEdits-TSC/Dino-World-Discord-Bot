@@ -7,7 +7,7 @@ export interface GifInfo {
 }
 
 export const BRANDING = {
-  avatar: { width: 512, height: 512, fps: 12 },
+  avatar: { width: 512, height: 512, fps: 10 },
   banner: { width: 680, height: 240, fps: 12 },
   maxBytes: 8_388_608,
   discordMaxBytes: 10_485_760,
@@ -93,8 +93,12 @@ export function assertUploadable(buf: Buffer, kind: 'gif' | 'png'): void {
     throw new Error(`Refusing to upload: magic bytes are not ${kind.toUpperCase()}.`);
   }
   if (buf.length > BRANDING.discordMaxBytes) {
+    // Both sides of the comparison come from the same divisor so the message
+    // can never describe the actual size and the ceiling in different units
+    // (the ceiling constant is a binary 10 MiB, not a round decimal 10 MB).
     throw new Error(
-      `Refusing to upload: ${(buf.length / 1e6).toFixed(1)} MB is over Discord's 10 MB ceiling.`,
+      `Refusing to upload: ${(buf.length / 1e6).toFixed(1)} MB is over Discord's ` +
+      `${(BRANDING.discordMaxBytes / 1e6).toFixed(1)} MB ceiling.`,
     );
   }
 }
