@@ -675,7 +675,7 @@ with `remove_background` plus the one-off defringe + fit pass described in the E
 rarities section (not `scripts/fit-art.mjs`, which fits to 31px), with one
 difference: portraits fit and center on the **whole silhouette bbox** (there is
 no egg axis to bias toward), 24px margin on a 1024×1024 transparent canvas — the
-margin the four committed portraits measure at.
+margin all six committed portraits measure at.
 
 **boss-coastal_dig — Old Riptooth (reference portrait):**
 
@@ -839,10 +839,15 @@ extend beyond the dinosaur silhouette — off-silhouette glow survives backgroun
 removal as floating islands or a light halo on transparency. Emissive detail is
 allowed only ON surfaces. Every prompt carries this rule verbatim.
 
-**Facing right:** all four committed boss portraits face right, snout pointing
-right, and one boss generation came back mirrored and had to be flipped in post
-(see Battle bosses). The prompt frame below states the direction up front —
-still check every generation against the reference before shipping it.
+**Facing right:** five of the six committed boss portraits face right, snout
+pointing right — the shared convention set by the coastal reference — and one
+of those five (Frozen Cliffs) came back mirrored on generation and had to be
+flipped in post to match it (see Battle bosses). The sixth, Abyssal Trench,
+ships facing left: it was generated as a standalone prompt with no facing
+direction stated and no reference image attached, so it never inherited the
+convention and was never corrected. The prompt frame below states the
+direction up front for exactly this reason — still check every generation
+against the reference before shipping it.
 
 **Workflow (reference chain):** all eight are generated as image-edits of the
 committed `assets/images/battles/boss-coastal_dig-portrait.webp` (Nano Banana
