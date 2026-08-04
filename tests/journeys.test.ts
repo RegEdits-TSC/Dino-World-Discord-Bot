@@ -22,6 +22,7 @@ import { runFight, BattleError } from '../src/modules/battles/service.js';
 import { chapterUnlocked, STAGES, type ProgressMap } from '../src/data/battle/chapters/index.js';
 import { locksFor } from '../src/core/locks.js';
 import { ENERGY_CAP, ENERGY_REGEN_MS } from '../src/data/battle/constants.js';
+import { TRADE_MIN_RATING } from '../src/data/trade.js';
 
 // This file is the regression net over six risky time/state couplings that
 // per-command unit tests miss because they only ever exercise one command at
@@ -195,7 +196,7 @@ describe('journeys', () => {
     // for /trade list, and it still runs at the top of every /trade dispatch.
     const ctx = makeCtx(); ctx.setNow(0);
     getOrCreateUser(ctx, 'a', 'a'); getOrCreateUser(ctx, 'b', 'b');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both sides ≥ 2★ gate
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();   // both sides ≥ 4★ gate
     ctx.db.insert(schema.dinos).values({
       userId: 'a', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
     }).run();
@@ -228,7 +229,7 @@ describe('journeys', () => {
     // before the fix hatchEgg dropped the flag and the hatchling sold at full shard value.
     const ctx = makeCtx(); ctx.setNow(1000);
     getOrCreateUser(ctx, 'a', 'a'); getOrCreateUser(ctx, 'b', 'b');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both sides ≥ 2★ gate
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();   // both sides ≥ 4★ gate
     const egg = ctx.db.insert(schema.eggs)
       .values({ userId: 'a', rarity: 'rare', source: 'expedition', obtainedAt: 0 }).returning().get();
 
