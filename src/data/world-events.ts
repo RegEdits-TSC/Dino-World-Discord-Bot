@@ -28,6 +28,9 @@ export interface EventMods {
   battleXp: number;
   enemyHp: number;
   breedMs: number;
+  /** [0-trait, 1-trait, 2-trait] fractions summing to 1 — the same convention
+   *  as WILD_SLOT_ODDS/BRED_SLOT_ODDS (src/data/traits.ts), fed straight into
+   *  rollTraits/rollSlotCount with no normalization. Never a 0-100 scale. */
   hatchTraitOdds: [number, number, number] | null;
 }
 
@@ -106,7 +109,12 @@ export const WORLD_EVENTS: WorldEvent[] = [
   {
     id: 'migration_season', name: 'Migration Season', emoji: 'dw_event_migration_season', weight: 1,
     blurb: 'Wild bloodlines are on the move. Fresh hatchlings are strange; the labs are distracted.',
-    mods: { hatchTraitOdds: [45, 40, 15], breedMs: 1.25 },
+    // Fractions summing to 1, the same convention as WILD_SLOT_ODDS/BRED_SLOT_ODDS
+    // (src/data/traits.ts) — rollSlotCount compares them straight against rng(),
+    // with no normalization. [45, 40, 15] here would put 100% of the mass under
+    // the first cumulative step (45 > any draw in [0,1)) and roll zero traits
+    // on every single Migration Season hatch — the opposite of the intended buff.
+    mods: { hatchTraitOdds: [0.45, 0.40, 0.15], breedMs: 1.25 },
     effects: ['Wild hatches roll far better traits', 'Breeding takes 25% longer'],
   },
 ];

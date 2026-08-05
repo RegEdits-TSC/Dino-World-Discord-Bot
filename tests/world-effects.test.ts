@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { feedCostFor } from '../src/modules/care/service.js';
 import { shiftOdds, startExpedition, claimExpedition, expeditionFeeFor, expeditionCashFor } from '../src/modules/expeditions/service.js';
-import { makeCtx, fakeAutocomplete } from './harness.js';
+import { makeCtx, fakeAutocomplete, mulberry32 } from './harness.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { startBreeding, claimBreeding, breedCooldowns } from '../src/modules/genelab/service.js';
 import { schema } from '../src/core/db/index.js';
@@ -12,6 +12,7 @@ import { runFight, energyCostFor, BattleError } from '../src/modules/battles/ser
 import { chaptersPayload, type ChaptersView } from '../src/modules/battles/embeds.js';
 import { battlesModule } from '../src/modules/battles/index.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
+import { hatchEgg } from '../src/modules/hatchery/service.js';
 
 const DAY = 86_400_000;
 
@@ -461,5 +462,65 @@ describe('battles under world events', () => {
       expect(stage4.name).toContain('(⚡1)');
       expect(boss.name).toContain('(⚡2)');
     });
+  });
+});
+
+describe('wild hatch trait odds under world events', () => {
+  // Every user gets exactly one dino, so recomputeRating (called inside hatchEgg)
+  // stays O(1) per hatch instead of degrading to O(n) as one user's collection grows
+  // — the difference between a few thousand hatches finishing instantly and a
+  // quadratic blowup. speciesId is pinned so hatchEgg never has to draw an extra
+  // rng() for the species roll (rollSpeciesInRarity) before rolling traits.
+  function insertReadyEgg(
+    ctx: ReturnType<typeof makeCtx>, userId: string,
+    opts: Partial<{ source: 'shop' | 'breeding'; traits: string[] }> = {},
+  ) {
+    getOrCreateUser(ctx, userId, userId);
+    return ctx.db.insert(schema.eggs).values({
+      userId, rarity: 'common', speciesId: 'compsognathus',
+      source: opts.source ?? 'shop', traits: opts.traits ?? [],
+      obtainedAt: ctx.now(), incubationStartedAt: ctx.now(), hatchesAt: ctx.now(),
+    }).returning().get();
+  }
+
+  // N and the tolerance were chosen together: for a Bernoulli share at p~=0.55/0.45
+  // (variance product 0.2475 either way), N=4000 gives a standard deviation of
+  // ~0.0079, so a 0.03 tolerance is ~3.8 sigma — loose enough that the seeded
+  // (fully deterministic, not actually flaky) run lands nowhere near the edge,
+  // yet tight enough that either injected bug below (wrong table, or the
+  // un-normalized 0-100 scale) misses by 10x the tolerance or more.
+  const N = 4000;
+  const TOLERANCE = 0.03;
+
+  function zeroTraitShare(nowMs: number, seed: number, n: number): number {
+    const ctx = makeCtx({ nowMs, rng: mulberry32(seed) });
+    let zero = 0;
+    for (let i = 0; i < n; i++) {
+      const userId = `stat${i}`;
+      const egg = insertReadyEgg(ctx, userId);
+      const out = hatchEgg(ctx, userId, egg.id);
+      if (out.traits.length === 0) zero++;
+    }
+    return zero / n;
+  }
+
+  // Each sample runs the full hatchEgg pipeline (transaction, escrow check,
+  // recomputeRating) against a fresh in-memory db user, so 4000 of them cost more
+  // than the default 5s test timeout — bumped per-test rather than globally.
+  it('uses the standard 55/35/10 odds on a calm day', () => {
+    const share = zeroTraitShare(0, 7, N);
+    expect(Math.abs(share - 0.55)).toBeLessThan(TOLERANCE);
+  }, 20_000);
+
+  it('uses 45/40/15 odds during Migration Season', () => {
+    const share = zeroTraitShare(27 * DAY, 7, N);
+    expect(Math.abs(share - 0.45)).toBeLessThan(TOLERANCE);
+  }, 20_000);
+
+  it('never applies the event odds to a bred egg', () => {
+    const ctx = makeCtx({ nowMs: 27 * DAY });
+    const egg = insertReadyEgg(ctx, 'u1', { source: 'breeding', traits: ['hardy', 'savage'] });
+    const out = hatchEgg(ctx, 'u1', egg.id);
+    expect(out.traits).toEqual(['hardy', 'savage']);
   });
 });
