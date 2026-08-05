@@ -339,7 +339,10 @@ Fix, in three parts:
 
 1. Lift `shuffle` into `src/core/rolls.ts` and use it in both places.
 2. Add a **daily deal** drawn from the same day-keyed stream: one egg rarity at
-   −20% and one food item at −25%, both `Math.ceil`'d so nothing is ever free.
+   −20% and one food item at −25%, both routed through
+   `Math.max(1, Math.round(...))` so nothing is ever free. That is the same
+   round-with-floor shape `feedCostFor` uses; `Math.ceil` is float-unsafe on an
+   integer x fractional-multiplier product (200 * 1.1 is 220.00000000000003).
    This is what makes the shop genuinely change day to day even at a two-rarity
    ceiling. Real prices: common 500 → 400, rare 8,000 → 6,400, legendary
    120,000 → 96,000; ferns 10 → 8, prime steak 24 → 18.

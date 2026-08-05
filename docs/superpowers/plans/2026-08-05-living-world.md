@@ -1038,7 +1038,11 @@ In `startExpedition`, resolve the record once:
   const mods = eventMods(now);
   const returnsAt = now + Math.round(site.durationMs * mods.expeditionMs);
   // ...
-  ctx.economy.apply(userId, { cash: -Math.ceil(site.cost * mods.expeditionFee) }, `expedition:${siteId}`, now);
+  // Math.max(1, Math.round(...)) matches feedCostFor, the only other event-scaled
+  // charge in the game. Math.ceil is float-unsafe here: 200 * 1.1 is
+  // 220.00000000000003, which ceils to a whole-unit overcharge. The floor keeps
+  // a steep discount from ever making an expedition free.
+  ctx.economy.apply(userId, { cash: -Math.max(1, Math.round(site.cost * mods.expeditionFee)) }, `expedition:${siteId}`, now);
 ```
 
 In `claimExpedition`:
@@ -1340,12 +1344,14 @@ Parse the numbers out of the real rendered strings — asserting against a recom
 
 ```ts
 // src/modules/shop/service.ts
+// Round-with-floor, matching feedCostFor and the expedition fee. Math.ceil is
+// float-unsafe on an integer x fractional-multiplier product (200 * 1.1 is
+// 220.00000000000003); the floor is what keeps a discount from reaching zero.
 export function eggPriceAt(rarity: Rarity, now: number): number {
-  // Ceil so an event discount can never make an egg free.
-  return Math.ceil(SHOP_EGG_PRICES[rarity] * eventMods(now).eggPrice);
+  return Math.max(1, Math.round(SHOP_EGG_PRICES[rarity] * eventMods(now).eggPrice));
 }
 export function foodPriceAt(food: FoodDef, now: number): number {
-  return Math.ceil(food.unitCost * eventMods(now).foodPrice);
+  return Math.max(1, Math.round(food.unitCost * eventMods(now).foodPrice));
 }
 ```
 
