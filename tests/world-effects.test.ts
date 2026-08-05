@@ -3,9 +3,11 @@ import { eq } from 'drizzle-orm';
 import { feedCostFor } from '../src/modules/care/service.js';
 import { shiftOdds, startExpedition, claimExpedition, expeditionFeeFor, expeditionCashFor } from '../src/modules/expeditions/service.js';
 import { makeCtx } from './harness.js';
-import { getOrCreateUser } from '../src/modules/park/service.js';
+import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
+import { startBreeding, claimBreeding, breedCooldowns } from '../src/modules/genelab/service.js';
 import { schema } from '../src/core/db/index.js';
 import { STARTER_FOOD } from '../src/data/foods.js';
+import { BREED_MS, BREED_COOLDOWN_MS } from '../src/data/breeding.js';
 
 const DAY = 86_400_000;
 
@@ -173,5 +175,79 @@ describe('expeditions under world events', () => {
     expect(cashOf(ctx) - cashBefore).toBe(267);
     expect(ctx.economy.getFoodInventory('u1')[loot.food.foodId])
       .toBe((STARTER_FOOD[loot.food.foodId] ?? 0) + loot.food.qty);
+  });
+});
+
+describe('breeding time under world events', () => {
+  // Local seeding helpers, mirroring tests/genelab.test.ts's `park`/`dino` —
+  // there is no shared seedPark helper in the harness.
+  function park(ctx: ReturnType<typeof makeCtx>, id = 'u1') {
+    getOrCreateUser(ctx, id, id);
+    ctx.economy.apply(id, { cash: 500_000 }, 'test', 0);
+    buildLot(ctx, id, 'gene_lab');
+    buildLot(ctx, id, 'herbivore_paddock');
+    return ctx.db.select().from(schema.lots).all().find((l) => l.kind === 'herbivore_paddock')!;
+  }
+  function dino(ctx: ReturnType<typeof makeCtx>, opts: Partial<{ species: string; lotId: number; traits: string[] }> = {}) {
+    // lastFedAt/hatchedAt anchor to ctx.now(), not 0 — these tests run on day 27,
+    // and a dino "fed" at epoch 0 would already have drained under the hunger
+    // gate by then (see tests/genelab.test.ts's own drain test at 30h elapsed).
+    return ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: opts.species ?? 'triceratops', lotId: opts.lotId ?? null,
+      hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),
+      traits: opts.traits ?? [],
+    }).returning().get();
+  }
+
+  it('is the base time on a calm day', () => {
+    const ctx = makeCtx({ nowMs: 0 });   // day 0 is calm (world.ts:12)
+    const lot = park(ctx);
+    const a = dino(ctx, { lotId: lot.id });
+    const b = dino(ctx, { species: 'gallimimus', lotId: lot.id });
+    expect(startBreeding(ctx, 'u1', a.id, b.id, null).readyAt).toBe(ctx.now() + BREED_MS.common);
+  });
+
+  it('runs 25% longer during Migration Season', () => {
+    const ctx = makeCtx({ nowMs: 27 * DAY });   // day 27 is migration_season (world.test.ts:40)
+    const lot = park(ctx);
+    const a = dino(ctx, { lotId: lot.id });
+    const b = dino(ctx, { species: 'gallimimus', lotId: lot.id });
+    expect(startBreeding(ctx, 'u1', a.id, b.id, null).readyAt)
+      .toBe(ctx.now() + Math.round(BREED_MS.common * 1.25));
+  });
+
+  it('composes with Fertile, which still shortens it', () => {
+    const ctx = makeCtx({ nowMs: 27 * DAY });
+    const lot = park(ctx);
+    const a = dino(ctx, { lotId: lot.id, traits: ['fertile'] });
+    const b = dino(ctx, { species: 'gallimimus', lotId: lot.id });
+    expect(startBreeding(ctx, 'u1', a.id, b.id, null).readyAt)
+      .toBe(ctx.now() + Math.round(BREED_MS.common * 0.75 * 1.25));
+  });
+
+  it('quotes the same number in the dry-run preview as it commits', () => {
+    const ctx = makeCtx({ nowMs: 27 * DAY });
+    const lot = park(ctx);
+    const a = dino(ctx, { lotId: lot.id });
+    const b = dino(ctx, { species: 'gallimimus', lotId: lot.id });
+    const preview = startBreeding(ctx, 'u1', a.id, b.id, null, { dryRun: true });
+    const committed = startBreeding(ctx, 'u1', a.id, b.id, null);
+    expect(committed.readyAt).toBe(preview.readyAt);
+  });
+
+  it('leaves the post-claim cooldown at the un-shortened rarity time, unaffected by the event', () => {
+    // Migration Season lengthens the wait TO the egg, not the wait BETWEEN
+    // pairings — breedCooldowns must read BREED_COOLDOWN_MS straight, with no
+    // event factor applied.
+    const ctx = makeCtx({ nowMs: 27 * DAY });
+    const lot = park(ctx);
+    const a = dino(ctx, { lotId: lot.id });
+    const b = dino(ctx, { species: 'gallimimus', lotId: lot.id });
+    const br = startBreeding(ctx, 'u1', a.id, b.id, null);
+    ctx.setNow(br.readyAt);
+    claimBreeding(ctx, 'u1', br.id);
+    const cd = breedCooldowns(ctx, 'u1');
+    expect(cd.get(a.id)).toBe(br.readyAt + BREED_COOLDOWN_MS.common);
+    expect(cd.get(b.id)).toBe(br.readyAt + BREED_COOLDOWN_MS.common);
   });
 });
