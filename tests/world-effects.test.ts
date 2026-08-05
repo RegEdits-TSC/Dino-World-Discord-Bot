@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { feedCostFor } from '../src/modules/care/service.js';
-import { shiftOdds, startExpedition, claimExpedition } from '../src/modules/expeditions/service.js';
+import { shiftOdds, startExpedition, claimExpedition, expeditionFeeFor, expeditionCashFor } from '../src/modules/expeditions/service.js';
 import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { schema } from '../src/core/db/index.js';
@@ -67,6 +67,44 @@ describe('expedition odds shifting', () => {
         expect(after, `${site.id} step ${step}`).toBeCloseTo(before, 6);
       }
     }
+  });
+});
+
+describe('expedition fee/cash rounding is round-with-floor, not ceil or floor', () => {
+  // No shipped world event produces a fractional expeditionFee or
+  // expeditionCash today — WORLD_EVENTS only ever sets expeditionFee to 1 or 2,
+  // and expeditionCash's one nonneutral value (fossil_rush, 1.5) applied to an
+  // integer roll can only ever land on a .0 or .5 fraction, where Math.round
+  // and Math.ceil always agree. So the real request pipeline can prove the fee
+  // is "not ceil" (Math.ceil(200 * 2) === 400 === Math.round(...), no shipped
+  // fee multiplier is fractional) but can never honestly prove "not floor" for
+  // cash, or pin the fee's round-vs-ceil distinction with anything other than
+  // a fabricated event. Per review, these call the two exported pure helpers
+  // directly with a synthetic fractional multiplier instead — the real
+  // production expression, not a fake event.
+
+  it('expeditionFeeFor rounds, rather than always rounding up (not Math.ceil)', () => {
+    // 200 * 1.1 === 220.00000000000003 (float artifact). Math.round -> 220;
+    // Math.ceil -> 221. This is the reviewer's own repro of the original bug.
+    expect(expeditionFeeFor(200, 1.1)).toBe(220);
+  });
+
+  it('expeditionFeeFor rounds, rather than always rounding down (not Math.floor)', () => {
+    // 10 * 1.26 = 12.6. Math.round -> 13; Math.floor -> 12.
+    expect(expeditionFeeFor(10, 1.26)).toBe(13);
+  });
+
+  it('expeditionFeeFor floors at 1 cash so a steep discount cannot reach 0', () => {
+    // 200 * 0.001 = 0.2 -> Math.round alone gives 0; Math.max(1, ...) lifts it to 1.
+    expect(expeditionFeeFor(200, 0.001)).toBe(1);
+  });
+
+  it('expeditionCashFor rounds, rather than always rounding up (not Math.ceil)', () => {
+    expect(expeditionCashFor(200, 1.1)).toBe(220);
+  });
+
+  it('expeditionCashFor rounds, rather than always rounding down (not Math.floor)', () => {
+    expect(expeditionCashFor(10, 1.26)).toBe(13);
   });
 });
 

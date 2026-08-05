@@ -22,6 +22,36 @@ export function listSites(hw: number): SiteDef[] {
 }
 
 /**
+ * Expedition fee after the day's world event, floored at 1 cash so a steep
+ * discount can never make an expedition free — same round-with-floor shape as
+ * feedCostFor (src/modules/care/service.ts:28-32). Round, not ceil: ceil is
+ * float-unsafe (200 * 1.1 === 220.00000000000003, so Math.ceil would silently
+ * overcharge by a whole cash unit) and was, before this fix, the only Math.ceil
+ * ever applied to a money value in the repo. Exported (not inlined) so both
+ * call sites — the real charge in startExpedition and the autocomplete quote
+ * in index.ts — share one definition and a fractional multiplier can be unit
+ * tested directly, since no shipped world event produces a fractional
+ * expeditionFee today (WORLD_EVENTS only ever sets it to 1 or 2).
+ */
+export function expeditionFeeFor(cost: number, feeMult: number): number {
+  return Math.max(1, Math.round(cost * feeMult));
+}
+
+/**
+ * Expedition bonus-cash payout after the day's world event. Plain Math.round —
+ * no floor, unlike the fee: every site's bonusCash range has a strictly
+ * positive minimum, so a payout can only round to 0 if fed a 0 raw roll, which
+ * never happens. Exported for the same reason as expeditionFeeFor: no shipped
+ * event's expeditionCash (only fossil_rush, at a flat 1.5) can, over an
+ * integer roll, land on any fraction other than .0 or .5 — round and ceil
+ * always agree at exactly .5, so the real pipeline alone can prove "not floor"
+ * but never "not ceil". A synthetic multiplier closes that gap honestly.
+ */
+export function expeditionCashFor(raw: number, cashMult: number): number {
+  return Math.round(raw * cashMult);
+}
+
+/**
  * Move every entry `step` places along the rarity ladder, clamping at both ends
  * and merging entries that collide. Total weight is preserved, so this changes
  * the SHAPE of the distribution without changing how many rng draws follow —
@@ -58,7 +88,7 @@ export function startExpedition(ctx: Ctx, userId: string, siteId: string, guildI
   const mods = eventMods(now);
   const returnsAt = now + Math.round(site.durationMs * mods.expeditionMs);
   return ctx.db.transaction(() => {
-    ctx.economy.apply(userId, { cash: -Math.ceil(site.cost * mods.expeditionFee) }, `expedition:${siteId}`, now);
+    ctx.economy.apply(userId, { cash: -expeditionFeeFor(site.cost, mods.expeditionFee) }, `expedition:${siteId}`, now);
     const exp = ctx.db.insert(schema.expeditions).values({
       userId, siteId, departedAt: now, returnsAt, loot: null, claimedAt: null,
     }).returning().get();
@@ -81,7 +111,7 @@ export function claimExpedition(ctx: Ctx, userId: string): { loot: Loot; site: S
   const lootDiet = ctx.rng() < 0.5 ? 'herbivore' : 'carnivore';
   const loot: Loot = {
     eggRarity,
-    cash: Math.round(rollIntInclusive(site.bonusCash[0], site.bonusCash[1], ctx.rng) * mods.expeditionCash),
+    cash: expeditionCashFor(rollIntInclusive(site.bonusCash[0], site.bonusCash[1], ctx.rng), mods.expeditionCash),
     food: { foodId: foodsForDiet(lootDiet)[0].id, qty: rollIntInclusive(site.bonusFood[0], site.bonusFood[1], ctx.rng) },
   };
   return ctx.db.transaction(() => {

@@ -3,7 +3,7 @@ import type { AttachmentBuilder } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
-import { startExpedition, claimExpedition, activeExpedition, ExpeditionError } from './service.js';
+import { startExpedition, claimExpedition, activeExpedition, expeditionFeeFor, ExpeditionError } from './service.js';
 import { EXPEDITION_SITES } from '../../data/sites.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { schema } from '../../core/db/index.js';
@@ -54,7 +54,7 @@ export const expeditionsModule: ModuleManifest = {
               value: s.id, valid: unlocked,
               label: unlocked
                 // 'en-US' pinned: labels are asserted verbatim in tests.
-                ? `🧭 ${s.name} — ${Math.ceil(s.cost * mods.expeditionFee).toLocaleString('en-US')} cash, ${fmtDuration(Math.round(s.durationMs * mods.expeditionMs))}`
+                ? `🧭 ${s.name} — ${expeditionFeeFor(s.cost, mods.expeditionFee).toLocaleString('en-US')} cash, ${fmtDuration(Math.round(s.durationMs * mods.expeditionMs))}`
                 : `🧭 ${s.name} — LOCKED, needs ★${(s.unlockRating / 100).toFixed(1)}`,
             };
           }));
