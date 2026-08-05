@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { recomputeRating, lotSlots, siteUnlocked, shopCeiling, mythicUnlocked } from '../src/modules/park/rating.js';
+import { LOT_SLOT_THRESHOLDS } from '../src/data/progression.js';
+import { EXPEDITION_SITES } from '../src/data/sites.js';
 import { schema } from '../src/core/db/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
@@ -28,6 +30,18 @@ describe('gating helpers (re-exported from rating.ts)', () => {
     expect(shopCeiling(700)).toBe('legendary');
     expect(mythicUnlocked(799)).toBe(false);
     expect(mythicUnlocked(800)).toBe(true);
+  });
+  // The two newest sites (Abyssal Trench, Containment Site) are pinned in two
+  // unrelated files with nothing coupling them — progression.ts's own gating
+  // constants and sites.ts's own gating constants. The spec's intent is that a
+  // gate this deep carries a park-side reward too, so the last two lot-slot
+  // thresholds must equal those two sites' unlockRating, in campaign order.
+  // Both sides read the real exported constants (never a hardcoded 880/950),
+  // so this fails the moment either file's gate moves without the other.
+  it('the two newest lot-slot thresholds match their sites\' unlockRating', () => {
+    const newestGateSites = [EXPEDITION_SITES.abyssal_trench, EXPEDITION_SITES.containment_site];
+    expect(LOT_SLOT_THRESHOLDS.slice(-newestGateSites.length))
+      .toEqual(newestGateSites.map((s) => s.unlockRating));
   });
   it('rating is scaled to 1000 — a known collection pins the exact score', () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
