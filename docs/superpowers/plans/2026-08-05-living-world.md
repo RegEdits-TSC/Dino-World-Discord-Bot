@@ -640,8 +640,10 @@ import { allSpecies } from '../src/data/species/index.js';
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
 
-// A common herbivore (60 cash/hr) in a correct-diet paddock with a matching
-// biome decor => paddockFit 1.0, so comfort is exactly hunger/100.
+// A common herbivore (60 cash/hr) in a correct-diet paddock with NO biome
+// decor => paddockFit 0.75, so comfort is 0.75 * min(100, hunger)/100.
+// NOTE: hungerAtFed 150 puts the overfill knee at +24h, not +36h --
+// hunger falls 100 points per 48h, so 150 -> 100 takes 24 hours.
 const species = allSpecies().find((s) => s.rarity === 'common' && s.diet === 'herbivore')!;
 
 function dino(lastFedAt: number, hungerAtFed = 100): ClockDino {
@@ -679,19 +681,38 @@ describe('accruedIncome across event seams', () => {
     const d = dino(SEAM, 150);
     const correct = accruedIncome([d], 0, 999, SEAM, SEAM + 30 * HOUR);
     const base = 60 * 0.75;
-    const naiveAtStart = Math.floor(base * 30 * 1.2);
-    const naiveAtEnd = Math.floor(base * 30 * 0.9);
+    // These must be the ACTUAL outputs of a once-per-request implementation,
+    // not a flat-comfort approximation -- otherwise the test excludes nothing.
+    const ratioHours = 24 * 1.0 + 6 * ((1.0 + 0.875) / 2);   // comfort is NOT flat
+    const naiveAtStart = Math.floor(base * ratioHours * 1.2);
+    const naiveAtEnd = Math.floor(base * ratioHours * 0.9);
     expect(correct).not.toBe(naiveAtStart);
     expect(correct).not.toBe(naiveAtEnd);
   });
 
   it('cannot be farmed by delaying a collection into a better event', () => {
-    // The same 24 heat_wave hours pay the same whether collected at the end of
-    // the heat_wave day or a day later.
+    // Additivity across a split IS the anti-farming property: if collecting in
+    // two pieces paid differently from collecting in one, a player could delay
+    // to re-price already-earned hours at a later day's multiplier.
+    // (Do NOT write `early === late` with identical arguments -- that is a
+    // tautology on a pure function and cannot fail under any implementation.)
     const d = dino(SEAM, 150);
-    const early = accruedIncome([d], 0, 999, SEAM, SEAM + 24 * HOUR);
-    const late = accruedIncome([d], 0, 999, SEAM, SEAM + 24 * HOUR);
-    expect(early).toBe(late);
+    const whole = accruedIncome([d], 0, 999, SEAM, SEAM + 30 * HOUR);
+    const first = accruedIncome([d], 0, 999, SEAM, SEAM + 24 * HOUR);
+    const rest = accruedIncome([d], 0, 999, SEAM + 24 * HOUR, SEAM + 30 * HOUR);
+    expect(Math.abs(whole - (first + rest))).toBeLessThanOrEqual(1);
+  });
+
+  // The dinoEnd-vs-end invariant is otherwise UNCOVERED by the whole suite:
+  // observing it needs both dinoEnd < end AND a UTC midnight inside the gap,
+  // and no other test has both. Under that bug the loop integrates past
+  // starvation -- a silent overpay.
+  it('stops at the per-dino end, not the shared window end, across a midnight', () => {
+    const d = dino(208 * DAY + 20 * HOUR, 10);   // hunger zeroes at +4.8h
+    const got = accruedIncome([d], 0, 999, 208 * DAY + 20 * HOUR, 208 * DAY + 50 * HOUR);
+    // Derive the expected value from comfortAt directly. Then verify the test
+    // FAILS if utcMidnightsBetween(from, dinoEnd) is changed to (from, end).
+    expect(got).toBe(EXPECTED);
   });
 
   it('handles a window spanning three days (capHours 999)', () => {
