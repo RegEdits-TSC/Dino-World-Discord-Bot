@@ -491,8 +491,9 @@ describe('world event derivation', () => {
       const worldCalm = worldEventFor(d * DAY).id === 'clear_skies';
       if (shopFirst === worldCalm) agree++;
     }
-    // Independent streams agree about half the time; a shared stream agrees 100%.
-    expect(Math.abs(agree / N - 0.5)).toBeLessThan(0.03);
+    // Both indicators are Bernoulli(1/3), so INDEPENDENT streams agree at
+    // (1/3)^2 + (2/3)^2 = 5/9 ~= 0.5556. A SHARED stream would agree at 1.0.
+    expect(Math.abs(agree / N - 5 / 9)).toBeLessThan(0.03);
   });
 });
 
