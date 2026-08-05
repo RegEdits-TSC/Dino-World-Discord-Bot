@@ -260,6 +260,10 @@ export interface EventMods {
   battleXp: number;
   enemyHp: number;
   breedMs: number;
+  // FRACTIONS summing to 1, never percentages: rollSlotCount compares them
+  // against rng() in [0,1) and WILD_SLOT_ODDS is [0.55, 0.35, 0.10]. The value
+  // [45, 40, 15] makes the first accumulator exceed every draw, so every hatch
+  // rolls ZERO traits -- the exact inverse of the intended effect.
   hatchTraitOdds: [number, number, number] | null;
 }
 
