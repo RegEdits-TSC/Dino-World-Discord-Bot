@@ -1559,11 +1559,13 @@ export const cryolophosaurus: Species = {
 
 ```ts
 import type { Species } from '../types.js';
-export const nanuqsaurus = {
+export const nanuqsaurus: Species = {
   id: 'nanuqsaurus', name: 'Nanuqsaurus', rarity: 'rare', diet: 'carnivore', archetype: 'bruiser',
   biomeTags: ['tundra'], flavor: 'A polar tyrant, built small for a long winter.',
-} satisfies Species;
+};
 ```
+
+Both use the `: Species` annotation, matching every one of the 40 existing species files. Do not use `satisfies` here — consistency with the sibling files is the convention.
 
 Register both in `src/data/species/index.ts` following the existing import + `ALL` array pattern exactly.
 
@@ -2014,22 +2016,25 @@ describe('the hard invariant — events never touch a gate', () => {
     expect([...highWaters], 'an event moved best-ever rating').toHaveLength(1);
   });
 
-  it('leaves every gate threshold untouched', async () => {
-    const { shopCeiling, siteUnlocked, lotSlots } = await import('../src/data/progression.js');
-    // These are pure functions of rating alone — the assertion is that no event
-    // modifier is in scope for any of them. A regression here means someone
-    // threaded eventMods into progression.ts.
-    for (const e of WORLD_EVENTS) {
-      const now = DAY_OF[e.id] * DAY;
-      void now;
-      expect(shopCeiling(450)).toBe(shopCeiling(450));
-      expect(lotSlots(450)).toBe(lotSlots(450));
+  // Every gate in the game is a pure function of RATING ALONE. The way an event
+  // could ever move one is by someone threading eventMods into the progression
+  // layer, so assert that structurally — a value-comparison test here would be
+  // tautological, since both sides would read the same unmodified constant.
+  it('keeps the progression layer free of any dependency on the world', () => {
+    const gateFiles = [
+      resolve(process.cwd(), 'src/data/progression.ts'),
+      resolve(process.cwd(), 'src/modules/park/rating.ts'),
+    ];
+    for (const file of gateFiles) {
+      const text = readFileSync(file, 'utf8');
+      expect(text, `${file} must not depend on the world`).not.toMatch(/core\/world\.js/);
+      expect(text, `${file} must not depend on event data`).not.toMatch(/world-events\.js/);
     }
   });
 });
 ```
 
-Fill the park-building block from `tests/rating.test.ts`'s local helpers, and adjust the third test's imports to whatever `src/data/progression.ts` actually exports — the point is that the gate functions take rating only and never `now`.
+Add `import { readFileSync } from 'node:fs'; import { resolve } from 'node:path';` to the file. Fill the park-building block from `tests/rating.test.ts`'s local helpers.
 
 - [ ] **Step 4: Run, full suite, commit**
 
