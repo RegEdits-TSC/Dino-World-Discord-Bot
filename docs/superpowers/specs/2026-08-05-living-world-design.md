@@ -63,10 +63,10 @@ export function worldEventFor(now: number): WorldEvent {
 ```
 
 `DAY_MS` and `mulberry32` and `rollWeighted` all already exist
-(`src/core/clock.ts:33`, `src/core/rolls.ts:5,16`). Nothing new is invented.
+(`src/core/clock.ts:33`, `src/core/rolls.ts:5,15`). Nothing new is invented.
 
 **The salt is load-bearing.** `dailyEggOffers` already seeds `mulberry32(day)`
-raw (`src/modules/shop/service.ts:20`). Sharing that stream would permanently
+raw (`src/modules/shop/service.ts:19`). Sharing that stream would permanently
 correlate "Market Panic day" with "legendary egg in the shop day". A test
 asserts the two streams are uncorrelated across 10,000 days.
 
@@ -133,7 +133,7 @@ instant of the fight is point-in-time and delivers the same fiction. Bosses go
 unchanged.
 
 **Heat Wave and Cold Snap modify feed *cost*, not drain *rate*.** Drain rate is
-inverted by `comfortCrossing` and `escapeAt` (`src/core/clock.ts:63-76`) to
+inverted by `comfortCrossing` and `escapeAt` (`src/core/clock.ts:59-73`) to
 solve for *when* hunger reaches a threshold. Making the rate piecewise turns
 that inversion into a segment walk through the most load-bearing pure functions
 in the game — which feed escape warnings, `/dino list`, autocomplete labels, and
@@ -155,7 +155,7 @@ Every hook already exists as a single clean seam. None requires restructuring.
 
 | Effect | Call site |
 | --- | --- |
-| `income` | `accruedIncome` — `src/core/clock.ts:95` (see §5) |
+| `income` | `accruedIncome` — `src/core/clock.ts:82` (see §5) |
 | `feedCost` | `feedCostFor` — `src/modules/care/service.ts:24` |
 | `expeditionMs` | `now + site.durationMs` — `src/modules/expeditions/service.ts:31` |
 | `expeditionFee` | `cash: -site.cost` — `src/modules/expeditions/service.ts:33` |
@@ -163,7 +163,7 @@ Every hook already exists as a single clean seam. None requires restructuring.
 | `expeditionCash` | `rollIntInclusive(site.bonusCash[0], …)` — `src/modules/expeditions/service.ts:50` |
 | `eggPrice` | `SHOP_EGG_PRICES[rarity]` in `buyEgg` — `src/modules/shop/service.ts:29` |
 | `foodPrice` | `buyFood` — `src/modules/shop/service.ts:40` |
-| `sellCash` | `SELL_CASH[rarity]` — `src/data/sell.ts:14` |
+| `sellCash` | `SELL_CASH[rarity]` — `src/data/sell.ts:14` (read at `shop/shards.ts:31,55` and `shop/index.ts:147`) |
 | `energyCostDelta` | `stage.energyCost` — `src/modules/battles/service.ts` |
 | `battleXp` | XP award in `runFight` — `src/modules/battles/service.ts` |
 | `enemyHp` | `Math.round(s.hp * (boss?.hpMult ?? 1))` — `src/modules/battles/service.ts:92` |
@@ -183,7 +183,7 @@ Two of these deserve a note:
 
 This is the only genuinely hard part of the spec.
 
-`accruedIncome` (`src/core/clock.ts:95-118`) already splits each dino's window
+`accruedIncome` (`src/core/clock.ts:82-111`) already splits each dino's window
 at the hunger-100 knee, because a two-point trapezoid across it mis-pays
 overfed dinos:
 
@@ -270,7 +270,7 @@ and fans out to every `guild_settings` row with `world_broadcast = 1` **and** a
 non-null `notify_channel_id`.
 
 - **No pings.** The client already sets `allowedMentions: { parse: [] }` globally
-  (`src/index.ts:29`), but the payload also carries no mention.
+  (`src/index.ts:31`), but the payload also carries no mention.
 - **Never a DM.** Daily unsolicited news in every player's DMs is how a bot gets
   blocked. The channel path is the only path.
 - The timer re-arms itself for the next midnight as the last step of its own
@@ -370,7 +370,7 @@ Fix: add **two new species tagged `tundra`** — data-only, reusing shipped
 Roster 40 → 42.
 
 Deliberately **not** retagging existing species: `paddockFit`
-(`src/core/clock.ts:44`) reads biome tags live, so a retag would silently change
+(`src/core/clock.ts:45`) reads biome tags live, so a retag would silently change
 the comfort — and therefore the income and escape timing — of dinos in live
 players' parks.
 
@@ -472,7 +472,7 @@ spec would violate.
 - **The 5-site module checklist** for the new `world` module: `modules.json`,
   `ALL_MODULES` in `src/core/module-list.ts`, `tests/registry-load.test.ts`
   (13 → 14 modules, 24 → 25 commands), `tests/config.test.ts`, and
-  `tests/contract.test.ts:46` (top-level command count).
+  `tests/contract.test.ts:49` (top-level command count).
 - **Any builder change needs `npm run deploy-commands`**, with exactly one bot
   instance running per token. `/world` is new and `/settings` gains a
   subcommand, so both force it.
