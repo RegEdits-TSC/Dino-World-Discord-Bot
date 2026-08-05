@@ -70,14 +70,29 @@ describe('accruedIncome across event seams', () => {
   });
 
   it('cannot be farmed by delaying a collection into a better event', () => {
-    // Splitting one collection into two (collect at +24h, then again at +30h)
-    // must pay the same total as one collection at +30h — each hour is priced
-    // by the day it was actually earned in, not by whichever day the player
-    // happens to click collect on. (+/-1 tolerance: two floors instead of one.)
+    // A single split point cannot discriminate a request-time-sampled
+    // implementation from the correct one unless the split point's OWN day
+    // rate differs from BOTH endpoints' day rates. `whole` and `rest` always
+    // share the same `to`, so a naive "mult = incomeMultAt(to)" implementation
+    // gives `rest` and `whole` the identical single rate, and additivity holds
+    // for it trivially regardless of where the split falls (it can only be
+    // caught if the split point's rate differs from `to`'s rate). Symmetrically,
+    // `whole` and `first` always share the same `from`, so a naive
+    // "mult = incomeMultAt(from)" implementation can only be caught if the
+    // split point's rate differs from `from`'s rate. One split point that
+    // differs from BOTH endpoints therefore catches both naive variants at
+    // once — which needs three distinct day-rates in the window, not two.
+    // 208 (heat_wave 1.2), 209 (cold_snap 0.9), 210 (clear_skies 1.0) are
+    // three pairwise-distinct rates on three consecutive days.
     const d = dino(SEAM, 150);
-    const whole = accruedIncome([d], 0, 999, SEAM, SEAM + 30 * HOUR);
-    const first = accruedIncome([d], 0, 999, SEAM, SEAM + 24 * HOUR);
-    const rest = accruedIncome([d], 0, 999, SEAM + 24 * HOUR, SEAM + 30 * HOUR);
+    const P = SEAM + 36 * HOUR; // interior of day 209 — differs from both 208 and 210
+    const whole = accruedIncome([d], 0, 999, SEAM, SEAM + 60 * HOUR);
+    const first = accruedIncome([d], 0, 999, SEAM, P);
+    const rest = accruedIncome([d], 0, 999, P, SEAM + 60 * HOUR);
+    // (+/-1 tolerance: two floors instead of one.) Verified directly (see the
+    // task report): a request-time-sampled variant, mutated in temporarily
+    // and reverted, fails this exact assertion by 155 (sampled at `to`) or 162
+    // (sampled at `from`) — this split genuinely discriminates both.
     expect(Math.abs(whole - (first + rest))).toBeLessThanOrEqual(1);
   });
 
