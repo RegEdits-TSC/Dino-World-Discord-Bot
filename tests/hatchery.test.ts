@@ -15,6 +15,8 @@ import { assetImage } from '../src/core/images.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
 import { traitLines } from '../src/core/trait-display.js';
+import { TRADE_MIN_RATING } from '../src/data/trade.js';
+import { MYTHIC_UNLOCK_RATING } from '../src/data/progression.js';
 
 // assetImage is a pass-through spy by default (calls the real implementation),
 // so every test in this file except the two degrade-path tests below is
@@ -342,7 +344,7 @@ describe('egg list pagination', () => {
 
   it('an expired trade stops showing a padlock on /eggs, with no sweep', async () => {
     getOrCreateUser(ctx, 'u2', 'u2');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
     const egg = addEgg('common');
     createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
       { dinoIds: [], eggIds: [], cash: 0, foods: {} });
@@ -361,7 +363,7 @@ describe('egg list pagination', () => {
     // Same expiry question as /eggs, one surface further in: paging is its own read of
     // the egg rows, and it must resolve the lock the same derived way.
     getOrCreateUser(ctx, 'u2', 'u2');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
     for (let n = 0; n < 10; n++) addEgg('common');
     const locked = addEgg('epic');                       // 11th row → index 10 → page 2's only item
     createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [locked.id], cash: 0, foods: {} },
@@ -383,7 +385,7 @@ describe('/mythic confirm flow', () => {
   const mythicId = mythicSpeciesChoices()[0].id;
   beforeEach(() => {
     ctx.economy.apply('u1', { shards: 500 }, 'seed', 0);
-    ctx.db.update(schema.users).set({ ratingHighWater: 400 }).where(eq(schema.users.discordId, 'u1')).run();
+    ctx.db.update(schema.users).set({ ratingHighWater: MYTHIC_UNLOCK_RATING }).where(eq(schema.users.discordId, 'u1')).run();
   });
   it('command replies with a confirm button and spends nothing', async () => {
     const i = fakeCommand({ name: 'mythic', user: 'u1', options: { species: mythicId } });
@@ -437,7 +439,7 @@ describe('/incubate execute', () => {
 
   it('rejects an egg locked in a pending trade, ephemeral', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both sides ≥ 2★ gate
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();   // both sides ≥ 4★ gate
     const egg = ctx.db.insert(schema.eggs)
       .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
     createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
@@ -453,7 +455,7 @@ describe('/incubate execute', () => {
     // The lock lapses on the clock: a dead trade can no longer reject with a
     // statement that is false, and no surface has to sweep to make that true.
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
     const egg = ctx.db.insert(schema.eggs)
       .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
     createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
@@ -516,7 +518,7 @@ describe('/hatch execute', () => {
     // createTrade refuses an incubating egg, and incubateEgg refuses a locked one.
     // Trade first, then set the timer fields directly.
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
     const egg = ctx.db.insert(schema.eggs)
       .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
     createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
@@ -541,8 +543,8 @@ describe('mythic:confirm and hatch:crack error branches', () => {
     const comp = hatcheryModule.components.find((c) => c.prefix === 'mythic')!;
     const gated = fakeButton({ customId: 'mythic:confirm:indominus', user: 'u1' });
     await comp.execute(ctx, gated.asInteraction() as unknown as ButtonInteraction);
-    expect(replyText(gated.replies[0])).toContain('4★');
-    ctx.db.update(schema.users).set({ ratingHighWater: 400, shards: 0 }).run();
+    expect(replyText(gated.replies[0])).toContain('8★');
+    ctx.db.update(schema.users).set({ ratingHighWater: MYTHIC_UNLOCK_RATING, shards: 0 }).run();
     const broke = fakeButton({ customId: 'mythic:confirm:indominus', user: 'u1' });
     await comp.execute(ctx, broke.asInteraction() as unknown as ButtonInteraction);
     expect(replyText(broke.replies[0])).toContain('Not enough shards');

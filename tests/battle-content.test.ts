@@ -13,7 +13,7 @@ const NPC_LEVEL_SANITY_CAP = 12;
 
 describe('battle campaign content', () => {
   it('chapter ids are EXPEDITION_SITES keys in unlockRating order', () => {
-    expect(CAMPAIGN.map((c) => c.id)).toEqual(['coastal_dig', 'amber_ridge', 'frozen_cliffs', 'volcano_core']);
+    expect(CAMPAIGN.map((c) => c.id)).toEqual(['coastal_dig', 'amber_ridge', 'frozen_cliffs', 'volcano_core', 'abyssal_trench', 'containment_site']);
     for (const c of CAMPAIGN) expect(EXPEDITION_SITES[c.id]).toBeDefined();
     const ratings = CAMPAIGN.map((c) => EXPEDITION_SITES[c.id].unlockRating);
     for (let i = 1; i < ratings.length; i++) expect(ratings[i]).toBeGreaterThan(ratings[i - 1]);
@@ -32,8 +32,8 @@ describe('battle campaign content', () => {
         else expect(s.boss).toBeUndefined();
       });
     }
-    expect(seen.size).toBe(20);
-    expect(STAGES.size).toBe(20);
+    expect(seen.size).toBe(30);
+    expect(STAGES.size).toBe(30);
     for (const c of CAMPAIGN) for (const s of c.stages) expect(STAGES.get(s.id)?.chapterId).toBe(c.id);
   });
 
@@ -98,18 +98,20 @@ describe('battle campaign content', () => {
 
   it('total campaign first-clear shards stay far below the 500-shard mythic price', () => {
     const total = CAMPAIGN.flatMap((c) => c.stages).reduce((sum, s) => sum + s.firstClearShards, 0);
-    expect(total).toBe(93);          // pinned — retune deliberately, never by accident
-    expect(total).toBeLessThan(500); // margin today: 407
+    expect(total).toBe(177);         // pinned — retune deliberately, never by accident
+    expect(total).toBeLessThan(500); // margin today: 323
   });
 
-  it('boss eggs ramp rare -> epic -> legendary -> legendary with pinned bossIds, no mythic', () => {
+  it('boss eggs ramp rare -> epic -> legendary onward with pinned bossIds, no mythic', () => {
     const bosses = CAMPAIGN.map((c) => c.stages[4].boss!);
-    expect(bosses.map((b) => b.eggRarity)).toEqual(['rare', 'epic', 'legendary', 'legendary']);
+    expect(bosses.map((b) => b.eggRarity)).toEqual(['rare', 'epic', 'legendary', 'legendary', 'legendary', 'legendary']);
     expect(bosses.map((b) => b.bossId)).toEqual([
-      'boss-coastal_dig', 'boss-amber_ridge', 'boss-frozen_cliffs', 'boss-volcano_core',
+      'boss-coastal_dig', 'boss-amber_ridge', 'boss-frozen_cliffs', 'boss-volcano_core', 'boss-abyssal_trench', 'boss-containment_site',
     ]);
     expect(bosses.slice(0, 3).map((b) => b.eggSpeciesId)).toEqual([null, null, null]);
     expect(bosses[3].eggSpeciesId).toBe('tyrannosaurus');
+    expect(bosses[4].eggSpeciesId).toBe('mosasaurus');
+    expect(bosses[5].eggSpeciesId).toBe('spinoraptor');
     for (const b of bosses) expect(b.eggRarity).not.toBe('mythic');
   });
 
@@ -166,8 +168,8 @@ describe('battle gating', () => {
   it('later chapters require prior boss first-clear AND the site unlockRating high-water', () => {
     const bossCleared = prog({ coastal_dig_boss: { stars: 1, firstClearedAt: 1_000 } });
     expect(chapterUnlocked('amber_ridge', prog({}), 999)).toBe(false);    // rating alone is not enough
-    expect(chapterUnlocked('amber_ridge', bossCleared, 149)).toBe(false); // boss clear alone is not enough
-    expect(chapterUnlocked('amber_ridge', bossCleared, 150)).toBe(true);  // both gates satisfied
+    expect(chapterUnlocked('amber_ridge', bossCleared, 299)).toBe(false); // boss clear alone is not enough
+    expect(chapterUnlocked('amber_ridge', bossCleared, 300)).toBe(true);  // both gates satisfied
   });
 
   it('a boss row with stars but no firstClearedAt does not unlock the next chapter', () => {

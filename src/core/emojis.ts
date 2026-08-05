@@ -11,6 +11,7 @@ export const EMOJI_FALLBACK: Record<string, string> = {
   dw_star: '⭐', dw_alert: '🚨', dw_hunger: '⚠',
   dw_site_volcano_core: '🌋', dw_site_coastal_dig: '🐚',
   dw_site_amber_ridge: '🟠', dw_site_frozen_cliffs: '❄️',
+  dw_site_abyssal_trench: '🌊', dw_site_containment_site: '🧪',
   dw_lot_carnivore: '🦖', dw_lot_herbivore: '🦕', dw_lot_food_court: '🍔',
   dw_lot_hatchery: '🥚', dw_lot_visitor: '🏛️',
   dw_dino_common: '🦕', dw_dino_uncommon: '🦕', dw_dino_rare: '🦕',

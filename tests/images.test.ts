@@ -146,6 +146,24 @@ async function expectTransparentCutout(kind: 'battles' | 'dinos', name: string):
   for (const [x, y] of [[0, 0], [1023, 0], [0, 1023], [1023, 1023]] as const) {
     expect(c.getImageData(x, y, 1, 1).data[3], `${name} corner ${x},${y}`).toBe(0);
   }
+  // Two cutout families diverge by 7px on purpose: the boss portraits and eggs came
+  // from a one-off pass at 24px, hatch cracks and dino art from fit-art.mjs at 31px.
+  // Nothing enforced it until now, so a portrait run through the wrong pass shipped
+  // visibly smaller than its siblings and every size/corner assertion still passed.
+  const px = c.getImageData(0, 0, 1024, 1024).data;
+  let minX = 1024, minY = 1024, maxX = -1, maxY = -1;
+  for (let y = 0; y < 1024; y++) {
+    for (let x = 0; x < 1024; x++) {
+      if (px[(y * 1024 + x) * 4 + 3] === 0) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  const margin = Math.min(minX, minY, 1023 - maxX, 1023 - maxY);
+  const expected = kind === 'battles' ? 24 : 31;
+  expect(Math.abs(margin - expected), `${name} margin ${margin}, expected ~${expected}`).toBeLessThanOrEqual(1);
 }
 
 const PORTRAIT_BOSS_IDS = CAMPAIGN.map((c) => c.stages[4].boss!.bossId);
@@ -301,8 +319,9 @@ describe('dino archetype art', () => {
   it.each(DINO_ART_KEYS)('%s is a 1024×1024 transparent cutout',
     (key) => expectTransparentCutout('dinos', key));
   // The whole point of keying on archetype×diet: every species resolves without
-  // new art. support-carnivore has no species today and still ships, so adding
-  // one stays a data-only change.
+  // new art. Archelon is the first species to use support-carnivore, which
+  // shipped unused until this round — it needed zero new art, same as any
+  // other species landing on an already-used combination.
   it('every species resolves to a shipped archetype image', () => {
     for (const s of allSpecies()) {
       expect(assetImage('dinos', `${s.archetype}-${s.diet}`), s.id).not.toBeNull();

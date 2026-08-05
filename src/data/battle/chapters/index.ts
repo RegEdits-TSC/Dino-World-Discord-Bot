@@ -6,6 +6,8 @@ import { coastalDig } from './coastal_dig.js';
 import { amberRidge } from './amber_ridge.js';
 import { frozenCliffs } from './frozen_cliffs.js';
 import { volcanoCore } from './volcano_core.js';
+import { abyssalTrench } from './abyssal_trench.js';
+import { containmentSite } from './containment_site.js';
 
 export interface BossDef {
   bossId: string;        // derives assets/images/battles/<bossId>-portrait.webp
@@ -33,7 +35,7 @@ export interface StageDef {
 // banner asset, the unlockRating co-gate, and the theme.
 export interface ChapterDef { id: string; name: string; tagline: string; stages: StageDef[] }
 
-export const CAMPAIGN: ChapterDef[] = [coastalDig, amberRidge, frozenCliffs, volcanoCore];
+export const CAMPAIGN: ChapterDef[] = [coastalDig, amberRidge, frozenCliffs, volcanoCore, abyssalTrench, containmentSite];
 
 export const STAGES = new Map<string, StageDef & { chapterId: string }>(
   CAMPAIGN.flatMap((ch) => ch.stages.map((st) => [st.id, { ...st, chapterId: ch.id }] as const)),

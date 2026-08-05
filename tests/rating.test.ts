@@ -2,26 +2,56 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { recomputeRating, lotSlots, siteUnlocked, shopCeiling, mythicUnlocked } from '../src/modules/park/rating.js';
+import { LOT_SLOT_THRESHOLDS } from '../src/data/progression.js';
+import { EXPEDITION_SITES } from '../src/data/sites.js';
 import { schema } from '../src/core/db/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
 
 describe('gating helpers (re-exported from rating.ts)', () => {
-  it('lotSlots grows 3→8 across thresholds', () => {
+  it('lotSlots grows 3→10 across all thresholds', () => {
     expect(lotSlots(0)).toBe(3);
-    expect(lotSlots(50)).toBe(4);
-    expect(lotSlots(400)).toBe(8);
-    expect(lotSlots(999)).toBe(8);
+    expect(lotSlots(100)).toBe(4);
+    expect(lotSlots(200)).toBe(5);
+    expect(lotSlots(400)).toBe(6);
+    expect(lotSlots(600)).toBe(7);
+    expect(lotSlots(800)).toBe(8);
+    expect(lotSlots(880)).toBe(9);
+    expect(lotSlots(950)).toBe(10);
+    expect(lotSlots(9999)).toBe(10);
   });
   it('siteUnlocked / shopCeiling / mythicUnlocked read high-water', () => {
-    expect(siteUnlocked(150, 149)).toBe(false);
-    expect(siteUnlocked(150, 150)).toBe(true);
+    expect(siteUnlocked(300, 299)).toBe(false);
+    expect(siteUnlocked(300, 300)).toBe(true);
     expect(shopCeiling(0)).toBe('uncommon');
-    expect(shopCeiling(250)).toBe('epic');
-    expect(shopCeiling(400)).toBe('legendary');
-    expect(mythicUnlocked(399)).toBe(false);
-    expect(mythicUnlocked(400)).toBe(true);
+    expect(shopCeiling(250)).toBe('rare');
+    expect(shopCeiling(400)).toBe('epic');
+    expect(shopCeiling(700)).toBe('legendary');
+    expect(mythicUnlocked(799)).toBe(false);
+    expect(mythicUnlocked(800)).toBe(true);
+  });
+  // The two newest sites (Abyssal Trench, Containment Site) are pinned in two
+  // unrelated files with nothing coupling them — progression.ts's own gating
+  // constants and sites.ts's own gating constants. The spec's intent is that a
+  // gate this deep carries a park-side reward too, so the last two lot-slot
+  // thresholds must equal those two sites' unlockRating, in campaign order.
+  // Both sides read the real exported constants (never a hardcoded 880/950),
+  // so this fails the moment either file's gate moves without the other.
+  it('the two newest lot-slot thresholds match their sites\' unlockRating', () => {
+    const newestGateSites = [EXPEDITION_SITES.abyssal_trench, EXPEDITION_SITES.containment_site];
+    expect(LOT_SLOT_THRESHOLDS.slice(-newestGateSites.length))
+      .toEqual(newestGateSites.map((s) => s.unlockRating));
+  });
+  it('rating is scaled to 1000 — a known collection pins the exact score', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    // tyrannosaurus + mosasaurus (legendary, 16 each) + indominus + indoraptor (mythic, 32 each)
+    // = 96 weight / 190 target × 0.40 collection weight × 1000 scale = 202
+    for (const s of ['tyrannosaurus', 'mosasaurus', 'indominus', 'indoraptor']) {
+      ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: s, hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    }
+    const { rating } = recomputeRating(ctx, 'u1');
+    expect(rating).toBe(202);
   });
 });
 
@@ -42,5 +72,22 @@ describe('recomputeRating', () => {
     const dropped = recomputeRating(ctx, 'u1');
     expect(dropped.rating).toBe(0);
     expect(dropped.highWater).toBe(high);
+  });
+  it('collection is clamped at the frozen target, so extra species never overflow it', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    // 296 points of rarity weight now exist against a COLLECTION_TARGET of 190,
+    // so a deep collection must saturate the term rather than exceeding it.
+    for (const s of ['indominus', 'indoraptor', 'ultimasaurus', 'tyrannosaurus', 'mosasaurus',
+      'quetzalcoatlus', 'liopleurodon', 'spinoraptor']) {
+      ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: s, hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    }
+    // 3 mythic (96) + 5 legendary (80) = 176 … add two epics to cross 190.
+    for (const s of ['kronosaurus', 'scorpios_rex']) {
+      ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: s, hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    }
+    const { rating } = recomputeRating(ctx, 'u1');
+    // collection saturated at 1.0 → 0.40 × 1000 = 400 from that term alone, and the
+    // park and comfort terms are unassigned/zero here.
+    expect(rating).toBe(400);
   });
 });

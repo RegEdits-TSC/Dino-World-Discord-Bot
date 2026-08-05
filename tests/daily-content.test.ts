@@ -3,6 +3,8 @@ import { QUESTS, CHURN_STATS, chestFor, nextChestAt, type QuestDef } from '../sr
 import { ACHIEVEMENTS, TIER_REWARDS } from '../src/data/achievements.js';
 import { STATS } from '../src/core/stats.js';
 import { FOODS } from '../src/data/foods.js';
+import { STAGES } from '../src/data/battle/chapters/index.js';
+import { BASE_LOT_SLOTS_FALLBACK, LOT_SLOT_THRESHOLDS } from '../src/data/progression.js';
 
 describe('daily content gate', () => {
   it('pool is exactly 17 defs with unique ids referencing real stats', () => {
@@ -66,5 +68,23 @@ describe('daily content gate', () => {
     const totalCash = ACHIEVEMENTS.length * TIER_REWARDS.reduce((s, r) => s + r.cash, 0);
     expect(totalShards).toBeLessThanOrEqual(350);
     expect(totalCash).toBeLessThanOrEqual(150_000);
+  });
+});
+
+describe('achievement reachability', () => {
+  // A tier above the game's own ceiling can never be claimed. lots_built shipped
+  // that way — Gold (10) and Platinum (15) against a maximum of 8 lots, worth
+  // 7,500 cash and 25 shards nobody could ever collect.
+  it('every top tier is actually attainable', () => {
+    const ceilings: Record<string, number> = {
+      stages_first_cleared: STAGES.size,
+      lots_built: BASE_LOT_SLOTS_FALLBACK + LOT_SLOT_THRESHOLDS.length,
+    };
+    for (const track of ACHIEVEMENTS) {
+      const ceiling = ceilings[track.id];
+      if (ceiling === undefined) continue;
+      expect(track.tiers[3], `${track.id} Platinum (${track.tiers[3]}) exceeds its ceiling ${ceiling}`)
+        .toBeLessThanOrEqual(ceiling);
+    }
   });
 });

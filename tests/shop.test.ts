@@ -8,6 +8,7 @@ import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
+import { TRADE_MIN_RATING } from '../src/data/trade.js';
 
 const DAY = 86_400_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -149,7 +150,7 @@ describe('shop food and sell error branches', () => {
   });
   it('/sell rejects an unsellable (locked) dino ephemeral, and sell:confirm re-checks', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
     const dino = ctx.db.insert(schema.dinos).values({
       userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
     }).returning().get();
@@ -167,7 +168,7 @@ describe('shop food and sell error branches', () => {
 
   it('/sell: an expired trade stops blocking the sale prompt, with no sweep', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
     const dino = ctx.db.insert(schema.dinos).values({
       userId: 'u1', speciesId: 'velociraptor', hunger: 100, lastFedAt: 0, hatchedAt: 0,
     }).returning().get();
@@ -186,7 +187,7 @@ describe('shop food and sell error branches', () => {
 
   it('sell:confirm: an expired trade stops blocking the sale, with no sweep', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
     const dino = ctx.db.insert(schema.dinos).values({
       userId: 'u1', speciesId: 'velociraptor', hunger: 100, lastFedAt: 0, hatchedAt: 0,
     }).returning().get();

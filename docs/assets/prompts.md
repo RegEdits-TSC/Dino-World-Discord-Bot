@@ -321,6 +321,49 @@ shell with glowing orange cracks).
 > colors, strong glossy highlights, clean cel shading with smooth gradients,
 > polished game-asset look. No text, no characters, no UI elements.
 
+## Abyssal Trench (`abyssal_trench`)
+
+Generated at 2528×1696 (3:2, resolution `2k`), fitted to 1536×1024 for the
+banner; the thumb is a centered square crop of the same source, resized to
+1024×1024 (not a squash).
+
+**Banner (1536×1024) and Thumb (1024×1024), same source:**
+
+> A deep-ocean abyssal trench, dominated by deep blue and blue-black water filling
+> the whole frame edge to edge with no letterboxing and no black bars. Steep dark
+> basalt walls on both sides falling away into a narrow black chasm, drifting
+> marine snow and pale cyan particulate suspended in the water, a small cluster of
+> dim amber hydrothermal vents low in the scene venting dark mineral smoke, tall
+> kelp-like tube worms clinging to the rock, a distant submersible's pale lamp beam
+> raking across the far wall. Cold blue palette overall, the amber vents small and
+> secondary, never lava-like. Wide cinematic establishing shot filling the entire
+> canvas. Glossy cartoon mobile-game art style, bold dark outlines, vibrant
+> saturated colors, strong glossy highlights, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no characters, no UI elements.
+
+Note for future regeneration: the first attempt at 1k came back letterboxed with
+baked-in black bars, and its orange vent chimneys read as lava, colliding with
+Volcano Core's identity. The "filling the whole frame edge to edge with no
+letterboxing", the explicit blue dominance, and "never lava-like" are the three
+clauses that fixed it.
+
+## Containment Site (`containment_site`)
+
+Generated at 1264×848, upscaled to 3216×2160 (`bytedance_image_upscale`, 2k),
+fitted to 1536×1024 for the banner; the thumb is a centered square crop of the
+same upscaled source, resized to 1024×1024 (not a squash).
+
+**Banner (1536×1024) and Thumb (1024×1024), same source:**
+
+> A rain-slick dinosaur research compound at night behind heavy electrified fencing,
+> tall floodlight towers cutting bright cones through drifting mist, a breached inner
+> paddock gate hanging open with bent steel bars, yellow warning chevrons painted on
+> wet concrete, puddles reflecting the lights, cold teal and sodium-amber palette,
+> wide cinematic establishing shot. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel shading
+> with smooth gradients, polished game-asset look. No text, no characters, no UI
+> elements.
+
 ---
 
 ## Embed banners
@@ -603,7 +646,7 @@ look everywhere else.
 
 ## Battle bosses
 
-Four boss portraits for the PvE campaign (`/battle`), used as `setThumbnail`
+Six boss portraits for the PvE campaign (`/battle`), used as `setThumbnail`
 on frames F3/F4 of boss stages. Null-degrade everywhere: the campaign ships
 fully playable with zero battle art.
 
@@ -613,6 +656,8 @@ fully playable with zero battle art.
 | `assets/images/battles/boss-amber_ridge-portrait.webp` | 1024×1024, transparent | Ridgeback Alpha (Allosaurus), Amber Ridge boss frames |
 | `assets/images/battles/boss-frozen_cliffs-portrait.webp` | 1024×1024, transparent | Stormwing (Quetzalcoatlus), Frozen Cliffs boss frames |
 | `assets/images/battles/boss-volcano_core-portrait.webp` | 1024×1024, transparent | The Tyrant King (Tyrannosaurus), Volcano Core boss frames |
+| `assets/images/battles/boss-abyssal_trench-portrait.webp` | 1024×1024, transparent | The Trench Sovereign (Mosasaurus), Abyssal Trench boss frames |
+| `assets/images/battles/boss-containment_site-portrait.webp` | 1024×1024, transparent | Asset 47 (Spinoraptor), Containment Site boss frames |
 
 **Hard no-glow rule:** no glow, rays, embers, sparkles, or light effects may
 extend beyond the dinosaur silhouette — off-silhouette glow survives
@@ -630,7 +675,7 @@ with `remove_background` plus the one-off defringe + fit pass described in the E
 rarities section (not `scripts/fit-art.mjs`, which fits to 31px), with one
 difference: portraits fit and center on the **whole silhouette bbox** (there is
 no egg axis to bias toward), 24px margin on a 1024×1024 transparent canvas — the
-margin the four committed portraits measure at.
+margin all six committed portraits measure at.
 
 **boss-coastal_dig — Old Riptooth (reference portrait):**
 
@@ -697,6 +742,63 @@ margin the four committed portraits measure at.
   markings on the scale surfaces only, an ember-orange eye, and a roaring
   open jaw.
 
+**boss-abyssal_trench — The Trench Sovereign (Mosasaurus):** generated as a
+standalone prompt (not an image-edit of the coastal reference), background
+removed, fitted to a 24px margin. The generated source faced left — this
+prompt states no facing direction, and with no reference image attached
+there was nothing to inherit the house right-facing convention from — so the
+committed file is that same generation horizontally flipped in post to face
+right, matching every other boss portrait. A future regeneration from this
+prompt is not guaranteed to land right-facing either; check orientation
+against the other bosses before shipping, and either flip in post again or
+add an explicit "facing right" clause to the prompt.
+
+> A fierce cartoon Mosasaurus boss portrait, head and shoulders in three-quarter
+> view, massive blunt reptilian skull with a jagged toothy snarl, deep-blue scales
+> over a pale cream underbelly, wet glossy sheen with seawater sheeting off the hide,
+> pale cyan bioluminescent speckling along the jawline, one old pale scar across the
+> brow. The complete head and shoulders sit fully inside the image with an even
+> margin of empty background on all four sides, nothing touching or cropped by any
+> edge. Plain flat light-gray studio background, completely empty, no scenery, no
+> ground shadow, no drawn border, no frame, no panel edge, no letterboxing. No glow,
+> rays, embers, sparkles, or light effects extending beyond the creature silhouette;
+> glowing details may appear only on the surfaces themselves. Glossy cartoon
+> mobile-game art style, bold dark outlines, vibrant saturated colors, strong glossy
+> highlights, clean cel shading with smooth gradients, polished game-asset look. No
+> text, no numbers, no lettering, no human characters, no UI elements.
+
+**boss-containment_site — Asset 47 (Spinoraptor):** generated as a standalone
+prompt (not an image-edit of the coastal reference), background removed,
+fitted to a 24px margin.
+
+> A fierce cartoon hybrid dinosaur boss portrait, head and shoulders in three-quarter
+> view, a raptor's narrow toothy skull with a tall spined sail rising behind the
+> shoulders, charcoal-black and acid-yellow banded scales with a wet glossy sheen,
+> old surgical scarring along the jaw, a small blank unmarked metal tag clipped to
+> the neck, snarling with intelligent menace. The complete head, neck and sail sit
+> fully inside the image with an even margin of empty background on all four sides,
+> nothing touching or cropped by any edge. Plain flat light-gray studio background,
+> completely empty, no scenery, no ground shadow, no drawn border, no frame, no panel
+> edge, no letterboxing. No glow, rays, embers, sparkles, or light effects extending
+> beyond the creature silhouette; glowing details may appear only on the surfaces
+> themselves. Glossy cartoon mobile-game art style, bold dark outlines, vibrant
+> saturated colors, strong glossy highlights, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no numbers, no lettering, no human
+> characters, no UI elements.
+
+**Two prompt clauses worth keeping for any future portrait.** The first pass
+of both portraits above failed for reasons the existing prompt frame did not
+cover, and these two clauses are what fixed them:
+
+- **"no drawn border, no frame, no panel edge"** — the first Mosasaurus came
+  back with a painted rectangular border around the whole image. On a
+  portrait destined for background removal that is fatal: the frame survives
+  matting, and a largest-connected-region step can keep the frame and discard
+  the animal.
+- **"no text, no numbers, no lettering"** — the first Spinoraptor rendered a
+  legible "#042" on its neck tag, which both violates the no-text house rule
+  and contradicts the boss's name, Asset 47.
+
 ## Dino archetypes
 
 Eight generic dinosaur portraits keyed on `archetype × diet`, used as
@@ -718,8 +820,10 @@ everywhere, like every other family here.
 | `assets/images/dinos/support-carnivore.webp` | 1024×1024, transparent | hatch reveal + non-boss battle thumbnail |
 
 `<archetype>` is one of `bruiser`, `tank`, `swift`, `support`; `<diet>` is
-`herbivore` or `carnivore`. `support-carnivore` has no species today and is
-generated anyway — the guarantee is that adding a species never needs new art.
+`herbivore` or `carnivore`. `support-carnivore` shipped with no species using
+it and was generated anyway — the guarantee is that adding a species never
+needs new art. Archelon (uncommon, support archetype, carnivore diet) now
+uses it, and needed no new art at all.
 
 **Fidelity cost of the fixed set:** `archetype` is a combat concept, not a
 body-plan one, so the guarantee above buys loose anatomical fidelity for
@@ -727,10 +831,10 @@ outliers. `swift-carnivore` covers both `velociraptor` and `quetzalcoatlus` —
 a beaked pterosaur — and the shared portrait is a scaled toothy theropod, not
 anything pterosaur-shaped. Accepted deliberately, not an oversight: a
 per-species `silhouette` field was considered and declined, since it would
-have traded eight images for roughly twelve plus a migration across all 30
+have traded eight images for roughly twelve plus a migration across all 40
 species files, to fix fidelity for a handful of outliers like this one.
 
-**Style: deliberately simpler than the four boss portraits.** Same house
+**Style: deliberately simpler than the six boss portraits.** Same house
 glossy-cartoon treatment and the same head-and-shoulders three-quarter framing,
 but flatter: clean archetype silhouettes, no scarring, no individuating damage,
 no character detail. These land in the same thumbnail slot as the boss portraits
@@ -742,10 +846,11 @@ extend beyond the dinosaur silhouette — off-silhouette glow survives backgroun
 removal as floating islands or a light halo on transparency. Emissive detail is
 allowed only ON surfaces. Every prompt carries this rule verbatim.
 
-**Facing right:** all four committed boss portraits face right, snout pointing
-right, and one boss generation came back mirrored and had to be flipped in post
-(see Battle bosses). The prompt frame below states the direction up front —
-still check every generation against the reference before shipping it.
+**Facing right:** all six committed boss portraits face right, snout pointing
+right, and two boss generations came back mirrored and had to be flipped in
+post (Frozen Cliffs and Abyssal Trench — see Battle bosses). The prompt frame
+below states the direction up front — still check every generation against
+the reference before shipping it.
 
 **Workflow (reference chain):** all eight are generated as image-edits of the
 committed `assets/images/battles/boss-coastal_dig-portrait.webp` (Nano Banana
@@ -999,7 +1104,7 @@ the light studio rim must be peeled, and all border pixels must end transparent.
 
 ## Emoji icons
 
-The 41 application emojis in `assets/emojis/` are **not** generated — they are
+The 43 application emojis in `assets/emojis/` are **not** generated — they are
 hand-authored SVG rendered by `npm run build-emojis`. That set includes the six
 `dw_dino_<rarity>` chips and the six `dw_lot_*` icons the park renderer reads
 as SVG at draw time, plus the four `dw_trait_<domain>` icons (income, care,
@@ -1013,6 +1118,13 @@ bullets in the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.
 | `dw_quest.svg` | A dartboard-style target (gold outer ring, cream middle ring, red bullseye) with a dart stuck dead center, gold-brown palette matching `dw_cash`/`dw_star` | 🎯 |
 | `dw_streak.svg` | A two-tone stylized flame — a red-orange outer silhouette with a brighter yellow-orange inner flame layered on top | 🔥 |
 | `dw_chest.svg` | A wooden treasure chest: domed lid and body in a warm wood-brown gradient, gold trim bands across the seam and down the front, a small gold lock plate at the seam | 🎁 |
+
+**Endgame site markers** — used inline in expedition embed titles for the two endgame sites:
+
+| File | Design intent | Unicode fallback |
+| --- | --- | --- |
+| `dw_site_abyssal_trench.svg` | A deep-sea submersible, side-on, floating on transparency: a rounded blue-to-navy gradient hull (stadium shape), a small conning tower on top, a pointed tail fin at the rear, one large pale-cyan porthole toward the front, and a small amber lamp at the nose with a short amber light cone reaching forward, dark navy (`#0b2233`) outlines throughout — a trench is negative space, so the site is represented by the vehicle you'd find exploring one, the same way Coastal Dig is represented by a shell rather than a hole in the sand | 🌊 |
+| `dw_site_containment_site.svg` | A short fence — four vertical slate posts crossed by two horizontal rails, no enclosing frame — with a yellow warning triangle mounted centered over it bearing a dark exclamation mark, dark slate (`#1b2530`) outlines throughout | 🧪 |
 
 ## Bot branding (animated avatar and banner)
 

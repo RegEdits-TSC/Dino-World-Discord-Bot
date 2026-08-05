@@ -23,7 +23,7 @@ beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); ctx.econo
 describe('expeditions', () => {
   it('lists only unlocked sites by high-water', () => {
     expect(listSites(0).map((s) => s.id)).toEqual(['coastal_dig']);
-    expect(listSites(400).length).toBe(4);
+    expect(listSites(950).length).toBe(6);
   });
   it('starts an expedition, charges cost, enqueues a return timer, blocks a second start', () => {
     const exp = startExpedition(ctx, 'u1', 'coastal_dig', 'g1');

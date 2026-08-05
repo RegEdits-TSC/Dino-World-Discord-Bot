@@ -4,6 +4,7 @@ import { makeCtx, fakeAutocomplete } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { battlesModule } from '../src/modules/battles/index.js';
+import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 
 const battleCmd = battlesModule.commands[0];
 type Choice = { name: string; value: string | number };
@@ -39,6 +40,28 @@ describe('/battle autocomplete', () => {
     expect(choices[0].name).toContain('⚡');
     expect(choices.some((c) => c.name.startsWith('🔒'))).toBe(true);
     for (const c of choices) expect(c.name).not.toMatch(/<a?:\w+:\d+>/);  // no custom emoji tags
+  });
+  it('stage: the newest chapter survives the 25-choice slice for a fully unlocked player', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1');
+    // Unlock everything the way a real endgame player does: rating high-water past the
+    // last gate, and a 1-star first clear on every stage. Chapter unlocks need only a
+    // 1-star boss clear, so this player still emits all 30 entries.
+    ctx.db.update(schema.users).set({ ratingHighWater: 1000 }).where(eq(schema.users.discordId, 'u1')).run();
+    for (const ch of CAMPAIGN) {
+      for (const s of ch.stages) {
+        ctx.db.insert(schema.battleProgress)
+          .values({ userId: 'u1', stageId: s.id, stars: 1, firstClearedAt: 1, attempts: 1 }).run();
+      }
+    }
+    const fake = fakeAutocomplete({ name: 'battle', sub: 'fight', user: 'u1', focused: { name: 'stage', value: '' } });
+    await battleCmd.autocomplete!(ctx, fake.asAutocomplete());
+    const choices = fake.replies[0] as Choice[];
+    expect(choices).toHaveLength(25);
+    const last = CAMPAIGN[CAMPAIGN.length - 1];
+    for (const s of last.stages) {
+      expect(choices.map((c) => c.value), `${s.id} dropped by the 25-choice slice`).toContain(s.id);
+    }
   });
   it('dino: escaped dinos are excluded; labels are Lv.N Name (archetype)', async () => {
     const ctx = makeCtx();

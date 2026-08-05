@@ -1,6 +1,6 @@
 import type { ChapterDef } from './index.js';
 
-// Chapter 4 — Volcano Core (unlockRating 400). Epic and legendary theropods;
+// Chapter 4 — Volcano Core (unlockRating 800). Epic and legendary theropods;
 // the finale pins a thematic legendary trophy egg (tyrannosaurus) — never
 // mythic, which would undercut the 500-shard mythic purchase.
 export const volcanoCore: ChapterDef = {

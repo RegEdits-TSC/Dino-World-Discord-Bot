@@ -6,6 +6,7 @@ import { schema } from '../src/core/db/index.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
 import { eq } from 'drizzle-orm';
+import { TRADE_MIN_RATING } from '../src/data/trade.js';
 
 const H = 3_600_000;
 const cmd = (name: string) => hatcheryModule.commands.find((c) => c.data.name === name)!;
@@ -79,7 +80,7 @@ describe('/incubate egg autocomplete', () => {
   it('an expired trade stops shadowing an inventory egg, with no sweep', async () => {
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
     const egg = ctx.db.insert(schema.eggs)
       .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
     createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
@@ -137,7 +138,7 @@ describe('/hatch egg autocomplete', () => {
     // a locked one. Trade first, then set the timer fields directly.
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
     const egg = ctx.db.insert(schema.eggs)
       .values({ userId: 'u1', rarity: 'common', source: 'shop', obtainedAt: 0 }).returning().get();
     createTrade(ctx, 'u1', 'u2', { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },

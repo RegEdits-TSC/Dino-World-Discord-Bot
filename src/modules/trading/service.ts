@@ -63,8 +63,8 @@ export function verifySide(ctx: Ctx, userId: string, side: TradeSide, opts: { fo
 
 export function createTrade(ctx: Ctx, fromUser: string, toUser: string, offer: TradeSide, request: TradeSide): Trade {
   if (fromUser === toUser) throw new TradeError('You cannot trade with yourself.');
-  if (liveRating(ctx, fromUser) < TRADE_MIN_RATING) throw new TradeError('You need a 2★ park rating to trade.');
-  if (liveRating(ctx, toUser) < TRADE_MIN_RATING) throw new TradeError('That player needs a 2★ park rating to trade.');
+  if (liveRating(ctx, fromUser) < TRADE_MIN_RATING) throw new TradeError('You need a 4★ park rating to trade.');
+  if (liveRating(ctx, toUser) < TRADE_MIN_RATING) throw new TradeError('That player needs a 4★ park rating to trade.');
   const since = ctx.now() - TRADE_EXPIRY_MS;
   const recent = ctx.db.select().from(schema.trades)
     .where(and(eq(schema.trades.fromUser, fromUser), gt(schema.trades.createdAt, since))).all().length;
@@ -103,7 +103,7 @@ export function acceptTrade(ctx: Ctx, userId: string, tradeId: number): Trade {
   verifySide(ctx, trade.fromUser, trade.offer, { forTradeId: trade.id });
   verifySide(ctx, trade.toUser, trade.request);
   if (liveRating(ctx, trade.fromUser) < TRADE_MIN_RATING || liveRating(ctx, trade.toUser) < TRADE_MIN_RATING)
-    throw new TradeError('Both players must be at 2★ to complete the trade.');
+    throw new TradeError('Both players must be at 4★ to complete the trade.');
   // An empty-for-empty trade is legal at creation (no minimum content is enforced), so
   // credit trades_completed only when something real actually moves — otherwise two
   // players could farm the daily quest with no-op trades.

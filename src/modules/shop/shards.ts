@@ -60,7 +60,7 @@ export function previewSell(ctx: Ctx, userId: string, dinoId: number) {
 
 export function buyMythicEgg(ctx: Ctx, userId: string, speciesId: string): Egg {
   const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get()!;
-  if (!mythicUnlocked(user.ratingHighWater)) throw new ShardError('Reach 4★ park rating to unlock Mythic purchases.');
+  if (!mythicUnlocked(user.ratingHighWater)) throw new ShardError('Reach 8★ park rating to unlock Mythic purchases.');
   const species = getSpecies(speciesId);
   if (species.rarity !== 'mythic') throw new ShardError('That is not a Mythic species.');
   return ctx.db.transaction(() => {

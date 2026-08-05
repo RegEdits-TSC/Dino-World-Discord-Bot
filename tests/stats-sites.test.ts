@@ -13,6 +13,8 @@ import { buyMythicEgg, sellDino } from '../src/modules/shop/shards.js';
 import { startBreeding, claimBreeding, spliceDino } from '../src/modules/genelab/service.js';
 import { readStat } from '../src/core/stats.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
+import { TRADE_MIN_RATING } from '../src/data/trade.js';
+import { MYTHIC_UNLOCK_RATING } from '../src/data/progression.js';
 
 const H = 3_600_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -211,7 +213,7 @@ describe('acceptTrade stat tracking', () => {
 
   it('counts trades_completed for both fromUser and toUser when a dino actually moves', () => {
     getOrCreateUser(ctx, 'u2', 'Two');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both at 2★ so the gate passes
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();   // both at 4★ so the gate passes
     const d = addDino();
     const t = createTrade(ctx, 'u1', 'u2', { ...emptySide, dinoIds: [d.id] }, emptySide);
     acceptTrade(ctx, 'u2', t.id);
@@ -221,7 +223,7 @@ describe('acceptTrade stat tracking', () => {
 
   it('does not count an empty-for-empty trade (anti-farm)', () => {
     getOrCreateUser(ctx, 'u2', 'Two');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
     // createTrade's own validation would accept this too (no minimum content is
     // enforced at creation), so insert the pending row directly — the point is
     // that acceptTrade itself must not credit a trade that moves nothing.
@@ -247,7 +249,7 @@ describe('shop stat tracking', () => {
   });
 
   it('buyMythicEgg counts shop_purchases once', () => {
-    ctx.db.update(schema.users).set({ ratingHighWater: 400, shards: 500 })
+    ctx.db.update(schema.users).set({ ratingHighWater: MYTHIC_UNLOCK_RATING, shards: 500 })
       .where(eq(schema.users.discordId, 'u1')).run();
     buyMythicEgg(ctx, 'u1', 'indoraptor');
     expect(readStat(ctx, 'u1', 'shop_purchases')).toBe(1);

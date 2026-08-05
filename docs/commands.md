@@ -30,7 +30,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/eggs` | Your egg inventory and incubator status | Paginated, 10 per page |
 | `/incubate` | Start incubating an egg | Autocomplete: egg |
 | `/hatch` | Hatch an egg that has finished incubating | Autocomplete: egg. Reveals the species on a button press |
-| `/mythic` | Trade shards for a Mythic egg | Needs 4.0★ best-ever rating. Asks for confirmation before spending |
+| `/mythic` | Trade shards for a Mythic egg | Needs 8.0★ best-ever rating. Asks for confirmation before spending |
 
 ## 🍖 Care
 

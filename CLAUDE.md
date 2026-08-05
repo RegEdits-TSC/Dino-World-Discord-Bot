@@ -246,13 +246,15 @@
   margin against the boss portraits' 24px — deliberate, recorded in
   `docs/assets/prompts.md`): **art is keyed on archetype×diet, never on species**,
   which is what keeps adding a species a data-only change. `support-carnivore`
-  ships with zero species using it for exactly that reason. That fixed cost has
+  shipped with zero species using it for exactly that reason; Archelon (uncommon,
+  support archetype, carnivore diet) now does, and it needed no new art at all —
+  proof the guarantee holds. That fixed cost has
   a fidelity price: `archetype` is a combat concept, not a body-plan one, so
   outliers share art loosely — `swift-carnivore` covers both `velociraptor` and
   `quetzalcoatlus` (a beaked pterosaur), rendered as a scaled toothy theropod.
   Accepted deliberately: a per-species `silhouette` field was considered and
   declined, since it would have traded 8 images for roughly 12 plus a migration
-  across all 30 species files, to fix fidelity for a handful of outliers.
+  across all 40 species files, to fix fidelity for a handful of outliers.
   Banners are
   1536×1024 (asserted in `tests/images.test.ts`) and transparent cutouts
   1024×1024; `node scripts/fit-art.mjs banner|cutout <src> <dest>` produces the
@@ -420,3 +422,19 @@
   asset hash starts with `a_` — Discord's own confirmation that it stored the
   animation rather than a single static frame, which is otherwise a silent failure.
   Regeneration prompts and the ffmpeg flag reasoning are in `docs/assets/prompts.md`.
+- Park rating (`src/data/progression.ts`) is a 1000-point scale (`RATING_SCALE`):
+  every star figure anywhere in the game or its docs is `rating / 100`, ceiling
+  10.0★. Two constants in that file are frozen by deliberate design decisions,
+  not values to keep in sync as content ships — do not "fix" either to track the
+  roster. `COLLECTION_TARGET` (190) is the rarity-weight sum of the species
+  roster the collection term shipped against; it must never become a live sum
+  over `allSpecies()` — a live denominator would tax every existing player's
+  rating each time a new species ships, and the collection term's
+  `Math.min(1, ...)` clamp is precisely what lets new species act as alternate
+  paths to the existing target instead of moving it. `NPC_LEVEL_SANITY_CAP`
+  (12, enforced in `tests/battle-content.test.ts`) must never be raised to
+  accommodate a new boss: simulation during the Abyssal Trench / Containment
+  Site work showed a boss whose effective level (`npcLevel + levelBonus`)
+  exceeded it was unwinnable, which is why both new bosses were tuned down on
+  `hpMult` instead of pushed up on level — see those chapter files' own
+  comments in `src/data/battle/chapters/` for the numbers and the reasoning.

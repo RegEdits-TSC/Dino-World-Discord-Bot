@@ -29,14 +29,27 @@ import { mosasaurus } from './mosasaurus.js';
 import { quetzalcoatlus } from './quetzalcoatlus.js';
 import { indominus } from './indominus.js';
 import { indoraptor } from './indoraptor.js';
+import { archelon } from './archelon.js';
+import { elasmosaurus } from './elasmosaurus.js';
+import { tylosaurus } from './tylosaurus.js';
+import { kronosaurus } from './kronosaurus.js';
+import { ankylodocus } from './ankylodocus.js';
+import { scorpiosRex } from './scorpios_rex.js';
+import { stegoceratops } from './stegoceratops.js';
+import { liopleurodon } from './liopleurodon.js';
+import { spinoraptor } from './spinoraptor.js';
+import { ultimasaurus } from './ultimasaurus.js';
 
 const ALL: Species[] = [
   triceratops, gallimimus, dryosaurus, compsognathus, struthiomimus, othnielia, microceratus, nasutoceratops,
   stegosaurus, parasaurolophus, dilophosaurus, iguanodon, maiasaura, pachycephalosaurus, ouranosaurus,
   velociraptor, carnotaurus, baryonyx, allosaurus, ankylosaurus, ceratosaurus,
+  archelon, elasmosaurus, tylosaurus,
   brachiosaurus, spinosaurus, therizinosaurus, giganotosaurus,
+  kronosaurus, ankylodocus, scorpiosRex, stegoceratops,
   tyrannosaurus, mosasaurus, quetzalcoatlus,
-  indominus, indoraptor,
+  liopleurodon, spinoraptor,
+  indominus, indoraptor, ultimasaurus,
 ];
 const REGISTRY = new Map<string, Species>(ALL.map((s) => [s.id, s]));
 

@@ -9,6 +9,7 @@ import type { Rarity } from '../src/data/types.js';
 import { eq } from 'drizzle-orm';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
+import { TRADE_MIN_RATING } from '../src/data/trade.js';
 
 const cmd = (name: string) => shopModule.commands.find((c) => c.data.name === name)!;
 
@@ -43,7 +44,7 @@ describe('/sell dino autocomplete', () => {
   it('tags mythic and trade-locked dinos, appends sale value to valid ones', async () => {
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();   // both 2★ so createTrade passes
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();   // both 4★ so createTrade passes
     const mk = (over: Partial<typeof schema.dinos.$inferInsert>) =>
       ctx.db.insert(schema.dinos).values({ userId: 'u1', speciesId: 'velociraptor', lastFedAt: 0, hatchedAt: 0, ...over }).returning().get();
     const ok = mk({});                                         // velociraptor is rare -> 500 cash
@@ -66,7 +67,7 @@ describe('/sell dino autocomplete', () => {
   it('an expired trade stops hiding a sellable dino with no sweep at all', async () => {
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'u1'); getOrCreateUser(ctx, 'u2', 'u2');
-    ctx.db.update(schema.users).set({ parkRating: 200 }).run();
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
     const dino = ctx.db.insert(schema.dinos)
       .values({ userId: 'u1', speciesId: 'velociraptor', lastFedAt: 0, hatchedAt: 0 }).returning().get();
     createTrade(ctx, 'u1', 'u2', { dinoIds: [dino.id], eggIds: [], cash: 0, foods: {} },

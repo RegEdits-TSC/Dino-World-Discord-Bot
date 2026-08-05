@@ -56,18 +56,20 @@ count on `/park view`; it isn't there.
 ### Lot slots
 
 You start with 3 lot slots and unlock one more each time your best-ever rating
-crosses a threshold, up to a maximum of 8. Slots are gated by your **best-ever**
+crosses a threshold, up to a maximum of 10. Slots are gated by your **best-ever**
 rating, which never falls — so once a slot unlocks, it's yours for good, even
 if your current rating later drops. There is no way to buy a slot with cash.
 
 | Slots unlocked | Rating needed |
 | --- | --- |
 | 1–3 | from the start |
-| 4 | 0.5★ |
-| 5 | 1.0★ |
-| 6 | 2.0★ |
-| 7 | 3.0★ |
-| 8 | 4.0★ |
+| 4 | 1.0★ |
+| 5 | 2.0★ |
+| 6 | 4.0★ |
+| 7 | 6.0★ |
+| 8 | 8.0★ |
+| 9 | 8.8★ |
+| 10 | 9.5★ |
 
 ### Lot types
 
@@ -140,7 +142,7 @@ Lab is refused outright, naming the facility that's already built.
 
 ### Decor
 
-Decor is bought per paddock with `/decorate`. There are eight items, each
+Decor is bought per paddock with `/decorate`. There are twelve items, each
 tagged to a biome:
 
 | Decoration | Cash | Biome tag |
@@ -153,6 +155,10 @@ tagged to a biome:
 | Tide Pool | 700 | coast |
 | Ice Block | 700 | tundra |
 | Lava Rock | 800 | volcanic |
+| Kelp Bed | 900 | marine |
+| Containment Fence | 1,000 | containment |
+| Hydrothermal Vent | 1,100 | marine |
+| Floodlight Rig | 1,200 | containment |
 
 Decor can only be placed on paddocks, not facilities. You can stack as many
 pieces on a paddock as you like — there's no per-paddock limit and no way to
@@ -236,10 +242,10 @@ until you place it in one.
 
 ## 6. The roster
 
-Dino World has 30 species split across six rarities: 8 Common, 7 Uncommon, 6
-Rare, 4 Epic, 3 Legendary, and 2 Mythic. Diet determines which paddock a dino
+Dino World has 40 species split across six rarities: 8 Common, 8 Uncommon, 8
+Rare, 8 Epic, 5 Legendary, and 3 Mythic. Diet determines which paddock a dino
 can live in without its comfort being halved, so it's worth knowing before you
-start hatching: 16 species are herbivores and 14 are carnivores.
+start hatching: 18 species are herbivores and 22 are carnivores.
 
 | Species | Rarity | Diet |
 | --- | --- | --- |
@@ -258,21 +264,31 @@ start hatching: 16 species are herbivores and 14 are carnivores.
 | Maiasaura | Uncommon | herbivore |
 | Pachycephalosaurus | Uncommon | herbivore |
 | Ouranosaurus | Uncommon | herbivore |
+| Archelon | Uncommon | carnivore |
 | Velociraptor | Rare | carnivore |
 | Carnotaurus | Rare | carnivore |
 | Baryonyx | Rare | carnivore |
 | Allosaurus | Rare | carnivore |
 | Ankylosaurus | Rare | herbivore |
 | Ceratosaurus | Rare | carnivore |
+| Elasmosaurus | Rare | carnivore |
+| Tylosaurus | Rare | carnivore |
 | Brachiosaurus | Epic | herbivore |
 | Spinosaurus | Epic | carnivore |
 | Therizinosaurus | Epic | herbivore |
 | Giganotosaurus | Epic | carnivore |
+| Kronosaurus | Epic | carnivore |
+| Ankylodocus | Epic | herbivore |
+| Scorpios rex | Epic | carnivore |
+| Stegoceratops | Epic | herbivore |
 | Tyrannosaurus | Legendary | carnivore |
 | Mosasaurus | Legendary | carnivore |
 | Quetzalcoatlus | Legendary | carnivore |
+| Liopleurodon | Legendary | carnivore |
+| Spinoraptor | Legendary | carnivore |
 | Indominus rex | Mythic | carnivore |
 | Indoraptor | Mythic | carnivore |
+| Ultimasaurus | Mythic | carnivore |
 
 ## 7. Care
 
@@ -411,16 +427,18 @@ skip and keeps going for the rest.
 
 ## 9. Expeditions
 
-Expeditions don't use any dinos — you send a dig crew to one of four sites,
+Expeditions don't use any dinos — you send a dig crew to one of six sites,
 pay a cash fee up front, wait out the duration, and claim the results. Only
 one expedition can be out at a time.
 
 | Site | Unlocks at | Cost | Duration | Cash bonus | Food bonus |
 | --- | --- | --- | --- | --- | --- |
 | Coastal Dig | 0.0★ | 200 | 15 min | 50–200 | 2–6 |
-| Amber Ridge | 1.5★ | 1,000 | 1 h | 200–800 | 4–10 |
-| Frozen Cliffs | 2.5★ | 4,000 | 4 h | 800–2,500 | 8–20 |
-| Volcano Core | 4.0★ | 15,000 | 8 h | 3,000–9,000 | 20–50 |
+| Amber Ridge | 3.0★ | 1,000 | 1 h | 200–800 | 4–10 |
+| Frozen Cliffs | 5.0★ | 4,000 | 4 h | 800–2,500 | 8–20 |
+| Volcano Core | 8.0★ | 15,000 | 8 h | 3,000–9,000 | 20–50 |
+| Abyssal Trench | 8.8★ | 40,000 | 12 h | 8,000–20,000 | 40–90 |
+| Containment Site | 9.5★ | 100,000 | 24 h | 20,000–50,000 | 80–180 |
 
 Site unlocks are gated on your **best-ever** rating, so a site never
 re-locks even if your current rating later drops. No site's maximum cash
@@ -444,8 +462,11 @@ The egg's rarity is rolled from odds set per site:
 | Amber Ridge | 45% | 40% | 15% | — | — | — |
 | Frozen Cliffs | — | 40% | 40% | 20% | — | — |
 | Volcano Core | — | — | 40% | 40% | 19.8% | 0.2% |
+| Abyssal Trench | — | — | 25% | 45% | 29% | 1% |
+| Containment Site | — | — | — | 35% | 63% | 2% |
 
-Volcano Core is the only site that can ever drop a Legendary or Mythic egg.
+Volcano Core, Abyssal Trench, and Containment Site are the only sites that can
+ever drop a Legendary or Mythic egg.
 There is no failure, risk, or partial-loss outcome — a returned expedition
 always pays its full loot — and there is no cancel or refund once you've
 sent a crew out.
@@ -454,8 +475,8 @@ sent a crew out.
 
 ### Chapters and unlocking
 
-The campaign is four chapters, each five stages long, with the fifth stage
-always the boss:
+The campaign is six chapters, each five stages long, with the fifth stage
+always the boss — 30 stages in total:
 
 | # | Chapter |
 | --- | --- |
@@ -463,13 +484,15 @@ always the boss:
 | 2 | Amber Ridge |
 | 3 | Frozen Cliffs |
 | 4 | Volcano Core |
+| 5 | Abyssal Trench |
+| 6 | Containment Site |
 
 Within a chapter, stage 1 is always open, and every later stage unlocks once
 you've earned at least 1 star on the stage before it. Chapter 1 is always
 open too. Every later chapter needs **both** a recorded first clear of the
 previous chapter's boss **and** a best-ever park rating at or above that
 chapter's gate — the same thresholds as the identically named expedition
-sites: 0.0★, 1.5★, 2.5★, and 4.0★.
+sites: 0.0★, 3.0★, 5.0★, 8.0★, 8.8★, and 9.5★.
 
 ### Energy
 
@@ -527,8 +550,8 @@ Cash, food, and battle XP for a stage all scale with the stars you earn:
 
 The first time you clear a stage, you also earn a one-time first-clear shard
 bonus that is **not** scaled by stars — a scrappy 1-star first win pays the
-same shards as a flawless 3-star one. Clearing every stage in all four
-chapters for the first time pays 93 first-clear shards in total across the
+same shards as a flawless 3-star one. Clearing every stage in all six
+chapters for the first time pays 177 first-clear shards in total across the
 whole campaign.
 
 Battle XP for a win is split evenly across your squad (rounded down, with
@@ -555,10 +578,18 @@ payout.
 ### Bosses
 
 Each chapter's fifth stage pits you against that chapter's boss — a tougher
-version of the chapter's strongest enemy species, with roughly two and a
-half times the HP and about a fifth more attack than a normal encounter of
-that species. Clearing a boss for the first time awards a one-time trophy
-egg (repeat clears pay no further egg):
+version of the chapter's strongest enemy species. The first four chapters'
+bosses share one benchmark: roughly two and a half times the HP and about a
+fifth more attack than a normal encounter of that species. The two newest
+bosses were tuned separately by simulation and don't match that convention —
+the Abyssal Trench boss carries 1.3× HP but hits harder, at 1.25× attack,
+while the Containment Site boss carries 2.15× HP at the usual 1.2× attack.
+A boss's own multipliers never drop below a normal encounter's, but each
+species' archetype multiplier still applies on top of that — so a
+tank-archetype boss (like the Abyssal Trench's Mosasaurus) can still resolve
+to a lower attack than a bruiser-archetype escort standing next to it.
+Clearing a boss for the first time awards
+a one-time trophy egg (repeat clears pay no further egg):
 
 | Boss | Chapter | Trophy egg rarity | Species |
 | --- | --- | --- | --- |
@@ -566,6 +597,8 @@ egg (repeat clears pay no further egg):
 | Ridgeback Alpha | Amber Ridge | Epic | rolls at hatch |
 | Stormwing | Frozen Cliffs | Legendary | rolls at hatch |
 | The Tyrant King | Volcano Core | Legendary | pinned: Tyrannosaurus |
+| The Trench Sovereign | Abyssal Trench | Legendary | pinned: Mosasaurus |
+| Asset 47 | Containment Site | Legendary | pinned: Spinoraptor |
 
 No boss ever drops a Mythic egg. Beating a chapter's boss for the first
 time is also, alongside the matching rating threshold, one half of what
@@ -598,10 +631,10 @@ Your rarity ceiling is set by your **best-ever** park rating:
 
 | Best-ever rating | Highest buyable rarity |
 | --- | --- |
-| below 1.0★ | Uncommon |
-| 1.0★ | Rare |
-| 2.0★ | Epic |
-| 3.5★ | Legendary |
+| below 2.0★ | Uncommon |
+| 2.0★ | Rare |
+| 4.0★ | Epic |
+| 7.0★ | Legendary |
 
 ### Selling dinos
 
@@ -666,7 +699,7 @@ Shards can never be part of a trade.
 
 | Rule | Value |
 | --- | --- |
-| Minimum park rating, both players | 2.0★ — checked against your **current** rating, the one gate in the game that isn't based on your best-ever high mark |
+| Minimum park rating, both players | 4.0★ — checked against your **current** rating, the one gate in the game that isn't based on your best-ever high mark |
 | Trades you may start | 3 within any rolling 24 hours, counting every trade you've sent in that window, even ones that were declined, cancelled, or expired |
 | Items per side | up to 5, counting dinos, eggs, and food stacks together — cash doesn't count, and a whole food stack counts as just one item no matter its quantity |
 | Offer expiry | 24 hours after it's sent |
@@ -710,14 +743,14 @@ Park rating is built from three weighted components, each capped at 1 (100%):
 
 | Component | Weight | What raises it |
 | --- | --- | --- |
-| Collection | 40% | The summed rarity value of the **distinct** species you own, out of the value of all 30 species combined. Owning duplicates of a species you already have adds nothing further. |
+| Collection | 40% | The summed rarity value of the **distinct** species you own, out of a frozen target of 190. That target does not move as new species ship — it's fixed at the rarity-weight sum of the roster the game shipped with, not a live count of every species that exists today, so new species only ever open more paths to the same target. Owning duplicates of a species you already have adds nothing further. |
 | Park | 35% | The combined levels of all your lots plus the total number of decor pieces you've placed, out of a maximum of 40. |
 | Comfort | 25% | The average comfort of dinos that are currently assigned to a paddock and haven't escaped. Unassigned or escaped dinos are simply left out of the average — they don't drag it down, but they also don't help. |
 
-The three components combine into a score out of 500, which is what's
-displayed as stars to one decimal place — a rating of 340 shows as 3.4★.
+The three components combine into a score out of 1000, which is what's
+displayed as stars to one decimal place — a rating of 550 shows as 5.5★.
 Since none of the three components can score above 1, a park's rating
-tops out at 5.0★.
+tops out at 10.0★.
 
 ### When it actually updates
 
@@ -739,9 +772,9 @@ that component.
 Alongside your current rating, the game separately tracks the highest rating
 you've ever reached, and that number never falls even if your current rating
 later drops. Almost every gate in the game — lot slots, expedition site
-unlocks, the shop's rarity ceiling, Mythic purchases (which need 4.0★), and
+unlocks, the shop's rarity ceiling, Mythic purchases (which need 8.0★), and
 the battle campaign's chapter gates — checks your **best-ever** rating.
-Trading is the lone exception: its 2.0★ minimum checks your **current**
+Trading is the lone exception: its 4.0★ minimum checks your **current**
 rating, so it's the one gate you can actually lose access to if your rating
 falls.
 
@@ -873,7 +906,7 @@ A bred egg's odds are better — see Breeding and the Gene Lab, next.
 The **Gene Lab** is a fourth kind of facility (see Lot types, above): build
 it for 20,000 cash, then upgrade it for 60,000 and 250,000. Like every
 facility it grants no income bonus and is capped at one per park, and it
-competes for the same pool of up to 8 lot slots as every paddock and every
+competes for the same pool of up to 10 lot slots as every paddock and every
 other facility. Unlike the Hatchery Lab — which hands you one free incubator
 slot even before you build one — the Gene Lab gives you nothing until it's
 built: zero breeding slots with no Gene Lab at all.
@@ -1006,7 +1039,7 @@ open `/daily` to look at it.
 | Fight 5 battles | 5 | 500 cash + 5 shards | you've fought at least one battle before |
 | Win a battle | 1 | 400 cash + 4 shards | you've fought at least one battle before |
 | Win 3 battles | 3 | 800 cash + 8 shards | you've fought at least one battle before |
-| Complete a trade | 1 | 500 cash + 5 shards | best-ever rating at or above 2.0★ (the trading minimum) |
+| Complete a trade | 1 | 500 cash + 5 shards | best-ever rating at or above 4.0★ (the trading minimum) |
 | Start a breeding | 1 | 400 cash + 4 shards | Gene Lab built |
 | Claim a breeding | 1 | 500 cash + 5 shards | Gene Lab built |
 | Splice a trait | 1 | 600 cash + 6 shards | Gene Lab built |
@@ -1062,12 +1095,12 @@ bronze, silver, gold, platinum — that pay once and stay paid:
 | Expedition Leader (expeditions claimed) | 5 | 25 | 100 | 300 |
 | Battle Tested (battles fought) | 10 | 50 | 200 | 500 |
 | Champion (battles won) | 5 | 25 | 100 | 250 |
-| Explorer (stages first-cleared) | 5 | 10 | 15 | 20 |
+| Explorer (stages first-cleared) | 5 | 10 | 20 | 30 |
 | Trader (trades completed) | 1 | 5 | 25 | 100 |
 | Breeder (breedings claimed) | 1 | 5 | 25 | 100 |
 | Gene Splicer (splices done) | 1 | 10 | 50 | 200 |
 | Dealmaker (dinos sold) | 5 | 25 | 100 | 300 |
-| Park Architect (lots built) | 3 | 6 | 10 | 15 |
+| Park Architect (lots built) | 3 | 5 | 8 | 10 |
 
 Every track pays the same rewards at a given tier, regardless of which stat
 it's tracking:

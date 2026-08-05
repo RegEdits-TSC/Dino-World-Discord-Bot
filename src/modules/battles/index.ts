@@ -171,7 +171,10 @@ export const battlesModule: ModuleManifest = {
         if (focused.name === 'stage') {
           const progress = loadProgress(ctx, i.user.id);
           const entries: AcEntry[] = [];
-          for (const ch of CAMPAIGN) {
+          // Newest chapter first: respondRanked slices at 25 and the campaign now has 30
+          // stages, so emission order decides what a player sees on an empty query. Old
+          // cleared chapters are the cheapest to recover by typing; the frontier is not.
+          for (const ch of [...CAMPAIGN].reverse()) {
             if (!chapterUnlocked(ch.id, progress, user.ratingHighWater)) continue;
             ch.stages.forEach((s, k) => {
               if (!matches(q, s.id, s.name, ch.name)) return;
