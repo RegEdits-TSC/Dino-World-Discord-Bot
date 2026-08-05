@@ -34,17 +34,25 @@ export const abyssalTrench: ChapterDef = {
       enemies: [{ speciesId: 'kronosaurus' }, { speciesId: 'liopleurodon' }, { speciesId: 'mosasaurus' }],
       rewards: { cash: 750, food: { foodId: 'fish', qty: 5 }, xp: 240 }, firstClearShards: 14,
       boss: {
-        // hpMult tuned down from an original 2.8 (tests/battle-balance.test.ts). atkMult
-        // stays at its originally authored 1.25 — a boss must never hit softer than an
-        // ordinary same-level enemy (atkMult < 1 is incoherent for the campaign's
-        // hardest fights), so hpMult is the only lever here. mosasaurus is a TANK
-        // archetype (1.35x hp, 1.4x def before this multiplier), and simulated losses
-        // at the original 2.8 were squad wipes around round 12-13 of a 30-round cap —
-        // not attrition timeouts — so the fix is a shorter kill race, not a softer hit:
-        // less boss HP means the squad finishes the fight before it accumulates lethal
-        // damage taken, without the boss ever hitting below its species baseline.
+        // hpMult retuned from an original 2.8, then a first-draft floor of 1.2
+        // (tests/battle-balance.test.ts) that overcorrected: 1.2 left this boss's
+        // resolved HP (806) and untraited win rate (0.60) both weaker than Volcano
+        // Core's (1193 / 0.92), inverting the campaign's difficulty ladder against
+        // Containment Site. atkMult stays at its originally authored 1.25: boss
+        // multipliers never fall below 1.0, though archetype multipliers still apply
+        // on top, so this tank boss (1.35x hp, 1.4x def, 0.8x atk before hpMult/atkMult)
+        // can still resolve to a lower attack than a bruiser escort standing beside it.
+        // A full return to hpMult 2.8 was simulated and reproduced the original
+        // squad-wipe failure — traited win rate collapses well under the 0.85 floor,
+        // and untraited under the 0.40 floor, long before resolved HP reaches 1193.
+        // 1.3 is the measured ceiling that keeps both floors comfortably clear
+        // (3,000-seed check: traited 0.96, untraited 0.49) while raising resolved
+        // HP from 806 to 874 — real headroom, though short of full parity with
+        // Volcano Core's 1193, which this archetype cannot reach without breaking
+        // the win-rate floors. tests/battle-balance.test.ts's monotonic-ladder
+        // assertion is what actually enforces the escalation now.
         bossId: 'boss-abyssal_trench', title: 'The Trench Sovereign', speciesId: 'mosasaurus',
-        levelBonus: 1, hpMult: 1.2, atkMult: 1.25, eggRarity: 'legendary', eggSpeciesId: 'mosasaurus',
+        levelBonus: 1, hpMult: 1.3, atkMult: 1.25, eggRarity: 'legendary', eggSpeciesId: 'mosasaurus',
       },
     },
   ],

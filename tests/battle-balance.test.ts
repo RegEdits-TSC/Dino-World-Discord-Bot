@@ -64,6 +64,23 @@ describe('boss difficulty bands', () => {
     expect(rate, `untraited win rate ${rate}`).toBeGreaterThanOrEqual(0.40);
   });
 
+  // Machine gate for the escalating-difficulty invariant: each boss must be at least as
+  // hard for an untraited squad as the one before it. This is what actually caught the
+  // Abyssal Trench / Containment Site inversion (0.598 then 0.652 — chapter 6 was
+  // EASIER than chapter 5) that motivated this file's monotonic check. A same-rate tie
+  // is allowed (>=, not >) since two bosses can legitimately land on the same band edge.
+  it('untraited win rates are non-increasing across the campaign', () => {
+    const rates = BOSS_STAGES.map(({ chapter, stage }) => ({ chapter, rate: winRate(stage, []) }));
+    for (let i = 1; i < rates.length; i++) {
+      const prev = rates[i - 1];
+      const cur = rates[i];
+      expect(
+        cur.rate,
+        `${cur.chapter} (${cur.rate}) must not be easier than ${prev.chapter} (${prev.rate})`,
+      ).toBeLessThanOrEqual(prev.rate);
+    }
+  });
+
   // The upper bound applies ONLY to the current finale, not to every boss ever shipped.
   // A maxed squad steamrolling early content it has badly outleveled is correct design —
   // Coastal Dig sits 9 levels below a level-capped squad on purpose — so holding every

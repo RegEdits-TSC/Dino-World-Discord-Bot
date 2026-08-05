@@ -582,10 +582,13 @@ version of the chapter's strongest enemy species. The first four chapters'
 bosses share one benchmark: roughly two and a half times the HP and about a
 fifth more attack than a normal encounter of that species. The two newest
 bosses were tuned separately by simulation and don't match that convention —
-the Abyssal Trench boss carries only 1.2× HP but hits harder, at 1.25×
-attack, while the Containment Site boss carries 2.0× HP at the usual 1.2×
-attack. No boss's attack multiplier ever drops below a normal encounter's;
-only HP is used to soften a fight. Clearing a boss for the first time awards
+the Abyssal Trench boss carries 1.3× HP but hits harder, at 1.25× attack,
+while the Containment Site boss carries 2.15× HP at the usual 1.2× attack.
+A boss's own multipliers never drop below a normal encounter's, but each
+species' archetype multiplier still applies on top of that — so a
+tank-archetype boss (like the Abyssal Trench's Mosasaurus) can still resolve
+to a lower attack than a bruiser-archetype escort standing next to it.
+Clearing a boss for the first time awards
 a one-time trophy egg (repeat clears pay no further egg):
 
 | Boss | Chapter | Trophy egg rarity | Species |

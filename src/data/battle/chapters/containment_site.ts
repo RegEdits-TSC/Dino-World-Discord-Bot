@@ -33,14 +33,20 @@ export const containmentSite: ChapterDef = {
       enemies: [{ speciesId: 'scorpios_rex' }, { speciesId: 'stegoceratops' }, { speciesId: 'spinoraptor' }],
       rewards: { cash: 1_400, food: { foodId: 'prime_steak', qty: 5 }, xp: 370 }, firstClearShards: 16,
       boss: {
-        // hpMult tuned down from an original 3.0 (tests/battle-balance.test.ts). atkMult
-        // stays at its originally authored 1.2, same rationale as the Abyssal Trench
-        // boss: atkMult must never drop below 1.0 (a boss hitting softer than an
-        // ordinary same-level enemy is incoherent), so hpMult alone carries the retune.
-        // This is the campaign's current finale (CAMPAIGN's last chapter), so its
-        // traited win rate also has an upper bound — see tests/battle-balance.test.ts.
+        // hpMult retuned from an original 3.0, then a first-draft floor of 2.0
+        // (tests/battle-balance.test.ts) that left this boss weaker than Abyssal
+        // Trench's escalated boss, re-inverting the campaign's difficulty ladder.
+        // atkMult stays at its originally authored 1.2, same rationale as the
+        // Abyssal Trench boss: boss multipliers never fall below 1.0, though
+        // archetype multipliers still apply on top of that floor. This is the
+        // campaign's current finale (CAMPAIGN's last chapter), so its traited win
+        // rate also has an upper bound — see tests/battle-balance.test.ts. 2.15 is
+        // the measured value that keeps both win-rate floors clear while landing
+        // below Abyssal Trench's untraited rate, restoring the monotonic ladder
+        // (3,000-seed check: traited 0.90, untraited 0.44) — see that file's
+        // monotonic-ladder assertion.
         bossId: 'boss-containment_site', title: 'Asset 47', speciesId: 'spinoraptor',
-        levelBonus: 1, hpMult: 2.0, atkMult: 1.2, eggRarity: 'legendary', eggSpeciesId: 'spinoraptor',
+        levelBonus: 1, hpMult: 2.15, atkMult: 1.2, eggRarity: 'legendary', eggSpeciesId: 'spinoraptor',
       },
     },
   ],
