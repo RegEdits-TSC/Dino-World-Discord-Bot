@@ -13,8 +13,18 @@ import { STAGES, chapterUnlocked, stageUnlocked, rosterFor, type ProgressMap } f
 import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
 import { track } from '../../core/stats.js';
+import { eventMods } from '../../core/world.js';
 
 export class BattleError extends Error {}
+
+/** The energy a stage actually costs right now. Floored at 1 — Blood Moon can
+ *  never make a stage free. `StageDef.energyCost` is typed `1 | 2 | 3` and
+ *  must never be written back to; every reader (the runFight gate/error/debit,
+ *  the chapters embed, and the stage autocomplete) derives its own display
+ *  value through this one function instead. */
+export function energyCostFor(declared: number, now: number): number {
+  return Math.max(1, declared + eventMods(now).energyCostDelta);
+}
 
 export interface FightOutcome {
   result: BattleResult; stars: 0 | 1 | 2 | 3; firstClear: boolean; won: boolean;
@@ -64,11 +74,16 @@ export function runFight(ctx: Ctx, userId: string, stageId: string, dinoIds: num
   });
 
   const now = ctx.now();
+  const mods = eventMods(now);
+  // Single local so the gate, the error text, and the debit below can never
+  // disagree — the two display-only readers (chaptersPayload, the stage
+  // autocomplete) call energyCostFor separately with their own `now`.
+  const cost = energyCostFor(stage.energyCost, now);
   const settled = settleEnergy(user.energy, user.energyUpdatedAt, now);
-  if (settled.energy < stage.energyCost) {
+  if (settled.energy < cost) {
     const nextAt = Math.floor((settled.updatedAtMs + ENERGY_REGEN_MS) / 1000);
     throw new BattleError(
-      `Not enough energy — need ⚡${stage.energyCost}, have ⚡${settled.energy}. Next ⚡ <t:${nextAt}:R>.`);
+      `Not enough energy — need ⚡${cost}, have ⚡${settled.energy}. Next ⚡ <t:${nextAt}:R>.`);
   }
 
   const squad: Combatant[] = squadRows.map((d) => {
@@ -89,7 +104,9 @@ export function runFight(ctx: Ctx, userId: string, stageId: string, dinoIds: num
     const sp = getSpecies(e.speciesId);
     const boss = e.boss;
     const s = statsFor(e.speciesId, stage.npcLevel + (boss?.levelBonus ?? 0));
-    const hp = Math.round(s.hp * (boss?.hpMult ?? 1));
+    // Blood Moon makes enemies tankier, not harder-hitting: enemyHp scales this
+    // one local that feeds both maxHp and hp, never the atk expression below.
+    const hp = Math.round(s.hp * (boss?.hpMult ?? 1) * mods.enemyHp);
     return {
       key: `n${i}`, name: boss ? boss.title : sp.name, speciesId: e.speciesId, archetype: sp.archetype,
       maxHp: hp, hp, atk: Math.round(s.atk * (boss?.atkMult ?? 1)), def: s.def, spd: s.spd, side: 1,
@@ -105,7 +122,14 @@ export function runFight(ctx: Ctx, userId: string, stageId: string, dinoIds: num
   // remainder to slot 1 (the first dino in the squad array) — THEN each dino's
   // own xp trait scales its individual share. Scaling the pool before the split
   // would let one dino's trait bleed into every other dino's share.
-  const totalXp = Math.round(stage.rewards.xp * STAR_XP_MULT[stars]);
+  // Blood Moon's battleXp multiplier belongs on the TOTAL, in this same
+  // expression — matching feedCostFor/expeditionFeeFor/startBreeding
+  // elsewhere in the codebase, one Math.round across every multiplier rather
+  // than rounding an intermediate value and rounding again. Rounding twice
+  // would occasionally disagree with a single round (e.g. coastal_dig_1 at
+  // 2 stars: single-round gives 57, round-then-round gives 56) for no
+  // behavioral benefit, since nothing downstream reads the un-multiplied total.
+  const totalXp = Math.round(stage.rewards.xp * STAR_XP_MULT[stars] * mods.battleXp);
   const baseXp = Math.floor(totalXp / n);
   const xpPerDino = squadRows.map((d, k) => {
     const baseShare = k === 0 ? baseXp + (totalXp % n) : baseXp;
@@ -116,7 +140,7 @@ export function runFight(ctx: Ctx, userId: string, stageId: string, dinoIds: num
     ? { foodId: stage.rewards.food.foodId, qty: Math.round(stage.rewards.food.qty * STAR_REWARD_MULT[stars]) }
     : null;
   const shards = firstClear ? stage.firstClearShards : 0;
-  const energyAfter = settled.energy - stage.energyCost;
+  const energyAfter = settled.energy - cost;
 
   // economy.apply opens its own transaction; better-sqlite3 nests it as a
   // savepoint inside this one (the sellDino/claimExpedition shape).

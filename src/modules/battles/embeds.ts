@@ -6,6 +6,7 @@ import { CAMPAIGN, STAGES, stageUnlocked, chapterUnlocked, rosterFor, type Progr
 import { ENERGY_CAP, ENERGY_REGEN_MS } from '../../data/battle/constants.js';
 import type { BeatSummary } from '../../data/battle/resolve.js';
 import type { FightOutcome } from './service.js';
+import { energyCostFor } from './service.js';
 
 export interface FramePayload {
   embeds: EmbedBuilder[];
@@ -25,6 +26,11 @@ export interface ChaptersView {
   ratingHighWater: number;
   energy: number;
   energyUpdatedAtMs: number;
+  // Optional, not because a real caller ever omits it (chaptersView always sets
+  // it from ctx.now()) but so existing fixtures built without it — this is a
+  // pure display snapshot, same shape as energy/energyUpdatedAtMs above — keep
+  // compiling. Missing defaults to a calm day: declared cost, unadjusted.
+  now?: number;
 }
 
 // <t:..:R> does not render inside embed footers, so energy lines live in a field.
@@ -150,7 +156,8 @@ export function chaptersPayload(userId: string, chapterIndex: number, view: Chap
   const stageLines = ch.stages.map((s) => {
     const open = unlocked && stageUnlocked(s.id, view.progress);
     const marker = open ? starGlyphs(view.progress.get(s.id)?.stars ?? 0) : '🔒';
-    return `${marker} ${s.boss ? '👑 ' : ''}${s.name} (⚡${s.energyCost})`;
+    const cost = energyCostFor(s.energyCost, view.now ?? 0);
+    return `${marker} ${s.boss ? '👑 ' : ''}${s.name} (⚡${cost})`;
   }).join('\n');
   const embed = new EmbedBuilder().setColor(unlocked ? 0xd35400 : 0x95a5a6)
     .setTitle(`📖 Chapter ${idx + 1}/${CAMPAIGN.length} — ${ch.name}${unlocked ? '' : ' 🔒'}`)
