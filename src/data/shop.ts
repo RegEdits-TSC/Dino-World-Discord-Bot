@@ -5,3 +5,5 @@ export const SHOP_EGG_PRICES: Record<Rarity, number> = {
 };
 export const FOOD_BUNDLES = [10, 50, 100];
 export const LEGENDARY_DAY_CHANCE = 0.10;
+export const DEAL_EGG_DISCOUNT = 0.8;    // -20%
+export const DEAL_FOOD_DISCOUNT = 0.75;  // -25%

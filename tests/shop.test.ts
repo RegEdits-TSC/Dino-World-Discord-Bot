@@ -2,13 +2,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { MessageFlags, type ButtonInteraction } from 'discord.js';
 import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
-import { dailyEggOffers, buyEgg, buyFood, ShopError } from '../src/modules/shop/service.js';
+import { dailyEggOffers, dailyDeal, todaysDeal, buyEgg, buyFood, eggPriceAt, ShopError } from '../src/modules/shop/service.js';
 import { shopModule } from '../src/modules/shop/index.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 import { TRADE_MIN_RATING } from '../src/data/trade.js';
+import { SHOP_EGG_PRICES } from '../src/data/shop.js';
+import { FOODS } from '../src/data/foods.js';
 
 const DAY = 86_400_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -37,6 +39,85 @@ describe('shop', () => {
   });
   it('buyEgg rejects mythic', () => {
     expect(() => buyEgg(ctx, 'u1', 'mythic')).toThrow(ShopError);
+  });
+});
+
+describe('shop daily rotation', () => {
+  it('varies day to day even at the two-rarity ceiling', () => {
+    // highWater 0 => ceiling uncommon, pool {common, uncommon}. dailyEggOffers
+    // slices 3 from a 2-entry pool, so the offer SET can never vary there (see
+    // "sorts before comparing sets" below) — the deal is the only thing that
+    // gives these exact players day-to-day variety, so that's what this test
+    // has to assert on instead of the offers array.
+    const seen = new Set<string>();
+    for (let d = 0; d < 30; d++) {
+      const offers = dailyEggOffers(0, d * DAY);
+      seen.add(JSON.stringify(dailyDeal(offers, d * DAY)));
+    }
+    expect(seen.size).toBeGreaterThan(1);
+  });
+
+  it('always discounts a rarity that is actually in today\'s rotation', () => {
+    for (const highWater of [0, 250, 450, 750]) {
+      for (let d = 0; d < 60; d++) {
+        const offers = dailyEggOffers(highWater, d * DAY);
+        expect(offers).toContain(dailyDeal(offers, d * DAY).rarity);
+      }
+    }
+  });
+
+  it('gives every player the same deal food on the same day, whatever their ceiling', () => {
+    // The deal's own stream must not depend on how many draws dailyEggOffers
+    // used — proof dailyDeal is never riding dailyEggOffers' rng instance.
+    // (Rarity alone isn't a valid probe here: it's an index into offers, and
+    // offers.length legitimately differs by ceiling, so two ceilings can
+    // validly land on two different rarities from the exact same rng draw.
+    // The food draw is the second call on dailyDeal's OWN fresh generator and
+    // never depends on offers.length at all, so it must always agree.)
+    for (let d = 0; d < 30; d++) {
+      const lowCeil = dailyDeal(dailyEggOffers(0, d * DAY), d * DAY);
+      const highCeil = dailyDeal(dailyEggOffers(750, d * DAY), d * DAY);
+      expect(lowCeil.food, `day ${d}`).toBe(highCeil.food);
+    }
+  });
+
+  it('never makes anything free', () => {
+    for (let d = 0; d < 100; d++) {
+      const offers = dailyEggOffers(750, d * DAY);
+      const deal = dailyDeal(offers, d * DAY);
+      expect(eggPriceAt(deal.rarity, d * DAY)).toBeGreaterThan(0);
+    }
+  });
+
+  it('sorts before comparing sets — the ORDER varies even when the set cannot', () => {
+    // Guard against a future test asserting deep equality on the array: the
+    // uncommon ceiling's 2-entry pool always slices down to the same SET, but
+    // shuffle() still reorders it day to day.
+    const a = [...dailyEggOffers(0, 0)].sort();
+    const b = [...dailyEggOffers(0, 7 * DAY)].sort();
+    expect(a).toEqual(b);
+  });
+
+  it('charges the deal price when buying the discounted rarity — never display-only', () => {
+    const deal = todaysDeal(ctx.now());
+    const before = bal().cash;
+    buyEgg(ctx, 'u1', deal.rarity);
+    const charged = before - bal().cash;
+    // Pinned against the real charge, not a recomputed expectation, so a bug
+    // that discounts the /shop view line but not buyEgg's own price can't
+    // pass by both sides drifting together.
+    expect(charged).toBe(eggPriceAt(deal.rarity, ctx.now()));
+    expect(charged).toBeLessThan(SHOP_EGG_PRICES[deal.rarity]);
+  });
+
+  it('charges the deal price when buying the discounted food — never display-only', () => {
+    const deal = todaysDeal(ctx.now());
+    const before = bal().cash;
+    const { total } = buyFood(ctx, 'u1', deal.food, 10);
+    const charged = before - bal().cash;
+    expect(charged).toBe(total);
+    const undiscountedTotal = 10 * FOODS[deal.food].unitCost;
+    expect(total).toBeLessThan(undiscountedTotal);
   });
 });
 

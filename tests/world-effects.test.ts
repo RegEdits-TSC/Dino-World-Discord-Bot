@@ -13,10 +13,10 @@ import { chaptersPayload, type ChaptersView } from '../src/modules/battles/embed
 import { battlesModule } from '../src/modules/battles/index.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 import { hatchEgg } from '../src/modules/hatchery/service.js';
-import { buyEgg, buyFood, eggPriceAt, foodPriceAt, roundCharge } from '../src/modules/shop/service.js';
+import { buyEgg, buyFood, eggPriceAt, foodPriceAt, roundCharge, todaysDeal } from '../src/modules/shop/service.js';
 import { sellDino, previewSell, sellCashAt, roundPayout } from '../src/modules/shop/shards.js';
 import { shopModule } from '../src/modules/shop/index.js';
-import { SHOP_EGG_PRICES } from '../src/data/shop.js';
+import { SHOP_EGG_PRICES, DEAL_EGG_DISCOUNT, DEAL_FOOD_DISCOUNT } from '../src/data/shop.js';
 import { SELL_CASH } from '../src/data/sell.js';
 
 const DAY = 86_400_000;
@@ -635,10 +635,24 @@ describe('shop and sell prices under world events', () => {
       expect(cashOf(ctx) - before).toBe(quoted);
     });
 
-    it('is a no-op on a calm day', () => {
+    it('is a no-op on a calm day, aside from the day\'s own (independent) deal', () => {
+      // A calm day has no world event, but the daily deal (Task 10) is not a
+      // world event — it exists every day, folded into eggPriceAt/foodPriceAt
+      // via a wholly separate rng stream (todaysDeal). So "no-op" now means
+      // "matches raw price, except for whichever one rarity/food is today's
+      // deal" — derived from the real formula, not hand-picked, so this stays
+      // accurate if the day-0 deal ever changes (e.g. a future DEAL_SALT edit).
       const ctx = makeCtx({ nowMs: 0 });
-      for (const r of CHARGEABLE_RARITIES) expect(eggPriceAt(r, ctx.now())).toBe(SHOP_EGG_PRICES[r]);
-      for (const f of Object.values(FOODS)) expect(foodPriceAt(f, ctx.now())).toBe(f.unitCost);
+      const deal = todaysDeal(ctx.now());
+      for (const r of CHARGEABLE_RARITIES) {
+        const expected = r === deal.rarity ? roundCharge(SHOP_EGG_PRICES[r], DEAL_EGG_DISCOUNT) : SHOP_EGG_PRICES[r];
+        expect(eggPriceAt(r, ctx.now()), r).toBe(expected);
+      }
+      for (const f of Object.values(FOODS)) {
+        const expected = f.id === deal.food ? roundCharge(f.unitCost, DEAL_FOOD_DISCOUNT) : f.unitCost;
+        expect(foodPriceAt(f, ctx.now()), f.id).toBe(expected);
+      }
+      // Selling is untouched by the deal (only egg purchases and food purchases are).
       for (const r of CHARGEABLE_RARITIES) expect(sellCashAt(r, ctx.now())).toBe(SELL_CASH[r]);
     });
   });

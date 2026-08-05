@@ -3,12 +3,13 @@ import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import type { Rarity } from '../../data/types.js';
 import { getOrCreateUser } from '../park/service.js';
-import { dailyEggOffers, buyEgg, buyFood, eggPriceAt, foodPriceAt, ShopError } from './service.js';
+import { dailyEggOffers, buyEgg, buyFood, eggPriceAt, foodPriceAt, todaysDeal, roundCharge, ShopError } from './service.js';
+import { eventMods } from '../../core/world.js';
 import { sellDino, previewSell, sellCashAt, ShardError } from './shards.js';
 import { locksFor } from '../../core/locks.js';
 import { schema } from '../../core/db/index.js';
 import { getSpecies } from '../../data/species/index.js';
-import { FOOD_BUNDLES } from '../../data/shop.js';
+import { FOOD_BUNDLES, SHOP_EGG_PRICES } from '../../data/shop.js';
 import { DECOR } from '../../data/decor.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, capitalize } from '../../core/autocomplete.js';
@@ -44,7 +45,18 @@ export const shopModule: ModuleManifest = {
               .join('\n');
             const bundleHint = `Buy any amount — e.g. ${FOOD_BUNDLES.join('/')}.`;
             const decorLine = Object.values(DECOR).map((d) => `${d.name} (${d.cost})`).join(' · ');
+            // The one global deal (src/modules/shop/service.ts's todaysDeal) —
+            // "original" is the event-adjusted price WITHOUT the deal, computed
+            // through the same roundCharge primitive eggPriceAt/foodPriceAt use,
+            // so this line can never show a number the deal-folded charge disagrees with.
+            const deal = todaysDeal(now);
+            const dealFood = FOODS[deal.food];
+            const dealEggOriginal = roundCharge(SHOP_EGG_PRICES[deal.rarity], eventMods(now).eggPrice);
+            const dealFoodOriginal = roundCharge(dealFood.unitCost, eventMods(now).foodPrice);
+            const dealLine = `${rarityEmoji(deal.rarity)}${capitalize(deal.rarity)} egg — ~~${dealEggOriginal.toLocaleString()}~~ **${eggPriceAt(deal.rarity, now).toLocaleString()}** cash\n`
+              + `${foodEmoji(dealFood.id)}${dealFood.name} — ~~${dealFoodOriginal.toLocaleString()}~~ **${foodPriceAt(dealFood, now).toLocaleString()}** cash/unit`;
             const embed = new EmbedBuilder().setTitle('🏪 Shop — today').setColor(0x5865F2).addFields(
+              { name: '🏷️ Daily Deal', value: dealLine },
               { name: '🥚 Eggs (/shop egg)', value: eggLines },
               { name: `${emojiTag('dw_food')} Food Market (/shop food)`, value: `${foodLines}\n${bundleHint}` },
               { name: '🌴 Decor (/decorate)', value: decorLine },
