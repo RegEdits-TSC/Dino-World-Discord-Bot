@@ -17,7 +17,6 @@ import { startExpedition } from '../src/modules/expeditions/service.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
 import { TRADE_MIN_RATING } from '../src/data/trade.js';
-import { MYTHIC_UNLOCK_RATING } from '../src/data/progression.js';
 import { ENERGY_CAP } from '../src/data/battle/constants.js';
 import { rollDailyQuests } from '../src/modules/daily/service.js';
 import { track } from '../src/core/stats.js';
@@ -76,7 +75,7 @@ ctx.setNow(Date.now());   // real wall time so <t:...> timestamps render sensibl
 const P1 = 'live-p1', P2 = 'live-p2';
 getOrCreateUser(ctx, P1, 'LiveTester');
 getOrCreateUser(ctx, P2, 'Counterparty');
-ctx.db.update(schema.users).set({ cash: 500_000, parkRating: TRADE_MIN_RATING, ratingHighWater: MYTHIC_UNLOCK_RATING, shards: 600 }).run();
+ctx.db.update(schema.users).set({ cash: 500_000, parkRating: TRADE_MIN_RATING, ratingHighWater: 1000, shards: 600 }).run();
 const herb = Object.keys(PADDOCKS).find((k) => PADDOCKS[k].diet === 'herbivore')!;
 const lot = buildLot(ctx, P1, herb);
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'triceratops', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
@@ -110,8 +109,10 @@ startExpedition(ctx, P1, 'coastal_dig', devGuildId);
 
 // Battles seed: max-level squad + chapter 1 cleared to (not including) the boss,
 // so one sweep shows the chapters overview, a normal 4-frame win, and a boss
-// FIRST clear whose F4 carries the egg line. ratingHighWater MYTHIC_UNLOCK_RATING
-// (set above) clears every site co-gate. ctx.sleep is makeCtx's instant stub, so the four
+// FIRST clear whose F4 carries the egg line. ratingHighWater 1000 (set above,
+// above the top gate of 950) clears every site co-gate, including the two newest
+// sites at 880 and 950 — MYTHIC_UNLOCK_RATING (800) alone would leave those two
+// locked. ctx.sleep is makeCtx's instant stub, so the four
 // editReply frames land immediately — the gallery posts them as four messages.
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'tyrannosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'spinosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
@@ -125,8 +126,24 @@ const [b1, b2, b3] = [squad[0], squad[squad.length - 2], squad[squad.length - 1]
 // chapter-1 page with later chapters locked, which is what the overview should
 // show in the gallery. coastal_dig_boss is deliberately NOT seeded: the case
 // above it is a FIRST clear and needs the egg line on F4.
+//
+// frozen_cliffs, volcano_core, abyssal_trench and containment_site are seeded
+// ALL FIVE stages each (including their own boss) — they exist purely as a
+// chapter-gate bridge up to the two newest chapters, whose boss cases further
+// down are what actually exercises the new portraits. The two new bosses are
+// tuned to genuinely threaten a squad (tests/battle-balance.test.ts's win-rate
+// bands), unlike the early bosses this mixed squad steamrolls — a first-clear
+// dependency chained through a real, possibly-lost fight would make the
+// Containment Site case's chapter gate flip on RNG. Pre-seeding both bosses'
+// firstClearedAt sidesteps that: each new boss case below is a repeat clear
+// (portrait still shows either way — F1's thumbnail doesn't depend on
+// win/first-clear) instead of a chained dependency on the other's outcome.
 for (const stageId of ['coastal_dig_1', 'coastal_dig_2', 'coastal_dig_3', 'coastal_dig_4',
-  'amber_ridge_1', 'amber_ridge_2', 'amber_ridge_3', 'amber_ridge_4']) {
+  'amber_ridge_1', 'amber_ridge_2', 'amber_ridge_3', 'amber_ridge_4',
+  'frozen_cliffs_1', 'frozen_cliffs_2', 'frozen_cliffs_3', 'frozen_cliffs_4', 'frozen_cliffs_boss',
+  'volcano_core_1', 'volcano_core_2', 'volcano_core_3', 'volcano_core_4', 'volcano_core_boss',
+  'abyssal_trench_1', 'abyssal_trench_2', 'abyssal_trench_3', 'abyssal_trench_4', 'abyssal_trench_boss',
+  'containment_site_1', 'containment_site_2', 'containment_site_3', 'containment_site_4']) {
   ctx.db.insert(schema.battleProgress).values({ userId: P1, stageId, stars: 3, firstClearedAt: ctx.now(), attempts: 1 }).run();
 }
 
@@ -190,6 +207,17 @@ const cases: Case[] = [
       ctx.db.update(schema.expeditions).set({ returnsAt: ctx.now() - 1 }).run();   // force the seeded dig home
       return slash('expeditions', 'expedition', { name: 'expedition', sub: 'claim', user: P1 });
     } },
+  { title: '/expedition start — Abyssal Trench: new site thumb', run: () => {
+      // Only one expedition can be out at a time (service.ts's activeExpedition
+      // check) — legal here because the claim case just above cleared the
+      // seeded coastal_dig dig. ratingHighWater 1000 (set above) clears this
+      // site's 880 gate.
+      return slash('expeditions', 'expedition', { name: 'expedition', sub: 'start', user: P1, options: { site: 'abyssal_trench' } });
+    } },
+  { title: '/expedition claim — Abyssal Trench: new site banner', run: () => {
+      ctx.db.update(schema.expeditions).set({ returnsAt: ctx.now() - 1 }).run();   // force the trench dig home
+      return slash('expeditions', 'expedition', { name: 'expedition', sub: 'claim', user: P1 });
+    } },
   { title: '/feed all — care banner', run: () => slash('care', 'feed', { name: 'feed', sub: 'all', user: P1 }) },
   { title: '/dino list — roster', run: () => slash('park', 'dino', { name: 'dino', sub: 'list', user: P1 }) },
   { title: '/trade list — pending trades', run: () => slash('trading', 'trade', { name: 'trade', sub: 'list', user: P1 }) },
@@ -220,6 +248,25 @@ const cases: Case[] = [
     } },
   { title: '/battle fight — boss FIRST clear: portrait thumb + egg line on F4', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } }) },
   { title: '/battle fight — amber_ridge boss: second portrait (edit off the coastal reference)', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'amber_ridge_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } }) },
+  { title: '/battle fight — Abyssal Trench boss: new boss portrait', run: () => {
+      // Every chapter/stage gate up to and including this one is satisfied by
+      // the direct seed rows above, so this and the case below are both repeat
+      // clears (no chained win dependency between them — see the seed comment).
+      // This boss is genuinely contested at this squad's power level, unlike
+      // the early chapters above, so it may win or lose here; F1's thumbnail
+      // is the boss portrait either way. Top up energy — this and the
+      // Containment Site case below cost 3 each, and only 3 is left after
+      // coastal_dig_boss + amber_ridge_boss (both above) drained the earlier
+      // top-up.
+      ctx.db.update(schema.users).set({ energy: ENERGY_CAP, energyUpdatedAt: ctx.now() })
+        .where(eq(schema.users.discordId, P1)).run();
+      return slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'abyssal_trench_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } });
+    } },
+  { title: '/battle fight — Containment Site boss: new boss portrait', run: () => {
+      // Same seeded bridge as the case above — independent of whether that
+      // fight won or lost.
+      return slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'containment_site_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } });
+    } },
   { title: 'park:collect — income embed (ephemeral in production)', run: () => button('park', 'park:collect', P1) },
   { title: '/rescue — recapture embed', run: () => slash('care', 'rescue', { name: 'rescue', user: P1, options: { dino: escapedDino.id } }) },
   { title: '/breed start — confirm pairing', run: () => slash('genelab', 'breed', { name: 'breed', sub: 'start', user: P1, options: { 'parent-a': dino.id, 'parent-b': mate.id } }) },
