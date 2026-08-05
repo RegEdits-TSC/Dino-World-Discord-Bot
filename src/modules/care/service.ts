@@ -12,17 +12,23 @@ import { PADDOCKS } from '../../data/paddocks.js';
 import { RECAPTURE_FEE_HOURS } from '../../data/care.js';
 import { modProduct } from '../../data/traits.js';
 import { track } from '../../core/stats.js';
+import { eventMods } from '../../core/world.js';
 
 export class CareError extends Error {}
 
-// Feed cost in food units, after trait modifiers. Floored at 1: a discount must
-// never make feeding free. Forward-looking guard, not currently exercised: the lowest
-// pre-floor value reachable today is 3.75 (common's feedCost 5 * thrifty's 0.75 — the
-// one-trait-per-domain rule means no second care-domain discount can stack on top), so
-// the floor can't trigger yet. It exists so a future cheaper food tier or a stronger
-// discount trait can't make feeding free.
-export function feedCostFor(rarity: Rarity, traits: string[]): number {
-  return Math.max(1, Math.round(RARITY[rarity].feedCost * modProduct(traits, 'feed')));
+// Feed cost in food units, after trait modifiers and the day's world event.
+// Floored at 1: a discount must never make feeding free. Forward-looking guard,
+// not currently exercised: the lowest pre-floor value reachable today is 2.8125
+// (common's feedCost 5 * thrifty's 0.75 * cold_snap's 0.75 — the one-trait-per-
+// domain rule means no second care-domain trait discount can stack on top), so
+// the floor can't trigger yet. It exists so a future cheaper food tier or a
+// stronger discount can't make feeding free.
+// `now` is REQUIRED, not defaulted, for the same reason hungerAt's drainMs is:
+// a default would let a call site silently keep the unmodified cost.
+export function feedCostFor(rarity: Rarity, traits: string[], now: number): number {
+  return Math.max(1, Math.round(
+    RARITY[rarity].feedCost * modProduct(traits, 'feed') * eventMods(now).feedCost,
+  ));
 }
 
 function pickFood(ctx: Ctx, userId: string, diet: Diet, cost: number): FoodDef | null {
@@ -37,7 +43,7 @@ export function feedDino(ctx: Ctx, userId: string, dinoId: number, foodId?: stri
   if (!dino) throw new CareError('You do not own that dino.');
   if (dino.escapedAt !== null) throw new CareError('That dino has escaped — rescue it first.');
   const species = getSpecies(dino.speciesId);
-  const cost = feedCostFor(species.rarity, dino.traits);
+  const cost = feedCostFor(species.rarity, dino.traits, ctx.now());
   let food: FoodDef;
   if (foodId) {
     const chosen = (FOODS as Record<string, FoodDef | undefined>)[foodId];
@@ -75,7 +81,7 @@ export function feedAll(ctx: Ctx, userId: string):
   const fed: number[] = []; const skipped: number[] = [];
   const spent: Partial<Record<FoodId, number>> = {};
   for (const c of candidates) {
-    const cost = feedCostFor(c.species.rarity, c.traits);
+    const cost = feedCostFor(c.species.rarity, c.traits, ctx.now());
     const food = pickFood(ctx, userId, c.species.diet, cost);
     if (!food) { skipped.push(c.id); continue; }
     ctx.db.transaction(() => {
