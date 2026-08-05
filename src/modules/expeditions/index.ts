@@ -12,6 +12,7 @@ import { FOODS } from '../../data/foods.js';
 import { matches, respondRanked, fmtDuration } from '../../core/autocomplete.js';
 import { assetImage, attach } from '../../core/images.js';
 import { emojiTag, rarityEmoji } from '../../core/emojis.js';
+import { eventMods } from '../../core/world.js';
 
 // '🌋 ' when the site marker resolves, '' when it doesn't — keeps titles clean either way.
 function siteMarker(siteId: string): string {
@@ -40,6 +41,11 @@ export const expeditionsModule: ModuleManifest = {
         const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, i.user.id)).get();
         const hw = user?.ratingHighWater ?? 0;
         const q = String(i.options.getFocused());
+        // Read-only + pure: eventMods has no db access, so calling it here is
+        // safe for an autocomplete provider. Without this the picker would
+        // quote the site's unmodified cost/duration straight off SiteDef —
+        // wrong during, say, an Amber Storm's doubled fee.
+        const mods = eventMods(ctx.now());
         await respondRanked(i, Object.values(EXPEDITION_SITES)
           .filter((s) => matches(q, s.id, s.name))
           .map((s) => {
@@ -48,7 +54,7 @@ export const expeditionsModule: ModuleManifest = {
               value: s.id, valid: unlocked,
               label: unlocked
                 // 'en-US' pinned: labels are asserted verbatim in tests.
-                ? `🧭 ${s.name} — ${s.cost.toLocaleString('en-US')} cash, ${fmtDuration(s.durationMs)}`
+                ? `🧭 ${s.name} — ${Math.ceil(s.cost * mods.expeditionFee).toLocaleString('en-US')} cash, ${fmtDuration(Math.round(s.durationMs * mods.expeditionMs))}`
                 : `🧭 ${s.name} — LOCKED, needs ★${(s.unlockRating / 100).toFixed(1)}`,
             };
           }));
