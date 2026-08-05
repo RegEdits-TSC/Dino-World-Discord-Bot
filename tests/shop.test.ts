@@ -2,15 +2,16 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { MessageFlags, type ButtonInteraction } from 'discord.js';
 import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
-import { dailyEggOffers, dailyDeal, todaysDeal, buyEgg, buyFood, eggPriceAt, ShopError } from '../src/modules/shop/service.js';
+import { dailyEggOffers, dailyDeal, todaysDeal, buyEgg, buyFood, eggPriceAt, foodPriceAt, roundCharge, ShopError } from '../src/modules/shop/service.js';
 import { shopModule } from '../src/modules/shop/index.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 import { TRADE_MIN_RATING } from '../src/data/trade.js';
-import { SHOP_EGG_PRICES } from '../src/data/shop.js';
+import { SHOP_EGG_PRICES, DEAL_EGG_DISCOUNT, DEAL_FOOD_DISCOUNT } from '../src/data/shop.js';
 import { FOODS } from '../src/data/foods.js';
+import { eventMods } from '../src/core/world.js';
 
 const DAY = 86_400_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -57,13 +58,85 @@ describe('shop daily rotation', () => {
     expect(seen.size).toBeGreaterThan(1);
   });
 
-  it('always discounts a rarity that is actually in today\'s rotation', () => {
-    for (const highWater of [0, 250, 450, 750]) {
-      for (let d = 0; d < 60; d++) {
-        const offers = dailyEggOffers(highWater, d * DAY);
-        expect(offers).toContain(dailyDeal(offers, d * DAY).rarity);
-      }
-    }
+  // NOTE: an earlier version of this test asserted
+  // `expect(offers).toContain(dailyDeal(offers, d * DAY).rarity)` feeding the
+  // PLAYER's own offers into dailyDeal directly — a shape production never
+  // takes. eggPriceAt/foodPriceAt go through todaysDeal (uncommon-ceiling
+  // offers, service.ts), not the viewer's own offers, so that assertion
+  // proved nothing about what a real epic/legendary-ceiling player sees.
+  // Rewritten against the real production entry point:
+  //   expect(dailyEggOffers(highWater, d * DAY)).toContain(todaysDeal(d * DAY).rarity)
+  // fails immediately (first failure observed: highWater 450, day 0 —
+  // offers ['epic','rare','common'], todaysDeal.rarity 'uncommon', ~24.5% of
+  // days over 2000 sampled at highWater 500) because todaysDeal is only ever
+  // drawn from the uncommon-ceiling pool and is never widened to the caller's
+  // own ceiling (a deliberate, separate, out-of-scope decision — see
+  // todaysDeal's doc comment in service.ts). The two tests below pin the
+  // actual mitigation instead: /shop view gates the egg half of the Daily
+  // Deal line on the viewer's own rotation.
+  it('the Daily Deal line omits the egg half when the deal rarity is outside the viewer\'s own rotation', async () => {
+    const shopCtx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(shopCtx, 'u1', 'u1');
+    shopCtx.db.update(schema.users).set({ ratingHighWater: 500 }).where(eq(schema.users.discordId, 'u1')).run();
+    const offers = dailyEggOffers(500, shopCtx.now());
+    const deal = todaysDeal(shopCtx.now());
+    expect(offers).not.toContain(deal.rarity);   // sanity: day 0 at highWater 500 is exactly the gated case
+    const i = fakeCommand({ name: 'shop', sub: 'view', user: 'u1' });
+    await shopModule.commands[0].execute(shopCtx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
+    const dealField = payload.embeds[0].toJSON().fields!.find((f) => f.name.includes('Daily Deal'))!;
+    expect(dealField.value).not.toContain('egg —');
+    expect(dealField.value).toContain(FOODS[deal.food].name);   // food half always shows — no rotation gate
+  });
+
+  it('the Daily Deal line includes the egg half when the deal rarity IS in the viewer\'s own rotation', async () => {
+    const shopCtx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(shopCtx, 'u1', 'u1');   // default highWater 0 -> uncommon ceiling, offers always {common, uncommon}
+    const offers = dailyEggOffers(0, shopCtx.now());
+    const deal = todaysDeal(shopCtx.now());
+    expect(offers).toContain(deal.rarity);   // sanity: this ceiling always contains the deal
+    const i = fakeCommand({ name: 'shop', sub: 'view', user: 'u1' });
+    await shopModule.commands[0].execute(shopCtx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
+    const dealField = payload.embeds[0].toJSON().fields!.find((f) => f.name.includes('Daily Deal'))!;
+    expect(dealField.value).toContain('egg —');
+    expect(dealField.value).toContain(`${eggPriceAt(deal.rarity, shopCtx.now()).toLocaleString()}** cash`);
+  });
+
+  it('/shop view\'s Daily Deal field pins the exact composed (event + deal) price, not a recomputed one', async () => {
+    // Day 38 is Market Panic (eggPrice x0.70); day-38's deal is 'uncommon',
+    // and highWater 0's offers always include it, so the egg half is shown.
+    const shopCtx = makeCtx({ nowMs: 38 * DAY });
+    getOrCreateUser(shopCtx, 'u1', 'u1');
+    const deal = todaysDeal(shopCtx.now());
+    const i = fakeCommand({ name: 'shop', sub: 'view', user: 'u1' });
+    await shopModule.commands[0].execute(shopCtx, i.asChatInput());
+    const payload = i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
+    const dealField = payload.embeds[0].toJSON().fields!.find((f) => f.name.includes('Daily Deal'))!;
+    const eventOnly = roundCharge(SHOP_EGG_PRICES[deal.rarity], eventMods(shopCtx.now()).eggPrice);
+    const composed = eggPriceAt(deal.rarity, shopCtx.now());
+    expect(eventOnly).toBe(2000 * 0.70);           // 1400, the struck-through number — no deal folded in
+    expect(composed).toBe(1120);                    // 2000 * 0.70 * 0.80, deal AND event both folded in
+    expect(dealField.value).toContain(`~~${eventOnly.toLocaleString()}~~ **${composed.toLocaleString()}** cash`);
+  });
+
+  it('composes the daily deal with the day\'s event, not just one or the other', () => {
+    // uncommon is day 38's (Market Panic, eggPrice x0.70) and day 18's
+    // (Bumper Harvest, eggPrice x1.25) deal rarity; ferns is day 18's
+    // (foodPrice x0.60) deal food. Verified directly against the real
+    // eggPriceAt/foodPriceAt before writing these as literals.
+    expect(eggPriceAt('uncommon', 38 * DAY)).toBe(1120);   // 2000 * 0.70 * 0.80; float product is 1120.0000000000002 — round, not ceil (would be 1121)
+    expect(foodPriceAt(FOODS.ferns, 18 * DAY)).toBe(5);    // 10 * 0.60 * 0.75 is exactly 4.5 — round, not floor (would be 4)
+    expect(eggPriceAt('uncommon', 18 * DAY)).toBe(2000);   // bumper_harvest's 1.25 exactly cancels the 0.80 deal
+  });
+
+  it('pins an absolute deal price — not just a discount-relative one', () => {
+    // Every other deal assertion in this file is either strictly-less-than or
+    // derived from DEAL_EGG_DISCOUNT/DEAL_FOOD_DISCOUNT, so a change to those
+    // constants (e.g. 0.8 -> 0.95) would leave the whole suite green. These
+    // two absolute numbers close that gap.
+    expect(eggPriceAt('uncommon', 0)).toBe(1600);
+    expect(foodPriceAt(FOODS.royal_greens, 0)).toBe(15);
   });
 
   it('gives every player the same deal food on the same day, whatever their ceiling', () => {
@@ -92,7 +165,11 @@ describe('shop daily rotation', () => {
   it('sorts before comparing sets — the ORDER varies even when the set cannot', () => {
     // Guard against a future test asserting deep equality on the array: the
     // uncommon ceiling's 2-entry pool always slices down to the same SET, but
-    // shuffle() still reorders it day to day.
+    // shuffle() still reorders it day to day. Both halves of the claim: the
+    // raw (unsorted) arrays really do differ day to day (day 0 is
+    // ['uncommon','common'], day 38 is ['common','uncommon']), while the
+    // sorted sets agree.
+    expect(dailyEggOffers(0, 0)).not.toEqual(dailyEggOffers(0, 38 * DAY));
     const a = [...dailyEggOffers(0, 0)].sort();
     const b = [...dailyEggOffers(0, 7 * DAY)].sort();
     expect(a).toEqual(b);

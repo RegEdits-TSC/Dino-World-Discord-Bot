@@ -31,8 +31,11 @@ export function dailyEggOffers(highWater: number, now: number): Rarity[] {
 
 // Distinct from WORLD_SALT (0x2c0, src/core/world.ts) and from
 // dailyEggOffers' own UNSALTED mulberry32(day) above — a fresh, independently
-// salted generator, so the deal's draws never coincide with either existing
-// per-day stream.
+// salted generator, so for any given day the deal's draws don't retrace
+// either existing per-day stream. (mulberry32(day ^ DEAL_SALT) is still
+// bit-identical to dailyEggOffers' mulberry32(day) stream for whichever OTHER
+// day equals `day ^ DEAL_SALT` — harmless, since that's a different day's
+// offers shuffle, not this day's, but worth being precise about.)
 const DEAL_SALT = 0xface;
 
 /**

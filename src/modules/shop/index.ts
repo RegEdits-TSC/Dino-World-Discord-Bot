@@ -51,10 +51,17 @@ export const shopModule: ModuleManifest = {
             // so this line can never show a number the deal-folded charge disagrees with.
             const deal = todaysDeal(now);
             const dealFood = FOODS[deal.food];
-            const dealEggOriginal = roundCharge(SHOP_EGG_PRICES[deal.rarity], eventMods(now).eggPrice);
             const dealFoodOriginal = roundCharge(dealFood.unitCost, eventMods(now).foodPrice);
-            const dealLine = `${rarityEmoji(deal.rarity)}${capitalize(deal.rarity)} egg — ~~${dealEggOriginal.toLocaleString()}~~ **${eggPriceAt(deal.rarity, now).toLocaleString()}** cash\n`
-              + `${foodEmoji(dealFood.id)}${dealFood.name} — ~~${dealFoodOriginal.toLocaleString()}~~ **${foodPriceAt(dealFood, now).toLocaleString()}** cash/unit`;
+            const dealFoodLine = `${foodEmoji(dealFood.id)}${dealFood.name} — ~~${dealFoodOriginal.toLocaleString()}~~ **${foodPriceAt(dealFood, now).toLocaleString()}** cash/unit`;
+            // todaysDeal is computed from the uncommon-ceiling offers (service.ts),
+            // not this viewer's own rotation — an epic/legendary-ceiling player's
+            // actual `offers` can legitimately exclude it. Showing the egg half
+            // unconditionally would sometimes advertise a rarity /shop egg
+            // rejects outright, so gate it on the viewer's own offers. Food has
+            // no rotation/ceiling gate at all, so its line always shows.
+            const dealEggOriginal = roundCharge(SHOP_EGG_PRICES[deal.rarity], eventMods(now).eggPrice);
+            const dealEggLine = `${rarityEmoji(deal.rarity)}${capitalize(deal.rarity)} egg — ~~${dealEggOriginal.toLocaleString()}~~ **${eggPriceAt(deal.rarity, now).toLocaleString()}** cash`;
+            const dealLine = offers.includes(deal.rarity) ? `${dealEggLine}\n${dealFoodLine}` : dealFoodLine;
             const embed = new EmbedBuilder().setTitle('🏪 Shop — today').setColor(0x5865F2).addFields(
               { name: '🏷️ Daily Deal', value: dealLine },
               { name: '🥚 Eggs (/shop egg)', value: eggLines },

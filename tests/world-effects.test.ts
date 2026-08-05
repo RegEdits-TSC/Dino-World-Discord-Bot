@@ -561,7 +561,8 @@ describe('shop and sell prices under world events', () => {
       await shopCmd().execute(ctx, i.asChatInput());
       const payload = i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
       const eggField = payload.embeds[0].toJSON().fields!.find((f) => f.name.includes('Eggs'))!;
-      const line = eggField.value.split('\n').find((l) => l.includes('common egg'))!;
+      // startsWith, not includes: 'common egg' is also a substring of 'uncommon egg'.
+      const line = eggField.value.split('\n').find((l) => l.startsWith('• common egg'))!;
       const quoted = parseCash(line);
       expect(quoted).toBe(350);   // SHOP_EGG_PRICES.common (500) * market_panic's eggPrice (0.70)
       const before = cashOf(ctx);
