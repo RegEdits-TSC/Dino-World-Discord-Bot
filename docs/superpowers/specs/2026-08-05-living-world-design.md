@@ -122,7 +122,7 @@ not an event.
 | 🌾 Bumper Harvest | food price ×0.60 | egg price ×1.25 | point-in-time |
 | 📉 Market Panic | egg price ×0.70 | sell cash ×0.80 | point-in-time |
 | 🩸 Blood Moon | stage energy cost −1 (floor 1), battle XP ×1.5 | enemy HP ×1.15 | point-in-time |
-| 🧬 Migration Season | wild hatch trait odds 45/40/15 | breeding time ×1.25 | point-in-time |
+| 🧬 Migration Season | wild hatch trait odds 45/40/15 (stored as `[0.45, 0.40, 0.15]` — fractions, matching `WILD_SLOT_ODDS`) | breeding time ×1.25 | point-in-time |
 
 **Blood Moon is energy *cost*, not energy *regen*.** `energyAt`
 (`src/data/battle/energy.ts:12`) derives the pool as

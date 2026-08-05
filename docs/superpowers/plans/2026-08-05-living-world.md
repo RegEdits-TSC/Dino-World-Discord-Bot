@@ -338,7 +338,7 @@ export const WORLD_EVENTS: WorldEvent[] = [
   {
     id: 'migration_season', name: 'Migration Season', emoji: 'dw_event_migration_season', weight: 1,
     blurb: 'Wild bloodlines are on the move. Fresh hatchlings are strange; the labs are distracted.',
-    mods: { hatchTraitOdds: [45, 40, 15], breedMs: 1.25 },
+    mods: { hatchTraitOdds: [0.45, 0.40, 0.15], breedMs: 1.25 },
     effects: ['Wild hatches roll far better traits', 'Breeding takes 25% longer'],
   },
 ];
