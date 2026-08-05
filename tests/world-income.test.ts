@@ -7,8 +7,8 @@ import { allSpecies } from '../src/data/species/index.js';
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
 
-// A common herbivore (60 cash/hr) in a correct-diet paddock with a matching
-// biome decor => paddockFit 1.0, so comfort is exactly hunger/100.
+// A common herbivore (60 cash/hr) in a correct-diet paddock with NO biome decor
+// => paddockFit 0.75, so comfort is 0.75 × min(100, hunger)/100.
 const species = allSpecies().find((s) => s.rarity === 'common' && s.diet === 'herbivore')!;
 
 function dino(lastFedAt: number, hungerAtFed = 100): ClockDino {
@@ -52,19 +52,33 @@ describe('accruedIncome across event seams', () => {
     const d = dino(SEAM, 150);
     const correct = accruedIncome([d], 0, 999, SEAM, SEAM + 30 * HOUR);
     const base = 60 * 0.75;
-    const naiveAtStart = Math.floor(base * 30 * 1.2);
-    const naiveAtEnd = Math.floor(base * 30 * 0.9);
+    // The comfort trapezoid itself (24h flat at ratio 1.0, then 6h ramping
+    // 1.0 -> 0.875) is pure hunger math, untouched by the event system — a
+    // once-per-request implementation still gets THIS right. Its bug is
+    // sampling incomeMultAt a single time and applying that one rate to the
+    // whole trapezoid, instead of once per segment. "Start-sampled" uses the
+    // rate at collection start (1.2); "end-sampled" uses the rate at collection
+    // end/"now" (0.9). These are the actual outputs such an implementation
+    // would produce (1599 and 1199) — not the flat-comfort guess this test
+    // used before, which happened to also be wrong for an unrelated reason and
+    // so never actually ruled out a once-per-request implementation.
+    const ratioHours = 24 * 1.0 + 6 * ((1.0 + 0.875) / 2);
+    const naiveAtStart = Math.floor(base * ratioHours * incomeMultAt(SEAM));
+    const naiveAtEnd = Math.floor(base * ratioHours * incomeMultAt(SEAM + 30 * HOUR));
     expect(correct).not.toBe(naiveAtStart);
     expect(correct).not.toBe(naiveAtEnd);
   });
 
   it('cannot be farmed by delaying a collection into a better event', () => {
-    // The same 24 heat_wave hours pay the same whether collected at the end of
-    // the heat_wave day or a day later.
+    // Splitting one collection into two (collect at +24h, then again at +30h)
+    // must pay the same total as one collection at +30h — each hour is priced
+    // by the day it was actually earned in, not by whichever day the player
+    // happens to click collect on. (+/-1 tolerance: two floors instead of one.)
     const d = dino(SEAM, 150);
-    const early = accruedIncome([d], 0, 999, SEAM, SEAM + 24 * HOUR);
-    const late = accruedIncome([d], 0, 999, SEAM, SEAM + 24 * HOUR);
-    expect(early).toBe(late);
+    const whole = accruedIncome([d], 0, 999, SEAM, SEAM + 30 * HOUR);
+    const first = accruedIncome([d], 0, 999, SEAM, SEAM + 24 * HOUR);
+    const rest = accruedIncome([d], 0, 999, SEAM + 24 * HOUR, SEAM + 30 * HOUR);
+    expect(Math.abs(whole - (first + rest))).toBeLessThanOrEqual(1);
   });
 
   it('handles a window spanning three days (capHours 999)', () => {
@@ -83,17 +97,62 @@ describe('accruedIncome across event seams', () => {
     expect(got).toBe(expected);
   });
 
-  it('does not double-count when the hunger knee lands exactly on a midnight', () => {
+  it('stops at the per-dino end, not the shared window end, across a midnight', () => {
+    // Regression coverage for enumerating midnights over the wrong bound.
+    // Observing that bug needs BOTH dinoEnd < end AND a UTC midnight strictly
+    // inside (dinoEnd, end) — nothing elsewhere in the suite has both.
+    //
+    // A hunger-zero-truncated dino (e.g. hungerAtFed 10) does NOT work for
+    // this: comfortAt clamps to 0 for any t past hungerZero regardless of
+    // which bound utcMidnightsBetween is given, so an extra breakpoint past
+    // dinoEnd contributes 0 either way — verified directly: temporarily
+    // changing utcMidnightsBetween(from, dinoEnd) to
+    // utcMidnightsBetween(from, end) in clock.ts left that scenario's result
+    // completely unchanged. comfortAt has no knowledge of ESCAPE, though, so
+    // an escape-truncated dino stays nonzero past dinoEnd and the bug becomes
+    // observable.
+    //
+    // hungerAtFed 100 (not overfed, no knee) fed 2h into day 208. Comfort
+    // crosses ESCAPE_COMFORT (0.25) at hunger 33.33% (threshold =
+    // ESCAPE_COMFORT/fit * 100 = 0.25/0.75*100, fit 0.75), which takes 32h;
+    // + GRACE_MS (8h) puts escapeAt at lastFedAt+40h = 208D+42h — before
+    // hungerZero (lastFedAt+48h = 208D+50h), so escape governs dinoEnd, not
+    // starvation. The window's shared `end` runs to 208D+54h, so the 210D
+    // midnight (208D+48h) sits strictly inside (dinoEnd=208D+42h, end=208D+54h)
+    // — exactly the gap the two bounds disagree on. Only the 209D midnight
+    // (208D+24h) is a real breakpoint; 210D must NOT be enumerated.
+    //
+    // Verified directly against the real functions (escapeAt, comfortAt) and
+    // by temporarily swapping the bound in clock.ts and reverting: correct
+    // (dinoEnd) gives 1173, the swapped-to-`end` bug gives 1199.
+    const lastFedAt = 208 * DAY + 2 * HOUR;
+    const d = dino(lastFedAt, 100);
+    const got = accruedIncome([d], 0, 999, lastFedAt, 208 * DAY + 54 * HOUR);
+
+    const base = 60 * 0.75;
+    const ratioAt = (relHours: number) => (100 - ((relHours - 2) / 48) * 100) / 100; // relHours = hours since 208D
+    const r0 = ratioAt(2);   // = 1.0, at `from`
+    const r24 = ratioAt(24); // at the 209D midnight
+    const r42 = ratioAt(42); // at dinoEnd (lastFedAt + 40h)
+    const seg1 = (24 - 2) * ((r0 + r24) / 2) * incomeMultAt(208 * DAY);           // from -> 209D, heat_wave
+    const seg2 = (42 - 24) * ((r24 + r42) / 2) * incomeMultAt(208 * DAY + DAY);   // 209D -> dinoEnd, cold_snap
+    const expected = Math.floor(base * (seg1 + seg2));
+    expect(got).toBe(expected);
+  });
+
+  it('prices a knee that coincides with a midnight at the NEW day rate, not the old one', () => {
     // hungerAtFed 150 puts the knee at lastFedAt + 24h ALWAYS (independent of
     // which day it's fed on: knee = lastFedAt + (150-100)/100 * 48h = +24h).
     // Feeding exactly at a UTC midnight therefore makes the knee land exactly
-    // on the NEXT UTC midnight too — the same instant is pushed into the
-    // breakpoint list once by the knee guard and once by utcMidnightsBetween,
-    // and it must collapse to ONE segment boundary, not two.
-    // (hungerAtFed 200 does NOT produce this coincidence within a short
-    // window: its knee is +48h out, which is why 208/heat_wave is reused here
-    // so the two sides of the coincident breakpoint pay different rates —
-    // proof a duplicate boundary isn't silently double- or under-counted.)
+    // on the NEXT UTC midnight too — the same instant enters the breakpoint
+    // list once via the knee guard and once via utcMidnightsBetween. Reusing
+    // the 208/heat_wave -> 209/cold_snap seam here (rather than a same-rate
+    // pair of days) is what actually pins the behaviour: the segment starting
+    // exactly at the coincident instant must be priced at cold_snap (0.9), the
+    // NEW day's rate, not heat_wave (1.2) carried over from the old one. (Note:
+    // a duplicate zero-width breakpoint contributes 0 to the trapezoid on its
+    // own regardless of any dedup guard, so this test's real content is the
+    // per-segment rate at the coincidence, not "double-counting" per se.)
     const SEAM2 = 208 * DAY;
     const d = dino(SEAM2, 150);
     const got = accruedIncome([d], 0, 999, SEAM2, SEAM2 + 36 * HOUR);
