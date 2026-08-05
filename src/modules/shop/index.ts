@@ -3,13 +3,12 @@ import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import type { Rarity } from '../../data/types.js';
 import { getOrCreateUser } from '../park/service.js';
-import { dailyEggOffers, buyEgg, buyFood, ShopError } from './service.js';
-import { sellDino, previewSell, ShardError } from './shards.js';
+import { dailyEggOffers, buyEgg, buyFood, eggPriceAt, foodPriceAt, ShopError } from './service.js';
+import { sellDino, previewSell, sellCashAt, ShardError } from './shards.js';
 import { locksFor } from '../../core/locks.js';
 import { schema } from '../../core/db/index.js';
 import { getSpecies } from '../../data/species/index.js';
-import { SHOP_EGG_PRICES, FOOD_BUNDLES } from '../../data/shop.js';
-import { SELL_CASH } from '../../data/sell.js';
+import { FOOD_BUNDLES } from '../../data/shop.js';
 import { DECOR } from '../../data/decor.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, capitalize } from '../../core/autocomplete.js';
@@ -37,10 +36,11 @@ export const shopModule: ModuleManifest = {
         const sub = i.options.getSubcommand();
         try {
           if (sub === 'view') {
-            const offers = dailyEggOffers(user.ratingHighWater, ctx.now());
-            const eggLines = offers.length ? offers.map((r) => `• ${rarityEmoji(r)}${r} egg — ${SHOP_EGG_PRICES[r].toLocaleString()} cash`).join('\n') : 'No eggs today.';
+            const now = ctx.now();
+            const offers = dailyEggOffers(user.ratingHighWater, now);
+            const eggLines = offers.length ? offers.map((r) => `• ${rarityEmoji(r)}${r} egg — ${eggPriceAt(r, now).toLocaleString()} cash`).join('\n') : 'No eggs today.';
             const foodLines = (['herbivore', 'carnivore'] as const).map((diet) =>
-              foodsForDiet(diet).map((f) => `${foodEmoji(f.id)}${f.name} — ${f.unitCost}/unit, fills ${f.fillTo}`).join('\n'))
+              foodsForDiet(diet).map((f) => `${foodEmoji(f.id)}${f.name} — ${foodPriceAt(f, now)}/unit, fills ${f.fillTo}`).join('\n'))
               .join('\n');
             const bundleHint = `Buy any amount — e.g. ${FOOD_BUNDLES.join('/')}.`;
             const decorLine = Object.values(DECOR).map((d) => `${d.name} (${d.cost})`).join(' · ');
@@ -86,16 +86,18 @@ export const shopModule: ModuleManifest = {
         if (i.options.getSubcommand() === 'food') {
           const inv = ctx.economy.getFoodInventory(i.user.id);
           const q = String(i.options.getFocused());
+          const now = ctx.now();
           await respondRanked(i, Object.values(FOODS)
             .filter((f) => matches(q, f.id, f.name, f.diet))
             .map((f) => ({ value: f.id, valid: true,
               // Unicode fallback only — custom tags render literally in autocomplete.
-              label: `${f.fallback} ${f.name} — ${f.unitCost} cash/unit, fills ${f.fillTo} (own ${inv[f.id] ?? 0})` })));
+              label: `${f.fallback} ${f.name} — ${foodPriceAt(f, now)} cash/unit, fills ${f.fillTo} (own ${inv[f.id] ?? 0})` })));
           return;
         }
         if (i.options.getSubcommand() !== 'egg') { await i.respond([]); return; }
         const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, i.user.id)).get();
-        const offers = dailyEggOffers(user?.ratingHighWater ?? 0, ctx.now());
+        const now = ctx.now();
+        const offers = dailyEggOffers(user?.ratingHighWater ?? 0, now);
         const q = String(i.options.getFocused());
         await respondRanked(i, eggRarityChoices
           .map((c) => c.value as Rarity)
@@ -106,7 +108,7 @@ export const shopModule: ModuleManifest = {
             label: offers.includes(r)
               // 'en-US' pinned: autocomplete labels are asserted verbatim in tests,
               // and the host locale must not change them.
-              ? `🥚 ${capitalize(r)} — ${SHOP_EGG_PRICES[r].toLocaleString('en-US')} cash`
+              ? `🥚 ${capitalize(r)} — ${eggPriceAt(r, now).toLocaleString('en-US')} cash`
               : `🥚 ${capitalize(r)} — not in today's shop`,
           })));
       } },
@@ -137,6 +139,7 @@ export const shopModule: ModuleManifest = {
         if (!dinos.length) { await respondRanked(i, [emptyRow('No dinos — hatch an egg first', 0)]); return; }
         const locks = locksFor(ctx, i.user.id);   // one batched read, not one per row
         const q = String(i.options.getFocused());
+        const now = ctx.now();
         await respondRanked(i, dinos
           .map((d) => ({ d, species: getSpecies(d.speciesId) }))
           .filter(({ d, species }) => matches(q, d.id, species.name, species.rarity))
@@ -144,7 +147,7 @@ export const shopModule: ModuleManifest = {
             const sellable = species.rarity !== 'mythic' && !locks.dinos.has(d.id);   // mirrors shards.ts
             const label = !sellable
               ? `🦖 #${d.id} ${species.name} — ${species.rarity === 'mythic' ? "MYTHIC, can't sell" : 'locked in a trade'}`
-              : `🦖 #${d.id} ${species.name} — ${SELL_CASH[species.rarity].toLocaleString('en-US')} cash${d.viaTrade ? ', 0 shards (via trade)' : ''}`;
+              : `🦖 #${d.id} ${species.name} — ${sellCashAt(species.rarity, now).toLocaleString('en-US')} cash${d.viaTrade ? ', 0 shards (via trade)' : ''}`;
             return { value: d.id, label, valid: sellable };
           }));
       } },

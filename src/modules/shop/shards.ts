@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
+import type { Rarity } from '../../data/types.js';
 import { RARITY } from '../../data/rarity.js';
 import { getSpecies, speciesByRarity } from '../../data/species/index.js';
 import { rollSellShards } from '../../core/rolls.js';
@@ -8,11 +9,32 @@ import { locksFor } from '../../core/locks.js';
 import { mythicUnlocked, recomputeRating } from '../park/rating.js';
 import { SHARD_DAILY_CAP, SHARD_WINDOW_MS, MYTHIC_SHARD_COST, SELL_CASH } from '../../data/sell.js';
 import { track } from '../../core/stats.js';
+import { eventMods } from '../../core/world.js';
 export { SHARD_DAILY_CAP } from '../../data/sell.js';
 
 export class ShardError extends Error {}
 type Egg = typeof schema.eggs.$inferSelect;
 type Species = ReturnType<typeof getSpecies>;
+
+/**
+ * Round-only (no floor) — a payout, not a charge, same shape as
+ * expeditionCashFor (src/modules/expeditions/service.ts:50-52). SELL_CASH's
+ * minimum is common at 50, and the only shipped event touching sellCash
+ * (market_panic) sets it to a flat 0.8 — 50 * 0.8 = 40, nowhere near 0, so a
+ * floor has nothing to guard against today. Exported as its own (base, mult)
+ * pure function, same reasoning as service.ts's roundCharge: no shipped
+ * event's sellCash lands on a fractional SELL_CASH product either, so a
+ * fractional multiplier has to be unit tested directly against this.
+ */
+export function roundPayout(base: number, mult: number): number {
+  return Math.round(base * mult);
+}
+
+// Sell payout after the day's world event. Exported so sellDino's charge,
+// previewSell's quote, and the /sell autocomplete label all read one number.
+export function sellCashAt(rarity: Rarity, now: number): number {
+  return roundPayout(SELL_CASH[rarity], eventMods(now).sellCash);
+}
 
 export function sellDino(ctx: Ctx, userId: string, dinoId: number): { cash: number; shards: number; capped: boolean } {
   const dino = ctx.db.select().from(schema.dinos)
@@ -28,7 +50,7 @@ export function sellDino(ctx: Ctx, userId: string, dinoId: number): { cash: numb
   const rolled = dino.viaTrade ? 0 : rollSellShards(species.rarity, ctx.rng);
   const allowed = Math.max(0, SHARD_DAILY_CAP - windowEarned);
   const shards = Math.min(rolled, allowed);
-  const cash = SELL_CASH[species.rarity];
+  const cash = sellCashAt(species.rarity, now);
   ctx.db.transaction(() => {
     ctx.economy.apply(userId, { cash, shards }, `sell:${species.id}`, now);
     ctx.db.update(schema.users)
@@ -52,7 +74,7 @@ export function previewSell(ctx: Ctx, userId: string, dinoId: number) {
   const [lo, hi] = RARITY[species.rarity].sellShards;
   return {
     minShards: dino.viaTrade ? 0 : lo, maxShards: dino.viaTrade ? 0 : hi,
-    cashValue: SELL_CASH[species.rarity],
+    cashValue: sellCashAt(species.rarity, ctx.now()),
     sellable: species.rarity !== 'mythic' && !locksFor(ctx, userId).dinos.has(dinoId),
     capReached: earned >= SHARD_DAILY_CAP,
   };

@@ -2,17 +2,22 @@ import { describe, it, expect } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { feedCostFor } from '../src/modules/care/service.js';
 import { shiftOdds, startExpedition, claimExpedition, expeditionFeeFor, expeditionCashFor } from '../src/modules/expeditions/service.js';
-import { makeCtx, fakeAutocomplete, mulberry32 } from './harness.js';
+import { makeCtx, fakeAutocomplete, fakeCommand, mulberry32 } from './harness.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { startBreeding, claimBreeding, breedCooldowns } from '../src/modules/genelab/service.js';
 import { schema } from '../src/core/db/index.js';
-import { STARTER_FOOD } from '../src/data/foods.js';
+import { STARTER_FOOD, FOODS } from '../src/data/foods.js';
 import { BREED_MS, BREED_COOLDOWN_MS } from '../src/data/breeding.js';
 import { runFight, energyCostFor, BattleError } from '../src/modules/battles/service.js';
 import { chaptersPayload, type ChaptersView } from '../src/modules/battles/embeds.js';
 import { battlesModule } from '../src/modules/battles/index.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 import { hatchEgg } from '../src/modules/hatchery/service.js';
+import { buyEgg, buyFood, eggPriceAt, foodPriceAt, roundCharge } from '../src/modules/shop/service.js';
+import { sellDino, previewSell, sellCashAt, roundPayout } from '../src/modules/shop/shards.js';
+import { shopModule } from '../src/modules/shop/index.js';
+import { SHOP_EGG_PRICES } from '../src/data/shop.js';
+import { SELL_CASH } from '../src/data/sell.js';
 
 const DAY = 86_400_000;
 
@@ -522,5 +527,171 @@ describe('wild hatch trait odds under world events', () => {
     const egg = insertReadyEgg(ctx, 'u1', { source: 'breeding', traits: ['hardy', 'savage'] });
     const out = hatchEgg(ctx, 'u1', egg.id);
     expect(out.traits).toEqual(['hardy', 'savage']);
+  });
+});
+
+describe('shop and sell prices under world events', () => {
+  const CHARGEABLE_RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary'] as const;
+  const shopCmd = () => shopModule.commands.find((c) => c.data.name === 'shop')!;
+  const sellCmd = () => shopModule.commands.find((c) => c.data.name === 'sell')!;
+
+  function seedUser(ctx: ReturnType<typeof makeCtx>, id = 'u1') {
+    getOrCreateUser(ctx, id, id);
+    ctx.economy.apply(id, { cash: 500_000 }, 'seed', ctx.now());
+  }
+  const cashOf = (ctx: ReturnType<typeof makeCtx>, id = 'u1') =>
+    ctx.db.select().from(schema.users).where(eq(schema.users.discordId, id)).get()!.cash;
+
+  // Parse "<number>" (with optional thousands separators) out of a real
+  // rendered string — never recompute the expected number from a constant,
+  // or a display/charge disagreement would slip straight through the test.
+  function parseCash(text: string): number {
+    const m = text.match(/([\d,]+) cash/);
+    if (!m) throw new Error(`no "<n> cash" found in: ${text}`);
+    return Number(m[1].replace(/,/g, ''));
+  }
+
+  describe('quote-vs-charge parity', () => {
+    // Market Panic (day 38): eggPrice x0.70, sellCash x0.80.
+    // Bumper Harvest (day 18): foodPrice x0.60, eggPrice x1.25.
+    it('charges exactly what /shop view quotes for an egg', async () => {
+      const ctx = makeCtx({ nowMs: 38 * DAY });
+      seedUser(ctx);
+      const i = fakeCommand({ name: 'shop', sub: 'view', user: 'u1' });
+      await shopCmd().execute(ctx, i.asChatInput());
+      const payload = i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
+      const eggField = payload.embeds[0].toJSON().fields!.find((f) => f.name.includes('Eggs'))!;
+      const line = eggField.value.split('\n').find((l) => l.includes('common egg'))!;
+      const quoted = parseCash(line);
+      expect(quoted).toBe(350);   // SHOP_EGG_PRICES.common (500) * market_panic's eggPrice (0.70)
+      const before = cashOf(ctx);
+      buyEgg(ctx, 'u1', 'common');
+      expect(before - cashOf(ctx)).toBe(quoted);
+    });
+
+    it('charges exactly what the rarity autocomplete quotes', async () => {
+      const ctx = makeCtx({ nowMs: 38 * DAY });
+      seedUser(ctx);
+      const i = fakeAutocomplete({ name: 'shop', sub: 'egg', user: 'u1', focused: { name: 'rarity', value: '' } });
+      await shopCmd().autocomplete!(ctx, i.asAutocomplete());
+      const rows = i.replies[0] as Array<{ name: string; value: string }>;
+      const row = rows.find((r) => r.value === 'common')!;
+      const quoted = parseCash(row.name);
+      expect(quoted).toBe(350);
+      const before = cashOf(ctx);
+      buyEgg(ctx, 'u1', 'common');
+      expect(before - cashOf(ctx)).toBe(quoted);
+    });
+
+    it('charges exactly what /shop view quotes for food', async () => {
+      const ctx = makeCtx({ nowMs: 18 * DAY });
+      seedUser(ctx);
+      const i = fakeCommand({ name: 'shop', sub: 'view', user: 'u1' });
+      await shopCmd().execute(ctx, i.asChatInput());
+      const payload = i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
+      const foodField = payload.embeds[0].toJSON().fields!.find((f) => f.name.includes('Food'))!;
+      const line = foodField.value.split('\n').find((l) => l.includes('Fish'))!;
+      const match = line.match(/— (\d+)\/unit/);
+      expect(match, line).not.toBeNull();
+      const quotedUnit = Number(match![1]);
+      // 12 * 0.60 = 7.2 -> round 7. Genuinely fractional pre-round, so this
+      // also proves foodPriceAt isn't Math.ceil (which would quote 8).
+      expect(quotedUnit).toBe(7);
+      const before = cashOf(ctx);
+      const { total } = buyFood(ctx, 'u1', 'fish', 3);
+      expect(total).toBe(quotedUnit * 3);
+      expect(before - cashOf(ctx)).toBe(total);
+    });
+
+    it('pays exactly what the /sell confirm preview quotes', () => {
+      const ctx = makeCtx({ nowMs: 38 * DAY });
+      seedUser(ctx);
+      const d = ctx.db.insert(schema.dinos).values({
+        userId: 'u1', speciesId: 'velociraptor', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),
+      }).returning().get();
+      const preview = previewSell(ctx, 'u1', d.id);
+      expect(preview.cashValue).toBe(400);   // SELL_CASH.rare (500) * market_panic's sellCash (0.80)
+      const before = cashOf(ctx);
+      const res = sellDino(ctx, 'u1', d.id);
+      expect(res.cash).toBe(preview.cashValue);
+      expect(cashOf(ctx) - before).toBe(preview.cashValue);
+    });
+
+    it('pays exactly what the /sell autocomplete quotes', async () => {
+      const ctx = makeCtx({ nowMs: 38 * DAY });
+      seedUser(ctx);
+      const d = ctx.db.insert(schema.dinos).values({
+        userId: 'u1', speciesId: 'velociraptor', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),
+      }).returning().get();
+      const i = fakeAutocomplete({ name: 'sell', user: 'u1', focused: { name: 'dino', value: '' } });
+      await sellCmd().autocomplete!(ctx, i.asAutocomplete());
+      const rows = i.replies[0] as Array<{ name: string; value: number }>;
+      const row = rows.find((r) => r.value === d.id)!;
+      const quoted = parseCash(row.name);
+      expect(quoted).toBe(400);
+      const before = cashOf(ctx);
+      const res = sellDino(ctx, 'u1', d.id);
+      expect(res.cash).toBe(quoted);
+      expect(cashOf(ctx) - before).toBe(quoted);
+    });
+
+    it('is a no-op on a calm day', () => {
+      const ctx = makeCtx({ nowMs: 0 });
+      for (const r of CHARGEABLE_RARITIES) expect(eggPriceAt(r, ctx.now())).toBe(SHOP_EGG_PRICES[r]);
+      for (const f of Object.values(FOODS)) expect(foodPriceAt(f, ctx.now())).toBe(f.unitCost);
+      for (const r of CHARGEABLE_RARITIES) expect(sellCashAt(r, ctx.now())).toBe(SELL_CASH[r]);
+    });
+  });
+
+  describe('rounding is round-with-floor for charges, round-only for the payout — never ceil, never floor', () => {
+    // Confirms neither shipped event reaches a fractional product against
+    // egg or sell prices — every SHOP_EGG_PRICES entry is a multiple of 500
+    // and every SELL_CASH entry a multiple of 50, and bumper_harvest/
+    // market_panic's multipliers (0.60, 0.70, 0.80, 1.25) resolve all of them
+    // to exact integers. Food alone reaches a genuine fraction under a
+    // shipped event (Fish at day 18, in the parity test above). So egg and
+    // sell rounding is unit tested directly against the shared roundCharge/
+    // roundPayout primitives with a synthetic fractional multiplier instead
+    // — the same pattern Task 5 used for expeditionFeeFor/expeditionCashFor
+    // — rather than fabricating a fake world event to reach one.
+    it('no shipped egg or sell-cash price is fractional under bumper_harvest or market_panic', () => {
+      for (const r of CHARGEABLE_RARITIES) {
+        expect(Number.isInteger(SHOP_EGG_PRICES[r] * 0.70), `${r} market_panic eggPrice`).toBe(true);
+        expect(Number.isInteger(SHOP_EGG_PRICES[r] * 1.25), `${r} bumper_harvest eggPrice`).toBe(true);
+        expect(Number.isInteger(SELL_CASH[r] * 0.80), `${r} market_panic sellCash`).toBe(true);
+      }
+    });
+
+    it('roundCharge rounds, rather than always rounding up (not Math.ceil)', () => {
+      // 200 * 1.1 === 220.00000000000003 (float artifact). Math.round -> 220;
+      // Math.ceil -> 221.
+      expect(roundCharge(200, 1.1)).toBe(220);
+    });
+
+    it('roundCharge rounds, rather than always rounding down (not Math.floor)', () => {
+      // 10 * 1.26 = 12.6. Math.round -> 13; Math.floor -> 12.
+      expect(roundCharge(10, 1.26)).toBe(13);
+    });
+
+    it('roundCharge floors at 1 cash so a steep discount cannot reach 0', () => {
+      // 200 * 0.001 = 0.2 -> Math.round alone gives 0; Math.max(1, ...) lifts it to 1.
+      expect(roundCharge(200, 0.001)).toBe(1);
+    });
+
+    it('roundPayout rounds, rather than always rounding up (not Math.ceil)', () => {
+      expect(roundPayout(200, 1.1)).toBe(220);
+    });
+
+    it('roundPayout rounds, rather than always rounding down (not Math.floor)', () => {
+      expect(roundPayout(10, 1.26)).toBe(13);
+    });
+
+    it('roundPayout applies no floor — a near-zero multiplier can reach 0', () => {
+      // Unlike roundCharge, sellCashAt never floors at 1: SELL_CASH's minimum
+      // (common, 50) times the one shipped sellCash multiplier (0.80) is 40,
+      // nowhere near 0, so nothing shipped needs the floor. Documented here,
+      // directly against the primitive, since no real payout can prove it.
+      expect(roundPayout(50, 0.001)).toBe(0);
+    });
   });
 });
