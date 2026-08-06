@@ -23,6 +23,11 @@ import { FOODS, foodsForDiet } from '../../data/foods.js';
 
 const eggRarityChoices = (['common', 'uncommon', 'rare', 'epic', 'legendary'] as const).map((r) => ({ name: r, value: r }));
 
+// Single source of truth for /shop view's header key list: exported so
+// tests/world-module.test.ts's per-key anyModRelevant tests exercise this
+// exact array, not a duplicated literal that could silently drift from it.
+export const SHOP_VIEW_HEADER_KEYS = ['eggPrice', 'foodPrice', 'sellCash'] as const;
+
 export const shopModule: ModuleManifest = {
   name: 'shop',
   commands: [
@@ -64,13 +69,13 @@ export const shopModule: ModuleManifest = {
             const dealEggLine = `${rarityEmoji(deal.rarity)}${capitalize(deal.rarity)} egg — ~~${dealEggOriginal.toLocaleString()}~~ **${eggPriceAt(deal.rarity, now).toLocaleString()}** cash`;
             const dealLine = offers.includes(deal.rarity) ? `${dealEggLine}\n${dealFoodLine}` : dealFoodLine;
             const embed = new EmbedBuilder().setTitle('🏪 Shop — today').setColor(0x5865F2)
-              .setDescription(eventHeaderLine(now, ['eggPrice', 'foodPrice', 'sellCash']))
+              .setDescription(eventHeaderLine(now, SHOP_VIEW_HEADER_KEYS))
               .addFields(
-              { name: '🏷️ Daily Deal', value: dealLine },
-              { name: '🥚 Eggs (/shop egg)', value: eggLines },
-              { name: `${emojiTag('dw_food')} Food Market (/shop food)`, value: `${foodLines}\n${bundleHint}` },
-              { name: '🌴 Decor (/decorate)', value: decorLine },
-            );
+                { name: '🏷️ Daily Deal', value: dealLine },
+                { name: '🥚 Eggs (/shop egg)', value: eggLines },
+                { name: `${emojiTag('dw_food')} Food Market (/shop food)`, value: `${foodLines}\n${bundleHint}` },
+                { name: '🌴 Decor (/decorate)', value: decorLine },
+              );
             const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
             const order = Object.keys(RARITY);
             const best = offers.length ? offers.reduce((a, b) => (order.indexOf(b) > order.indexOf(a) ? b : a)) : null;

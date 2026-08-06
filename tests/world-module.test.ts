@@ -5,9 +5,11 @@ import { eventHeaderLine, anyModRelevant } from '../src/modules/world/embeds.js'
 import { NEUTRAL_MODS } from '../src/data/world-events.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { parkModule } from '../src/modules/park/index.js';
-import { shopModule } from '../src/modules/shop/index.js';
-import { expeditionsModule } from '../src/modules/expeditions/index.js';
+import { PARK_HEADER_KEYS } from '../src/modules/park/embeds.js';
+import { shopModule, SHOP_VIEW_HEADER_KEYS } from '../src/modules/shop/index.js';
+import { expeditionsModule, EXPEDITION_START_HEADER_KEYS } from '../src/modules/expeditions/index.js';
 import { battlesModule } from '../src/modules/battles/index.js';
+import { BATTLE_CHAPTERS_HEADER_KEYS } from '../src/modules/battles/embeds.js';
 
 type EmbedJson = {
   title?: string;
@@ -133,7 +135,7 @@ describe('world header lines', () => {
   });
 
   it('appears on /expedition start with the dig effects', async () => {
-    const ctx = makeCtx({ nowMs: 10 * DAY });  // amber_storm
+    const ctx = makeCtx({ nowMs: 10 * DAY });  // amber_storm: expeditionMs + expeditionFee
     getOrCreateUser(ctx, 'u1', 'Reg');
     const i = fakeCommand({ name: 'expedition', sub: 'start', user: 'u1', guild: 'g1', options: { site: 'coastal_dig' } });
     await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
@@ -141,6 +143,24 @@ describe('world header lines', () => {
     const embed = payload.embeds[0].toJSON();
     expect(embed.description).toContain('Amber Storm');
     expect(embed.description).toContain('Expeditions finish 25% sooner');
+  });
+
+  it('/expedition start says nothing is unusual on a day whose only effects are priced at claim time', async () => {
+    // Fossil Rush (day 14) sets ONLY expeditionCash and expeditionOddsShift —
+    // both excluded from the start header on purpose (Finding 1: those two
+    // are sampled fresh at claim time, so advertising them at dispatch could
+    // announce a payout a later UTC-midnight crossing no longer matches).
+    // This is the case that pins the whole point of the fix: if either
+    // payout key were ever added back to EXPEDITION_START_HEADER_KEYS, this
+    // test would start showing "Expeditions pay 50% more cash" instead.
+    const ctx = makeCtx({ nowMs: 14 * DAY });  // fossil_rush
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const i = fakeCommand({ name: 'expedition', sub: 'start', user: 'u1', guild: 'g1', options: { site: 'coastal_dig' } });
+    await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as EmbedPayload;
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.description).toContain('Fossil Rush');
+    expect(embed.description).toContain('no effect here today');
   });
 
   it('appears on /battle chapters with the combat effects', async () => {
@@ -163,5 +183,58 @@ describe('world header lines', () => {
     const embed = payload.embeds[0].toJSON();
     expect(embed.description).toContain('Clear Skies');
     expect(embed.description).toContain('no effect here today');
+  });
+});
+
+describe('each header call site\'s key array is individually load-bearing', () => {
+  // anyModRelevant is an OR across keys, and eventHeaderLine then prints the
+  // event's entire UNFILTERED effects array once any one key is relevant. So
+  // an end-to-end test picked on a real fixture day can only prove "at least
+  // one of my keys overlaps this day's event" — never "this exact key set is
+  // correct" — whenever the fixture day happens to move more than one of a
+  // call site's keys at once (bumper_harvest moves both eggPrice and
+  // foodPrice; amber_storm moves both expeditionMs and expeditionFee;
+  // blood_moon moves all three of energyCostDelta/battleXp/enemyHp). These
+  // tests isolate each key individually with a synthetic EventMods that
+  // changes ONLY that one field off NEUTRAL_MODS, straight against the
+  // exported anyModRelevant — the same pattern already used above for the
+  // energyCostDelta boundary, never a mock of src/core/world.js.
+  //
+  // Each test imports the call site's REAL exported key array (PARK_HEADER_KEYS
+  // etc.) rather than a hand-copied literal, so if a key is ever dropped from
+  // the production array, the corresponding expect below flips from true to
+  // false and fails — unlike the fixture-day tests above, most of which would
+  // stay green (see the fail-then-revert note in the task report).
+
+  it('park: income alone trips the header; an unrelated field does not', () => {
+    expect(anyModRelevant({ ...NEUTRAL_MODS, income: 1.2 }, PARK_HEADER_KEYS)).toBe(true);
+    expect(anyModRelevant({ ...NEUTRAL_MODS, eggPrice: 0.7 }, PARK_HEADER_KEYS)).toBe(false);
+  });
+
+  it('shop view: each of eggPrice/foodPrice/sellCash individually trips the header', () => {
+    expect(anyModRelevant({ ...NEUTRAL_MODS, eggPrice: 0.7 }, SHOP_VIEW_HEADER_KEYS)).toBe(true);
+    expect(anyModRelevant({ ...NEUTRAL_MODS, foodPrice: 0.6 }, SHOP_VIEW_HEADER_KEYS)).toBe(true);
+    // sellCash never appears alone in the shipped roster — market_panic (its
+    // only carrier) also moves eggPrice — which is exactly why this needs a
+    // synthetic mods object rather than a second fixture day.
+    expect(anyModRelevant({ ...NEUTRAL_MODS, sellCash: 0.8 }, SHOP_VIEW_HEADER_KEYS)).toBe(true);
+    expect(anyModRelevant({ ...NEUTRAL_MODS, energyCostDelta: -1 }, SHOP_VIEW_HEADER_KEYS)).toBe(false);
+  });
+
+  it('expedition start: each of expeditionMs/expeditionFee individually trips the header; the claim-time-only keys never do', () => {
+    expect(anyModRelevant({ ...NEUTRAL_MODS, expeditionMs: 0.75 }, EXPEDITION_START_HEADER_KEYS)).toBe(true);
+    expect(anyModRelevant({ ...NEUTRAL_MODS, expeditionFee: 2 }, EXPEDITION_START_HEADER_KEYS)).toBe(true);
+    // Finding 1: expeditionCash/expeditionOddsShift are sampled at CLAIM time
+    // (service.ts), so the start header must stay silent about them even when
+    // they're the only fields an event moves — this pins that exclusion.
+    expect(anyModRelevant({ ...NEUTRAL_MODS, expeditionCash: 1.5 }, EXPEDITION_START_HEADER_KEYS)).toBe(false);
+    expect(anyModRelevant({ ...NEUTRAL_MODS, expeditionOddsShift: -1 }, EXPEDITION_START_HEADER_KEYS)).toBe(false);
+  });
+
+  it('battle chapters: each of energyCostDelta/battleXp/enemyHp individually trips the header', () => {
+    expect(anyModRelevant({ ...NEUTRAL_MODS, energyCostDelta: -1 }, BATTLE_CHAPTERS_HEADER_KEYS)).toBe(true);
+    expect(anyModRelevant({ ...NEUTRAL_MODS, battleXp: 1.5 }, BATTLE_CHAPTERS_HEADER_KEYS)).toBe(true);
+    expect(anyModRelevant({ ...NEUTRAL_MODS, enemyHp: 1.15 }, BATTLE_CHAPTERS_HEADER_KEYS)).toBe(true);
+    expect(anyModRelevant({ ...NEUTRAL_MODS, income: 1.2 }, BATTLE_CHAPTERS_HEADER_KEYS)).toBe(false);
   });
 });

@@ -21,6 +21,17 @@ function siteMarker(siteId: string): string {
   return t ? `${t} ` : '';
 }
 
+// /expedition start's header key list, exported so
+// tests/world-module.test.ts's per-key anyModRelevant tests exercise this
+// exact array. Deliberately excludes expeditionCash/expeditionOddsShift:
+// those two are sampled fresh at CLAIM time (see claimExpedition's "Loot is
+// priced at CLAIM time" comment in ./service.ts), not locked in here — every
+// site but coastal_dig runs 1-24h, so advertising a payout condition at
+// dispatch that a later UTC-midnight crossing can silently no longer match
+// would be actively misleading. Only expeditionMs/expeditionFee are genuinely
+// locked in by startExpedition before this line runs.
+export const EXPEDITION_START_HEADER_KEYS = ['expeditionMs', 'expeditionFee'] as const;
+
 function sitePayload(siteId: string, description: string) {
   const embed = new EmbedBuilder().setColor(0xe8590c)
     .setTitle(`🧭 ${siteMarker(siteId)}${EXPEDITION_SITES[siteId].name}`).setDescription(description);
@@ -66,7 +77,9 @@ export const expeditionsModule: ModuleManifest = {
         try {
           if (sub === 'start') {
             const exp = startExpedition(ctx, i.user.id, i.options.getString('site', true), i.guildId);
-            const header = eventHeaderLine(ctx.now(), ['expeditionMs', 'expeditionFee', 'expeditionCash', 'expeditionOddsShift']);
+            // See EXPEDITION_START_HEADER_KEYS above for why the payout keys
+            // (expeditionCash/expeditionOddsShift) are excluded.
+            const header = eventHeaderLine(ctx.now(), EXPEDITION_START_HEADER_KEYS);
             await i.reply(sitePayload(exp.siteId, `${header}\n\nCrew dispatched — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.`));
           } else if (sub === 'status') {
             const exp = activeExpedition(ctx, i.user.id);

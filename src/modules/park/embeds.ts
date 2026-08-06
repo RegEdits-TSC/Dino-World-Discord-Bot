@@ -9,8 +9,18 @@ const LOT_EMOJI: Record<string, string> = {
   gene_lab: 'dw_lot_genelab',
 };
 
+// Single source of truth for the dashboard's header key list: exported so
+// tests/world-module.test.ts's per-key anyModRelevant tests exercise this
+// exact array, not a duplicated literal that could silently drift from it.
+export const PARK_HEADER_KEYS = ['income'] as const;
+
 export function dashboardPayload(
   user: User, lots: Lot[], dinoCount: number, pending: number, escapedCount = 0,
+  // now is optional because a handful of existing fixtures build a payload
+  // without a ctx at all (tests/park.test.ts, tests/park-view-image.test.ts) —
+  // every real call site (src/modules/park/index.ts) always passes ctx.now().
+  // Missing defaults to a calm day, the same convention ChaptersView.now uses
+  // in src/modules/battles/embeds.ts.
   opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number; now?: number } = {},
 ) {
   const extras: string[] = [];
@@ -21,7 +31,7 @@ export function dashboardPayload(
   const embed = new EmbedBuilder()
     .setTitle(`🏞️ ${user.parkName}`)
     .setColor(0x3ba55c)
-    .setDescription(eventHeaderLine(opts.now ?? 0, ['income']))
+    .setDescription(eventHeaderLine(opts.now ?? 0, PARK_HEADER_KEYS))
     .addFields(
       { name: `${emojiTag('dw_cash')} Cash`, value: user.cash.toLocaleString(), inline: true },
       { name: `${emojiTag('dw_food')} Food`, value: opts.foodLine ?? 'none — /shop food', inline: true },

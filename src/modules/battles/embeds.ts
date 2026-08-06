@@ -150,6 +150,11 @@ export function fightFrames(
     withSkip(beatFrame(outcome.result.beats[1]), 2), f4];
 }
 
+// /battle chapters' header key list, exported so tests/world-module.test.ts's
+// per-key anyModRelevant tests exercise this exact array, not a duplicated
+// literal that could silently drift from it.
+export const BATTLE_CHAPTERS_HEADER_KEYS = ['energyCostDelta', 'battleXp', 'enemyHp'] as const;
+
 export function chaptersPayload(userId: string, chapterIndex: number, view: ChaptersView): FramePayload {
   const idx = Math.min(Math.max(0, chapterIndex), CAMPAIGN.length - 1);
   const ch = CAMPAIGN[idx];
@@ -160,7 +165,7 @@ export function chaptersPayload(userId: string, chapterIndex: number, view: Chap
     const cost = energyCostFor(s.energyCost, view.now ?? 0);
     return `${marker} ${s.boss ? '👑 ' : ''}${s.name} (⚡${cost})`;
   }).join('\n');
-  const header = eventHeaderLine(view.now ?? 0, ['energyCostDelta', 'battleXp', 'enemyHp']);
+  const header = eventHeaderLine(view.now ?? 0, BATTLE_CHAPTERS_HEADER_KEYS);
   const tagline = unlocked ? ch.tagline
     : `${ch.tagline}\n\n🔒 Locked — beat the previous chapter's boss and raise your park rating.`;
   const embed = new EmbedBuilder().setColor(unlocked ? 0xd35400 : 0x95a5a6)
