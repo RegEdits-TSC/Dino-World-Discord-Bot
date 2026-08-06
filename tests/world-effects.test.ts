@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { eq } from 'drizzle-orm';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { feedCostFor } from '../src/modules/care/service.js';
 import { shiftOdds, startExpedition, claimExpedition, expeditionFeeFor, expeditionCashFor } from '../src/modules/expeditions/service.js';
 import { makeCtx, fakeAutocomplete, fakeCommand, mulberry32 } from './harness.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
+import { decorateLot } from '../src/modules/park/dinos.js';
+import { recomputeRating } from '../src/modules/park/rating.js';
 import { startBreeding, claimBreeding, breedCooldowns } from '../src/modules/genelab/service.js';
 import { schema } from '../src/core/db/index.js';
 import { STARTER_FOOD, FOODS } from '../src/data/foods.js';
@@ -18,6 +22,8 @@ import { sellDino, previewSell, sellCashAt, roundPayout } from '../src/modules/s
 import { shopModule } from '../src/modules/shop/index.js';
 import { SHOP_EGG_PRICES, DEAL_EGG_DISCOUNT, DEAL_FOOD_DISCOUNT } from '../src/data/shop.js';
 import { SELL_CASH } from '../src/data/sell.js';
+import { WORLD_EVENTS } from '../src/data/world-events.js';
+import { worldEventFor } from '../src/core/world.js';
 
 const DAY = 86_400_000;
 
@@ -708,5 +714,73 @@ describe('shop and sell prices under world events', () => {
       // directly against the primitive, since no real payout can prove it.
       expect(roundPayout(50, 0.001)).toBe(0);
     });
+  });
+});
+
+describe('the hard invariant — events never touch a gate', () => {
+  // The day index at which each event first occurs, so the loop below covers
+  // all nine without mocking anything. Pinned against tests/world.test.ts's
+  // own "pins the day fixtures the rest of the suite selects events by" test —
+  // every value here is one of those already-verified fixture days.
+  const DAY_OF: Record<string, number> = {
+    clear_skies: 0, heat_wave: 5, blood_moon: 7, cold_snap: 8, amber_storm: 10,
+    fossil_rush: 14, bumper_harvest: 18, migration_season: 27, market_panic: 38,
+  };
+
+  it('covers every event in the roster', () => {
+    for (const e of WORLD_EVENTS) {
+      expect(DAY_OF[e.id], `no fixture day for ${e.id}`).toBeDefined();
+      expect(worldEventFor(DAY_OF[e.id] * DAY).id).toBe(e.id);
+    }
+  });
+
+  it('computes an identical park rating under all nine events', () => {
+    // One paddock, one dino fed and assigned at that ctx's own `now` (so hunger
+    // never drains across the different fixture days), one decor piece —
+    // exactly enough to exercise all three rating.ts terms (collection, park,
+    // comfort). Anchoring lastFedAt/hatchedAt to ctx.now() rather than 0
+    // mirrors tests/world-effects.test.ts's own `dino()` helper above, for the
+    // same reason: a dino "fed" at epoch 0 would have drained differently
+    // depending on how far the fixture day sits from day 0.
+    function seed(ctx: ReturnType<typeof makeCtx>): string {
+      const userId = 'u1';
+      getOrCreateUser(ctx, userId, userId);
+      ctx.economy.apply(userId, { cash: 500_000 }, 'test', ctx.now());
+      const lot = buildLot(ctx, userId, 'herbivore_paddock');
+      ctx.db.insert(schema.dinos).values({
+        userId, speciesId: 'triceratops', lotId: lot.id,
+        hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),
+      }).run();
+      decorateLot(ctx, userId, lot.id, 'grass_tuft');
+      return userId;
+    }
+
+    const ratings = new Set<number>();
+    const highWaters = new Set<number>();
+    for (const e of WORLD_EVENTS) {
+      const ctx = makeCtx({ nowMs: DAY_OF[e.id] * DAY });
+      const userId = seed(ctx);
+      const out = recomputeRating(ctx, userId);
+      ratings.add(out.rating);
+      highWaters.add(out.highWater);
+    }
+    expect([...ratings], 'an event moved park rating').toHaveLength(1);
+    expect([...highWaters], 'an event moved best-ever rating').toHaveLength(1);
+  });
+
+  // Every gate in the game is a pure function of RATING ALONE. The way an event
+  // could ever move one is by someone threading eventMods into the progression
+  // layer, so assert that structurally — a value-comparison test here would be
+  // tautological, since both sides would read the same unmodified constant.
+  it('keeps the progression layer free of any dependency on the world', () => {
+    const gateFiles = [
+      resolve(process.cwd(), 'src/data/progression.ts'),
+      resolve(process.cwd(), 'src/modules/park/rating.ts'),
+    ];
+    for (const file of gateFiles) {
+      const text = readFileSync(file, 'utf8');
+      expect(text, `${file} must not depend on the world`).not.toMatch(/core\/world\.js/);
+      expect(text, `${file} must not depend on event data`).not.toMatch(/world-events\.js/);
+    }
   });
 });

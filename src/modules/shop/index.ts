@@ -5,6 +5,7 @@ import type { Rarity } from '../../data/types.js';
 import { getOrCreateUser } from '../park/service.js';
 import { dailyEggOffers, buyEgg, buyFood, eggPriceAt, foodPriceAt, todaysDeal, roundCharge, ShopError } from './service.js';
 import { eventMods } from '../../core/world.js';
+import { eventHeaderLine } from '../world/embeds.js';
 import { sellDino, previewSell, sellCashAt, ShardError } from './shards.js';
 import { locksFor } from '../../core/locks.js';
 import { schema } from '../../core/db/index.js';
@@ -62,7 +63,9 @@ export const shopModule: ModuleManifest = {
             const dealEggOriginal = roundCharge(SHOP_EGG_PRICES[deal.rarity], eventMods(now).eggPrice);
             const dealEggLine = `${rarityEmoji(deal.rarity)}${capitalize(deal.rarity)} egg — ~~${dealEggOriginal.toLocaleString()}~~ **${eggPriceAt(deal.rarity, now).toLocaleString()}** cash`;
             const dealLine = offers.includes(deal.rarity) ? `${dealEggLine}\n${dealFoodLine}` : dealFoodLine;
-            const embed = new EmbedBuilder().setTitle('🏪 Shop — today').setColor(0x5865F2).addFields(
+            const embed = new EmbedBuilder().setTitle('🏪 Shop — today').setColor(0x5865F2)
+              .setDescription(eventHeaderLine(now, ['eggPrice', 'foodPrice', 'sellCash']))
+              .addFields(
               { name: '🏷️ Daily Deal', value: dealLine },
               { name: '🥚 Eggs (/shop egg)', value: eggLines },
               { name: `${emojiTag('dw_food')} Food Market (/shop food)`, value: `${foodLines}\n${bundleHint}` },

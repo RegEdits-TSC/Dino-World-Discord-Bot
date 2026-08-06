@@ -100,7 +100,7 @@ export const parkModule: ModuleManifest = {
           const tinv = ctx.economy.getFoodInventory(targetUser.id);
           const tfoodLine = (Object.entries(tinv) as Array<[FoodId, number]>)
             .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
-          const payload = dashboardPayload(fresh, tlots, tdinos.length, 0, tescaped, { foodLine: tfoodLine, earnedTiers: earnedTierCount(ctx, targetUser.id) });
+          const payload = dashboardPayload(fresh, tlots, tdinos.length, 0, tescaped, { foodLine: tfoodLine, earnedTiers: earnedTierCount(ctx, targetUser.id), now: ctx.now() });
           const base = { embeds: payload.embeds };
           let png: Buffer | undefined;
           try { png = await renderPark(buildParkSnapshot(ctx, targetUser.id)); } catch { png = undefined; }
@@ -126,7 +126,7 @@ export const parkModule: ModuleManifest = {
         const inv = ctx.economy.getFoodInventory(i.user.id);
         const foodLine = (Object.entries(inv) as Array<[FoodId, number]>)
           .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
-        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine, earnedTiers: earnedTierCount(ctx, i.user.id) });
+        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine, earnedTiers: earnedTierCount(ctx, i.user.id), now: nowMs });
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
         await i.editReply(png ? withParkImage(base, png) : base);

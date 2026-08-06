@@ -7,6 +7,7 @@ import { ENERGY_CAP, ENERGY_REGEN_MS } from '../../data/battle/constants.js';
 import type { BeatSummary } from '../../data/battle/resolve.js';
 import type { FightOutcome } from './service.js';
 import { energyCostFor } from './service.js';
+import { eventHeaderLine } from '../world/embeds.js';
 
 export interface FramePayload {
   embeds: EmbedBuilder[];
@@ -159,10 +160,12 @@ export function chaptersPayload(userId: string, chapterIndex: number, view: Chap
     const cost = energyCostFor(s.energyCost, view.now ?? 0);
     return `${marker} ${s.boss ? '👑 ' : ''}${s.name} (⚡${cost})`;
   }).join('\n');
+  const header = eventHeaderLine(view.now ?? 0, ['energyCostDelta', 'battleXp', 'enemyHp']);
+  const tagline = unlocked ? ch.tagline
+    : `${ch.tagline}\n\n🔒 Locked — beat the previous chapter's boss and raise your park rating.`;
   const embed = new EmbedBuilder().setColor(unlocked ? 0xd35400 : 0x95a5a6)
     .setTitle(`📖 Chapter ${idx + 1}/${CAMPAIGN.length} — ${ch.name}${unlocked ? '' : ' 🔒'}`)
-    .setDescription(unlocked ? ch.tagline
-      : `${ch.tagline}\n\n🔒 Locked — beat the previous chapter's boss and raise your park rating.`)
+    .setDescription(`${header}\n\n${tagline}`)
     .addFields(
       { name: 'Stages', value: stageLines },
       { name: 'Energy', value: energyLine(view.energy, view.energyUpdatedAtMs) },

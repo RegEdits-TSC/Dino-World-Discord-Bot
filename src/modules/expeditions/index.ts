@@ -13,6 +13,7 @@ import { matches, respondRanked, fmtDuration } from '../../core/autocomplete.js'
 import { assetImage, attach } from '../../core/images.js';
 import { emojiTag, rarityEmoji } from '../../core/emojis.js';
 import { eventMods } from '../../core/world.js';
+import { eventHeaderLine } from '../world/embeds.js';
 
 // '🌋 ' when the site marker resolves, '' when it doesn't — keeps titles clean either way.
 function siteMarker(siteId: string): string {
@@ -65,7 +66,8 @@ export const expeditionsModule: ModuleManifest = {
         try {
           if (sub === 'start') {
             const exp = startExpedition(ctx, i.user.id, i.options.getString('site', true), i.guildId);
-            await i.reply(sitePayload(exp.siteId, `Crew dispatched — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.`));
+            const header = eventHeaderLine(ctx.now(), ['expeditionMs', 'expeditionFee', 'expeditionCash', 'expeditionOddsShift']);
+            await i.reply(sitePayload(exp.siteId, `${header}\n\nCrew dispatched — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.`));
           } else if (sub === 'status') {
             const exp = activeExpedition(ctx, i.user.id);
             if (!exp) { await i.reply({ content: 'No active expedition. Start one with /expedition start.', flags: MessageFlags.Ephemeral }); return; }

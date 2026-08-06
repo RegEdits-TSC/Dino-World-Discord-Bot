@@ -1,6 +1,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } from 'discord.js';
 import type { User, Lot } from './service.js';
 import { emojiTag } from '../../core/emojis.js';
+import { eventHeaderLine } from '../world/embeds.js';
 
 const LOT_EMOJI: Record<string, string> = {
   carnivore_paddock: 'dw_lot_carnivore', herbivore_paddock: 'dw_lot_herbivore',
@@ -10,7 +11,7 @@ const LOT_EMOJI: Record<string, string> = {
 
 export function dashboardPayload(
   user: User, lots: Lot[], dinoCount: number, pending: number, escapedCount = 0,
-  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number } = {},
+  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number; now?: number } = {},
 ) {
   const extras: string[] = [];
   if (escapedCount > 0) extras.push(`${escapedCount} ${emojiTag('dw_alert')} escaped`);
@@ -20,6 +21,7 @@ export function dashboardPayload(
   const embed = new EmbedBuilder()
     .setTitle(`🏞️ ${user.parkName}`)
     .setColor(0x3ba55c)
+    .setDescription(eventHeaderLine(opts.now ?? 0, ['income']))
     .addFields(
       { name: `${emojiTag('dw_cash')} Cash`, value: user.cash.toLocaleString(), inline: true },
       { name: `${emojiTag('dw_food')} Food`, value: opts.foodLine ?? 'none — /shop food', inline: true },

@@ -3,9 +3,15 @@ import { makeCtx, fakeCommand } from './harness.js';
 import { worldModule } from '../src/modules/world/index.js';
 import { eventHeaderLine, anyModRelevant } from '../src/modules/world/embeds.js';
 import { NEUTRAL_MODS } from '../src/data/world-events.js';
+import { getOrCreateUser } from '../src/modules/park/service.js';
+import { parkModule } from '../src/modules/park/index.js';
+import { shopModule } from '../src/modules/shop/index.js';
+import { expeditionsModule } from '../src/modules/expeditions/index.js';
+import { battlesModule } from '../src/modules/battles/index.js';
 
 type EmbedJson = {
   title?: string;
+  description?: string;
   fields?: Array<{ name: string; value: string }>;
   footer?: { text: string };
 };
@@ -100,5 +106,62 @@ describe('eventHeaderLine', () => {
     // instead — the same pattern tests/world-effects.test.ts uses for
     // expeditionFeeFor/roundCharge boundaries no shipped multiplier reaches.
     expect(anyModRelevant({ ...NEUTRAL_MODS, energyCostDelta: 1 }, ['energyCostDelta'])).toBe(true);
+  });
+});
+
+describe('world header lines', () => {
+  it('appears on /park view with only the income effect', async () => {
+    const ctx = makeCtx({ nowMs: 5 * DAY });   // heat_wave
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await parkModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as EmbedPayload;
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.description).toContain('Heat Wave');
+    expect(embed.description).toContain('Park income +20%');
+  });
+
+  it('appears on /shop view with only the price effects', async () => {
+    const ctx = makeCtx({ nowMs: 18 * DAY });  // bumper_harvest
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const i = fakeCommand({ name: 'shop', sub: 'view', user: 'u1' });
+    await shopModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as EmbedPayload;
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.description).toContain('Bumper Harvest');
+    expect(embed.description).toContain('Food costs 40% less');
+  });
+
+  it('appears on /expedition start with the dig effects', async () => {
+    const ctx = makeCtx({ nowMs: 10 * DAY });  // amber_storm
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const i = fakeCommand({ name: 'expedition', sub: 'start', user: 'u1', guild: 'g1', options: { site: 'coastal_dig' } });
+    await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as EmbedPayload;
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.description).toContain('Amber Storm');
+    expect(embed.description).toContain('Expeditions finish 25% sooner');
+  });
+
+  it('appears on /battle chapters with the combat effects', async () => {
+    const ctx = makeCtx({ nowMs: 7 * DAY });   // blood_moon
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const i = fakeCommand({ name: 'battle', sub: 'chapters', user: 'u1' });
+    await battlesModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as EmbedPayload;
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.description).toContain('Blood Moon');
+    expect(embed.description).toContain('Battle XP');
+  });
+
+  it('still renders on a calm day, saying nothing is unusual', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await parkModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as EmbedPayload;
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.description).toContain('Clear Skies');
+    expect(embed.description).toContain('no effect here today');
   });
 });
