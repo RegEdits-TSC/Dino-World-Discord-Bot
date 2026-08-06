@@ -1104,7 +1104,7 @@ the light studio rim must be peeled, and all border pixels must end transparent.
 
 ## Emoji icons
 
-The 43 application emojis in `assets/emojis/` are **not** generated — they are
+The 52 application emojis in `assets/emojis/` are **not** generated — they are
 hand-authored SVG rendered by `npm run build-emojis`. That set includes the six
 `dw_dino_<rarity>` chips and the six `dw_lot_*` icons the park renderer reads
 as SVG at draw time, plus the four `dw_trait_<domain>` icons (income, care,
@@ -1125,6 +1125,20 @@ bullets in the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.
 | --- | --- | --- |
 | `dw_site_abyssal_trench.svg` | A deep-sea submersible, side-on, floating on transparency: a rounded blue-to-navy gradient hull (stadium shape), a small conning tower on top, a pointed tail fin at the rear, one large pale-cyan porthole toward the front, and a small amber lamp at the nose with a short amber light cone reaching forward, dark navy (`#0b2233`) outlines throughout — a trench is negative space, so the site is represented by the vehicle you'd find exploring one, the same way Coastal Dig is represented by a shell rather than a hole in the sand | 🌊 |
 | `dw_site_containment_site.svg` | A short fence — four vertical slate posts crossed by two horizontal rails, no enclosing frame — with a yellow warning triangle mounted centered over it bearing a dark exclamation mark, dark slate (`#1b2530`) outlines throughout | 🧪 |
+
+**World event bulletin** — nine event emoji, one per `WORLD_EVENTS` entry (`src/data/world-events.ts`), used inline on the `/world` hub and event headlines; all nine share the same circular-badge footprint (a stroked r=27 background circle) so the set reads as one bulletin:
+
+| File | Design intent | Unicode fallback |
+| --- | --- | --- |
+| `dw_event_clear_skies.svg` | A sky-blue badge with a small gold sun disc and eight radiating rays | ☀️ |
+| `dw_event_amber_storm.svg` | A dark storm-blue badge with a gray cloud cluster and an amber lightning bolt striking through it | 🌩️ |
+| `dw_event_fossil_rush.svg` | A tan badge with a cream dog-bone shape — a shaft with four rounded knob ends | 🦴 |
+| `dw_event_heat_wave.svg` | A hot orange-red badge with a two-tone layered flame and a faint heat-shimmer wave beneath it | 🔥 |
+| `dw_event_cold_snap.svg` | An icy blue-white badge with a white six-armed snowflake, each tip carrying a small branch tick | ❄️ |
+| `dw_event_bumper_harvest.svg` | A golden badge with three fanned wheat stalks converging at the base, each topped with a grain-head ellipse | 🌾 |
+| `dw_event_market_panic.svg` | A dusty-red alarm badge with three descending cream bars and a dark diagonal arrow cutting down through them | 📉 |
+| `dw_event_blood_moon.svg` | A near-black night-sky badge with a red crescent moon — a dark occluding circle overlapping a red disc — and a scatter of small white stars | 🩸 |
+| `dw_event_migration_season.svg` | A blue-violet badge with a wide double-helix strand, evoking both wandering bloodlines and the trait odds the event reshuffles | 🧬 |
 
 ## Bot branding (animated avatar and banner)
 
