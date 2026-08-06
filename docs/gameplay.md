@@ -242,10 +242,15 @@ until you place it in one.
 
 ## 6. The roster
 
-Dino World has 40 species split across six rarities: 8 Common, 8 Uncommon, 8
+Dino World has 42 species split across six rarities: 8 Common, 9 Uncommon, 9
 Rare, 8 Epic, 5 Legendary, and 3 Mythic. Diet determines which paddock a dino
 can live in without its comfort being halved, so it's worth knowing before you
-start hatching: 18 species are herbivores and 22 are carnivores.
+start hatching: 18 species are herbivores and 24 are carnivores.
+
+Since the species inside a hatched egg is a flat pick across its rarity's pool
+(see above), adding a species to a tier dilutes every other species in that
+tier's odds — the Uncommon tier grew from 8 to 9 species, so each existing
+Uncommon dropped from a 1-in-8 to a 1-in-9 chance per hatch.
 
 | Species | Rarity | Diet |
 | --- | --- | --- |
@@ -265,6 +270,7 @@ start hatching: 18 species are herbivores and 22 are carnivores.
 | Pachycephalosaurus | Uncommon | herbivore |
 | Ouranosaurus | Uncommon | herbivore |
 | Archelon | Uncommon | carnivore |
+| Cryolophosaurus | Uncommon | carnivore |
 | Velociraptor | Rare | carnivore |
 | Carnotaurus | Rare | carnivore |
 | Baryonyx | Rare | carnivore |
@@ -273,6 +279,7 @@ start hatching: 18 species are herbivores and 22 are carnivores.
 | Ceratosaurus | Rare | carnivore |
 | Elasmosaurus | Rare | carnivore |
 | Tylosaurus | Rare | carnivore |
+| Nanuqsaurus | Rare | carnivore |
 | Brachiosaurus | Epic | herbivore |
 | Spinosaurus | Epic | carnivore |
 | Therizinosaurus | Epic | herbivore |

@@ -39,6 +39,8 @@ import { stegoceratops } from './stegoceratops.js';
 import { liopleurodon } from './liopleurodon.js';
 import { spinoraptor } from './spinoraptor.js';
 import { ultimasaurus } from './ultimasaurus.js';
+import { cryolophosaurus } from './cryolophosaurus.js';
+import { nanuqsaurus } from './nanuqsaurus.js';
 
 const ALL: Species[] = [
   triceratops, gallimimus, dryosaurus, compsognathus, struthiomimus, othnielia, microceratus, nasutoceratops,
@@ -50,6 +52,7 @@ const ALL: Species[] = [
   tyrannosaurus, mosasaurus, quetzalcoatlus,
   liopleurodon, spinoraptor,
   indominus, indoraptor, ultimasaurus,
+  cryolophosaurus, nanuqsaurus,
 ];
 const REGISTRY = new Map<string, Species>(ALL.map((s) => [s.id, s]));
 
