@@ -44,7 +44,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
   ].join('\n') },
   shop: { title: '🏪 Shop', art: { kind: 'banners', name: 'shop_food_market' }, body: [
     '`/shop view` — today\'s eggs, food, decor, and the Daily Deal (the part that actually changes every day).',
-    '`/shop egg rarity:<r>` — buy an egg from today\'s rotation.',
+    '`/shop egg rarity:<r>` — buy an egg currently on offer.',
     '`/shop food item:<food> units:<n>` — diet-matched food; carnivore food costs ~20% more.',
     '`/sell dino:<id>` — sell a dino for cash + shards (shards buy Mythics).',
     'A dino you have offered in a trade is locked 🔒 — /sell is blocked until the trade resolves.',
