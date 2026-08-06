@@ -44,6 +44,20 @@ describe('the world broadcast', () => {
     expect(timers.filter((t) => t.kind === WORLD_TIMER).map((t) => t.firesAt)).toEqual([6 * DAY]);
   });
 
+  it('re-arms from ctx.now(), not from the missed firesAt, after a multi-day gap', async () => {
+    // Distinguishes the shipped `nextMidnight(ctx.now())` from the forbidden
+    // `t.firesAt + DAY_MS`: every other re-arm fixture keeps nowMs and firesAt
+    // on the same UTC day, so both forms land on 6*DAY there. A restart after
+    // a multi-day outage is the case where they diverge — firesAt is stale at
+    // 5*DAY, but real time has moved to partway through day 8, so the correct
+    // re-arm is the next midnight after NOW (9*DAY), not firesAt+DAY_MS (6*DAY).
+    const ctx = makeCtx({ nowMs: 8 * DAY + 500 });
+    const s = fakeSender();
+    await worldBroadcastHandler(s, ctx)({ id: 1, kind: WORLD_TIMER, userId: '0', refId: 0, originGuildId: null, firesAt: 5 * DAY, handledAt: null });
+    const timers = ctx.db.select().from(schema.timers).all();
+    expect(timers.filter((t) => t.kind === WORLD_TIMER).map((t) => t.firesAt)).toEqual([9 * DAY]);
+  });
+
   it('re-arms even when a channel send throws', async () => {
     const ctx = makeCtx({ nowMs: 5 * DAY });
     ctx.db.insert(schema.guildSettings).values([
@@ -60,12 +74,21 @@ describe('the world broadcast', () => {
     expect(ctx.db.select().from(schema.timers).all().filter((t) => t.kind === WORLD_TIMER)).toHaveLength(1);
   });
 
-  it('arms exactly once however many times boot runs', () => {
+  it('arms exactly once however many times boot runs, and ignores a decoy timer of a different kind', () => {
+    // A regression that dropped the `kind` clause from armWorldBroadcast's
+    // guard would still pass against an empty timers table; production
+    // routinely has other pending kinds (egg_hatch, expedition_return,
+    // breeding_ready) at boot, so seed one to make that failure mode real.
     const ctx = makeCtx({ nowMs: 5 * DAY });
+    ctx.scheduler.enqueue({ kind: 'egg_hatch', userId: 'u1', refId: 7, originGuildId: null, firesAt: 6 * DAY });
     armWorldBroadcast(ctx);
     armWorldBroadcast(ctx);
     armWorldBroadcast(ctx);
-    expect(ctx.db.select().from(schema.timers).all().filter((t) => t.kind === WORLD_TIMER)).toHaveLength(1);
+    const timers = ctx.db.select().from(schema.timers).all();
+    expect(timers.filter((t) => t.kind === WORLD_TIMER)).toHaveLength(1);
+    expect(timers.filter((t) => t.kind === 'egg_hatch')).toEqual([
+      { id: expect.any(Number), kind: 'egg_hatch', userId: 'u1', refId: 7, originGuildId: null, firesAt: 6 * DAY, handledAt: null },
+    ]);
   });
 
   it('survives adminReset of an arbitrary player', async () => {
