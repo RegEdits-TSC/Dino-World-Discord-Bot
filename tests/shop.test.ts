@@ -9,7 +9,7 @@ import { locksFor } from '../src/core/locks.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 import { TRADE_MIN_RATING } from '../src/data/trade.js';
-import { SHOP_EGG_PRICES, DEAL_EGG_DISCOUNT, DEAL_FOOD_DISCOUNT } from '../src/data/shop.js';
+import { SHOP_EGG_PRICES } from '../src/data/shop.js';
 import { FOODS } from '../src/data/foods.js';
 import { eventMods } from '../src/core/world.js';
 
@@ -125,7 +125,7 @@ describe('shop daily rotation', () => {
     // (Bumper Harvest, eggPrice x1.25) deal rarity; ferns is day 18's
     // (foodPrice x0.60) deal food. Verified directly against the real
     // eggPriceAt/foodPriceAt before writing these as literals.
-    expect(eggPriceAt('uncommon', 38 * DAY)).toBe(1120);   // 2000 * 0.70 * 0.80; float product is 1120.0000000000002 — round, not ceil (would be 1121)
+    expect(eggPriceAt('uncommon', 38 * DAY)).toBe(1120);   // 2000 * (0.70 * 0.80) is actually 1119.9999999999997726, a hair under 1120 — round and ceil agree (both 1120); floor would undercharge to 1119
     expect(foodPriceAt(FOODS.ferns, 18 * DAY)).toBe(5);    // 10 * 0.60 * 0.75 is exactly 4.5 — round, not floor (would be 4)
     expect(eggPriceAt('uncommon', 18 * DAY)).toBe(2000);   // bumper_harvest's 1.25 exactly cancels the 0.80 deal
   });

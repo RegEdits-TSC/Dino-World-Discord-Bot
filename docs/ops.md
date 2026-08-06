@@ -220,13 +220,13 @@ Example `modules.json`:
 }
 ```
 
-Thirteen modules ship today:
+Fourteen modules ship today:
 
 - `park` — paddocks, upgrades, park rating, decorations.
 - `hatchery` — eggs, incubation, hatching, Mythic purchases.
 - `expeditions` — dispatching dinos on expeditions for loot.
-- `shop` — daily egg/food/decor rotation and dino sales.
-- `settings` — per-guild configuration (e.g. notification channel).
+- `shop` — egg/food/decor shop with a daily deal, and dino sales.
+- `settings` — per-guild configuration (e.g. notification channel, world bulletin opt-in).
 - `care` — feeding dinos and rescuing escapees.
 - `trading` — player-to-player dino/egg/currency trades with escrow.
 - `leaderboards` — server and global rankings by rating, cash, and collection.
@@ -235,6 +235,7 @@ Thirteen modules ship today:
 - `battles` — the PvE campaign: fight chapter stages with a squad for cash, shards, and eggs.
 - `genelab` — pair or splice dinos for traits in the Gene Lab.
 - `daily` — daily quest board, streaks, chests, and lifetime achievements.
+- `world` — the daily world event and season, plus the opt-in world bulletin broadcast.
 
 Admin commands are gated to the OWNER_ID user and hidden from non-admins in the Discord UI. Set OWNER_ID in .env.
 
@@ -345,7 +346,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    ```bash
    npm run deploy-commands
    ```
-   Should report `24` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, leaderboards, admin, help, battles, genelab, and daily modules combined).
+   Should report `25` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, leaderboards, admin, help, battles, genelab, daily, and world modules combined).
 
 2. **Start the bot**:
    ```bash
@@ -408,7 +409,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    - Wait a few minutes, then run `/park view` and click **Collect** — income should now accrue above 0.
 
    **k) `/shop view`**
-   - Should show today's egg, food, and decor rotation.
+   - Should show today's eggs, food, decor, and the Daily Deal.
    - `/shop egg rarity:common` — should buy a common egg and deduct cash.
    - `/sell dino:<id>` — should show a confirm button; confirming should pay out cash and shards (watch the 60-shard/day cap; sales past the cap still pay cash but no more shards for the day).
 

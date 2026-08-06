@@ -127,7 +127,7 @@ export function runFight(ctx: Ctx, userId: string, stageId: string, dinoIds: num
   // elsewhere in the codebase, one Math.round across every multiplier rather
   // than rounding an intermediate value and rounding again. Rounding twice
   // would occasionally disagree with a single round (e.g. coastal_dig_1 at
-  // 2 stars: single-round gives 57, round-then-round gives 56) for no
+  // 2 stars: single-round gives 56, round-then-round gives 57) for no
   // behavioral benefit, since nothing downstream reads the un-multiplied total.
   const totalXp = Math.round(stage.rewards.xp * STAR_XP_MULT[stars] * mods.battleXp);
   const baseXp = Math.floor(totalXp / n);

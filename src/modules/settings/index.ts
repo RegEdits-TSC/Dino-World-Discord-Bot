@@ -22,7 +22,15 @@ export const settingsModule: ModuleManifest = {
           // notifyChannelId, and reusing it here would blank the other field.
           ctx.db.insert(schema.guildSettings).values({ guildId: i.guildId, worldBroadcast: on })
             .onConflictDoUpdate({ target: schema.guildSettings.guildId, set: { worldBroadcast: on } }).run();
-          await i.reply({ content: on ? '🗞️ The daily world bulletin will post in the notification channel.' : '🗞️ The daily world bulletin is now off.', flags: MessageFlags.Ephemeral });
+          // /settings world-news on can legitimately succeed before a notification
+          // channel is ever set — worldBroadcastHandler requires BOTH worldBroadcast
+          // and a non-null notifyChannelId, so promising a post here would be wrong
+          // for a guild that hasn't run /settings channel yet.
+          const gs = ctx.db.select().from(schema.guildSettings).where(eq(schema.guildSettings.guildId, i.guildId)).get();
+          const onMsg = gs?.notifyChannelId
+            ? '🗞️ The daily world bulletin will post in the notification channel.'
+            : '🗞️ The daily world bulletin is on, but no notification channel is set yet — run `/settings channel` first, or nothing will post.';
+          await i.reply({ content: on ? onMsg : '🗞️ The daily world bulletin is now off.', flags: MessageFlags.Ephemeral });
           return;
         }
         const channelId = i.options.getChannel('channel', true).id;
