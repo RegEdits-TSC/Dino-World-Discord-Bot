@@ -503,29 +503,54 @@ describe('wild hatch trait odds under world events', () => {
   const N = 4000;
   const TOLERANCE = 0.03;
 
-  function zeroTraitShare(nowMs: number, seed: number, n: number): number {
+  // The mean trait count, measured on the SAME sample as the 0-trait share.
+  // The share alone cannot distinguish [p0, p1, p2] from a 1<->2 bucket swap
+  // [p0, p2, p1] — both give an IDENTICAL 0-trait share, since only p0 feeds
+  // it. That is exactly the shape of the bug that shipped and survived a full
+  // task review before being caught: WORLD_EVENTS' migration_season odds were
+  // briefly transposed as [45, 15, 40] against the intended [45, 40, 15].
+  // E[traits] = p1 + 2*p2 moves under that swap, so it catches what the share
+  // can't. Variance of X in {0,1,2}: calm p=[.55,.35,.10] gives Var = (.35*1 +
+  // .10*4) - .55^2 = .75 - .3025 = .4475; migration p=[.45,.40,.15] gives Var
+  // = (.40*1 + .15*4) - .70^2 = 1.00 - .49 = .51. Either way the N=4000
+  // sample mean's SD is ~0.0106-0.0113, so a 0.05 tolerance (~4.5 sigma) stays
+  // loose enough for the deterministic run while still catching the
+  // bucket-swap deviation (0.25, ~5x the tolerance) by a wide margin.
+  const MEAN_TOLERANCE = 0.05;
+
+  function hatchTraitStats(nowMs: number, seed: number, n: number): { zeroShare: number; meanTraits: number } {
     const ctx = makeCtx({ nowMs, rng: mulberry32(seed) });
     let zero = 0;
+    let totalTraits = 0;
     for (let i = 0; i < n; i++) {
       const userId = `stat${i}`;
       const egg = insertReadyEgg(ctx, userId);
       const out = hatchEgg(ctx, userId, egg.id);
       if (out.traits.length === 0) zero++;
+      totalTraits += out.traits.length;
     }
-    return zero / n;
+    return { zeroShare: zero / n, meanTraits: totalTraits / n };
   }
 
   // Each sample runs the full hatchEgg pipeline (transaction, escrow check,
   // recomputeRating) against a fresh in-memory db user, so 4000 of them cost more
   // than the default 5s test timeout — bumped per-test rather than globally.
   it('uses the standard 55/35/10 odds on a calm day', () => {
-    const share = zeroTraitShare(0, 7, N);
-    expect(Math.abs(share - 0.55)).toBeLessThan(TOLERANCE);
+    const { zeroShare, meanTraits } = hatchTraitStats(0, 7, N);
+    expect(Math.abs(zeroShare - 0.55)).toBeLessThan(TOLERANCE);
+    // E[traits] = 0*0.55 + 1*0.35 + 2*0.10 = 0.55 — coincidentally equal to
+    // WILD_SLOT_ODDS' own p0, not a copy-paste of the assertion above.
+    expect(Math.abs(meanTraits - 0.55)).toBeLessThan(MEAN_TOLERANCE);
   }, 20_000);
 
   it('uses 45/40/15 odds during Migration Season', () => {
-    const share = zeroTraitShare(27 * DAY, 7, N);
-    expect(Math.abs(share - 0.45)).toBeLessThan(TOLERANCE);
+    const { zeroShare, meanTraits } = hatchTraitStats(27 * DAY, 7, N);
+    expect(Math.abs(zeroShare - 0.45)).toBeLessThan(TOLERANCE);
+    // E[traits] = 0*0.45 + 1*0.40 + 2*0.15 = 0.70. The 1<->2 bucket swap this
+    // test exists to catch ([0.45, 0.15, 0.40]) leaves the 0-trait share above
+    // identical (still 0.45) but moves this mean to 0.95 — the gap a
+    // zero-share-only check cannot see.
+    expect(Math.abs(meanTraits - 0.70)).toBeLessThan(MEAN_TOLERANCE);
   }, 20_000);
 
   it('never applies the event odds to a bred egg', () => {

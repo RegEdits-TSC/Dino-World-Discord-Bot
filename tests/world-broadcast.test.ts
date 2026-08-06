@@ -74,6 +74,29 @@ describe('the world broadcast', () => {
     expect(ctx.db.select().from(schema.timers).all().filter((t) => t.kind === WORLD_TIMER)).toHaveLength(1);
   });
 
+  it('converges two pending timers to one instead of compounding, when both fire in the same tick', async () => {
+    // world_broadcast is the repo's first SELF-rescheduling timer kind: handling
+    // one always enqueues its own successor, so — unlike the other three kinds,
+    // which degrade to at most one duplicate message per stray fire — an
+    // unguarded re-arm here doubles the pending count on every fire (2 -> 4 ->
+    // 8 ...) instead of converging. This mirrors two bot processes racing the
+    // same due timer (this repo's CLAUDE.md: exactly one instance per token,
+    // but the DB itself does not enforce it): seed two pending rows directly,
+    // then drain them through the real Scheduler — which marks handledAt
+    // sequentially after each handler resolves, exactly as production does —
+    // rather than invoking the handler function twice by hand.
+    const ctx = makeCtx({ nowMs: 5 * DAY });
+    const s = fakeSender();
+    ctx.scheduler.enqueue({ kind: WORLD_TIMER, userId: '0', refId: 0, originGuildId: null, firesAt: 5 * DAY });
+    ctx.scheduler.enqueue({ kind: WORLD_TIMER, userId: '0', refId: 0, originGuildId: null, firesAt: 5 * DAY });
+    ctx.scheduler.register(WORLD_TIMER, worldBroadcastHandler(s, ctx));
+    const fired = await ctx.scheduler.tick(ctx.now());
+    expect(fired).toBe(2);
+    const pending = ctx.db.select().from(schema.timers).all()
+      .filter((t) => t.kind === WORLD_TIMER && t.handledAt === null);
+    expect(pending).toHaveLength(1);
+  });
+
   it('arms exactly once however many times boot runs, and ignores a decoy timer of a different kind', () => {
     // A regression that dropped the `kind` clause from armWorldBroadcast's
     // guard would still pass against an empty timers table; production

@@ -268,6 +268,7 @@ After `npm run deploy-commands`, confirm the new command set is live by exercisi
 - `/trade offer user:@someone give-cash:10` then the recipient runs `/trade accept id:<n>` — the escrow swap completes; `/trade list`, `/trade decline`, `/trade cancel` respond.
 - `/top metric:rating` and `/top metric:collection scope:global` — leaderboards render.
 - `/admin inspect user:@you` — returns your raw state (owner only).
+- `/world` — today's event, season, and turnover countdown render, with the event banner image; `/settings world-news state:on` — confirms the opt-in bulletin toggle (run as a user with Manage Guild permission).
 
 All commands should reply without an "application did not respond" timeout. If a command is missing, re-run `npm run deploy-commands` (guild deploys are instant; global takes up to ~1h).
 
