@@ -3,7 +3,7 @@ import type { AttachmentBuilder } from 'discord.js';
 import { assetImage, attach } from '../../core/images.js';
 import { emojiTag } from '../../core/emojis.js';
 import { worldEventFor, eventMods, seasonFor, seasonDay, SEASON_DAYS, dayIndex } from '../../core/world.js';
-import type { EventMods } from '../../data/world-events.js';
+import { NEUTRAL_MODS, type EventMods } from '../../data/world-events.js';
 
 const DAY_MS = 86_400_000;
 const SEASON_LABEL = { wet: 'Wet', dry: 'Dry', cold: 'Cold' } as const;
@@ -16,10 +16,12 @@ export interface Payload { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] }
 export function eventHeaderLine(now: number, keys: ReadonlyArray<keyof EventMods>): string {
   const e = worldEventFor(now);
   const mods = eventMods(now);
-  const relevant = keys.some((k) => {
-    const v = mods[k];
-    return k === 'hatchTraitOdds' ? v !== null : v !== 1 && v !== 0;
-  });
+  // EventMods has three different neutral shapes: 1 for most fields, 0 for
+  // expeditionOddsShift/energyCostDelta, and null for hatchTraitOdds.
+  // Hardcoding "1 or 0 means neutral" misreads a field whose OWN neutral is
+  // the other one (a future energyCostDelta: +1 would look neutral against a
+  // literal 1/0 check). Comparing against NEUTRAL_MODS is neutral-shape-agnostic.
+  const relevant = keys.some((k) => mods[k] !== NEUTRAL_MODS[k]);
   const tag = emojiTag(e.emoji);
   if (!relevant) return `${tag} **${e.name}** — no effect here today`;
   return `${tag} **${e.name}** — ${e.effects.join(' · ')}`;

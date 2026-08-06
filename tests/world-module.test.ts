@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { makeCtx, fakeCommand } from './harness.js';
 import { worldModule } from '../src/modules/world/index.js';
 import { eventHeaderLine } from '../src/modules/world/embeds.js';
+import { NEUTRAL_MODS } from '../src/data/world-events.js';
+import * as world from '../src/core/world.js';
 
 type EmbedJson = {
   title?: string;
@@ -77,5 +79,28 @@ describe('eventHeaderLine', () => {
   it('lists the effects when the screen is affected', () => {
     expect(eventHeaderLine(38 * DAY, ['eggPrice', 'sellCash']))
       .toContain('Eggs cost 30% less');
+  });
+
+  it('treats a 0-neutral field as relevant when the event moves it off zero', () => {
+    // blood_moon (day 7) sets energyCostDelta: -1, whose own neutral is 0, not
+    // 1 — a check that reads "0 or 1 means neutral" misses this entirely.
+    expect(eventHeaderLine(7 * DAY, ['energyCostDelta']))
+      .toContain('Every stage costs 1 less energy');
+  });
+
+  it('treats a 0-neutral field pinned to the OTHER shape\'s neutral value (1) as relevant', () => {
+    // The bug this guards: comparing a raw value against the literals 1 and 0
+    // (instead of against NEUTRAL_MODS) misreads energyCostDelta === 1 as
+    // neutral, because 1 also happens to be the neutral value for most OTHER
+    // fields. No shipped WORLD_EVENTS entry sets energyCostDelta to 1 — the
+    // only live fixture is blood_moon's -1, which the old literal check also
+    // got right (-1 is neither 1 nor 0), so that fixture alone cannot
+    // discriminate this bug. Constructing the exact boundary value here does.
+    const spy = vi.spyOn(world, 'eventMods').mockReturnValue({ ...NEUTRAL_MODS, energyCostDelta: 1 });
+    try {
+      expect(eventHeaderLine(0, ['energyCostDelta'])).not.toContain('no effect here today');
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
