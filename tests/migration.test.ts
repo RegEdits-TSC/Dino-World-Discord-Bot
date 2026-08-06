@@ -370,3 +370,43 @@ describe('0007 rating rescale via the real drizzle migrator (production path)', 
     }
   });
 });
+
+describe('0008 world broadcast via the real drizzle migrator (production path)', () => {
+  it('adds world_broadcast defaulting to false and preserves an existing notify channel', () => {
+    // Reach the 0007 schema via a scratch folder holding migrations 0000-0007, seed a
+    // parent user AND a child dino row (the FK migrateDb must not trip over), plus a
+    // pre-existing guild_settings row, then let the real migrateDb apply 0008 exactly
+    // as the bot does at startup. An empty-DB run or a raw-SQL replay would pass even
+    // if the journal entry were missing (idx 8's `when` <= 0007's), which is the
+    // failure this test exists to catch.
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig8-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^000[0-7].*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 7);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');           // production createDb sets this
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });   // apply 0000-0007 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, last_collect_at_ms, created_at_ms) VALUES ('u1', 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO dinos (user_id, species_id, hunger, last_fed_at_ms, hatched_at_ms)
+                    VALUES ('u1', 'triceratops', 100, 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO guild_settings (guild_id, notify_channel_id) VALUES ('g1', 'chan1')`).run();
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+      const rows = sqlite.prepare(`SELECT guild_id, notify_channel_id, world_broadcast FROM guild_settings`).all() as
+        Array<{ guild_id: string; notify_channel_id: string; world_broadcast: number }>;
+      // A row that predates the column keeps its channel and defaults world_broadcast to off.
+      expect(rows).toEqual([{ guild_id: 'g1', notify_channel_id: 'chan1', world_broadcast: 0 }]);
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});
