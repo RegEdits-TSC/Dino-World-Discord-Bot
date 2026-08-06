@@ -1,9 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { makeCtx, fakeCommand } from './harness.js';
 import { worldModule } from '../src/modules/world/index.js';
-import { eventHeaderLine } from '../src/modules/world/embeds.js';
+import { eventHeaderLine, anyModRelevant } from '../src/modules/world/embeds.js';
 import { NEUTRAL_MODS } from '../src/data/world-events.js';
-import * as world from '../src/core/world.js';
 
 type EmbedJson = {
   title?: string;
@@ -95,12 +94,11 @@ describe('eventHeaderLine', () => {
     // fields. No shipped WORLD_EVENTS entry sets energyCostDelta to 1 — the
     // only live fixture is blood_moon's -1, which the old literal check also
     // got right (-1 is neither 1 nor 0), so that fixture alone cannot
-    // discriminate this bug. Constructing the exact boundary value here does.
-    const spy = vi.spyOn(world, 'eventMods').mockReturnValue({ ...NEUTRAL_MODS, energyCostDelta: 1 });
-    try {
-      expect(eventHeaderLine(0, ['energyCostDelta'])).not.toContain('no effect here today');
-    } finally {
-      spy.mockRestore();
-    }
+    // discriminate this bug. worldEventFor is pure and deterministic and this
+    // plan never mocks src/core/world.js, so the boundary value is exercised
+    // directly against the exported pure predicate with a synthetic EventMods
+    // instead — the same pattern tests/world-effects.test.ts uses for
+    // expeditionFeeFor/roundCharge boundaries no shipped multiplier reaches.
+    expect(anyModRelevant({ ...NEUTRAL_MODS, energyCostDelta: 1 }, ['energyCostDelta'])).toBe(true);
   });
 });
