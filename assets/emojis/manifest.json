@@ -41,5 +41,14 @@
   "dw_quest": "06ef7636c01532401eedc5ce3dd477655e463154f8e1a83a412352e8491e9162",
   "dw_streak": "2072337b0345d69ed805cbfd613841b547009436a8c27862fcd1359905f376d3",
   "dw_site_abyssal_trench": "4c41129555764491962db04a35e7bb88b95fe6c545ea250959ca2589cd325bbd",
-  "dw_site_containment_site": "16187920b548d9c20f1a75c8f1b2a4b6b17f2eff69fef3051d5a7e620594f39f"
+  "dw_site_containment_site": "16187920b548d9c20f1a75c8f1b2a4b6b17f2eff69fef3051d5a7e620594f39f",
+  "dw_event_amber_storm": "300750499d8f6bdf05745fc195a416c616681d9c318af0ac322c4fe0bbf1da45",
+  "dw_event_blood_moon": "51665790e504b459f99fbebc0a86a7be750fbb37c4739ba81e66ce063c5cd5f0",
+  "dw_event_bumper_harvest": "d7d37a81235c80c34d66fc29797f4a545cbc776240c4d68d701091b26db269da",
+  "dw_event_clear_skies": "b655a6fa53eddd1dd8d1b8abd67563817d40bd4ea6f82674089a72d36f45fa12",
+  "dw_event_cold_snap": "b3edd8e879439c99e895384f7754cead44cfff80e5cd3a0c296306bb5a85a07a",
+  "dw_event_fossil_rush": "5ee0fb5d3417ffb4c0a111736420d70dbd5e4d4eb71e7180008b1b2566078386",
+  "dw_event_heat_wave": "35d148a699bcfc8d922c920c169f03950fa109e320def03e15a0ed8aa3b66a81",
+  "dw_event_market_panic": "89de3fe3aefad4836ab5295f25751b8d1fc3623c1717f916943f19d40f47cd9a",
+  "dw_event_migration_season": "b88b4bc5b5f2b0896a46916d47075ee13d9b20b41ac0459702757873090ec6a9"
 }
