@@ -72,11 +72,13 @@ describe('/daily hub', () => {
     expect(lines.slice(1).some((l) => l.includes('▱▱▱▱▱') && l.includes('0/'))).toBe(true);
   });
 
-  it('ships no files key when the daily banner asset is absent', async () => {
+  it('attaches the daily banner asset', async () => {
     const ctx = makeCtx({ nowMs: 0 });
     const i = fakeCommand({ name: 'daily', user: 'u1' });
     await dailyCmd.execute(ctx, i.asChatInput());
-    expect((i.replies[0] as EmbedPayload).files).toBeUndefined();
+    const files = (i.replies[0] as EmbedPayload).files!;
+    expect(files).toHaveLength(1);
+    expect(files[0].name).toBe('daily.webp');
   });
 
   it('falls back to placeholder text instead of throwing when every rolled quest\'s def has been retired', async () => {
@@ -192,7 +194,8 @@ describe('/achievements', () => {
     expect(pageButtons[1].custom_id).toBe('ach:page:u1:2');
     const claimRow = payload.components[1].toJSON().components;
     expect(claimRow[0].custom_id).toBe('ach:claimall:u1');
-    expect(payload.files).toBeUndefined(); // no achievements banner shipped yet — null-degrade
+    expect(payload.files).toHaveLength(1);
+    expect(payload.files![0].name).toBe('achievements.webp');
   });
 
   it('shows claimed tier glyphs and MAXED once the stat has crossed every tier', async () => {

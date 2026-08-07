@@ -4,13 +4,12 @@ The volcano/frozen banners and volcano thumb were generated with ChatGPT image
 generation; the remaining coastal/amber banners and the coastal/amber/frozen
 thumbs were generated with Higgsfield Nano Banana Pro. The six egg rarities were
 generated with Higgsfield Nano Banana Pro as a reference chain (see the Egg
-rarities section). The fifteen embed banners were generated with Higgsfield
+rarities section). The twenty-six embed banners were generated with Higgsfield
 Nano Banana Pro, `care_neglect` as a reference chain off `care` and
 `battle_defeat` off `battle_victory`. The six hatch cracks were generated as
 reference-chain edits of their own egg icons. These prompts are the source of
 truth for regenerating or extending the set — keep them in sync with any new
-assets. Two more banners, `daily.webp` and `achievements.webp`, have prompts
-recorded below but are not generated yet — see the Embed banners section.
+assets.
 
 Note on thumbs: some models render a "square cartoon game icon of …" prompt as
 a rounded-rectangle app-icon tile with a border. To force a full-bleed square
@@ -34,6 +33,9 @@ icons in `assets/images/eggs/` (glossy cartoon game style):
 | `assets/images/sites/<id>-banner.webp` | 1536×1024 | `/expedition claim` full-width embed image |
 | `assets/images/sites/<id>-thumb.webp` | 1024×1024* | `/expedition start` + `status` embed thumbnail |
 | `assets/images/park/ground.webp` | 1200×800 (3:2) | `/park view` canvas backdrop, cover-scaled |
+| `assets/images/park/ground-wet.webp` | 1200×800 (3:2) | season-variant canvas backdrop (wet), not yet wired into the renderer |
+| `assets/images/park/ground-dry.webp` | 1200×800 (3:2) | season-variant canvas backdrop (dry), not yet wired into the renderer |
+| `assets/images/park/ground-cold.webp` | 1200×800 (3:2) | season-variant canvas backdrop (cold), not yet wired into the renderer |
 | `assets/images/park/plate-paddock.webp` | 270×150 | `/park view` paddock tile plate |
 | `assets/images/park/plate-facility.webp` | 270×150 | `/park view` facility tile plate |
 
@@ -368,10 +370,10 @@ same upscaled source, resized to 1024×1024 (not a squash).
 
 ## Embed banners
 
-Fifteen wide banners for the surfaces that have no site or egg art of their own.
-All generated with Higgsfield Nano Banana Pro at 3:2, then scaled to 1536×1024
-(the generator emits 1264×848; scaling to full width leaves ~6px of vertical
-excess, which is center-cropped).
+Twenty-six wide banners for the surfaces that have no site or egg art of their
+own. All generated with Higgsfield Nano Banana Pro at 3:2, then scaled to
+1536×1024 (the generator emits 1264×848; scaling to full width leaves ~6px of
+vertical excess, which is center-cropped).
 
 | File | Size | Use |
 |---|---|---|
@@ -390,13 +392,17 @@ excess, which is center-cropped).
 | `assets/images/banners/sell.webp` | 1536×1024 | `/sell` confirmation prompt embed image |
 | `assets/images/banners/gene_lab.webp` | 1536×1024 | `/breed` confirm/status/claim embed image |
 | `assets/images/banners/gene_splice.webp` | 1536×1024 | `/splice` preview/result embed image |
-| `assets/images/banners/daily.webp` *(not yet generated)* | 1536×1024 | `/daily` hub embed image |
-| `assets/images/banners/achievements.webp` *(not yet generated)* | 1536×1024 | `/achievements` embed image |
-
-The last two rows have prompts below but no committed file yet — `assetImage`
-null-degrades until they land, which is why the `/daily` hub and `/help
-topic:daily` ship art-less at first (see the Daily loop entry in the repo
-`CLAUDE.md`).
+| `assets/images/banners/daily.webp` | 1536×1024 | `/daily` hub embed image |
+| `assets/images/banners/achievements.webp` | 1536×1024 | `/achievements` embed image |
+| `assets/images/banners/event-clear_skies.webp` | 1536×1024 | `/world` hub embed image, Clear Skies |
+| `assets/images/banners/event-amber_storm.webp` | 1536×1024 | `/world` hub embed image, Amber Storm |
+| `assets/images/banners/event-fossil_rush.webp` | 1536×1024 | `/world` hub embed image, Fossil Rush |
+| `assets/images/banners/event-heat_wave.webp` | 1536×1024 | `/world` hub embed image, Heat Wave |
+| `assets/images/banners/event-cold_snap.webp` | 1536×1024 | `/world` hub embed image, Cold Snap |
+| `assets/images/banners/event-bumper_harvest.webp` | 1536×1024 | `/world` hub embed image, Bumper Harvest |
+| `assets/images/banners/event-market_panic.webp` | 1536×1024 | `/world` hub embed image, Market Panic |
+| `assets/images/banners/event-blood_moon.webp` | 1536×1024 | `/world` hub embed image, Blood Moon |
+| `assets/images/banners/event-migration_season.webp` | 1536×1024 | `/world` hub embed image, Migration Season |
 
 These are the only prompts in this file whose subject is dinosaurs rather than
 scenery, so they drop the shared block's "no characters" clause and forbid only
@@ -588,13 +594,10 @@ stall with a ledger are exactly the kind of scene a model will happily letter.
 All three generated clean on the first attempt with the strengthened clause,
 so no regeneration was needed.
 
-**Daily (`daily.webp`) and Achievements (`achievements.webp`):** prompts
-recorded ahead of generation, not generated yet. Once generated, follow the
-same pipeline as the rest of this section — Higgsfield Nano Banana Pro at
-3:2, then `node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024 WebP
-q95. Until then `assetImage` null-degrades both embeds and the `daily` `/help`
-topic ships with no `art` descriptor at all (see the Daily loop entry in the
-repo `CLAUDE.md`).
+**Daily (`daily.webp`) and Achievements (`achievements.webp`):** generated
+with Higgsfield Nano Banana Pro at 3:2, then
+`node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024 WebP q95 — same
+pipeline as the rest of this section.
 
 > **daily.webp:** A wide cartoon scene of a dinosaur park quest board beside a
 > well-trodden path: a warm timber signpost holding a chalkboard-style board
@@ -641,6 +644,110 @@ look everywhere else.
 > background thrown far out of focus into warm bokeh. Dramatic rim lighting,
 > volumetric glow, painterly digital illustration, game key art. No text, no
 > lettering, no people.
+
+**World event banners** (`event-<id>.webp`, one per `WORLD_EVENTS` entry in
+`src/data/world-events.ts`): generated with model `nano_banana_pro` (the API
+silently routes this to `nano_banana_2`) at aspect ratio `3:2`, source output
+1264×848, then `node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024
+WebP q95 — same pipeline as the rest of this section. The nine are
+deliberately **one park under nine conditions, not nine different places**:
+each opens on the same fenced paddocks, timber visitor pavilion and winding
+dirt path, and varies only the weather or event. That constraint is what
+makes them read as a set on the `/world` hub bulletin rather than nine
+unrelated scenes. Every prompt shares the opening "A wide establishing
+cartoon view over a lush dinosaur park valley…" and ends with the shared
+style block plus the expanded no-text clause used elsewhere in this section.
+
+> **event-clear_skies.webp:** A wide establishing cartoon view over a lush
+> dinosaur park valley: the same fenced paddocks, timber visitor pavilion and
+> winding dirt path as the rest of the bulletin, under a calm clear day with
+> bright even sunlight, a deep blue sky scattered with soft white clouds,
+> everything settled and nothing unusual happening. Glossy cartoon
+> mobile-game art style, bold dark outlines, vibrant saturated colors, strong
+> glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no human characters, no UI elements.
+
+> **event-amber_storm.webp:** A wide establishing cartoon view over the same
+> lush dinosaur park valley — fenced paddocks, timber visitor pavilion and
+> winding dirt path — now lashed by sheets of golden-amber rain slanting
+> across the valley, wind bending the ferns hard, canvas dig tarps flapping
+> loose, dark churning ochre storm clouds overhead. Glossy cartoon
+> mobile-game art style, bold dark outlines, vibrant saturated colors, strong
+> glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no human characters, no UI elements.
+
+> **event-fossil_rush.webp:** A wide establishing cartoon view over the same
+> lush dinosaur park valley — fenced paddocks, timber visitor pavilion and
+> winding dirt path — where a collapsed hillside has exposed pale curved
+> fossil ribs, a horned skull and vertebrae in layered ochre rock, open
+> excavation pits, crates and loose scree scattered around the dig. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated
+> colors, strong glossy highlights, clean cel shading with smooth gradients,
+> polished game-asset look. No text, no lettering, no words, no numbers, no
+> signage writing anywhere in the scene, no human characters, no UI elements.
+
+> **event-heat_wave.webp:** A wide establishing cartoon view over the same
+> lush dinosaur park valley — fenced paddocks, timber visitor pavilion and
+> winding dirt path — the grass scorched yellow-brown, the ground cracked
+> and dusty with visible heat shimmer, dinosaurs crowding into palm shade
+> panting, a bleached white-hot sky overhead. Glossy cartoon mobile-game art
+> style, bold dark outlines, vibrant saturated colors, strong glossy
+> highlights, clean cel shading with smooth gradients, polished game-asset
+> look. No text, no lettering, no words, no numbers, no signage writing
+> anywhere in the scene, no human characters, no UI elements.
+
+> **event-cold_snap.webp:** A wide establishing cartoon view over the same
+> lush dinosaur park valley — fenced paddocks, timber visitor pavilion and
+> winding dirt path — every fern and fence rail rimed in frost, frozen
+> puddles, stiff silver-green grass, breath vapour in the cold air, a low
+> pale winter sun in a washed lilac-blue sky. Glossy cartoon mobile-game art
+> style, bold dark outlines, vibrant saturated colors, strong glossy
+> highlights, clean cel shading with smooth gradients, polished game-asset
+> look. No text, no lettering, no words, no numbers, no signage writing
+> anywhere in the scene, no human characters, no UI elements.
+
+> **event-bumper_harvest.webp:** A wide establishing cartoon view over the
+> same lush dinosaur park valley — fenced paddocks, timber visitor pavilion
+> and winding dirt path — crates spilling glossy greens, fruit and bundled
+> hay, stacked barrels and baskets, a laden cart, warm golden late-afternoon
+> light over the abundance. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no
+> lettering, no words, no numbers, no signage writing anywhere in the scene,
+> no human characters, no UI elements.
+
+> **event-market_panic.webp:** A wide establishing cartoon view over the
+> same lush dinosaur park valley — fenced paddocks, timber visitor pavilion
+> and winding dirt path — market stalls abandoned with sagging awnings,
+> crates and cages of unsold goods, gold coins spilled across the dirt, an
+> overturned strongbox, flat grey-blue overcast light over the scene. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated
+> colors, strong glossy highlights, clean cel shading with smooth gradients,
+> polished game-asset look. No text, no lettering, no words, no numbers, no
+> signage writing anywhere in the scene, no human characters, no UI elements.
+
+> **event-blood_moon.webp:** A wide establishing cartoon view over the same
+> lush dinosaur park valley — fenced paddocks, timber visitor pavilion and
+> winding dirt path — under deep night beneath an enormous crimson moon,
+> agitated carnivores pressing at the fences with glowing eyes, orange torch
+> flames and low mist drifting across the ground. Dark and moody but never
+> pure black. Glossy cartoon mobile-game art style, bold dark outlines,
+> vibrant saturated colors, strong glossy highlights, clean cel shading with
+> smooth gradients, polished game-asset look. No text, no lettering, no
+> words, no numbers, no signage writing anywhere in the scene, no human
+> characters, no UI elements.
+
+> **event-migration_season.webp:** A wide establishing cartoon view over the
+> same lush dinosaur park valley — fenced paddocks, timber visitor pavilion
+> and winding dirt path — the sky filled with pterosaurs wheeling in long
+> ribbons, a herd of sauropods crossing the far ridgeline, dust rising off
+> the ground, warm golden-hour light over the valley. Glossy cartoon
+> mobile-game art style, bold dark outlines, vibrant saturated colors,
+> strong glossy highlights, clean cel shading with smooth gradients,
+> polished game-asset look. No text, no lettering, no words, no numbers, no
+> signage writing anywhere in the scene, no human characters, no UI elements.
 
 ---
 
@@ -982,6 +1089,49 @@ close.
 > cast shadows. Glossy cartoon mobile-game art style, bold dark outlines,
 > vibrant saturated colors, clean cel shading with smooth gradients, polished
 > game-asset look. No text, no characters, no UI elements.
+
+**park/ground-{wet,dry,cold}** — three season variants of the ground above,
+committed but not yet wired into the renderer (a future change, not this
+pass). Generated with model `nano_banana_pro` (the API silently routes this
+to `nano_banana_2`) at aspect ratio `3:2`, source output 1264×848, then
+`node scripts/fit-art.mjs ground <src> <dest>` to 1200×800 WebP q95 —
+`fit-art.mjs`'s new `ground` mode, sized for the park canvas rather than the
+1536×1024 `banner` mode. Each keeps the same "top-down view of lush
+jungle-park ground filling the whole frame … no single focal point …
+even flat lighting, no strong cast shadows" framing as the base ground and
+varies only the season, and each ends with the shared style block plus the
+expanded no-text clause used elsewhere in this file (a stricter ending than
+the base ground prompt above, which predates that clause).
+
+> **ground-wet.webp:** A top-down view of lush jungle-park ground filling the
+> whole frame, soaked deep vivid rain-soaked green with glossy puddles and
+> dark damp dirt patches worn into the turf, no single focal point and
+> nothing large enough to dominate the frame. Even flat lighting, no strong
+> cast shadows. Glossy cartoon mobile-game art style, bold dark outlines,
+> vibrant saturated colors, strong glossy highlights, clean cel shading with
+> smooth gradients, polished game-asset look. No text, no lettering, no
+> words, no numbers, no signage writing anywhere in the scene, no human
+> characters, no UI elements.
+
+> **ground-dry.webp:** A top-down view of lush jungle-park ground filling the
+> whole frame, sun-bleached straw-gold and pale olive grass with hairline
+> cracks and dusty pale dirt patches worn into the turf, no single focal
+> point and nothing large enough to dominate the frame. Even flat lighting,
+> no strong cast shadows. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no
+> lettering, no words, no numbers, no signage writing anywhere in the scene,
+> no human characters, no UI elements.
+
+> **ground-cold.webp:** A top-down view of lush jungle-park ground filling
+> the whole frame, stiff silver-green grass dusted with frost and thin snow
+> patches, pale frozen dirt patches worn into the turf, no single focal
+> point and nothing large enough to dominate the frame. Even flat lighting,
+> no strong cast shadows. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no
+> lettering, no words, no numbers, no signage writing anywhere in the scene,
+> no human characters, no UI elements.
 
 **park/plate-paddock** (generated with the ground attached as the `image`
 reference):
