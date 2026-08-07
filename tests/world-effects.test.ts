@@ -192,6 +192,31 @@ describe('expeditions under world events', () => {
     expect(ctx.economy.getFoodInventory('u1')[loot.food.foodId])
       .toBe((STARTER_FOOD[loot.food.foodId] ?? 0) + loot.food.qty);
   });
+
+  it('prices loot at CLAIM time, not departure time, across a day boundary', () => {
+    // Depart 5 minutes before day 14 (fossil_rush, expeditionCash x1.5) rolls
+    // in — departure itself lands on day 13 (blood_moon, which sets NO
+    // expedition mod at all, so its expeditionCash is the neutral 1) — and
+    // let the 15-minute dig land after midnight, inside day 14.
+    // eventMods(exp.departedAt) would price this against day 13's neutral
+    // multiplier (178) instead of day 14's 1.5x (267).
+    const departAt = 14 * DAY - 5 * 60_000;
+    const ctx = makeCtx({ nowMs: departAt });
+    seed(ctx);
+    const exp = startExpedition(ctx, 'u1', 'coastal_dig', 'g1');
+    expect(Math.floor(exp.returnsAt / DAY)).toBe(14);   // confirms the boundary crossing
+    ctx.setNow(exp.returnsAt);
+    const cashBefore = cashOf(ctx);
+    const { loot } = claimExpedition(ctx, 'u1');
+    // Claim-time mods.expeditionOddsShift is -1 regardless of departure day,
+    // same collapse-to-common as the mid-day Fossil Rush test above.
+    expect(loot.eggRarity).toBe('common');
+    // Same seeded rng (mulberry32(42)) and the same draw order as the mid-day
+    // Fossil Rush test above — departure itself draws no rng — so the raw
+    // bonusCash roll is the same 178, scaled by day 14's own 1.5x: 267.
+    expect(loot.cash).toBe(267);
+    expect(cashOf(ctx) - cashBefore).toBe(267);
+  });
 });
 
 describe('breeding time under world events', () => {
@@ -473,6 +498,26 @@ describe('battles under world events', () => {
       expect(stage4.name).toContain('(⚡1)');
       expect(boss.name).toContain('(⚡2)');
     });
+
+    it('the stage autocomplete shows the adjusted cost on the OPEN template too, not only the locked one', async () => {
+      // The test above only ever looks up locked stages (coastal_dig_4,
+      // coastal_dig_boss) for an unseeded user — both render through the
+      // 🔒-prefixed template, so a mutation reverting only the OPEN template
+      // (src/modules/battles/index.ts) to the declared cost is invisible to
+      // it. Clear through coastal_dig_1..3 so coastal_dig_4 unlocks and
+      // renders through the open template instead.
+      const ctx = makeCtx({ nowMs: 7 * DAY });
+      getOrCreateUser(ctx, 'u1', 'u1');
+      clearThrough(ctx, 'u1', ['coastal_dig_1', 'coastal_dig_2', 'coastal_dig_3']);
+      const battleCmd = battlesModule.commands[0];
+      const fake = fakeAutocomplete({ name: 'battle', sub: 'fight', user: 'u1', focused: { name: 'stage', value: '' } });
+      await battleCmd.autocomplete!(ctx, fake.asAutocomplete());
+      const choices = fake.replies[0] as { name: string; value: string }[];
+      const stage4 = choices.find((c) => c.value === 'coastal_dig_4')!;
+      expect(stage4.name).not.toMatch(/^🔒/);       // open — no lock marker
+      expect(stage4.name).toContain('(⚡1)');        // declares 2, adjusted to 1 on Blood Moon
+      expect(stage4.name).not.toContain('(⚡2)');
+    });
   });
 });
 
@@ -628,6 +673,24 @@ describe('shop and sell prices under world events', () => {
       const quotedUnit = Number(match![1]);
       // 12 * 0.60 = 7.2 -> round 7. Genuinely fractional pre-round, so this
       // also proves foodPriceAt isn't Math.ceil (which would quote 8).
+      expect(quotedUnit).toBe(7);
+      const before = cashOf(ctx);
+      const { total } = buyFood(ctx, 'u1', 'fish', 3);
+      expect(total).toBe(quotedUnit * 3);
+      expect(before - cashOf(ctx)).toBe(total);
+    });
+
+    it('charges exactly what the food autocomplete quotes', async () => {
+      const ctx = makeCtx({ nowMs: 18 * DAY });
+      seedUser(ctx);
+      const i = fakeAutocomplete({ name: 'shop', sub: 'food', user: 'u1', focused: { name: 'item', value: '' } });
+      await shopCmd().autocomplete!(ctx, i.asAutocomplete());
+      const rows = i.replies[0] as Array<{ name: string; value: string }>;
+      const row = rows.find((r) => r.value === 'fish')!;
+      const match = row.name.match(/(\d+) cash\/unit/);
+      expect(match, row.name).not.toBeNull();
+      const quotedUnit = Number(match![1]);
+      // 12 * 0.60 = 7.2 -> round 7, mirroring the /shop view food parity check above.
       expect(quotedUnit).toBe(7);
       const before = cashOf(ctx);
       const { total } = buyFood(ctx, 'u1', 'fish', 3);

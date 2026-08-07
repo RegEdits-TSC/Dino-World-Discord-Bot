@@ -12,10 +12,12 @@ const DAY_MS = 86_400_000;
 // Chosen so UTC days 0-4 all resolve to Clear Skies (all-neutral modifiers).
 // This is a TEST-ENVIRONMENT decision with zero production impact: makeCtx
 // defaults nowMs to 0 (tests/harness.ts:17), so essentially the whole existing
-// suite and scripts/test-live.ts run on day 0, and an eventful epoch would
-// silently multiply pinned fixtures across a dozen test files. Real players are
-// past day 20,000. Long-run Clear Skies share is 0.3338 over 1,000,000 days
-// against the 1/3 design target.
+// OFFLINE suite runs on day 0, and an eventful epoch would silently multiply
+// pinned fixtures across a dozen test files. scripts/test-live.ts is the one
+// exception — it calls ctx.setNow(Date.now()), real wall time, deliberately,
+// so its gallery reflects whatever event is live today rather than day 0.
+// Real players are past day 20,000. Long-run Clear Skies share is 0.3338 over
+// 1,000,000 days against the 1/3 design target.
 //
 // The salt is also what keeps the world stream independent of the shop's:
 // dailyEggOffers seeds mulberry32(day) RAW (src/modules/shop/service.ts:19), so

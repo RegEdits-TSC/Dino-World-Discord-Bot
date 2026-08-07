@@ -52,10 +52,20 @@ describe('the world broadcast', () => {
     // 5*DAY, but real time has moved to partway through day 8, so the correct
     // re-arm is the next midnight after NOW (9*DAY), not firesAt+DAY_MS (6*DAY).
     const ctx = makeCtx({ nowMs: 8 * DAY + 500 });
+    // Also seed an opted-in guild with a channel, so the sent PAYLOAD (not
+    // just the re-arm) is exercised here — this is otherwise the only
+    // fixture in the file where nowMs and firesAt fall on different days, and
+    // no existing test reads the sent payload at all. Day 5 (the stale
+    // firesAt) is Heat Wave; day 8 (ctx.now()) is Cold Snap — genuinely
+    // different events, verified via worldEventFor, not assumed.
+    ctx.db.insert(schema.guildSettings).values({ guildId: 'g', notifyChannelId: 'c', worldBroadcast: true }).run();
     const s = fakeSender();
     await worldBroadcastHandler(s, ctx)({ id: 1, kind: WORLD_TIMER, userId: '0', refId: 0, originGuildId: null, firesAt: 5 * DAY, handledAt: null });
     const timers = ctx.db.select().from(schema.timers).all();
     expect(timers.filter((t) => t.kind === WORLD_TIMER).map((t) => t.firesAt)).toEqual([9 * DAY]);
+    const sent = s.channel[0].payload as { embeds: Array<{ toJSON(): { title?: string } }> };
+    expect(sent.embeds[0].toJSON().title).toContain('Cold Snap');      // ctx.now()'s (day 8) event
+    expect(sent.embeds[0].toJSON().title).not.toContain('Heat Wave');  // firesAt's (day 5) event — must not leak in
   });
 
   it('re-arms even when a channel send throws', async () => {

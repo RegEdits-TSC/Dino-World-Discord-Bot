@@ -45,6 +45,7 @@ describe('/settings world-news', () => {
     const on = fakeCommand({ name: 'settings', sub: 'world-news', user: 'u1', guild: 'g1', options: { state: 'on' } });
     await cmd.execute(ctx, on.asChatInput());
     expect(replyText(on.replies[0])).toContain('bulletin');
+    expect(replyText(on.replies[0])).toContain('no notification channel is set yet');
     expect(ctx.db.select().from(schema.guildSettings).all()).toEqual([
       { guildId: 'g1', notifyChannelId: null, worldBroadcast: true },
     ]);
@@ -55,6 +56,7 @@ describe('/settings world-news', () => {
     await cmd.execute(ctx, chan.asChatInput());
     const on = fakeCommand({ name: 'settings', sub: 'world-news', user: 'u1', guild: 'g1', options: { state: 'on' } });
     await cmd.execute(ctx, on.asChatInput());
+    expect(replyText(on.replies[0])).toContain('will post in the notification channel');
     expect(ctx.db.select().from(schema.guildSettings).all()).toEqual([
       { guildId: 'g1', notifyChannelId: 'chanA', worldBroadcast: true },
     ]);

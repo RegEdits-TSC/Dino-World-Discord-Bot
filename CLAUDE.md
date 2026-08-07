@@ -444,9 +444,11 @@
   `WORLD_SALT` (`0x2c0`) is XORed into the day index before seeding
   `mulberry32` specifically so UTC days 0–4 all resolve to Clear Skies
   (fully neutral mods): `makeCtx` defaults `nowMs` to 0 (`tests/harness.ts`),
-  so essentially the **whole existing test suite**, plus
-  `scripts/test-live.ts`, run on day 0 — an eventful epoch would have
-  silently multiplied pinned fixtures across a dozen unrelated test files.
+  so essentially the **whole offline test suite** runs on day 0 — an eventful
+  epoch would have silently multiplied pinned fixtures across a dozen
+  unrelated test files. `scripts/test-live.ts` is the one exception: it calls
+  `ctx.setNow(Date.now())` deliberately, so its gallery renders under
+  whatever event is live on the real calendar day, not day 0.
   Never reorder `WORLD_EVENTS` or change the salt without re-running
   `tests/world.test.ts`. Seasons (`seasonFor`/`seasonDay`, same file) are a
   separate, purely cosmetic 30-day/3-season cycle (`SEASON_DAYS`) with no

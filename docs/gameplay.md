@@ -447,11 +447,16 @@ one expedition can be out at a time.
 | Abyssal Trench | 8.8★ | 40,000 | 12 h | 8,000–20,000 | 40–90 |
 | Containment Site | 9.5★ | 100,000 | 24 h | 20,000–50,000 | 80–180 |
 
+The costs, durations, cash/food ranges above, and the egg odds further below
+are all calm-day numbers — Amber Storm, Fossil Rush, and other world events
+can shorten a dig, change its fee, boost its cash payout, or shift its egg
+odds a rarity step; see The world, below.
+
 Site unlocks are gated on your **best-ever** rating, so a site never
-re-locks even if your current rating later drops. No site's maximum cash
-bonus can beat its fee outright — at Coastal Dig the best case (200) merely
-breaks even — so an expedition is never a guaranteed cash profit on its own;
-the egg and the food are the real payoff.
+re-locks even if your current rating later drops. On a calm day, no site's
+maximum cash bonus beats its fee outright — at Coastal Dig the best case
+(200) merely breaks even — so a calm-day expedition is never a guaranteed
+cash profit on its own; the egg and the food are the real payoff.
 
 Every claim pays out exactly three things at once: one egg, a cash amount
 rolled anywhere between the site's min and max (inclusive), and a stack of
