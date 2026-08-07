@@ -105,4 +105,27 @@ describe('park render with the committed art', () => {
     const chipX = TILE0_X + 16, chipY = TILE0_Y + 75;
     expect(pixelAt(real, chipX + 14, chipY + 14)).toEqual(pixelAt(chipRef, 14, 14));
   });
+
+  // End-to-end proof that the three committed season rasters are actually distinct art, not the
+  // same file copy-pasted three times, and that each is wired to its own Season key: the ground
+  // pixel sampled at the same unoccluded point (10, 240) used above must differ across all three
+  // seasons and from the no-season / base-ground render this same file already pins above.
+  it('paints a different real ground raster per snapshot.season, and the base ground with no season', async () => {
+    const art = await loadParkArt();
+    const groundPixel = async (season?: 'wet' | 'dry' | 'cold') => {
+      const png = renderParkPng(season ? { ...sample, season } : sample, art);
+      const c = await decodeToCanvas(png);
+      return pixelAt(c, 10, 240);
+    };
+    const wet = await groundPixel('wet');
+    const dry = await groundPixel('dry');
+    const cold = await groundPixel('cold');
+    const base = await groundPixel();
+    expect(wet).not.toEqual(dry);
+    expect(wet).not.toEqual(cold);
+    expect(dry).not.toEqual(cold);
+    expect(wet).not.toEqual(base);
+    expect(dry).not.toEqual(base);
+    expect(cold).not.toEqual(base);
+  });
 });

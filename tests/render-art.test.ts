@@ -9,6 +9,7 @@ import type { Rarity } from '../src/data/types.js';
 describe('EMPTY_ART', () => {
   it('is exhaustive over every rarity with all-null entries', () => {
     expect(EMPTY_ART.ground).toBeNull();
+    expect(EMPTY_ART.groundBySeason).toEqual({ wet: null, dry: null, cold: null });
     expect(EMPTY_ART.platePaddock).toBeNull();
     expect(EMPTY_ART.plateFacility).toBeNull();
     expect(EMPTY_ART.lotIcons).toEqual({});
@@ -34,6 +35,13 @@ describe('loadSvgImage', () => {
 describe('loadParkArt', () => {
   it('loads every lot icon and dino chip, and leaves unknown lot kinds unmapped', async () => {
     const art = await loadParkArt();
+    // The three season ground rasters share the raster loader's own Promise.all with the base
+    // ground and both plates — see art.ts's loadParkArt — so a season raster going missing from
+    // disk fails exactly like ground.webp going missing: silently, to null, never a rejection.
+    for (const season of ['wet', 'dry', 'cold'] as const) {
+      expect(art.groundBySeason[season], `no ${season} ground loaded`).not.toBeNull();
+      expect(art.groundBySeason[season]!.width).toBeGreaterThan(0);
+    }
     for (const kind of ['carnivore_paddock', 'herbivore_paddock', 'food_court', 'hatchery_lab', 'visitor_center']) {
       expect(art.lotIcons[kind], `no icon loaded for lot kind ${kind}`).not.toBeNull();
       expect(art.lotIcons[kind]!.width).toBeGreaterThan(0);
@@ -58,6 +66,7 @@ describe('loadParkArt', () => {
     try {
       const art = await loadParkArt();
       expect(art.ground).toBeNull();
+      expect(art.groundBySeason).toEqual({ wet: null, dry: null, cold: null });
       expect(art.platePaddock).toBeNull();
       expect(art.plateFacility).toBeNull();
       expect(art.lotIcons['carnivore_paddock']).toBeNull();

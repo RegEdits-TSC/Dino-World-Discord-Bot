@@ -504,3 +504,21 @@
   would silently delete or shift the world broadcast timer for every server.
   `'0'` can never collide with a real snowflake — Discord IDs start far
   above that range.
+  The season's cosmetic ground art is wired the same "id crosses, asset doesn't" way as the
+  event system's own art: `buildParkSnapshot` (`src/modules/park/snapshot.ts`) is the only place
+  with a `Ctx`, so it alone stamps `ParkSnapshot.season = seasonFor(ctx.now())` — an OPTIONAL
+  field, so the handful of hand-built `ParkSnapshot` test fixtures that predate seasons keep
+  compiling and keep resolving to the base ground, exactly like a snapshot built before this
+  feature shipped would. `renderParkPng` (`src/core/render/draw.ts`) never calls `seasonFor`
+  or reads a clock itself — it stays a pure function of its `(snapshot, art)` arguments, which is
+  what the byte-identical-output pin in `tests/render-draw.test.ts` requires. `ParkArt.groundBySeason`
+  (`src/core/render/art.ts`) is a `Record<Season, Image | null>`, exhaustively null-initialized in
+  `EMPTY_ART` the same way `dinoChips` is: a lookup miss on a real `Season` value must never read
+  back `undefined`, because `drawImage(undefined)` throws exactly like `drawImage(null)` does and
+  costs the whole park image. The fallback chain in `groundImage` (`draw.ts`) is
+  `groundBySeason[season] ?? ground ?? <flat fill>` — a missing or unloaded seasonal raster
+  degrades to the base ground, never to a blank canvas, and a snapshot with no `season` at all
+  (every pre-season fixture) skips the seasonal lookup entirely. The three rasters load inside
+  `loadParkArt`'s existing `Promise.all` alongside the base ground and both plates, so they
+  inherit the same never-rejects guarantee for free — no second `Promise.all`, no separate
+  top-level await for `worker.ts` to guard.

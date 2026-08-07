@@ -33,9 +33,9 @@ icons in `assets/images/eggs/` (glossy cartoon game style):
 | `assets/images/sites/<id>-banner.webp` | 1536×1024 | `/expedition claim` full-width embed image |
 | `assets/images/sites/<id>-thumb.webp` | 1024×1024* | `/expedition start` + `status` embed thumbnail |
 | `assets/images/park/ground.webp` | 1200×800 (3:2) | `/park view` canvas backdrop, cover-scaled |
-| `assets/images/park/ground-wet.webp` | 1200×800 (3:2) | season-variant canvas backdrop (wet), not yet wired into the renderer |
-| `assets/images/park/ground-dry.webp` | 1200×800 (3:2) | season-variant canvas backdrop (dry), not yet wired into the renderer |
-| `assets/images/park/ground-cold.webp` | 1200×800 (3:2) | season-variant canvas backdrop (cold), not yet wired into the renderer |
+| `assets/images/park/ground-wet.webp` | 1200×800 (3:2) | `/park view` canvas backdrop for the wet season, selected by `ParkSnapshot.season` |
+| `assets/images/park/ground-dry.webp` | 1200×800 (3:2) | `/park view` canvas backdrop for the dry season, selected by `ParkSnapshot.season` |
+| `assets/images/park/ground-cold.webp` | 1200×800 (3:2) | `/park view` canvas backdrop for the cold season, selected by `ParkSnapshot.season` |
 | `assets/images/park/plate-paddock.webp` | 270×150 | `/park view` paddock tile plate |
 | `assets/images/park/plate-facility.webp` | 270×150 | `/park view` facility tile plate |
 
@@ -1091,9 +1091,12 @@ close.
 > game-asset look. No text, no characters, no UI elements.
 
 **park/ground-{wet,dry,cold}** — three season variants of the ground above,
-committed but not yet wired into the renderer (a future change, not this
-pass). Generated with model `nano_banana_pro` (the API silently routes this
-to `nano_banana_2`) at aspect ratio `3:2`, source output 1264×848, then
+selected by `ParkArt.groundBySeason[snapshot.season]` in
+`src/core/render/draw.ts`, falling back to the base `ground` art (and,
+failing that, the flat fill) whenever a season's raster is missing or a
+snapshot names none. Generated with model `nano_banana_pro` (the API
+silently routes this to `nano_banana_2`) at aspect ratio `3:2`, source
+output 1264×848, then
 `node scripts/fit-art.mjs ground <src> <dest>` to 1200×800 WebP q95 —
 `fit-art.mjs`'s new `ground` mode, sized for the park canvas rather than the
 1536×1024 `banner` mode. Each keeps the same "top-down view of lush
