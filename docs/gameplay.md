@@ -242,10 +242,15 @@ until you place it in one.
 
 ## 6. The roster
 
-Dino World has 40 species split across six rarities: 8 Common, 8 Uncommon, 8
+Dino World has 42 species split across six rarities: 8 Common, 9 Uncommon, 9
 Rare, 8 Epic, 5 Legendary, and 3 Mythic. Diet determines which paddock a dino
 can live in without its comfort being halved, so it's worth knowing before you
-start hatching: 18 species are herbivores and 22 are carnivores.
+start hatching: 18 species are herbivores and 24 are carnivores.
+
+Since the species inside a hatched egg is a flat pick across its rarity's pool
+(see above), adding a species to a tier dilutes every other species in that
+tier's odds — the Uncommon tier grew from 8 to 9 species, so each existing
+Uncommon dropped from a 1-in-8 to a 1-in-9 chance per hatch.
 
 | Species | Rarity | Diet |
 | --- | --- | --- |
@@ -265,6 +270,7 @@ start hatching: 18 species are herbivores and 22 are carnivores.
 | Pachycephalosaurus | Uncommon | herbivore |
 | Ouranosaurus | Uncommon | herbivore |
 | Archelon | Uncommon | carnivore |
+| Cryolophosaurus | Uncommon | carnivore |
 | Velociraptor | Rare | carnivore |
 | Carnotaurus | Rare | carnivore |
 | Baryonyx | Rare | carnivore |
@@ -273,6 +279,7 @@ start hatching: 18 species are herbivores and 22 are carnivores.
 | Ceratosaurus | Rare | carnivore |
 | Elasmosaurus | Rare | carnivore |
 | Tylosaurus | Rare | carnivore |
+| Nanuqsaurus | Rare | carnivore |
 | Brachiosaurus | Epic | herbivore |
 | Spinosaurus | Epic | carnivore |
 | Therizinosaurus | Epic | herbivore |
@@ -440,11 +447,16 @@ one expedition can be out at a time.
 | Abyssal Trench | 8.8★ | 40,000 | 12 h | 8,000–20,000 | 40–90 |
 | Containment Site | 9.5★ | 100,000 | 24 h | 20,000–50,000 | 80–180 |
 
+The costs, durations, cash/food ranges above, and the egg odds further below
+are all calm-day numbers — Amber Storm, Fossil Rush, and other world events
+can shorten a dig, change its fee, boost its cash payout, or shift its egg
+odds a rarity step; see The world, below.
+
 Site unlocks are gated on your **best-ever** rating, so a site never
-re-locks even if your current rating later drops. No site's maximum cash
-bonus can beat its fee outright — at Coastal Dig the best case (200) merely
-breaks even — so an expedition is never a guaranteed cash profit on its own;
-the egg and the food are the real payoff.
+re-locks even if your current rating later drops. On a calm day, no site's
+maximum cash bonus beats its fee outright — at Coastal Dig the best case
+(200) merely breaks even — so a calm-day expedition is never a guaranteed
+cash profit on its own; the egg and the food are the real payoff.
 
 Every claim pays out exactly three things at once: one egg, a cash amount
 rolled anywhere between the site's min and max (inclusive), and a stack of
@@ -608,8 +620,8 @@ unlocks the next chapter.
 
 ### Buying eggs
 
-`/shop egg` sells eggs at a flat price per rarity, drawn from a rotation that
-changes once a day:
+`/shop egg` sells eggs at a price per rarity, drawn from a set of rarities
+recomputed once a day:
 
 | Rarity | Shop price |
 | --- | --- |
@@ -626,6 +638,17 @@ separate 10% chance to add a Legendary egg on top, making that a
 four-egg day. While your ceiling is still Uncommon, there are only 2
 rarities to draw from, so the shop shows 2. Trying to buy a rarity that
 isn't in today's rotation is refused.
+
+**Below a 4.0★ best-ever rating, that pool holds only 2 or 3 rarities —
+so the draw takes the whole pool every time, and the set of rarities on
+sale never actually changes day to day for those players.** Only once
+your ceiling reaches Epic (4.0★) or higher does the pool have more than
+3 rarities, so the *set itself* can start to vary. What genuinely gives
+every player, regardless of ceiling, day-to-day variety is the
+**Daily Deal**: one rarity and one food item, chosen fresh each day and
+sold at a further discount on top of the listed price. The prices in the
+table above and the deal's discount can also move with the day's world
+event — see The world, below.
 
 Your rarity ceiling is set by your **best-ever** park rating:
 
@@ -791,28 +814,41 @@ values — their relative order isn't defined.
 
 ## 14. Notifications
 
-The bot can proactively notify you about three things: an egg finishing
-incubation, an expedition returning, and trade activity. There are no
-hunger or escape notifications of any kind — those are only ever surfaced
-when you next run a command yourself.
+The bot can proactively notify you about five things: an egg finishing
+incubation, an expedition returning, a breeding pairing finishing, trade
+activity, and — since the world went live — a daily world bulletin. There
+are no hunger or escape notifications of any kind — those are only ever
+surfaced when you next run a command yourself.
 
 - **Egg ready** — fires once the egg you're incubating finishes, naming its
   rarity and pointing you at `/hatch`.
 - **Expedition returned** — fires once your expedition's timer is up,
   naming the site and pointing you at `/expedition claim`.
+- **Breeding complete** — fires once a Gene Lab pairing finishes, pointing
+  you at `/breed claim`.
 - **Trade activity** — fires immediately rather than on a timer: the
   recipient is notified the moment an offer is sent to them, and the
   sender is notified when it's accepted or declined. Cancelling a trade you
   sent notifies no one.
+- **Daily world bulletin** — a per-server broadcast, not a per-player one.
+  Opt in with `/settings world-news on` and it posts the day's world event
+  and season to your server's configured notification channel every UTC
+  midnight. It works differently from the four notifications above in two
+  ways: there's no DM fallback (if the server hasn't set a notification
+  channel yet, the bulletin simply has nowhere to post that day), and it
+  carries no `@`-ping, since it isn't addressed to any one player.
 
-Either of the timer-based notifications is simply skipped if you've already
-handled it yourself (already hatched the egg, or already claimed the
-expedition) by the time it would have fired.
+Any of the three timer-based, per-player notifications (egg, expedition,
+breeding) is simply skipped if you've already handled it yourself by the
+time it would have fired.
 
 ### Where it goes
 
-Notifications go to a server's configured notification channel first, with
-a ping, if one is set; otherwise they arrive as a DM with no ping. If the
+This section covers the four per-player notifications (egg, expedition,
+breeding, trade) — the world bulletin's delivery rule is different and is
+covered above. Notifications go to a server's configured notification
+channel first, with a ping, if one is set; otherwise they arrive as a DM
+with no ping. If the
 channel can't be posted to for any reason, the bot silently falls back to a
 DM, and if that also fails, the notification is simply dropped. The channel
 used is always the one configured in the server where you started the
@@ -828,12 +864,15 @@ never dropped.
 ### `/settings channel`
 
 Server admins with the Manage Server permission can run `/settings channel`
-to set where hatch and expedition notifications post in that server —
-it only accepts a normal text channel, and only works when run inside a
-server. Running it again simply replaces the previous channel; there's no
-way to clear or unset it once set. There's no per-player notification
-preference anywhere in the game — no DM opt-out, no per-type toggle — the
-only thing stored is one channel per server.
+to set where hatch, expedition, breeding, and trade notifications post in
+that server — it only accepts a normal text channel, and only works when
+run inside a server. Running it again simply replaces the previous
+channel; there's no way to clear or unset it once set. The same channel is
+also where the world bulletin posts, once a server opts in with
+`/settings world-news on` (see Notifications, above). There's no
+per-player notification preference anywhere in the game — no DM opt-out,
+no per-type toggle — everything stored is per server: one notification
+channel, plus the world bulletin's own on/off flag.
 
 ## 15. Traits
 
@@ -898,6 +937,11 @@ Mythic bought with shards — rolls its trait count independently of rarity:
 | 0 | 55% |
 | 1 | 35% |
 | 2 | 10% |
+
+These are the odds on a calm day. Migration Season (see The world, at the
+end of this guide) temporarily replaces them with better ones — 0 traits
+45%, 1 trait 40%, 2 traits 15% — so a Migration Season hatch is
+meaningfully more likely to come out with at least one trait.
 
 A bred egg's odds are better — see Breeding and the Gene Lab, next.
 
@@ -1120,3 +1164,64 @@ crosses its threshold, whether or not you've opened `/achievements` since;
 the page shows a medal for every tier you've already claimed and a progress
 bar toward the next one you haven't. **Claim all** pays every claimable tier
 across every track in one reply.
+
+## 18. The world
+
+Every day, the whole game shares one randomly-rolled world event and one of
+three cosmetic seasons. Both are derived fresh from the current UTC date —
+nothing is stored — so every player everywhere sees the exact same event
+and season on any given day. `/world` shows today's event and its effects,
+the current season, when the event turns over, and tomorrow's event by
+name only.
+
+### Events
+
+Nine events exist, and one is drawn each UTC day from a weighted pool.
+**Clear Skies** carries weight 4 against the other eight events at weight 1
+each (12 total), so it comes up roughly **one day in three** — an event
+every single day would stop feeling like an event.
+
+| Event | Effect |
+| --- | --- |
+| Clear Skies | Nothing — a calm, fully neutral day |
+| Amber Storm | Expeditions finish 25% sooner; expedition fees are doubled |
+| Fossil Rush | Expeditions pay 50% more cash; expedition eggs come back one rarity step worse |
+| Heat Wave | Park income +20%; feeding costs 30% more food |
+| Cold Snap | Feeding costs 25% less food; park income −10% |
+| Bumper Harvest | Food costs 40% less; eggs cost 25% more |
+| Market Panic | Eggs cost 30% less; selling a dino pays 20% less cash |
+| Blood Moon | Every battle stage costs 1 less energy (minimum 1); battle XP ×1.5; enemies have 15% more HP |
+| Migration Season | Wild hatches roll far better trait odds (see Wild hatch odds, above); breeding takes 25% longer |
+
+Between them, events can move egg price, food price, sell cash, feed cost,
+park income, expedition time/fee/cash/egg-rarity odds, battle stage energy
+cost, battle XP, enemy HP, wild hatch trait odds, and breeding time — and
+nothing else. **An event never touches your park rating or any
+rating-gated unlock** — lot slots, expedition site unlocks, the shop's
+rarity ceiling, Mythic purchases, the battle campaign's chapter gates, and
+the trading minimum all still work exactly as described elsewhere in this
+guide, event or no event.
+
+Income is the one effect that's paid over time rather than read once: if
+the income you're about to collect spans more than one UTC day, each day's
+slice is paid at **that day's own event rate**, measured at the instant
+that slice began — never at the instant you press Collect. Waiting for a
+better multiplier before collecting does not retroactively improve what
+earlier days already earned; it can only affect the rate applied to time
+that hasn't happened yet.
+
+### Seasons
+
+Alongside the daily event, the calendar also cycles through three cosmetic
+seasons — Wet, Dry, Cold — 30 days each, in that fixed order, repeating
+indefinitely. Seasons are purely cosmetic: `/world` names the current
+season and which day of the 30 you're on. **A season carries no gameplay
+modifier of any kind** — it never interacts with the day's event, your
+income, prices, or anything else in this guide.
+
+### `/world`
+
+`/world` shows today's event by name with its blurb and effects in plain
+language, the current season and day, a countdown to when the event turns
+over (UTC midnight), and tomorrow's event — by name only, so you know
+what's coming without the game handing you its exact numbers early.

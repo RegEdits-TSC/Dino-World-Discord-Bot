@@ -10,7 +10,7 @@ import { getSpecies } from '../../data/species/index.js';
 import { battleLevel } from '../../data/battle/stats.js';
 import { settleEnergy } from '../../data/battle/energy.js';
 import { CAMPAIGN, stageUnlocked, chapterUnlocked } from '../../data/battle/chapters/index.js';
-import { runFight, loadProgress, BattleError, type FightOutcome } from './service.js';
+import { runFight, loadProgress, energyCostFor, BattleError, type FightOutcome } from './service.js';
 import { fightFrames, chaptersPayload, type FramePayload, type ChaptersView } from './embeds.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { FIGHT_FRAME_DELAY_MS } from '../../data/battle/constants.js';
@@ -121,7 +121,7 @@ function chaptersView(ctx: Ctx, userId: string): { view: ChaptersView; frontier:
   const settled = settleEnergy(user.energy, user.energyUpdatedAt, ctx.now());
   const view: ChaptersView = {
     progress, ratingHighWater: user.ratingHighWater,
-    energy: settled.energy, energyUpdatedAtMs: settled.updatedAtMs,
+    energy: settled.energy, energyUpdatedAtMs: settled.updatedAtMs, now: ctx.now(),
   };
   // Frontier = highest unlocked chapter (chapter 1 is always unlocked).
   const frontier = CAMPAIGN.reduce((acc, ch, k) => (chapterUnlocked(ch.id, progress, user.ratingHighWater) ? k : acc), 0);
@@ -183,11 +183,12 @@ export const battlesModule: ModuleManifest = {
               const pos = s.boss ? 'Boss' : String(k + 1);
               // Unicode only — custom emoji tags render as literal text here.
               const glyphs = stars > 0 ? `${'⭐'.repeat(stars)} ` : '';
+              const cost = energyCostFor(s.energyCost, ctx.now());
               entries.push({
                 value: s.id, valid: open,
                 label: open
-                  ? `${glyphs}${ch.name} ${pos} — ${s.name} (⚡${s.energyCost})`
-                  : `🔒 ${ch.name} ${pos} — ${s.name} (⚡${s.energyCost})`,
+                  ? `${glyphs}${ch.name} ${pos} — ${s.name} (⚡${cost})`
+                  : `🔒 ${ch.name} ${pos} — ${s.name} (⚡${cost})`,
               });
             });
           }

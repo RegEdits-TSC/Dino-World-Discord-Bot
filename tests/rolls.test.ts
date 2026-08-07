@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rollWeighted, rollRarityFromOdds, rollSpeciesInRarity, rollSellShards, rollIntInclusive } from '../src/core/rolls.js';
-import { mulberry32 } from './harness.js';
+import { rollWeighted, rollRarityFromOdds, rollSpeciesInRarity, rollSellShards, rollIntInclusive, mulberry32, shuffle } from '../src/core/rolls.js';
 
 describe('rolls', () => {
   it('rollWeighted respects cumulative weights at boundaries', () => {
@@ -26,5 +25,44 @@ describe('rolls', () => {
     const odds = [{ rarity: 'rare' as const, weight: 40 }, { rarity: 'epic' as const, weight: 60 }];
     expect(['rare', 'epic']).toContain(rollRarityFromOdds(odds, () => 0.5));
     expect(rollSpeciesInRarity('mythic', () => 0).rarity).toBe('mythic');
+  });
+});
+
+describe('shuffle', () => {
+  it('returns a new array and leaves the input untouched', () => {
+    const input = [1, 2, 3, 4, 5];
+    const out = shuffle(input, mulberry32(7));
+    expect(out).not.toBe(input);
+    expect(input).toEqual([1, 2, 3, 4, 5]);
+    expect([...out].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('is deterministic for a given seed', () => {
+    expect(shuffle([1, 2, 3, 4, 5], mulberry32(7)))
+      .toEqual(shuffle([1, 2, 3, 4, 5], mulberry32(7)));
+  });
+
+  // A comparator shuffle (`sort(() => rng() - 0.5)`) is measurably biased: it
+  // leaves elements near their starting index far more often than 1/n. This is
+  // the property the shop's old implementation failed, and it is why this test
+  // lives here rather than being inferred from the daily-quest suite.
+  it('is unbiased — every element reaches every position at roughly 1/n', () => {
+    const N = 5;
+    const TRIALS = 60_000;
+    const counts = Array.from({ length: N }, () => new Array(N).fill(0));
+    const rng = mulberry32(12345);
+    for (let t = 0; t < TRIALS; t++) {
+      const out = shuffle([0, 1, 2, 3, 4], rng);
+      out.forEach((value, pos) => { counts[value][pos]++; });
+    }
+    const expected = TRIALS / N;
+    for (let value = 0; value < N; value++) {
+      for (let pos = 0; pos < N; pos++) {
+        // ±6% tolerance: comfortably inside sampling noise at 60k trials, and
+        // comfortably outside the >20% skew a comparator shuffle produces.
+        expect(Math.abs(counts[value][pos] - expected) / expected,
+          `value ${value} at position ${pos}`).toBeLessThan(0.06);
+      }
+    }
   });
 });

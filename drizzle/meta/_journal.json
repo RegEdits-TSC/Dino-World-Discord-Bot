@@ -57,6 +57,13 @@
       "when": 1785867499999,
       "tag": "0007_rating_rescale",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1785982031959,
+      "tag": "0008_world_broadcast",
+      "breakpoints": true
     }
   ]
 }

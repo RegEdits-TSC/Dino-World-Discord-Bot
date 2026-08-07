@@ -54,6 +54,26 @@ describe('/feed one food autocomplete', () => {
     expect(rows[0].name).toBe('🌿 Ferns ×10 — fills 100');
     expect(rows[1].name).toBe('🍎 Fruit Basket ×0 — fills 125, not enough');
   });
+  it('marks a food unaffordable by the event-adjusted cost, not the raw table value', async () => {
+    const DAY = 86_400_000;
+    // Day 5 is heat_wave (tests/world-effects.test.ts's DAY_OF fixture, confirmed
+    // against src/core/world.ts's worldEventFor). feedCost x1.3: common's raw
+    // feedCost is 5 (RARITY.common.feedCost), so feedCostFor('common', [], 5*DAY)
+    // rounds 5*1.3=6.5 up to 7 (pinned by tests/world-effects.test.ts:54). Holding
+    // 6 ferns reads affordable (6 >= 5) against the raw table value the old code
+    // used, but genuinely short (6 < 7) against the real event-adjusted cost.
+    const ctx = makeCtx({ nowMs: 5 * DAY });
+    getOrCreateUser(ctx, 'u1', 'u1');                          // starter: 10 ferns, 10 fish
+    ctx.economy.apply('u1', { foods: { ferns: -4 } }, 'test', ctx.now());   // 10 -> 6
+    const d = seedDino(ctx, { speciesId: 'triceratops', lastFedAt: ctx.now(), hatchedAt: ctx.now() });
+    const i = fakeAutocomplete({ name: 'feed', sub: 'one', user: 'u1',
+      focused: { name: 'food', value: '' }, options: { dino: d.id } });
+    await cmd('feed').autocomplete!(ctx, i.asAutocomplete());
+    const rows = i.replies[0] as Array<{ name: string; value: string }>;
+    const ferns = rows.find((r) => r.value === 'ferns')!;
+    expect(ferns.name).toBe('🌿 Ferns ×6 — fills 100, not enough');
+  });
+
   it('hints to pick the dino first when the dino option is empty', async () => {
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'u1');

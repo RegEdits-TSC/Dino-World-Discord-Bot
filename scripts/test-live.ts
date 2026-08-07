@@ -26,6 +26,8 @@ import { makeCtx, fakeCommand, fakeButton, type FakeInteraction } from '../tests
 import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
 import type { Ctx } from '../src/core/context.js';
 
+const DAY_MS = 86_400_000;
+
 // ---- env -------------------------------------------------------------------
 for (const name of ['DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'DATABASE_PATH', 'OWNER_ID', 'DEV_GUILD_ID', 'TEST_CHANNEL_ID']) {
   if (!process.env[name]) { console.error(`test:live needs ${name} set in .env`); process.exit(1); }
@@ -233,6 +235,25 @@ const cases: Case[] = [
       return slash('trading', 'trade', { name: 'trade', sub: 'accept', user: P2, options: { id: pending[0].id } });
     } },
   { title: '/top — leaderboard', run: () => slash('leaderboards', 'top', { name: 'top', user: P1, guild: devGuildId, options: { metric: 'rating' } }) },
+  { title: '/world — Blood Moon: header + banner, three effect lines', run: async () => {
+      // makeCtx's day 0 is deliberately calm (src/core/world.ts's comment on
+      // WORLD_SALT) and `ctx` above sits on real wall time, so a bare /world
+      // here would render "Clear Skies — no effect here today" and never
+      // exercise an event banner. Day 7 is blood_moon — pinned by
+      // tests/world.test.ts and tests/world-effects.test.ts's DAY_OF fixture
+      // — the busiest event, with three effect lines. Swap ctx.now() just for
+      // this one case and restore it immediately after: /world reads
+      // ctx.now() directly, and every other case relies on the shared ctx
+      // staying on real wall time (for sensible <t:...> timestamps and for
+      // seeded timer comparisons like "returnsAt <= ctx.now()" elsewhere).
+      const real = ctx.now();
+      ctx.setNow(7 * DAY_MS + 12 * 3_600_000);
+      try {
+        return await slash('world', 'world', { name: 'world', user: P1 });
+      } finally {
+        ctx.setNow(real);
+      }
+    } },
   { title: '/admin inspect — (ephemeral in production)', run: () => slash('admin', 'admin', { name: 'admin', sub: 'inspect', user: 'owner', options: { user: P1 } }) },
   { title: '/battle chapters — campaign overview', run: () => slash('battles', 'battle', { name: 'battle', sub: 'chapters', user: P1 }) },
   { title: '/battle fight — coastal_dig_1 win: swift-carnivore archetype thumb on all 4 frames', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_1', dino1: b1.id, dino2: b2.id } }) },

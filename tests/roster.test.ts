@@ -2,13 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { allSpecies, speciesByRarity, getSpecies } from '../src/data/species/index.js';
 import { DECOR } from '../src/data/decor.js';
 
-const EXPECTED = { common: 8, uncommon: 8, rare: 8, epic: 8, legendary: 5, mythic: 3 } as const;
+const EXPECTED = { common: 8, uncommon: 9, rare: 9, epic: 8, legendary: 5, mythic: 3 } as const;
 
 describe('roster', () => {
-  it('has exactly 40 species with unique ids', () => {
+  it('has exactly 42 species with unique ids', () => {
     const all = allSpecies();
-    expect(all).toHaveLength(40);
-    expect(new Set(all.map((s) => s.id)).size).toBe(40);
+    expect(all).toHaveLength(42);
+    expect(new Set(all.map((s) => s.id)).size).toBe(42);
   });
   it('matches the per-tier distribution', () => {
     for (const [rarity, n] of Object.entries(EXPECTED))

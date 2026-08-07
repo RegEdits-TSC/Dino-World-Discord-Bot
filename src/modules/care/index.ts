@@ -5,12 +5,11 @@ import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
-import { feedDino, feedAll, rescueDino, CareError } from './service.js';
+import { feedDino, feedAll, rescueDino, feedCostFor, CareError } from './service.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { hungerAt, drainMsFor } from '../../core/clock.js';
 import { getSpecies } from '../../data/species/index.js';
 import { FOODS, foodsForDiet, type FoodId } from '../../data/foods.js';
-import { RARITY } from '../../data/rarity.js';
 import { matches, respondRanked, emptyRow, dinoLabel, VERY_HUNGRY_MS } from '../../core/autocomplete.js';
 import { emojiTag } from '../../core/emojis.js';
 import { assetImage, attach } from '../../core/images.js';
@@ -86,7 +85,14 @@ export const careModule: ModuleManifest = {
             .where(and(eq(schema.dinos.id, Number(dinoId)), eq(schema.dinos.userId, i.user.id))).get();
           if (!dino) { await i.respond([{ name: 'Pick the dino option first', value: '-' }]); return; }
           const species = getSpecies(dino.speciesId);
-          const cost = RARITY[species.rarity].feedCost;
+          // Routed through feedCostFor, not a raw RARITY table read: on an event
+          // day (Heat Wave/Cold Snap scale feedCost, Gluttonous/Thrifty compose
+          // with it) the raw table value quotes the wrong cost, so an
+          // affordable food can render "not enough" (or vice versa) and
+          // feedDino — which DOES call feedCostFor — then disagrees with what
+          // this menu just showed. Pure and read-only: safe in an autocomplete
+          // provider.
+          const cost = feedCostFor(species.rarity, dino.traits, ctx.now());
           const inv = ctx.economy.getFoodInventory(i.user.id);
           const q = String(focused.value);
           await respondRanked(i, foodsForDiet(species.diet)

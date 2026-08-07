@@ -61,7 +61,7 @@ This guide covers deploying Dino World to production, running it as a system ser
    ```bash
    npm run deploy-emojis
    ```
-   This uploads the 43 custom emojis to the bot's Discord application and writes `assets/emojis/manifest.json` (emoji name → sha256 of the uploaded PNG). **Commit that file right away.** If it goes missing, the next `deploy-emojis` run sees every hash as changed and deletes + recreates all 43 emojis with new snowflake IDs — every message already posted with an old `<:dw_cash:ID>` tag then renders as a broken emoji, silently and with no way to recover it by rerunning. This is the only irreversible live write in the deploy; run it once, after the code is built, before starting the bot.
+   This uploads the 52 custom emojis to the bot's Discord application and writes `assets/emojis/manifest.json` (emoji name → sha256 of the uploaded PNG). **Commit that file right away.** If it goes missing, the next `deploy-emojis` run sees every hash as changed and deletes + recreates all 52 emojis with new snowflake IDs — every message already posted with an old `<:dw_cash:ID>` tag then renders as a broken emoji, silently and with no way to recover it by rerunning. This is the only irreversible live write in the deploy; run it once, after the code is built, before starting the bot.
 
 7. **Start the bot**:
    - **Direct**: `node dist/index.js`
@@ -220,13 +220,13 @@ Example `modules.json`:
 }
 ```
 
-Thirteen modules ship today:
+Fourteen modules ship today:
 
 - `park` — paddocks, upgrades, park rating, decorations.
 - `hatchery` — eggs, incubation, hatching, Mythic purchases.
 - `expeditions` — dispatching dinos on expeditions for loot.
-- `shop` — daily egg/food/decor rotation and dino sales.
-- `settings` — per-guild configuration (e.g. notification channel).
+- `shop` — egg/food/decor shop with a daily deal, and dino sales.
+- `settings` — per-guild configuration (e.g. notification channel, world bulletin opt-in).
 - `care` — feeding dinos and rescuing escapees.
 - `trading` — player-to-player dino/egg/currency trades with escrow.
 - `leaderboards` — server and global rankings by rating, cash, and collection.
@@ -235,6 +235,7 @@ Thirteen modules ship today:
 - `battles` — the PvE campaign: fight chapter stages with a squad for cash, shards, and eggs.
 - `genelab` — pair or splice dinos for traits in the Gene Lab.
 - `daily` — daily quest board, streaks, chests, and lifetime achievements.
+- `world` — the daily world event and season, plus the opt-in world bulletin broadcast.
 
 Admin commands are gated to the OWNER_ID user and hidden from non-admins in the Discord UI. Set OWNER_ID in .env.
 
@@ -267,6 +268,7 @@ After `npm run deploy-commands`, confirm the new command set is live by exercisi
 - `/trade offer user:@someone give-cash:10` then the recipient runs `/trade accept id:<n>` — the escrow swap completes; `/trade list`, `/trade decline`, `/trade cancel` respond.
 - `/top metric:rating` and `/top metric:collection scope:global` — leaderboards render.
 - `/admin inspect user:@you` — returns your raw state (owner only).
+- `/world` — today's event, season, and turnover countdown render, with the event banner image; `/settings world-news state:on` — confirms the opt-in bulletin toggle (run as a user with Manage Guild permission).
 
 All commands should reply without an "application did not respond" timeout. If a command is missing, re-run `npm run deploy-commands` (guild deploys are instant; global takes up to ~1h).
 
@@ -345,7 +347,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    ```bash
    npm run deploy-commands
    ```
-   Should report `24` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, leaderboards, admin, help, battles, genelab, and daily modules combined).
+   Should report `25` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, leaderboards, admin, help, battles, genelab, daily, and world modules combined).
 
 2. **Start the bot**:
    ```bash
@@ -408,7 +410,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    - Wait a few minutes, then run `/park view` and click **Collect** — income should now accrue above 0.
 
    **k) `/shop view`**
-   - Should show today's egg, food, and decor rotation.
+   - Should show today's eggs, food, decor, and the Daily Deal.
    - `/shop egg rarity:common` — should buy a common egg and deduct cash.
    - `/sell dino:<id>` — should show a confirm button; confirming should pay out cash and shards (watch the 60-shard/day cap; sales past the cap still pay cash but no more shards for the day).
 

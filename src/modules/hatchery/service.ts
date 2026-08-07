@@ -8,6 +8,7 @@ import { getSpecies } from '../../data/species/index.js';
 import { rollSpeciesInRarity } from '../../core/rolls.js';
 import { rollTraits } from '../../data/traits.js';
 import { locksFor } from '../../core/locks.js';
+import { eventMods } from '../../core/world.js';
 import { recomputeRating } from '../park/rating.js';
 import { facilityLevel, type Lot } from '../park/service.js';
 import { track } from '../../core/stats.js';
@@ -59,7 +60,12 @@ export function hatchEgg(ctx: Ctx, userId: string, eggId: number): { species: Sp
   // distribution with [13.75%, 53.75%, 32.5%]. `source` is the discriminator, not
   // `traits.length`: breeding is the only writer of eggs.traits, and a trade moves
   // an egg without touching either column, so it survives changing hands.
-  const traits = egg.source === 'breeding' ? egg.traits : rollTraits(ctx.rng);
+  // Migration Season only ever touches a WILD roll: passing `undefined` on every
+  // other day keeps rollTraits' own WILD_SLOT_ODDS default, so rng consumption on
+  // a calm day is byte-identical to before this event existed (tests/hatchery.test.ts's
+  // seeded ['fleet', 'prodigy'] replay pins this).
+  const traits = egg.source === 'breeding' ? egg.traits
+    : rollTraits(ctx.rng, eventMods(ctx.now()).hatchTraitOdds ?? undefined);
   const dinoId = ctx.db.transaction(() => {
     const dino = ctx.db.insert(schema.dinos).values({
       userId, lotId: null, speciesId: species.id, hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),

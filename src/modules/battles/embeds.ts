@@ -6,6 +6,8 @@ import { CAMPAIGN, STAGES, stageUnlocked, chapterUnlocked, rosterFor, type Progr
 import { ENERGY_CAP, ENERGY_REGEN_MS } from '../../data/battle/constants.js';
 import type { BeatSummary } from '../../data/battle/resolve.js';
 import type { FightOutcome } from './service.js';
+import { energyCostFor } from './service.js';
+import { eventHeaderLine } from '../world/embeds.js';
 
 export interface FramePayload {
   embeds: EmbedBuilder[];
@@ -25,6 +27,11 @@ export interface ChaptersView {
   ratingHighWater: number;
   energy: number;
   energyUpdatedAtMs: number;
+  // Optional, not because a real caller ever omits it (chaptersView always sets
+  // it from ctx.now()) but so existing fixtures built without it — this is a
+  // pure display snapshot, same shape as energy/energyUpdatedAtMs above — keep
+  // compiling. Missing defaults to a calm day: declared cost, unadjusted.
+  now?: number;
 }
 
 // <t:..:R> does not render inside embed footers, so energy lines live in a field.
@@ -143,6 +150,11 @@ export function fightFrames(
     withSkip(beatFrame(outcome.result.beats[1]), 2), f4];
 }
 
+// /battle chapters' header key list, exported so tests/world-module.test.ts's
+// per-key anyModRelevant tests exercise this exact array, not a duplicated
+// literal that could silently drift from it.
+export const BATTLE_CHAPTERS_HEADER_KEYS = ['energyCostDelta', 'battleXp', 'enemyHp'] as const;
+
 export function chaptersPayload(userId: string, chapterIndex: number, view: ChaptersView): FramePayload {
   const idx = Math.min(Math.max(0, chapterIndex), CAMPAIGN.length - 1);
   const ch = CAMPAIGN[idx];
@@ -150,12 +162,15 @@ export function chaptersPayload(userId: string, chapterIndex: number, view: Chap
   const stageLines = ch.stages.map((s) => {
     const open = unlocked && stageUnlocked(s.id, view.progress);
     const marker = open ? starGlyphs(view.progress.get(s.id)?.stars ?? 0) : '🔒';
-    return `${marker} ${s.boss ? '👑 ' : ''}${s.name} (⚡${s.energyCost})`;
+    const cost = energyCostFor(s.energyCost, view.now ?? 0);
+    return `${marker} ${s.boss ? '👑 ' : ''}${s.name} (⚡${cost})`;
   }).join('\n');
+  const header = eventHeaderLine(view.now ?? 0, BATTLE_CHAPTERS_HEADER_KEYS);
+  const tagline = unlocked ? ch.tagline
+    : `${ch.tagline}\n\n🔒 Locked — beat the previous chapter's boss and raise your park rating.`;
   const embed = new EmbedBuilder().setColor(unlocked ? 0xd35400 : 0x95a5a6)
     .setTitle(`📖 Chapter ${idx + 1}/${CAMPAIGN.length} — ${ch.name}${unlocked ? '' : ' 🔒'}`)
-    .setDescription(unlocked ? ch.tagline
-      : `${ch.tagline}\n\n🔒 Locked — beat the previous chapter's boss and raise your park rating.`)
+    .setDescription(`${header}\n\n${tagline}`)
     .addFields(
       { name: 'Stages', value: stageLines },
       { name: 'Energy', value: energyLine(view.energy, view.energyUpdatedAtMs) },

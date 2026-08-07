@@ -68,8 +68,8 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/shop view` | Today's shop rotation | Changes once a day |
-| `/shop egg` | Buy an egg | Autocomplete: rarity. Only rarities in today's rotation |
+| `/shop view` | Today's eggs, food, decor, and the Daily Deal | The egg set is stable below a 4.0★ best-ever rating — the Daily Deal is what actually changes day to day |
+| `/shop egg` | Buy an egg | Autocomplete: rarity. Only rarities currently on offer |
 | `/shop food` | Buy food by item and quantity | Autocomplete: item |
 | `/sell` | Sell a dino for cash and shards | Autocomplete: dino |
 
@@ -90,6 +90,12 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/daily` | Your daily quest board, streak, and Claim button | Rolls a fresh board the first time you do anything each day (UTC); unclaimed quests expire at reset |
 | `/achievements` | Your lifetime achievement tracks, with a Claim all button | Paginated, 10 per page |
 
+## 🌍 World
+
+| Command | What it does | Notes |
+| --- | --- | --- |
+| `/world` | Today's world event, the season, and what changes | Also names tomorrow's event, by name only |
+
 ## 🏆 Progress
 
 | Command | What it does | Notes |
@@ -101,7 +107,8 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/settings channel` | Set where the bot posts hatch and expedition notifications | **Requires the Manage Server permission** |
+| `/settings channel` | Set where the bot posts hatch, expedition, breeding, trade, and world-bulletin notifications | **Requires the Manage Server permission** |
+| `/settings world-news` | Turn the daily world bulletin on or off for this server | **Requires the Manage Server permission**. Posts to the channel set by `/settings channel` — needs one configured to actually post |
 | `/admin give` | Grant resources to a player | Autocomplete: dino-species. **Bot owner only** |
 | `/admin inspect` | Dump a player's raw state | **Bot owner only** |
 | `/admin reset` | Reset a player to a fresh start | **Bot owner only** |

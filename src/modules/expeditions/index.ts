@@ -3,7 +3,7 @@ import type { AttachmentBuilder } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
-import { startExpedition, claimExpedition, activeExpedition, ExpeditionError } from './service.js';
+import { startExpedition, claimExpedition, activeExpedition, expeditionFeeFor, ExpeditionError } from './service.js';
 import { EXPEDITION_SITES } from '../../data/sites.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { schema } from '../../core/db/index.js';
@@ -12,12 +12,25 @@ import { FOODS } from '../../data/foods.js';
 import { matches, respondRanked, fmtDuration } from '../../core/autocomplete.js';
 import { assetImage, attach } from '../../core/images.js';
 import { emojiTag, rarityEmoji } from '../../core/emojis.js';
+import { eventMods } from '../../core/world.js';
+import { eventHeaderLine } from '../world/embeds.js';
 
 // '🌋 ' when the site marker resolves, '' when it doesn't — keeps titles clean either way.
 function siteMarker(siteId: string): string {
   const t = emojiTag(`dw_site_${siteId}`);
   return t ? `${t} ` : '';
 }
+
+// /expedition start's header key list, exported so
+// tests/world-module.test.ts's per-key anyModRelevant tests exercise this
+// exact array. Deliberately excludes expeditionCash/expeditionOddsShift:
+// those two are sampled fresh at CLAIM time (see claimExpedition's "Loot is
+// priced at CLAIM time" comment in ./service.ts), not locked in here — every
+// site but coastal_dig runs 1-24h, so advertising a payout condition at
+// dispatch that a later UTC-midnight crossing can silently no longer match
+// would be actively misleading. Only expeditionMs/expeditionFee are genuinely
+// locked in by startExpedition before this line runs.
+export const EXPEDITION_START_HEADER_KEYS = ['expeditionMs', 'expeditionFee'] as const;
 
 function sitePayload(siteId: string, description: string) {
   const embed = new EmbedBuilder().setColor(0xe8590c)
@@ -40,6 +53,11 @@ export const expeditionsModule: ModuleManifest = {
         const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, i.user.id)).get();
         const hw = user?.ratingHighWater ?? 0;
         const q = String(i.options.getFocused());
+        // Read-only + pure: eventMods has no db access, so calling it here is
+        // safe for an autocomplete provider. Without this the picker would
+        // quote the site's unmodified cost/duration straight off SiteDef —
+        // wrong during, say, an Amber Storm's doubled fee.
+        const mods = eventMods(ctx.now());
         await respondRanked(i, Object.values(EXPEDITION_SITES)
           .filter((s) => matches(q, s.id, s.name))
           .map((s) => {
@@ -48,7 +66,7 @@ export const expeditionsModule: ModuleManifest = {
               value: s.id, valid: unlocked,
               label: unlocked
                 // 'en-US' pinned: labels are asserted verbatim in tests.
-                ? `🧭 ${s.name} — ${s.cost.toLocaleString('en-US')} cash, ${fmtDuration(s.durationMs)}`
+                ? `🧭 ${s.name} — ${expeditionFeeFor(s.cost, mods.expeditionFee).toLocaleString('en-US')} cash, ${fmtDuration(Math.round(s.durationMs * mods.expeditionMs))}`
                 : `🧭 ${s.name} — LOCKED, needs ★${(s.unlockRating / 100).toFixed(1)}`,
             };
           }));
@@ -59,7 +77,10 @@ export const expeditionsModule: ModuleManifest = {
         try {
           if (sub === 'start') {
             const exp = startExpedition(ctx, i.user.id, i.options.getString('site', true), i.guildId);
-            await i.reply(sitePayload(exp.siteId, `Crew dispatched — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.`));
+            // See EXPEDITION_START_HEADER_KEYS above for why the payout keys
+            // (expeditionCash/expeditionOddsShift) are excluded.
+            const header = eventHeaderLine(ctx.now(), EXPEDITION_START_HEADER_KEYS);
+            await i.reply(sitePayload(exp.siteId, `${header}\n\nCrew dispatched — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.`));
           } else if (sub === 'status') {
             const exp = activeExpedition(ctx, i.user.id);
             if (!exp) { await i.reply({ content: 'No active expedition. Start one with /expedition start.', flags: MessageFlags.Ephemeral }); return; }

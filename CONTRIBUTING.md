@@ -98,8 +98,8 @@ bot is live and will not collide with the running instance's session.
 
 ## Adding a module
 
-Registering a new module touches four places. Miss one and the tests will tell
-you, but it is faster to do all four up front:
+Registering a new module touches five places. Miss one and the tests will tell
+you, but it is faster to do all five up front:
 
 1. `modules.json` — the enabled-module list.
 2. `src/core/module-list.ts` — add it to the `ALL_MODULES` array. Both
@@ -107,6 +107,9 @@ you, but it is faster to do all four up front:
    editing.
 3. `tests/registry-load.test.ts` — update the expected command count.
 4. `tests/config.test.ts` — update the expected module list.
+5. `tests/contract.test.ts` — update the top-level command count in "every
+   builder serializes"; if any new option sets `.setAutocomplete(true)`, add a
+   matching entry to that file's `AUTOCOMPLETE_OPTIONS` too.
 
 ## Changing a command
 

@@ -2,6 +2,7 @@ import { RARITY } from '../data/rarity.js';
 import { modProduct } from '../data/traits.js';
 import { DECOR } from '../data/decor.js';
 import type { Species, PaddockDef } from '../data/types.js';
+import { incomeMultAt, utcMidnightsBetween } from './world.js';
 
 export const HUNGER_DRAIN_MS = 48 * 3_600_000;   // spec §3.4
 export const GRACE_MS = 8 * 3_600_000;
@@ -97,14 +98,32 @@ export function accruedIncome(
     const hungerZero = d.lastFedAt + (d.hungerAtFed / 100) * drainMs;
     dinoEnd = Math.min(dinoEnd, Math.max(from, hungerZero));
     if (dinoEnd <= from) continue;
-    // Comfort is piecewise linear with a knee where hunger crosses 100 (overfill).
-    // A two-point mean is exact on each side of the knee but wrong across it.
+    // Comfort is piecewise linear with a knee where hunger crosses 100
+    // (overfill), and the world's income multiplier is piecewise constant with
+    // a step at every UTC midnight. A two-point mean is exact WITHIN one linear,
+    // single-event region and wrong across either kind of boundary, so both
+    // kinds become breakpoints in one sorted list.
     const seg = (a: number, b: number) =>
       ((comfortAt(d, a) + comfortAt(d, b)) / 2) * ((b - a) / 3_600_000);
     const knee = d.lastFedAt + Math.max(0, (d.hungerAtFed - 100) / 100) * drainMs;
-    const comfortHours = knee > from && knee < dinoEnd
-      ? seg(from, knee) + seg(knee, dinoEnd)
-      : seg(from, dinoEnd);
+    // Midnights are enumerated over the PER-DINO window: using the shared `end`
+    // would attribute income to a segment this dino never earned in.
+    const breaks = [
+      from,
+      ...(knee > from && knee < dinoEnd ? [knee] : []),   // strict, as before
+      ...utcMidnightsBetween(from, dinoEnd),
+      dinoEnd,
+    ].sort((x, y) => x - y);
+    let comfortHours = 0;
+    for (let i = 0; i < breaks.length - 1; i++) {
+      const a = breaks[i];
+      const b = breaks[i + 1];
+      if (b <= a) continue;   // a knee landing exactly on a midnight yields one segment, not two
+      // Sample the multiplier at the segment's START instant — never at the
+      // request time. Reading eventMods(now).income here is the bug this whole
+      // structure exists to prevent.
+      comfortHours += seg(a, b) * incomeMultAt(a);
+    }
     total += RARITY[d.species.rarity].incomePerHr * modProduct(d.traits, 'income') * comfortHours;
   }
   return Math.floor(total * (1 + facilityBonusPct / 100));

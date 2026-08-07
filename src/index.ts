@@ -11,6 +11,7 @@ import { routeInteraction } from './core/router.js';
 import { Scheduler } from './core/scheduler.js';
 import { ALL_MODULES } from './core/module-list.js';
 import { dailyRouterHooks } from './modules/daily/hooks.js';
+import { armWorldBroadcast, worldBroadcastHandler } from './modules/world/broadcast.js';
 import type { Ctx } from './core/context.js';
 
 const config = loadConfig();
@@ -34,6 +35,7 @@ const sender = clientSender(client);
 scheduler.register('egg_hatch', eggHatchHandler(sender, ctx));
 scheduler.register('expedition_return', expeditionReturnHandler(sender, ctx));
 scheduler.register('breeding_ready', breedingReadyHandler(sender, ctx));
+scheduler.register('world_broadcast', worldBroadcastHandler(sender, ctx));
 
 setInterval(() => { scheduler.tick(Date.now()).catch((e) => logger.error({ err: e }, 'scheduler tick failed')); }, 30_000);
 
@@ -44,6 +46,7 @@ client.on('error', (e) => logger.error({ err: e }, 'discord client error'));
 client.once(Events.ClientReady, (c) => {
   logger.info(`Logged in as ${c.user.tag}`);
   void loadAppEmojis(client);
+  armWorldBroadcast(ctx);
   scheduler.tick(Date.now()).catch((e) => logger.error({ err: e }, 'scheduler boot scan failed'));
 });
 await client.login(config.token);

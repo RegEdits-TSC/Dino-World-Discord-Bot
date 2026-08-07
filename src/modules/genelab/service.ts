@@ -5,6 +5,7 @@ import type { Rarity } from '../../data/types.js';
 import { getSpecies } from '../../data/species/index.js';
 import { locksFor, lockLabel } from '../../core/locks.js';
 import { hungerAt, drainMsFor } from '../../core/clock.js';
+import { eventMods } from '../../core/world.js';
 import { breedingSlots } from '../park/service.js';
 import {
   modProduct, pickTrait, rollSlotCount, spliceTrait, TRAITS, BRED_SLOT_ODDS, type TraitDomain, type TraitId,
@@ -111,8 +112,11 @@ export function startBreeding(
       throw new BreedError(`Dino #${d.id} is too hungry to breed — feed it first.`);
   }
 
-  // Fertile is a parent-side trait, so take the better of the two.
-  const timeMult = Math.min(modProduct(a.traits, 'breedTime'), modProduct(b.traits, 'breedTime'));
+  // Fertile is a parent-side trait, so take the better of the two. Migration Season's
+  // breedMs (1.25 on the affected day, else 1) composes into this SAME term so the
+  // preview, the committed row, and the scheduler timer at :147 (readyAt is computed
+  // before the dryRun early return below) can never disagree about the world's effect.
+  const timeMult = Math.min(modProduct(a.traits, 'breedTime'), modProduct(b.traits, 'breedTime')) * eventMods(now).breedMs;
   // Rounded because readyAt lands in an integer column and drives a Discord timestamp;
   // every current multiplier is exact, but a future one need not be.
   const readyAt = Math.round(now + BREED_MS[sa.rarity] * timeMult);

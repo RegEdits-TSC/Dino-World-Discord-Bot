@@ -19,7 +19,7 @@ describe('loadConfig', () => {
   });
   it('loads modules.json validated as string->boolean (regression)', () => {
     const cfg = loadConfig(good);
-    expect(cfg.modules).toEqual({ park: true, hatchery: true, expeditions: true, shop: true, settings: true, care: true, trading: true, leaderboards: true, admin: true, help: true, battles: true, genelab: true, daily: true });
+    expect(cfg.modules).toEqual({ park: true, hatchery: true, expeditions: true, shop: true, settings: true, care: true, trading: true, leaderboards: true, admin: true, help: true, battles: true, genelab: true, daily: true, world: true });
   });
 });
 

@@ -56,9 +56,9 @@ describe('feedDino', () => {
   });
 
   it('discounts feed cost for Thrifty and surcharges it for Gluttonous', () => {
-    expect(feedCostFor('rare', [])).toBe(20);
-    expect(feedCostFor('rare', ['thrifty'])).toBe(15);
-    expect(feedCostFor('rare', ['gluttonous'])).toBe(25);
+    expect(feedCostFor('rare', [], 0)).toBe(20);
+    expect(feedCostFor('rare', ['thrifty'], 0)).toBe(15);
+    expect(feedCostFor('rare', ['gluttonous'], 0)).toBe(25);
   });
 
   it('discounts a common feed cost to a sensible positive amount', () => {
@@ -66,7 +66,7 @@ describe('feedDino', () => {
     // Math.max(1, ...) floor in feedCostFor. Under today's data (single care-domain trait,
     // 5 the lowest feedCost) the floor is unreachable — see the comment at its definition —
     // so this only pins the discounted value itself, not the floor.
-    expect(feedCostFor('common', ['thrifty'])).toBe(4);
+    expect(feedCostFor('common', ['thrifty'], 0)).toBe(4);
   });
 
   it('charges the discounted amount when feeding a Thrifty dino', () => {

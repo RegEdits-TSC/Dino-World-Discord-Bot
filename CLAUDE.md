@@ -16,7 +16,7 @@
   errors degrade to an empty suggestion list.
 - Registering a new module touches 5 sites: modules.json, `src/core/module-list.ts`
   (the `ALL_MODULES` array), tests/registry-load.test.ts (command count),
-  tests/config.test.ts (expected modules), and `tests/contract.test.ts:46`
+  tests/config.test.ts (expected modules), and `tests/contract.test.ts:49`
   (the top-level command count in "every builder serializes" — that same file
   also enforces a bidirectional autocomplete manifest, so any option flagged
   `.setAutocomplete(true)` needs a matching entry in `AUTOCOMPLETE_OPTIONS`
@@ -438,3 +438,69 @@
   exceeded it was unwinnable, which is why both new bosses were tuned down on
   `hpMult` instead of pushed up on level — see those chapter files' own
   comments in `src/data/battle/chapters/` for the numbers and the reasoning.
+- Living world: `worldEventFor(now)` / `eventMods(now)` (`src/core/world.ts`)
+  are pure functions of a UTC timestamp — the day's event is DERIVED, never
+  stored, same philosophy as escrow locks and quest progress above.
+  `WORLD_SALT` (`0x2c0`) is XORed into the day index before seeding
+  `mulberry32` specifically so UTC days 0–4 all resolve to Clear Skies
+  (fully neutral mods): `makeCtx` defaults `nowMs` to 0 (`tests/harness.ts`),
+  so essentially the **whole offline test suite** runs on day 0 — an eventful
+  epoch would have silently multiplied pinned fixtures across a dozen
+  unrelated test files. `scripts/test-live.ts` is the one exception: it calls
+  `ctx.setNow(Date.now())` deliberately, so its gallery renders under
+  whatever event is live on the real calendar day, not day 0.
+  Never reorder `WORLD_EVENTS` or change the salt without re-running
+  `tests/world.test.ts`. Seasons (`seasonFor`/`seasonDay`, same file) are a
+  separate, purely cosmetic 30-day/3-season cycle (`SEASON_DAYS`) with no
+  modifiers at all — deliberately, since that's what removes every
+  season×event stacking question before it can come up.
+  Income is the only effect integrated over time: `accruedIncome`
+  (`src/core/clock.ts`) splits its accrual window at every UTC midnight it
+  crosses and samples `incomeMultAt` at each resulting segment's START, never
+  once at request time — so a day's slice of pending income is always paid
+  at that day's own rate, and delaying `/park view`'s Collect can never
+  retroactively earn a better multiplier for time that already passed.
+  Hunger drain rate and battle energy regen were deliberately never wired to
+  any event: both are either inverted (regen counts up over time, the
+  opposite direction from a one-shot cost) or, like income, accumulate
+  across an arbitrarily long window — scaling either would have forced the
+  same piecewise segment-splitting machinery through `clock.ts`/`energy.ts`
+  that `accruedIncome` needed, for two knobs that already had a one-shot
+  alternative (Heat Wave/Cold Snap scale `feedCostFor` instead of drain rate;
+  Blood Moon scales `energyCostFor` instead of regen). For the same reason
+  `hungerAt` requires `drainMs` (see the Gene Lab bullet above),
+  `feedCostFor` (`src/modules/care/service.ts`) and `energyCostFor`
+  (`src/modules/battles/service.ts`) both take `now` as a REQUIRED
+  parameter, never defaulted — a default would let a call site silently keep
+  the unmodified rate/cost, reintroducing the exact bug the parameter exists
+  to prevent.
+  Every price or cost a world event can scale is quoted and charged through
+  exactly one helper — `eggPriceAt` / `foodPriceAt` / `roundCharge`
+  (`src/modules/shop/service.ts`), `sellCashAt` / `roundPayout`
+  (`src/modules/shop/shards.ts`), `feedCostFor`, `energyCostFor` — never a
+  raw table value re-multiplied inline at each call site. When this pattern
+  was introduced, egg price, food price, and sell cash each had three
+  separate read sites (a display quote, an autocomplete label, and the
+  actual charge or payout) and stage energy cost had five (the `runFight`
+  gate, its error text, and its debit all read one local `cost` computed
+  once, plus the chapters embed and the stage autocomplete each call
+  `energyCostFor` independently) that would otherwise have had to agree by
+  hand. Route any future price/cost surface through the matching helper
+  rather than re-deriving it.
+  `EventMods.hatchTraitOdds` (`src/data/world-events.ts`) is a
+  `[0-trait, 1-trait, 2-trait]` array of FRACTIONS summing to 1 — the same
+  convention as `WILD_SLOT_ODDS`/`BRED_SLOT_ODDS` (`src/data/traits.ts`) —
+  fed straight into `rollSlotCount`/`rollTraits` with no normalization.
+  Writing it on a 0–100 scale (e.g. `[45, 40, 15]`) would put the entire
+  cumulative weight under the first step and roll **zero** traits on every
+  single Migration Season hatch — the opposite of the intended buff.
+  The world broadcast timer (`src/modules/world/broadcast.ts`) enqueues with
+  a sentinel `userId: '0'`, never a real Discord snowflake, purely because
+  `Scheduler.enqueue` requires a `userId` even though the broadcast isn't
+  per-player. That sentinel is necessary, not incidental: `adminReset`
+  deletes timers BY `userId` and `adminFastForward` shifts them BY `userId`
+  (`src/modules/admin/service.ts`), so if the sentinel could ever collide
+  with a real player's id, resetting or fast-forwarding that one player
+  would silently delete or shift the world broadcast timer for every server.
+  `'0'` can never collide with a real snowflake — Discord IDs start far
+  above that range.

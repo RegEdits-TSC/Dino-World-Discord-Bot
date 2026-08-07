@@ -156,6 +156,9 @@ export const userGuilds = sqliteTable('user_guilds', {
 export const guildSettings = sqliteTable('guild_settings', {
   guildId: text('guild_id').primaryKey(),
   notifyChannelId: text('notify_channel_id'),
+  // Off by default: a server that set a channel for hatch pings never asked for
+  // a daily world bulletin in it.
+  worldBroadcast: integer('world_broadcast', { mode: 'boolean' }).notNull().default(false),
 });
 
 export const userStats = sqliteTable('user_stats', {
