@@ -55,7 +55,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | --- | --- | --- |
 | `/expedition start` | Send a dig crew out to a site | Autocomplete: site |
 | `/expedition status` | Check how long your active expedition has left | |
-| `/expedition claim` | Collect the rewards from a returned expedition | |
+| `/expedition claim` | Collect the rewards from a returned expedition | Reply names any live cash/egg-odds world event effect |
 
 ## ⚔️ Battles
 

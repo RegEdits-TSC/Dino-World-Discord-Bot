@@ -32,6 +32,26 @@ function siteMarker(siteId: string): string {
 // locked in by startExpedition before this line runs.
 export const EXPEDITION_START_HEADER_KEYS = ['expeditionMs', 'expeditionFee'] as const;
 
+// /expedition claim's header key list — the mirror image of the exclusion
+// above. This ONE is allowed to name expeditionCash/expeditionOddsShift
+// precisely because this line renders AFTER claimExpedition (see the claim
+// branch below) has already sampled eventMods moments earlier in this same
+// synchronous call. claimExpedition takes no `now` parameter and calls
+// ctx.now() itself, so the header's own ctx.now() read below is a SEPARATE
+// call, not the same sample threaded through — unlike /expedition start,
+// /shop view, /battle chapters, and /park view, which each compute `now`
+// once and pass it into both the business logic and eventHeaderLine. That's
+// fine here only because nothing awaits between the two reads, so both land
+// in the same UTC day and the header can't disagree with the loot beside
+// it. Do not introduce an await between claimExpedition and the header
+// line below — that is the only way the two could straddle a midnight.
+// /expedition status is the screen that must NOT get this header — a dig
+// that has not returned yet is forward-looking, and a header there would
+// repeat exactly the bug that was just fixed on /expedition start
+// (advertising a payout condition that a later UTC-midnight crossing could
+// still invalidate before claim).
+export const EXPEDITION_CLAIM_HEADER_KEYS = ['expeditionCash', 'expeditionOddsShift'] as const;
+
 function sitePayload(siteId: string, description: string) {
   const embed = new EmbedBuilder().setColor(0xe8590c)
     .setTitle(`🧭 ${siteMarker(siteId)}${EXPEDITION_SITES[siteId].name}`).setDescription(description);
@@ -89,8 +109,11 @@ export const expeditionsModule: ModuleManifest = {
               : `⏳ Digging — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.`));
           } else {
             const { loot, site } = claimExpedition(ctx, i.user.id);
+            // See EXPEDITION_CLAIM_HEADER_KEYS above for why this header is
+            // safe here and must never move to /expedition status.
+            const header = eventHeaderLine(ctx.now(), EXPEDITION_CLAIM_HEADER_KEYS);
             const embed = new EmbedBuilder().setColor(0xe8590c).setTitle(`🧭 ${siteMarker(site.id)}${site.name} — returned!`)
-              .setDescription(`Found a **${rarityEmoji(loot.eggRarity)}${loot.eggRarity}** egg!`)
+              .setDescription(`${header}\n\nFound a **${rarityEmoji(loot.eggRarity)}${loot.eggRarity}** egg!`)
               .addFields(
                 { name: `${emojiTag('dw_cash')} Cash`, value: `+${loot.cash}`, inline: true },
                 { name: `${emojiTag(FOODS[loot.food.foodId].emoji)} ${FOODS[loot.food.foodId].name}`, value: `+${loot.food.qty}`, inline: true });
