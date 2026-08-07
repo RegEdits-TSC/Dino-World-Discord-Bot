@@ -148,9 +148,38 @@ describe('attach', () => {
 });
 
 describe('banner art', () => {
+  // BANNERS is a LOWER BOUND (see scrapeBannerNames above): a scrape that silently
+  // finds nothing would make it.each([]) register zero tests below and this whole
+  // guard would go dark with the suite still green. Assert it actually found
+  // something, and separately (below) that it found everything committed.
+  it('the scrape found at least one banner name — a silent scrape failure disables every check below', () => {
+    expect(BANNERS.length, 'scrapeBannerNames() found nothing — did the call pattern change?').toBeGreaterThan(0);
+  });
+
+  // Closes the loop the scrape cannot close on its own: BANNERS can only prove
+  // "what it found, exists" (a lower bound). This proves the reverse — every
+  // non-event banner actually committed under assets/images/banners is also
+  // referenced somewhere the scrape can see — catching an orphaned file just as
+  // readily as a wrapped call or a switch to double quotes would silently starve
+  // the scrape on the other side.
+  it('references every committed non-event banner (guards the scrape itself)', () => {
+    const onDisk = readdirSync(resolve(process.cwd(), 'assets/images/banners'))
+      .filter((f) => f.endsWith('.webp') && !f.startsWith('event-'))
+      .map((f) => f.replace(/\.webp$/, ''));
+    expect(onDisk.filter((n) => !BANNERS.includes(n))).toEqual([]);
+  });
+
   // Discord scales an embed image to the embed width, so an off-size banner
   // letterboxes or crops; 1536×1024 matches the site banners already shipping.
-  it.each(BANNERS)('%s is 1536×1024', async (name) => {
+  // Covers all 26 committed banners, not just the 17 the static scrape can see:
+  // event-<id> names come from a template literal (world/embeds.ts) no scrape can
+  // resolve, so they are appended here from WORLD_EVENTS directly — same
+  // cross-check precedent as the CAMPAIGN/WORLD_EVENTS loops in "the committed
+  // asset set" below. Without this, a future event banner committed unfitted (the
+  // generator's native output is 1264×848) would letterbox on the /world hub with
+  // this suite green.
+  const DIMENSION_CHECKED_BANNERS = [...BANNERS, ...WORLD_EVENTS.map((e) => `event-${e.id}`)];
+  it.each(DIMENSION_CHECKED_BANNERS)('%s is 1536×1024', async (name) => {
     const img = new Image();
     img.src = readFileSync(resolve(process.cwd(), 'assets/images/banners', `${name}.webp`));
     await img.decode();

@@ -257,13 +257,16 @@
   across all 40 species files, to fix fidelity for a handful of outliers.
   Banners are
   1536×1024 (asserted in `tests/images.test.ts`) and transparent cutouts
-  1024×1024; `node scripts/fit-art.mjs banner|cutout <src> <dest>` produces the
-  banners and the hatch cracks, but NOT the eggs or the boss portraits — those
-  came from a one-off pass with a tighter 24px margin (vs the script's 31px) and,
-  for the eggs, an egg-axis bias. `docs/assets/prompts.md` carries the numbers and
-  the two families' divergence; the cracks additionally keep multiple
-  disconnected alpha regions on purpose (falling shell fragments), so the egg
-  pass's "largest connected region" step must never be applied to them.
+  1024×1024; `node scripts/fit-art.mjs banner|ground|cutout <src> <dest>`
+  produces the banners and the hatch cracks via `banner`/`cutout`, but NOT the
+  eggs or the boss portraits — those came from a one-off pass with a tighter
+  24px margin (vs the script's 31px) and, for the eggs, an egg-axis bias. The
+  season ground rasters (`park/ground-wet|dry|cold.webp`) come from `ground`,
+  cover-scaled to 1200×800 rather than banner's 1536×1024 — the park renderer's
+  canvas never needs more than that. `docs/assets/prompts.md` carries the
+  numbers and the two families' divergence; the cracks additionally keep
+  multiple disconnected alpha regions on purpose (falling shell fragments), so
+  the egg pass's "largest connected region" step must never be applied to them.
   `assets/images/battles/` ships committed boss portraits
   (`boss-<siteId>-portrait.webp`, 1024×1024 transparent cutouts pinned by
   `tests/images.test.ts`); `assetImage`'s null-degrade still holds, so the

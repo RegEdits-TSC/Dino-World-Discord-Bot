@@ -14,13 +14,15 @@ import { createCanvas, Image } from '@napi-rs/canvas';
 
 // The cover-scaled modes. Both are 3:2 — `ground` differs from `banner` only in
 // pixel size, because the park renderer's ground is cover-scaled onto a canvas
-// that is at most 1218px tall, so 1536x1024 would ship ~64% more bytes than the
-// renderer can ever use. 1200x800 is what the committed park/ground.webp already
-// is; the season variants must match it exactly or they crop differently from
-// each other at the same row count.
+// that is at most 752px tall (gridDims in src/core/render/draw.ts: height =
+// 88 + 166*rows, and rows maxes out at 4 — lotSlots caps at 10 in
+// src/data/progression.ts, over a 3-wide grid), so 1536x1024 would ship ~64%
+// more bytes than the renderer can ever use. 1200x800 is what the committed
+// park/ground.webp already is; the season variants must match it exactly or
+// they crop differently from each other at the same row count.
 const COVER = { banner: [1536, 1024], ground: [1200, 800] };
 const [mode, src, dest] = process.argv.slice(2);
-if (!(mode === 'cutout' || mode in COVER) || !src || !dest) {
+if (!(mode === 'cutout' || Object.hasOwn(COVER, mode)) || !src || !dest) {
   console.error('usage: node scripts/fit-art.mjs <banner|ground|cutout> <src> <dest.webp>');
   process.exit(2);
 }
@@ -41,7 +43,7 @@ const img = new Image();
 img.src = readFileSync(src);
 await img.decode();
 
-if (mode in COVER) {
+if (Object.hasOwn(COVER, mode)) {
   const [W, H] = COVER[mode];
   const scale = Math.max(W / img.width, H / img.height);
   const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
