@@ -450,7 +450,11 @@ one expedition can be out at a time.
 The costs, durations, cash/food ranges above, and the egg odds further below
 are all calm-day numbers — Amber Storm, Fossil Rush, and other world events
 can shorten a dig, change its fee, boost its cash payout, or shift its egg
-odds a rarity step; see The world, below.
+odds a rarity step; see The world, below. The cash bonus and egg-rarity shift
+are rolled fresh when you claim rather than locked in at dispatch, so
+`/expedition claim`'s reply carries its own event header naming those two
+effects whenever either is live that day, separate from the dig-time/fee
+header shown when you started the dig.
 
 Site unlocks are gated on your **best-ever** rating, so a site never
 re-locks even if your current rating later drops. On a calm day, no site's

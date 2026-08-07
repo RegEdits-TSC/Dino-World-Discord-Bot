@@ -7,7 +7,8 @@ import { getOrCreateUser } from '../src/modules/park/service.js';
 import { parkModule } from '../src/modules/park/index.js';
 import { PARK_HEADER_KEYS } from '../src/modules/park/embeds.js';
 import { shopModule, SHOP_VIEW_HEADER_KEYS } from '../src/modules/shop/index.js';
-import { expeditionsModule, EXPEDITION_START_HEADER_KEYS } from '../src/modules/expeditions/index.js';
+import { expeditionsModule, EXPEDITION_START_HEADER_KEYS, EXPEDITION_CLAIM_HEADER_KEYS } from '../src/modules/expeditions/index.js';
+import { startExpedition } from '../src/modules/expeditions/service.js';
 import { battlesModule } from '../src/modules/battles/index.js';
 import { BATTLE_CHAPTERS_HEADER_KEYS } from '../src/modules/battles/embeds.js';
 
@@ -163,6 +164,56 @@ describe('world header lines', () => {
     expect(embed.description).toContain('no effect here today');
   });
 
+  it('/expedition claim says nothing is unusual on a calm day', async () => {
+    const ctx = makeCtx({ nowMs: 0 });         // clear_skies
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    startExpedition(ctx, 'u1', 'coastal_dig', 'g1');
+    ctx.setNow(ctx.now() + 16 * 60_000);       // past coastal_dig's 15-minute duration
+    const i = fakeCommand({ name: 'expedition', sub: 'claim', user: 'u1', guild: 'g1' });
+    await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as EmbedPayload;
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.description).toContain('Clear Skies');
+    expect(embed.description).toContain('no effect here today');
+  });
+
+  it('/expedition claim names both payout effects on Fossil Rush', async () => {
+    // Fossil Rush (day 14) sets ONLY expeditionCash/expeditionOddsShift — the
+    // exact two keys this screen owns, and the two EXPEDITION_START_HEADER_KEYS
+    // deliberately excludes. This is the case that proves the claim header
+    // does its job: on this exact day, /expedition start (tested above) shows
+    // "no effect here today" while /expedition claim shows both lines.
+    const ctx = makeCtx({ nowMs: 14 * DAY });  // fossil_rush
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    startExpedition(ctx, 'u1', 'coastal_dig', 'g1');
+    ctx.setNow(ctx.now() + 16 * 60_000);
+    const i = fakeCommand({ name: 'expedition', sub: 'claim', user: 'u1', guild: 'g1' });
+    await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as EmbedPayload;
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.description).toContain('Fossil Rush');
+    expect(embed.description).toContain('Expeditions pay 50% more cash');
+    expect(embed.description).toContain('Expedition eggs come back one rarity step worse');
+  });
+
+  it('/expedition claim says nothing is unusual on Amber Storm, whose effects are dispatch-time only', async () => {
+    // Amber Storm (day 10) sets ONLY expeditionMs/expeditionFee — the two keys
+    // EXPEDITION_START_HEADER_KEYS owns and EXPEDITION_CLAIM_HEADER_KEYS does
+    // not. This is the leak-proof case: it proves the claim screen names
+    // payout keys ONLY, and never bleeds the dispatch-time keys /expedition
+    // start already showed for this same dig.
+    const ctx = makeCtx({ nowMs: 10 * DAY });  // amber_storm
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    startExpedition(ctx, 'u1', 'coastal_dig', 'g1');
+    ctx.setNow(ctx.now() + 16 * 60_000);       // > 15min * 0.75 (amber_storm's shortened duration)
+    const i = fakeCommand({ name: 'expedition', sub: 'claim', user: 'u1', guild: 'g1' });
+    await expeditionsModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as EmbedPayload;
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.description).toContain('Amber Storm');
+    expect(embed.description).toContain('no effect here today');
+  });
+
   it('appears on /battle chapters with the combat effects', async () => {
     const ctx = makeCtx({ nowMs: 7 * DAY });   // blood_moon
     getOrCreateUser(ctx, 'u1', 'Reg');
@@ -229,6 +280,16 @@ describe('each header call site\'s key array is individually load-bearing', () =
     // they're the only fields an event moves — this pins that exclusion.
     expect(anyModRelevant({ ...NEUTRAL_MODS, expeditionCash: 1.5 }, EXPEDITION_START_HEADER_KEYS)).toBe(false);
     expect(anyModRelevant({ ...NEUTRAL_MODS, expeditionOddsShift: -1 }, EXPEDITION_START_HEADER_KEYS)).toBe(false);
+  });
+
+  it('expedition claim: each of expeditionCash/expeditionOddsShift individually trips the header; the dispatch-time-only keys never do', () => {
+    expect(anyModRelevant({ ...NEUTRAL_MODS, expeditionCash: 1.5 }, EXPEDITION_CLAIM_HEADER_KEYS)).toBe(true);
+    expect(anyModRelevant({ ...NEUTRAL_MODS, expeditionOddsShift: -1 }, EXPEDITION_CLAIM_HEADER_KEYS)).toBe(true);
+    // Mirror image of the expedition-start test above: expeditionMs/expeditionFee
+    // are locked in at DISPATCH time, so the claim header must stay silent
+    // about them even when they're the only fields an event moves.
+    expect(anyModRelevant({ ...NEUTRAL_MODS, expeditionMs: 0.75 }, EXPEDITION_CLAIM_HEADER_KEYS)).toBe(false);
+    expect(anyModRelevant({ ...NEUTRAL_MODS, expeditionFee: 2 }, EXPEDITION_CLAIM_HEADER_KEYS)).toBe(false);
   });
 
   it('battle chapters: each of energyCostDelta/battleXp/enemyHp individually trips the header', () => {
