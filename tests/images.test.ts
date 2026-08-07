@@ -6,11 +6,53 @@ import { join, resolve } from 'node:path';
 import { assetImage, attach } from '../src/core/images.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 import { allSpecies } from '../src/data/species/index.js';
+import { WORLD_EVENTS } from '../src/data/world-events.js';
 import type { Archetype, Diet } from '../src/data/types.js';
 
-const BANNERS = ['trading', 'leaderboards', 'help', 'care', 'care_neglect', 'shop_food_market',
-  'battle_victory', 'battle_defeat', 'collect', 'rescue', 'dino_roster', 'eggs_incubator', 'sell',
-  'gene_lab', 'gene_splice'];
+function srcFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = join(dir, e.name);
+    return e.isDirectory() ? srcFiles(p) : e.name.endsWith('.ts') ? [p] : [];
+  });
+}
+
+// BANNERS is SCRAPED from src/, never hand-typed. A hand-typed list can only
+// ever verify that what exists, exists: it stayed green when daily/embeds.ts
+// referenced 'daily' and 'achievements' banners neither of which had a shipped
+// file, because assetImage null-degrades and nothing in the list said they
+// were supposed to exist. Two static reference forms carry a banner name:
+// (1) a call `assetImage('banners', <name>)` — <name> may be a plain literal
+// OR a ternary between two literals (care/index.ts's `neglected ? 'care_neglect'
+// : 'care'`, battles/embeds.ts's `outcome.won ? 'battle_victory' :
+// 'battle_defeat'`), so every quoted string after the match, not just the
+// literal second-argument position, has to count; and (2) a HELP_TOPICS
+// `art: { kind: 'banners', name: '<name>' }` descriptor
+// (src/modules/help/index.ts) — a shape no assetImage-call regex can see at
+// all. A THIRD form, world/embeds.ts's
+// `` assetImage('banners', `event-${e.id}`) ``, is a template literal no
+// static scrape can resolve to a name; those are covered separately below by
+// looping WORLD_EVENTS. Rooted at src/ ONLY: tests/images.test.ts itself calls
+// assetImage('banners', 'no-such-banner') in a null-degrade test above, and
+// scraping tests/ would demand that nonexistent file exist and fail on the
+// spot.
+function scrapeBannerNames(): string[] {
+  const names = new Set<string>();
+  for (const file of srcFiles(resolve(process.cwd(), 'src'))) {
+    for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const callIdx = line.indexOf("assetImage('banners'");
+      if (callIdx !== -1) {
+        for (const m of line.slice(callIdx).matchAll(/'([^']*)'/g)) {
+          if (m[1] !== 'banners') names.add(m[1]);
+        }
+      }
+      const topic = line.match(/kind:\s*'banners'\s*,\s*name:\s*'([^']+)'/);
+      if (topic) names.add(topic[1]);
+    }
+  }
+  return [...names].sort();
+}
+
+const BANNERS = scrapeBannerNames();
 
 describe('assetImage', () => {
   it('returns an attachment ref for a present file', () => {
@@ -241,13 +283,6 @@ describe('hatch crack art', () => {
   });
 });
 
-function srcFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    const p = join(dir, e.name);
-    return e.isDirectory() ? srcFiles(p) : e.name.endsWith('.ts') ? [p] : [];
-  });
-}
-
 describe('attach adoption', () => {
   // The point of attach() is that "set the slot" and "attach the file" cannot
   // drift apart. A hand-rolled `payload.files = [...]` IS that drift, and it
@@ -290,6 +325,13 @@ describe('the committed asset set', () => {
     for (const c of CAMPAIGN) {
       expect(assetImage('sites', `${c.id}-banner`), `sites/${c.id}-banner`).not.toBeNull();
       expect(assetImage('sites', `${c.id}-thumb`), `sites/${c.id}-thumb`).not.toBeNull();
+    }
+    // world/embeds.ts builds this name from a template literal
+    // (`` `event-${e.id}` ``), which no static scrape can resolve — so unlike
+    // BANNERS above, world event banners are cross-checked here by looping the
+    // data source directly, same precedent as the CAMPAIGN loop just above.
+    for (const ev of WORLD_EVENTS) {
+      expect(assetImage('banners', `event-${ev.id}`), `banners/event-${ev.id}`).not.toBeNull();
     }
   });
 });
