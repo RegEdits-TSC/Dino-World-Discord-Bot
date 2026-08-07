@@ -6,11 +6,53 @@ import { join, resolve } from 'node:path';
 import { assetImage, attach } from '../src/core/images.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 import { allSpecies } from '../src/data/species/index.js';
+import { WORLD_EVENTS } from '../src/data/world-events.js';
 import type { Archetype, Diet } from '../src/data/types.js';
 
-const BANNERS = ['trading', 'leaderboards', 'help', 'care', 'care_neglect', 'shop_food_market',
-  'battle_victory', 'battle_defeat', 'collect', 'rescue', 'dino_roster', 'eggs_incubator', 'sell',
-  'gene_lab', 'gene_splice'];
+function srcFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = join(dir, e.name);
+    return e.isDirectory() ? srcFiles(p) : e.name.endsWith('.ts') ? [p] : [];
+  });
+}
+
+// BANNERS is SCRAPED from src/, never hand-typed. A hand-typed list can only
+// ever verify that what exists, exists: it stayed green when daily/embeds.ts
+// referenced 'daily' and 'achievements' banners neither of which had a shipped
+// file, because assetImage null-degrades and nothing in the list said they
+// were supposed to exist. Two static reference forms carry a banner name:
+// (1) a call `assetImage('banners', <name>)` — <name> may be a plain literal
+// OR a ternary between two literals (care/index.ts's `neglected ? 'care_neglect'
+// : 'care'`, battles/embeds.ts's `outcome.won ? 'battle_victory' :
+// 'battle_defeat'`), so every quoted string after the match, not just the
+// literal second-argument position, has to count; and (2) a HELP_TOPICS
+// `art: { kind: 'banners', name: '<name>' }` descriptor
+// (src/modules/help/index.ts) — a shape no assetImage-call regex can see at
+// all. A THIRD form, world/embeds.ts's
+// `` assetImage('banners', `event-${e.id}`) ``, is a template literal no
+// static scrape can resolve to a name; those are covered separately below by
+// looping WORLD_EVENTS. Rooted at src/ ONLY: tests/images.test.ts itself calls
+// assetImage('banners', 'no-such-banner') in a null-degrade test above, and
+// scraping tests/ would demand that nonexistent file exist and fail on the
+// spot.
+function scrapeBannerNames(): string[] {
+  const names = new Set<string>();
+  for (const file of srcFiles(resolve(process.cwd(), 'src'))) {
+    for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const callIdx = line.indexOf("assetImage('banners'");
+      if (callIdx !== -1) {
+        for (const m of line.slice(callIdx).matchAll(/'([^']*)'/g)) {
+          if (m[1] !== 'banners') names.add(m[1]);
+        }
+      }
+      const topic = line.match(/kind:\s*'banners'\s*,\s*name:\s*'([^']+)'/);
+      if (topic) names.add(topic[1]);
+    }
+  }
+  return [...names].sort();
+}
+
+const BANNERS = scrapeBannerNames();
 
 describe('assetImage', () => {
   it('returns an attachment ref for a present file', () => {
@@ -106,9 +148,38 @@ describe('attach', () => {
 });
 
 describe('banner art', () => {
+  // BANNERS is a LOWER BOUND (see scrapeBannerNames above): a scrape that silently
+  // finds nothing would make it.each([]) register zero tests below and this whole
+  // guard would go dark with the suite still green. Assert it actually found
+  // something, and separately (below) that it found everything committed.
+  it('the scrape found at least one banner name — a silent scrape failure disables every check below', () => {
+    expect(BANNERS.length, 'scrapeBannerNames() found nothing — did the call pattern change?').toBeGreaterThan(0);
+  });
+
+  // Closes the loop the scrape cannot close on its own: BANNERS can only prove
+  // "what it found, exists" (a lower bound). This proves the reverse — every
+  // non-event banner actually committed under assets/images/banners is also
+  // referenced somewhere the scrape can see — catching an orphaned file just as
+  // readily as a wrapped call or a switch to double quotes would silently starve
+  // the scrape on the other side.
+  it('references every committed non-event banner (guards the scrape itself)', () => {
+    const onDisk = readdirSync(resolve(process.cwd(), 'assets/images/banners'))
+      .filter((f) => f.endsWith('.webp') && !f.startsWith('event-'))
+      .map((f) => f.replace(/\.webp$/, ''));
+    expect(onDisk.filter((n) => !BANNERS.includes(n))).toEqual([]);
+  });
+
   // Discord scales an embed image to the embed width, so an off-size banner
   // letterboxes or crops; 1536×1024 matches the site banners already shipping.
-  it.each(BANNERS)('%s is 1536×1024', async (name) => {
+  // Covers all 26 committed banners, not just the 17 the static scrape can see:
+  // event-<id> names come from a template literal (world/embeds.ts) no scrape can
+  // resolve, so they are appended here from WORLD_EVENTS directly — same
+  // cross-check precedent as the CAMPAIGN/WORLD_EVENTS loops in "the committed
+  // asset set" below. Without this, a future event banner committed unfitted (the
+  // generator's native output is 1264×848) would letterbox on the /world hub with
+  // this suite green.
+  const DIMENSION_CHECKED_BANNERS = [...BANNERS, ...WORLD_EVENTS.map((e) => `event-${e.id}`)];
+  it.each(DIMENSION_CHECKED_BANNERS)('%s is 1536×1024', async (name) => {
     const img = new Image();
     img.src = readFileSync(resolve(process.cwd(), 'assets/images/banners', `${name}.webp`));
     await img.decode();
@@ -241,13 +312,6 @@ describe('hatch crack art', () => {
   });
 });
 
-function srcFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    const p = join(dir, e.name);
-    return e.isDirectory() ? srcFiles(p) : e.name.endsWith('.ts') ? [p] : [];
-  });
-}
-
 describe('attach adoption', () => {
   // The point of attach() is that "set the slot" and "attach the file" cannot
   // drift apart. A hand-rolled `payload.files = [...]` IS that drift, and it
@@ -290,6 +354,13 @@ describe('the committed asset set', () => {
     for (const c of CAMPAIGN) {
       expect(assetImage('sites', `${c.id}-banner`), `sites/${c.id}-banner`).not.toBeNull();
       expect(assetImage('sites', `${c.id}-thumb`), `sites/${c.id}-thumb`).not.toBeNull();
+    }
+    // world/embeds.ts builds this name from a template literal
+    // (`` `event-${e.id}` ``), which no static scrape can resolve — so unlike
+    // BANNERS above, world event banners are cross-checked here by looping the
+    // data source directly, same precedent as the CAMPAIGN loop just above.
+    for (const ev of WORLD_EVENTS) {
+      expect(assetImage('banners', `event-${ev.id}`), `banners/event-${ev.id}`).not.toBeNull();
     }
   });
 });

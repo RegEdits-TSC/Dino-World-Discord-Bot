@@ -32,9 +32,9 @@ describe('/world', () => {
     const embed = payload.embeds[0].toJSON();
     expect(embed.title).toContain('Clear Skies');
     expect(embed.fields![0].value).toContain('Nothing out of the ordinary');
-    // No art has shipped yet (Task 12) — assetImage null-degrades, so the
-    // payload must never carry a files array, not even an empty one.
-    expect(payload.files).toBeUndefined();
+    // Task 12 shipped one event banner per WORLD_EVENTS entry.
+    expect(payload.files).toHaveLength(1);
+    expect((payload.files![0] as { name?: string | null }).name).toBe('event-clear_skies.webp');
   });
 
   it('spells out every effect of an eventful day in plain language', async () => {

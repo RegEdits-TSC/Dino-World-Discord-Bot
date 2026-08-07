@@ -43,4 +43,15 @@ describe('buildParkSnapshot', () => {
     expect(() => structuredClone(snap)).not.toThrow();
     expect(JSON.parse(JSON.stringify(snap)).lots[0].kind).toBe('hatchery_lab');
   });
+
+  // Season comes from ctx.now(), never Date.now() — buildParkSnapshot is the one place with a Ctx
+  // to call seasonFor(ctx.now()) from, so this is the one place that has to prove the wiring reaches
+  // it. Day 0 -> 'wet' and day 60 -> 'cold' are the same fixtures tests/world.test.ts's own
+  // "cycles wet -> dry -> cold every 30 days" test pins for seasonFor directly.
+  it('stamps season from ctx.now() via seasonFor', () => {
+    addLot('carnivore_paddock', 'paddock');
+    expect(buildParkSnapshot(ctx, 'a').season).toBe('wet');       // day 0 (makeCtx default)
+    ctx.setNow(60 * 24 * 3_600_000);                              // day 60
+    expect(buildParkSnapshot(ctx, 'a').season).toBe('cold');
+  });
 });

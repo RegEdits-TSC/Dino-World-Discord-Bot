@@ -5,6 +5,7 @@ import type { Rarity } from '../../data/types.js';
 import { getSpecies } from '../../data/species/index.js';
 import { lotSlots } from '../../data/progression.js';
 import { settleEscapes } from './escapes.js';
+import { seasonFor, type Season } from '../../core/world.js';
 
 export interface SnapshotDino { speciesId: string; rarity: Rarity; escaped: boolean }
 export interface SnapshotLot {
@@ -14,6 +15,10 @@ export interface SnapshotLot {
 export interface ParkSnapshot {
   parkName: string; cash: number; parkRating: number;
   dinoCount: number; escapedCount: number; lotCap: number;
+  // Cosmetic season the map's ground art draws for — optional so an older or synthetic
+  // snapshot with no season resolves to the base (non-seasonal) ground art in draw.ts,
+  // rather than requiring every literal ParkSnapshot in the codebase to name one.
+  season?: Season;
   lots: SnapshotLot[];
 }
 
@@ -41,6 +46,7 @@ export function buildParkSnapshot(ctx: Ctx, userId: string): ParkSnapshot {
   return {
     parkName: user.parkName, cash: user.cash, parkRating: user.parkRating,
     dinoCount: dinos.length, escapedCount, lotCap: lotSlots(user.ratingHighWater),
+    season: seasonFor(ctx.now()),
     lots: lots.map((l) => ({
       id: l.id, type: l.type, kind: l.kind, name: l.name, level: l.level,
       decorCount: l.decor.length, dinos: byLot.get(l.id) ?? [],

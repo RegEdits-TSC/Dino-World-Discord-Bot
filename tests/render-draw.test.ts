@@ -140,6 +140,7 @@ describe('renderParkPng', () => {
 
   const stubArt: ParkArt = {
     ground: svgStub('#0000ff', 120, 80),
+    groundBySeason: { wet: null, dry: null, cold: null },
     platePaddock: svgStub('#ff00ff', 270, 150),
     plateFacility: svgStub('#ff8800', 270, 150),
     lotIcons: { carnivore_paddock: svgStub('#00ffff', 64, 64), hatchery_lab: svgStub('#00ffff', 64, 64) },
@@ -174,5 +175,32 @@ describe('renderParkPng', () => {
     expect(at(546, 210)).toEqual([255, 136, 0]);   // facility plate on tile 1
     expect(at(49, 114)).toEqual([0, 255, 255]);    // lot icon replaced the 🦖 glyph run
     expect(at(50, 173)).toEqual([255, 255, 0]);    // legendary dino chip replaced the 🦖 glyph run
+  });
+
+  // Proves the season id travels snapshot -> draw.ts -> pixel, entirely through ParkArt.groundBySeason
+  // (never Date.now() inside the renderer — see the byte-identical pin above, which this must not
+  // break). Each season gets its own unmistakable hue, distinct from every color stubArt already uses,
+  // so a sampled pixel names exactly which season's raster drew it.
+  const seasonalArt: ParkArt = {
+    ...stubArt,
+    groundBySeason: {
+      wet: svgStub('#22cc55', 120, 80),
+      dry: svgStub('#ddaa11', 120, 80),
+      cold: svgStub('#3388ee', 120, 80),
+    },
+  };
+
+  it('draws the season\'s own ground raster when snapshot.season names one', async () => {
+    const wet = await sampler(renderParkPng({ ...sample, season: 'wet' }, seasonalArt));
+    const dry = await sampler(renderParkPng({ ...sample, season: 'dry' }, seasonalArt));
+    const cold = await sampler(renderParkPng({ ...sample, season: 'cold' }, seasonalArt));
+    expect(wet(10, 240)).toEqual([0x22, 0xcc, 0x55]);
+    expect(dry(10, 240)).toEqual([0xdd, 0xaa, 0x11]);
+    expect(cold(10, 240)).toEqual([0x33, 0x88, 0xee]);
+  });
+
+  it('falls back to the base ground when the snapshot names no season, even though seasonal art is loaded', async () => {
+    const noSeason = await sampler(renderParkPng(sample, seasonalArt));
+    expect(noSeason(10, 240)).toEqual([0, 0, 255]);   // stubArt.ground, not any seasonal color above
   });
 });

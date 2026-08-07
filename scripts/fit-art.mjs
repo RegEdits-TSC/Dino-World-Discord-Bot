@@ -1,5 +1,6 @@
 // Post-processing for generated art (see docs/assets/prompts.md).
 //   node scripts/fit-art.mjs banner <src> <dest>   -> 1536x1024, cover-scaled, center-cropped, WebP q95
+//   node scripts/fit-art.mjs ground <src> <dest>   -> 1200x800, cover-scaled, center-cropped, WebP q95
 //   node scripts/fit-art.mjs cutout <src> <dest>   -> 1024x1024 transparent, defringed and centered, WebP q95
 //
 // `cutout` is the processor for the hatch cracks and for any future cutout family.
@@ -11,9 +12,18 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createCanvas, Image } from '@napi-rs/canvas';
 
+// The cover-scaled modes. Both are 3:2 — `ground` differs from `banner` only in
+// pixel size, because the park renderer's ground is cover-scaled onto a canvas
+// that is at most 752px tall (gridDims in src/core/render/draw.ts: height =
+// 88 + 166*rows, and rows maxes out at 4 — lotSlots caps at 10 in
+// src/data/progression.ts, over a 3-wide grid), so 1536x1024 would ship ~64%
+// more bytes than the renderer can ever use. 1200x800 is what the committed
+// park/ground.webp already is; the season variants must match it exactly or
+// they crop differently from each other at the same row count.
+const COVER = { banner: [1536, 1024], ground: [1200, 800] };
 const [mode, src, dest] = process.argv.slice(2);
-if (!['banner', 'cutout'].includes(mode) || !src || !dest) {
-  console.error('usage: node scripts/fit-art.mjs <banner|cutout> <src> <dest.webp>');
+if (!(mode === 'cutout' || Object.hasOwn(COVER, mode)) || !src || !dest) {
+  console.error('usage: node scripts/fit-art.mjs <banner|ground|cutout> <src> <dest.webp>');
   process.exit(2);
 }
 
@@ -33,14 +43,14 @@ const img = new Image();
 img.src = readFileSync(src);
 await img.decode();
 
-if (mode === 'banner') {
-  const W = 1536, H = 1024;
+if (Object.hasOwn(COVER, mode)) {
+  const [W, H] = COVER[mode];
   const scale = Math.max(W / img.width, H / img.height);
   const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
   const canvas = createCanvas(W, H);
   canvas.getContext('2d').drawImage(img, Math.round((W - w) / 2), Math.round((H - h) / 2), w, h);
   writeFileSync(dest, canvas.toBuffer('image/webp', Q));
-  console.log(`banner ${dest} ${W}x${H} (source ${img.width}x${img.height})`);
+  console.log(`${mode} ${dest} ${W}x${H} (source ${img.width}x${img.height})`);
   process.exit(0);
 }
 

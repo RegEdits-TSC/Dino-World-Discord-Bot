@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createCanvas, Image } from '@napi-rs/canvas';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { renderParkPng, gridDims } from '../src/core/render/draw.js';
 import { loadParkArt } from '../src/core/render/art.js';
 import type { ParkSnapshot } from '../src/modules/park/snapshot.js';
@@ -104,5 +106,36 @@ describe('park render with the committed art', () => {
     const chipRef = renderAlone(28, 28, (c) => c.drawImage(chip, 0, 0, 28, 28));
     const chipX = TILE0_X + 16, chipY = TILE0_Y + 75;
     expect(pixelAt(real, chipX + 14, chipY + 14)).toEqual(pixelAt(chipRef, 14, 14));
+  });
+
+  // End-to-end proof that each season snapshot actually draws ITS OWN committed raster, not just "a"
+  // raster that happens to differ from the others. Same positive-reference pattern as the ground
+  // assertion in the test above, but the reference image is read straight off disk by EXPECTED
+  // filename (assets/images/park/ground-<season>.webp) rather than through art.groundBySeason[season]
+  // — sourcing the reference from loadParkArt's own output would make this test tautological against
+  // exactly the defect it exists to catch: a swapped pair of entries in loadParkArt's groundBySeason
+  // object literal (e.g. `wet: groundDry, dry: groundWet`) would then swap the reference right along
+  // with the real render, and the two would keep agreeing by construction. A pairwise distinctness
+  // check (wet !== dry !== cold, the previous version of this test) doesn't catch that swap either —
+  // every pairwise inequality stays true — which is the whole reason for this rewrite.
+  it('paints each season snapshot with its own committed ground raster', async () => {
+    const art = await loadParkArt();
+    const hasBuild = sample.lots.length < sample.lotCap;
+    const cellCount = sample.lots.length + (hasBuild ? 1 : 0);
+    const dims = gridDims(cellCount);
+    for (const season of ['wet', 'dry', 'cold'] as const) {
+      const img = new Image();
+      img.src = readFileSync(resolve(process.cwd(), 'assets/images/park', `ground-${season}.webp`));
+      await img.decode();
+
+      const scale = Math.max(dims.width / img.width, dims.height / img.height);
+      const dw = img.width * scale, dh = img.height * scale;
+      const gx = (dims.width - dw) / 2, gy = (dims.height - dh) / 2;
+      const seasonRef = renderAlone(dims.width, dims.height, (c) => c.drawImage(img, gx, gy, dw, dh));
+
+      const png = renderParkPng({ ...sample, season }, art);
+      const real = await decodeToCanvas(png);
+      expect(pixelAt(real, 10, 240), season).toEqual(pixelAt(seasonRef, 10, 240));
+    }
   });
 });

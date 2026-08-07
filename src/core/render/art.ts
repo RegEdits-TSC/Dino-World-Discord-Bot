@@ -3,9 +3,16 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { RARITY } from '../../data/rarity.js';
 import type { Rarity } from '../../data/types.js';
+import type { Season } from '../world.js';
 
 export interface ParkArt {
   ground: Image | null;
+  // One raster per cosmetic season (src/core/world.ts's Season), drawn INSTEAD of `ground` when
+  // the snapshot names a season and that season's raster loaded. Keyed exhaustively so a lookup by
+  // any Season value reads back Image | null, never undefined — the same reasoning as dinoChips
+  // below, and for the same failure mode: drawImage(undefined) throws exactly like
+  // drawImage(null) does, costing the whole park image.
+  groundBySeason: Record<Season, Image | null>;
   platePaddock: Image | null;
   plateFacility: Image | null;
   lotIcons: Record<string, Image | null>;
@@ -28,8 +35,12 @@ function nullChips(): Record<Rarity, Image | null> {
   return { common: null, uncommon: null, rare: null, epic: null, legendary: null, mythic: null };
 }
 
+function nullSeasons(): Record<Season, Image | null> {
+  return { wet: null, dry: null, cold: null };
+}
+
 export const EMPTY_ART: ParkArt = {
-  ground: null, platePaddock: null, plateFacility: null,
+  ground: null, groundBySeason: nullSeasons(), platePaddock: null, plateFacility: null,
   lotIcons: {}, dinoChips: nullChips(),
 };
 
@@ -63,8 +74,9 @@ export async function loadParkArt(): Promise<ParkArt> {
   const raster = (name: string) => loadRasterImage(resolve(process.cwd(), 'assets/images/park', name));
   const svg = (name: string) => loadSvgImage(resolve(process.cwd(), 'assets/emojis/svg', `${name}.svg`));
 
-  const [ground, platePaddock, plateFacility] = await Promise.all([
+  const [ground, platePaddock, plateFacility, groundWet, groundDry, groundCold] = await Promise.all([
     raster('ground.webp'), raster('plate-paddock.webp'), raster('plate-facility.webp'),
+    raster('ground-wet.webp'), raster('ground-dry.webp'), raster('ground-cold.webp'),
   ]);
 
   const lotIcons: Record<string, Image | null> = {};
@@ -73,5 +85,8 @@ export async function loadParkArt(): Promise<ParkArt> {
   const dinoChips = nullChips();
   for (const r of Object.keys(RARITY) as Rarity[]) dinoChips[r] = svg(`dw_dino_${r}`);
 
-  return { ground, platePaddock, plateFacility, lotIcons, dinoChips };
+  return {
+    ground, groundBySeason: { wet: groundWet, dry: groundDry, cold: groundCold },
+    platePaddock, plateFacility, lotIcons, dinoChips,
+  };
 }

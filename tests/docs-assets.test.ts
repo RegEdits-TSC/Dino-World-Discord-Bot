@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const svgCount = readdirSync(resolve(process.cwd(), 'assets/emojis/svg')).filter((f) => f.endsWith('.svg')).length;
+const bannerCount = readdirSync(resolve(process.cwd(), 'assets/images/banners')).length;
 const ops = readFileSync(resolve(process.cwd(), 'docs/ops.md'), 'utf8');
 const prompts = readFileSync(resolve(process.cwd(), 'docs/assets/prompts.md'), 'utf8');
 
@@ -17,8 +18,22 @@ describe('docs track the committed assets', () => {
     for (const n of quoted) expect(n).toBe(svgCount);
   });
 
+  // This branch had to hand-fix exactly this drift once already ("fifteen" -> "twenty-six"), the same
+  // failure this whole file exists to catch after an emoji count drifted silently. A word-spelled
+  // numeral ("twenty-six") can't be regexed, which is why the two banner-count mentions in prompts.md
+  // were switched to digits alongside this test. The emoji regex above and this one target disjoint
+  // words ("emojis" vs "banners"), so neither line can accidentally satisfy the other's check.
+  it('every banner count quoted in prompts.md equals the number of committed banner files', () => {
+    const quoted = [...prompts.matchAll(/(\d+)\s+(?:embed |wide )?banners/g)].map((m) => Number(m[1]));
+    expect(quoted.length, 'no banner count found in prompts.md — did the wording change?').toBeGreaterThan(0);
+    for (const n of quoted) expect(n).toBe(bannerCount);
+  });
+
   it('prompts.md carries a regeneration target for every generated park raster', () => {
-    for (const f of ['park/ground.webp', 'park/plate-paddock.webp', 'park/plate-facility.webp']) {
+    for (const f of [
+      'park/ground.webp', 'park/ground-wet.webp', 'park/ground-dry.webp', 'park/ground-cold.webp',
+      'park/plate-paddock.webp', 'park/plate-facility.webp',
+    ]) {
       expect(prompts, `prompts.md is missing the regeneration target ${f}`).toContain(f);
     }
   });

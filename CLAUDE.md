@@ -257,13 +257,16 @@
   across all 40 species files, to fix fidelity for a handful of outliers.
   Banners are
   1536×1024 (asserted in `tests/images.test.ts`) and transparent cutouts
-  1024×1024; `node scripts/fit-art.mjs banner|cutout <src> <dest>` produces the
-  banners and the hatch cracks, but NOT the eggs or the boss portraits — those
-  came from a one-off pass with a tighter 24px margin (vs the script's 31px) and,
-  for the eggs, an egg-axis bias. `docs/assets/prompts.md` carries the numbers and
-  the two families' divergence; the cracks additionally keep multiple
-  disconnected alpha regions on purpose (falling shell fragments), so the egg
-  pass's "largest connected region" step must never be applied to them.
+  1024×1024; `node scripts/fit-art.mjs banner|ground|cutout <src> <dest>`
+  produces the banners and the hatch cracks via `banner`/`cutout`, but NOT the
+  eggs or the boss portraits — those came from a one-off pass with a tighter
+  24px margin (vs the script's 31px) and, for the eggs, an egg-axis bias. The
+  season ground rasters (`park/ground-wet|dry|cold.webp`) come from `ground`,
+  cover-scaled to 1200×800 rather than banner's 1536×1024 — the park renderer's
+  canvas never needs more than that. `docs/assets/prompts.md` carries the
+  numbers and the two families' divergence; the cracks additionally keep
+  multiple disconnected alpha regions on purpose (falling shell fragments), so
+  the egg pass's "largest connected region" step must never be applied to them.
   `assets/images/battles/` ships committed boss portraits
   (`boss-<siteId>-portrait.webp`, 1024×1024 transparent cutouts pinned by
   `tests/images.test.ts`); `assetImage`'s null-degrade still holds, so the
@@ -504,3 +507,21 @@
   would silently delete or shift the world broadcast timer for every server.
   `'0'` can never collide with a real snowflake — Discord IDs start far
   above that range.
+  The season's cosmetic ground art is wired the same "id crosses, asset doesn't" way as the
+  event system's own art: `buildParkSnapshot` (`src/modules/park/snapshot.ts`) is the only place
+  with a `Ctx`, so it alone stamps `ParkSnapshot.season = seasonFor(ctx.now())` — an OPTIONAL
+  field, so the handful of hand-built `ParkSnapshot` test fixtures that predate seasons keep
+  compiling and keep resolving to the base ground, exactly like a snapshot built before this
+  feature shipped would. `renderParkPng` (`src/core/render/draw.ts`) never calls `seasonFor`
+  or reads a clock itself — it stays a pure function of its `(snapshot, art)` arguments, which is
+  what the byte-identical-output pin in `tests/render-draw.test.ts` requires. `ParkArt.groundBySeason`
+  (`src/core/render/art.ts`) is a `Record<Season, Image | null>`, exhaustively null-initialized in
+  `EMPTY_ART` the same way `dinoChips` is: a lookup miss on a real `Season` value must never read
+  back `undefined`, because `drawImage(undefined)` throws exactly like `drawImage(null)` does and
+  costs the whole park image. The fallback chain in `groundImage` (`draw.ts`) is
+  `groundBySeason[season] ?? ground ?? <flat fill>` — a missing or unloaded seasonal raster
+  degrades to the base ground, never to a blank canvas, and a snapshot with no `season` at all
+  (every pre-season fixture) skips the seasonal lookup entirely. The three rasters load inside
+  `loadParkArt`'s existing `Promise.all` alongside the base ground and both plates, so they
+  inherit the same never-rejects guarantee for free — no second `Promise.all`, no separate
+  top-level await for `worker.ts` to guard.

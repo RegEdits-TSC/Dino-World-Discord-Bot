@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import type { ParkSnapshot, SnapshotLot } from '../../modules/park/snapshot.js';
 import { lotIcon, tilePalette, dinoGlyph, RARITY_COLOR } from '../../data/render-icons.js';
 import { EMPTY_ART, type ParkArt } from './art.js';
+import type { Season } from '../world.js';
 
 const COLS = 3;
 const TILE_W = 270, TILE_H = 150, GAP = 16, PAD = 20, HEADER_H = 64;
@@ -74,6 +75,15 @@ function iconImageValue(c: SKRSContext2D, x: number, y: number, img: Image, valu
 // the escaped-count information instead, staying inside one font for the whole run.
 export function dinoStatText(dinoCount: number, escapedCount: number): string {
   return escapedCount > 0 ? `${dinoCount} (${escapedCount} escaped)` : String(dinoCount);
+}
+
+// Resolves which ground raster to draw: the season's own art if the snapshot names a season AND
+// that season's raster loaded, else the base (non-seasonal) ground, else null — which drawGround
+// degrades to the flat fill for. Never reads Date.now()/ctx.now() here: the season id crosses on
+// the snapshot (built by buildParkSnapshot, which does own a Ctx), so renderParkPng stays a pure,
+// deterministic function of its arguments — see tests/render-draw.test.ts's byte-identical pin.
+function groundImage(art: ParkArt, season: Season | undefined): Image | null {
+  return (season ? art.groundBySeason[season] : null) ?? art.ground;
 }
 
 // Cover-scale, never tile: the canvas height grows with the row count, so the backdrop is scaled to
@@ -147,7 +157,7 @@ export function renderParkPng(snap: ParkSnapshot, art: ParkArt = EMPTY_ART): Buf
   const canvas = createCanvas(dims.width, dims.height);
   const c = canvas.getContext('2d');
 
-  drawGround(c, art.ground, dims.width, dims.height);                          // grass or ground art
+  drawGround(c, groundImage(art, snap.season), dims.width, dims.height);       // grass or ground art
   c.fillStyle = '#234a1e'; c.fillRect(0, 0, dims.width, HEADER_H);             // header bar, always over the ground
 
   c.fillStyle = '#ffffff';
