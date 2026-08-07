@@ -35,13 +35,21 @@ export const EXPEDITION_START_HEADER_KEYS = ['expeditionMs', 'expeditionFee'] as
 // /expedition claim's header key list — the mirror image of the exclusion
 // above. This ONE is allowed to name expeditionCash/expeditionOddsShift
 // precisely because this line renders AFTER claimExpedition (see the claim
-// branch below) has already sampled eventMods for the loot sitting right
-// beside it in the same embed: the header and the loot are read from the
-// same ctx.now() sample, so they can never disagree. /expedition status is
-// the screen that must NOT get this header — a dig that has not returned
-// yet is forward-looking, and a header there would repeat exactly the bug
-// that was just fixed on /expedition start (advertising a payout condition
-// that a later UTC-midnight crossing could still invalidate before claim).
+// branch below) has already sampled eventMods moments earlier in this same
+// synchronous call. claimExpedition takes no `now` parameter and calls
+// ctx.now() itself, so the header's own ctx.now() read below is a SEPARATE
+// call, not the same sample threaded through — unlike /expedition start,
+// /shop view, /battle chapters, and /park view, which each compute `now`
+// once and pass it into both the business logic and eventHeaderLine. That's
+// fine here only because nothing awaits between the two reads, so both land
+// in the same UTC day and the header can't disagree with the loot beside
+// it. Do not introduce an await between claimExpedition and the header
+// line below — that is the only way the two could straddle a midnight.
+// /expedition status is the screen that must NOT get this header — a dig
+// that has not returned yet is forward-looking, and a header there would
+// repeat exactly the bug that was just fixed on /expedition start
+// (advertising a payout condition that a later UTC-midnight crossing could
+// still invalidate before claim).
 export const EXPEDITION_CLAIM_HEADER_KEYS = ['expeditionCash', 'expeditionOddsShift'] as const;
 
 function sitePayload(siteId: string, description: string) {
