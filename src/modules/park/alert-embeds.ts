@@ -21,7 +21,13 @@ function fmtRemaining(ms: number): string {
  */
 export function alertPayload(
   userId: string, escapes: EscapeAlert[], income: IncomeCapAlert | null, now: number,
-): NotifyPayload & { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
+): (NotifyPayload & { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }) | null {
+  // An alert with no conditions is not an empty alert, it is no alert. Returning null here
+  // means no caller can coerce this function into building `setDescription('')`, which
+  // @discordjs/builders' embed validator rejects outright — the crash is removed by
+  // construction rather than defended against at every call site.
+  if (escapes.length === 0 && !income) return null;
+
   const lines: string[] = [];
 
   if (escapes.length > 0) {
