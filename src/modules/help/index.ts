@@ -23,6 +23,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
   park: { title: '🏞️ Park', body: [
     '`/park view [user]` — dashboard, park map, Collect button.',
     '`/park rename name:<text>` — rename your park.',
+    '`/park alerts state:on|off` — DM warnings before a dino escapes and when income caps. On by default.',
     '`/build kind:<lot>` — build on an empty lot. Paddocks stack; one facility of each kind, so upgrade rather than rebuild.',
     '`/upgrade lot:<id>` — raise a lot one level.',
     '`/decorate lot:<id> item:<decor>` — decor boosts comfort for matching biomes.',

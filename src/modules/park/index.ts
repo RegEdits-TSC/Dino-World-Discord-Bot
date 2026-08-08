@@ -77,7 +77,10 @@ export const parkModule: ModuleManifest = {
         .addSubcommand((s) => s.setName('view').setDescription('Park dashboard')
           .addUserOption((o) => o.setName('user').setDescription('View another player\'s park').setRequired(false)))
         .addSubcommand((s) => s.setName('rename').setDescription('Rename your park')
-          .addStringOption((o) => o.setName('name').setDescription('New name').setRequired(true).setMaxLength(60))),
+          .addStringOption((o) => o.setName('name').setDescription('New name').setRequired(true).setMaxLength(60)))
+        .addSubcommand((s) => s.setName('alerts').setDescription('Turn proactive park alerts on or off')
+          .addStringOption((o) => o.setName('state').setDescription('On or off').setRequired(true)
+            .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' }))),
       async execute(ctx, i) {
         const user = getOrCreateUser(ctx, i.user.id, i.user.displayName);
         if (i.options.getSubcommand() === 'rename') {
@@ -85,6 +88,21 @@ export const parkModule: ModuleManifest = {
           ctx.db.update(schema.users).set({ parkName: name })
             .where(eq(schema.users.discordId, i.user.id)).run();
           await i.reply({ content: `Park renamed to **${name}**.` });
+          return;
+        }
+        // Explicit branch, not an else-fallthrough: /park has no subcommand dispatch —
+        // `rename` is the only named case and everything else IS the view path below.
+        // A missing branch here renders the dashboard and reports success.
+        if (i.options.getSubcommand() === 'alerts') {
+          const on = i.options.getString('state', true) === 'on';
+          ctx.db.update(schema.users).set({ alertsEnabled: on })
+            .where(eq(schema.users.discordId, i.user.id)).run();
+          await i.reply({
+            content: on
+              ? '🔔 Park alerts are **on** — you will get a DM before a dino escapes and when your park hits its income cap.'
+              : '🔕 Park alerts are **off**. Egg, breeding, and expedition notifications are unaffected. Turn them back on with `/park alerts state:on`.',
+            flags: MessageFlags.Ephemeral,
+          });
           return;
         }
         const targetUser = i.options.getUser('user');
