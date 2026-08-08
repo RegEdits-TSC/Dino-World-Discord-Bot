@@ -603,11 +603,12 @@ describe('/park alerts', () => {
     const off = fakeCommand({ name: 'park', sub: 'alerts', user: 'u1', options: { state: 'off' } });
     await cmd.execute(ctx, off.asChatInput());
     expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.alertsEnabled).toBe(false);
-    expect(JSON.stringify(off.replies[0])).toContain('off');
+    expect(replyText(off.replies[0])).toContain('Park alerts are **off**');
 
     const on = fakeCommand({ name: 'park', sub: 'alerts', user: 'u1', options: { state: 'on' } });
     await cmd.execute(ctx, on.asChatInput());
     expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.alertsEnabled).toBe(true);
+    expect(replyText(on.replies[0])).toContain('Park alerts are **on**');
   });
 
   it('/park alerts does NOT fall through to the dashboard view path', async () => {
@@ -619,7 +620,8 @@ describe('/park alerts', () => {
     const i = fakeCommand({ name: 'park', sub: 'alerts', user: 'u1', options: { state: 'off' } });
     await cmd.execute(ctx, i.asChatInput());
     expect(i.deferOpts).toHaveLength(0);              // the view path always defers
-    expect(JSON.stringify(i.replies)).not.toContain('Park rating');
+    expect(i.replies).toHaveLength(1);
+    expect(replyText(i.replies[0])).toContain('Park alerts are **off**');
   });
 });
 
