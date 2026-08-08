@@ -89,10 +89,15 @@
   `allowedMentions: { users: [userId] }`, which REPLACES the client default for
   that one message (discord.js `MessagePayload` doesn't merge the two),
   restoring the ping without making anything else mentionable — the same fix
-  landed on the trade-offer reply. `Sender` fakes are hand-rolled per test file
-  — **four**, not three: `tests/notify.test.ts`, `tests/notify-handlers.test.ts`,
-  `tests/journeys.test.ts`, `tests/world-broadcast.test.ts` — not in the harness,
-  and only `npm run typecheck` catches a stale one.
+  landed on the trade-offer reply. `Sender` fakes are hand-rolled per test
+  file, not in the harness, so a shape change has no single call site to grep
+  — `grep -rl 'channelSend' tests/` is the reliable way to find every one
+  (`tests/notify.test.ts`, `tests/notify-handlers.test.ts`,
+  `tests/journeys.test.ts`, `tests/world-broadcast.test.ts`,
+  `tests/alert-sweep.test.ts` — five today, and re-run the grep rather than
+  trusting this count, since the next sweep-style test to land will add a
+  sixth without anyone remembering to update this line) — and only
+  `npm run typecheck` catches a stale one.
 - Two assets in one payload: call `attach()` for both and the second can never
   clobber the first — appending is exactly what `attach` does, and hand-assigning
   `payload.files` (the idiom that shipped those defects) is banned outright by

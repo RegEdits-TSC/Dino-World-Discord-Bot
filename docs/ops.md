@@ -438,7 +438,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
 
    **q) `/park alerts state:off`** then **`/park alerts state:on`**
    - Should confirm alerts are off, then confirm they're back on.
-   - With alerts on and a dino inside its escape or income-cap window (from steps o/p above), wait for the next 15-minute alert sweep — you should receive a single combined DM with 🍖 Feed all / 💰 Collect / 🔕 Mute buttons, never a channel post even if step (m) set a notification channel.
+   - With alerts on and the unfed dino from step (p) still inside its escape window (before you rescue it), wait for the next 15-minute alert sweep — you should receive a DM with 🍖 Feed all and 🔕 Mute buttons, never a channel post even if step (m) set a notification channel. 💰 Collect only appears when pending income has separately hit its cap (see Income, `docs/gameplay.md` §4) — this setup alone won't show it.
    - Pressing 🔕 Mute on that DM should have the same effect as `/park alerts state:off`.
 
 6. **Verify no errors in logs**:
