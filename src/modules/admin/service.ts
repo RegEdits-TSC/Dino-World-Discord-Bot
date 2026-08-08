@@ -63,6 +63,13 @@ export function adminReset(ctx: Ctx, targetId: string): void {
     ctx.db.delete(schema.userStats).where(eq(schema.userStats.userId, targetId)).run();
     ctx.db.delete(schema.dailyQuests).where(eq(schema.dailyQuests.userId, targetId)).run();
     ctx.db.delete(schema.achievementClaims).where(eq(schema.achievementClaims.userId, targetId)).run();
+    // Same rule the breedings and user_stats fixes taught: reset must delete from every
+    // table the feature reads. A surviving alerts_sent row would suppress the first
+    // alert a "fresh" account earns.
+    ctx.db.delete(schema.alertsSent).where(eq(schema.alertsSent.userId, targetId)).run();
+    // alertsEnabled is deliberately NOT reset. Every other column here is progress or a
+    // cosmetic default; this one is communication consent. Restoring it would start
+    // DMing a player who explicitly opted out.
     ctx.db.update(schema.users).set({
       cash: 500, shards: 0, parkRating: 0, ratingHighWater: 0, parkName: 'New Park',
       shardsWindowStart: 0, shardsWindowEarned: 0, lastCollectAt: ctx.now(),

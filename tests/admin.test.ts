@@ -334,3 +334,35 @@ describe('adminFastForward + daily loop', () => {
     expect(claim2.streak).toBe(2);   // the shifted anchor reads as yesterday
   });
 });
+
+it('adminReset deletes alert records but preserves an explicit mute', async () => {
+  const ctx = makeCtx();
+  ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+  ctx.db.update(schema.users).set({ alertsEnabled: false })
+    .where(eq(schema.users.discordId, 'u1')).run();
+  ctx.db.insert(schema.alertsSent).values({
+    userId: 'u1', kind: 'escape', refId: 1, tier: 'heads_up', firedForMs: 5, sentAt: 5,
+  }).run();
+
+  adminReset(ctx, 'u1');
+
+  // Reset must clear every table the feature reads — the breedings/user_stats lesson.
+  expect(ctx.db.select().from(schema.alertsSent).all()).toHaveLength(0);
+  // But NOT the mute: it is communication consent, not progress. Un-muting a player who
+  // explicitly opted out would be a reset that talks to them again without asking.
+  expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.alertsEnabled).toBe(false);
+});
+
+it('adminFastForward does not shift alert records, which is what lets it force an alert', () => {
+  // Shifting lastFedAt moves escapeAt; firedForMs then stops matching and the next sweep
+  // alerts. Shifting the record too would keep them in lockstep and force nothing.
+  const ctx = makeCtx({ nowMs: 100 * 3_600_000 });
+  ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: ctx.now(), createdAt: 0 }).run();
+  ctx.db.insert(schema.alertsSent).values({
+    userId: 'u1', kind: 'income_cap', refId: 0, tier: '', firedForMs: 5, sentAt: 5,
+  }).run();
+  adminFastForward(ctx, 'u1', 24);
+  const row = ctx.db.select().from(schema.alertsSent).all()[0];
+  expect(row.firedForMs).toBe(5);
+  expect(row.sentAt).toBe(5);
+});
