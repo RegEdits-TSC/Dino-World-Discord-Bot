@@ -89,21 +89,29 @@ export function alertSweepHandler(sender: Sender, ctx: Ctx) {
         // from user_guilds routes into channels the player may no longer be able to see.
         await deliverNotification(sender, ctx, u.discordId, null, payload);
 
-        // Throttle after each successful send, never before the first one and never for a
-        // skipped user (the `continue`s above never reach this line). This exists for the
-        // first sweep after a fresh deploy: alerts_enabled defaults to true for every
-        // pre-existing row, and essentially every idle player satisfies the income-cap
-        // predicate by then, so an unbounded fan-out would fire a serial burst of DMs —
-        // each potentially opening a new DM channel — which is exactly what Discord
-        // rate-limits hardest. In steady state very few users trip either predicate on a
-        // given sweep, so this rarely adds meaningful wall-clock time.
-        await ctx.sleep(250);
-
-        // Recorded only AFTER the send resolves. deliverNotification never throws, so this
-        // always runs — but keeping the order means a future throwing sender leaves the
-        // alert owed rather than silently consumed.
+        // Recorded immediately after the send resolves — NOTHING awaited in between. These
+        // are synchronous better-sqlite3 writes, so the sent-but-not-yet-recorded window is
+        // sub-millisecond. Putting the throttle sleep here (between the send and the
+        // records, as it once was) would widen that window to the sleep's own duration: a
+        // process death inside it re-sends this exact alert on the next boot, which
+        // alerts_sent exists to prevent — most likely during the very first-sweep backfill
+        // the throttle below was added for. deliverNotification never throws, so these
+        // always run — but keeping the order (record only after the send) means a future
+        // throwing sender leaves the alert owed rather than silently consumed.
         for (const e of escapes) recordEscapeSent(ctx, u.discordId, e.dinoId, e.tier, e.escapeAt);
         if (income) recordSent(ctx, u.discordId, 'income_cap', 0, '', income.capAt);
+
+        // Throttle only AFTER the send is fully recorded, never before the first send and
+        // never for a skipped user (the `continue`s above never reach this line). This
+        // exists for the first sweep after a fresh deploy: alerts_enabled defaults to true
+        // for every pre-existing row, and essentially every idle player satisfies the
+        // income-cap predicate by then, so an unbounded fan-out would fire a serial burst of
+        // DMs — each potentially opening a new DM channel — which is exactly what Discord
+        // rate-limits hardest. In steady state very few users trip either predicate per
+        // sweep, so this rarely adds meaningful wall-clock time. Left unconditional even
+        // after the loop's last actual send (a harmless trailing 250ms) rather than tracking
+        // "will any later target also send", which isn't knowable without processing them.
+        await ctx.sleep(250);
       } catch (err) {
         logger.warn({ err, userId: u.discordId }, 'alert sweep failed for user');
       }

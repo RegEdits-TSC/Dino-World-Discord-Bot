@@ -60,8 +60,12 @@ describe('alert sweep', () => {
     // seedAtRiskPlayer's lastCollectAt: 0 puts the park past its income cap too, so this
     // round-trips BOTH alert keys, not just the escape one — stated explicitly so a future
     // seed "tidy-up" (e.g. lastCollectAt: ctx.now()) that silently drops income-cap
-    // coverage fails this assertion instead of passing unnoticed.
+    // coverage fails this assertion instead of passing unnoticed. Symmetric for the escape
+    // half: `now` sits exactly on the inclusive heads_up boundary (remaining === leadMs), so
+    // without this line a regression that stopped the escape predicate from firing would
+    // still pass every assertion above via the income-cap alert alone.
     expect(JSON.stringify(dms[0].payload)).toContain('Income capped');
+    expect(JSON.stringify(dms[0].payload)).toContain('Unsettled dinos');
     ctx.setNow(ctx.now() + SWEEP_MS);
     await handler(timer(ctx.now()));
     expect(dms).toHaveLength(1);              // idempotent: same escapeAt, already recorded
