@@ -329,6 +329,8 @@ Then:
    ```
    Restart **after** `deploy-emojis`, not before — the runtime emoji map is fetched once at `ClientReady`, so an already-running process won't see new emoji IDs until it restarts.
 
+   On the first restart after this release, expect a one-time burst of proactive park alert DMs: `alerts_enabled` defaults to true for every pre-existing user row, so the first `alert_sweep` after boot finds most idle players already past their income cap. Sends are throttled (one per ~250ms) to keep this from hammering Discord's DM-open rate limit, but it's still worth watching the logs for 429s right after this restart.
+
 8. **Verify** it started: Check logs and confirm the bot is online in your test server.
 
 ## Release Smoke Test
@@ -420,7 +422,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    **m) `/settings channel channel:#some-channel`** (run as a user with Manage Guild permission)
    - Should confirm the notification channel was set.
    - Future hatch/expedition pings should post to that channel instead of falling back to DM.
-   - This channel does not receive the two proactive park alerts (escape warning, income cap) — those are always a DM; see step (q) below.
+   - This channel does not receive the two proactive park alerts (escape warning, income cap) — those are always a DM; see step (p) below.
 
    **n) `/mythic species:<name>` (requires 8★ high-water park rating and 500 shards)**
    - Should show a confirm button and deduct nothing yet; confirming should deduct the shards and grant a Mythic egg of the requested species.

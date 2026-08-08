@@ -24,10 +24,10 @@ export function armAlertSweep(ctx: Ctx): void {
   const pending = ctx.db.select().from(schema.timers)
     .where(and(eq(schema.timers.kind, ALERT_TIMER), isNull(schema.timers.handledAt))).all();
   if (pending.length > 0) return;
-  ctx.db.insert(schema.timers).values({
+  ctx.scheduler.enqueue({
     kind: ALERT_TIMER, userId: SENTINEL_USER, refId: 0,
     originGuildId: null, firesAt: ctx.now() + SWEEP_MS,
-  }).run();
+  });
 }
 
 export function alertSweepHandler(sender: Sender, ctx: Ctx) {
@@ -39,8 +39,20 @@ export function alertSweepHandler(sender: Sender, ctx: Ctx) {
     // No window, no anchor arithmetic. The sweep asks "does the condition hold NOW, and
     // have I already sent for THIS instant?" — which is why a late fire, a re-run of the
     // same row, or a multi-day outage cannot produce a duplicate or a miss.
-    const targets = ctx.db.select().from(schema.users)
-      .where(eq(schema.users.alertsEnabled, true)).all();
+    //
+    // Guarded like the per-user work and the prune below: a thrown SELECT (SQLITE_BUSY is
+    // realistic under contention) must not propagate. scheduler.ts:28 already added this
+    // timer's id to `attempted` before the handler ran, and the due-snapshot filter
+    // (scheduler.ts:25) excludes anything in `attempted` for the rest of the process — an
+    // uncaught throw here would leave alerts dead until restart. Skipping this sweep's
+    // fan-out and still reaching the re-arm below turns that into "one late sweep" instead.
+    let targets: Array<typeof schema.users.$inferSelect> = [];
+    try {
+      targets = ctx.db.select().from(schema.users)
+        .where(eq(schema.users.alertsEnabled, true)).all();
+    } catch (err) {
+      logger.error({ err }, 'alert sweep target query failed');
+    }
 
     for (const u of targets) {
       // Individually caught, like world/broadcast.ts's fan-out: Scheduler.tick writes
@@ -77,6 +89,16 @@ export function alertSweepHandler(sender: Sender, ctx: Ctx) {
         // from user_guilds routes into channels the player may no longer be able to see.
         await deliverNotification(sender, ctx, u.discordId, null, payload);
 
+        // Throttle after each successful send, never before the first one and never for a
+        // skipped user (the `continue`s above never reach this line). This exists for the
+        // first sweep after a fresh deploy: alerts_enabled defaults to true for every
+        // pre-existing row, and essentially every idle player satisfies the income-cap
+        // predicate by then, so an unbounded fan-out would fire a serial burst of DMs —
+        // each potentially opening a new DM channel — which is exactly what Discord
+        // rate-limits hardest. In steady state very few users trip either predicate on a
+        // given sweep, so this rarely adds meaningful wall-clock time.
+        await ctx.sleep(250);
+
         // Recorded only AFTER the send resolves. deliverNotification never throws, so this
         // always runs — but keeping the order means a future throwing sender leaves the
         // alert owed rather than silently consumed.
@@ -103,10 +125,10 @@ export function alertSweepHandler(sender: Sender, ctx: Ctx) {
         .where(and(eq(schema.timers.kind, ALERT_TIMER), isNull(schema.timers.handledAt),
                    ne(schema.timers.id, t.id))).all();
       if (others.length === 0) {
-        ctx.db.insert(schema.timers).values({
+        ctx.scheduler.enqueue({
           kind: ALERT_TIMER, userId: SENTINEL_USER, refId: 0,
           originGuildId: null, firesAt: now + SWEEP_MS,
-        }).run();
+        });
       }
     } catch (err) { logger.error({ err }, 'alert sweep re-arm failed'); }
   };

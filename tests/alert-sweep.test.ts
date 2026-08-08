@@ -15,8 +15,12 @@ function capture() {
   return { dms, sender };
 }
 
-// A Triceratops in a herbivore paddock fed at t=0 escapes at drain*0.75 + grace.
-const ESCAPE_AT = HUNGER_DRAIN_MS * 0.75 + GRACE_MS;
+// A Triceratops in a herbivore paddock fed at t=0, with no biome-matching decor
+// (seedAtRiskPlayer's lot has none), sits at paddockFit 0.75 rather than 1.0 —
+// see clock.ts's paddockFit. At fit 0.75 the comfort-threshold hunger is
+// (0.25/0.75)*100 = 33.3%, so the crossing lands at 2/3 of the drain window, not
+// 3/4. Matches tests/alert-detect.test.ts's pinned escapeAt for this exact fixture.
+const ESCAPE_AT = HUNGER_DRAIN_MS * (2 / 3) + GRACE_MS;
 
 function seedAtRiskPlayer(ctx: ReturnType<typeof makeCtx>, id = 'u1') {
   ctx.db.insert(schema.users).values({ discordId: id, lastCollectAt: 0, createdAt: 0 }).run();
@@ -53,14 +57,23 @@ describe('alert sweep', () => {
     await handler(timer(ctx.now()));
     expect(dms).toHaveLength(1);
     expect(dms[0].userId).toBe('u1');
+    // seedAtRiskPlayer's lastCollectAt: 0 puts the park past its income cap too, so this
+    // round-trips BOTH alert keys, not just the escape one — stated explicitly so a future
+    // seed "tidy-up" (e.g. lastCollectAt: ctx.now()) that silently drops income-cap
+    // coverage fails this assertion instead of passing unnoticed.
+    expect(JSON.stringify(dms[0].payload)).toContain('Income capped');
     ctx.setNow(ctx.now() + SWEEP_MS);
     await handler(timer(ctx.now()));
     expect(dms).toHaveLength(1);              // idempotent: same escapeAt, already recorded
   });
 
   it('re-running the SAME timer row does not double-alert', async () => {
-    // setInterval does not await the in-flight tick (src/index.ts:40) and `attempted` is
-    // consulted only in the due-snapshot filter, so one row genuinely can run twice.
+    // Not reachable within a single process: scheduler.ts:28 adds the id to `attempted`
+    // BEFORE the `await handler(t)`, so the due-snapshot filter (scheduler.ts:25) already
+    // excludes this row from the very next tick (src/index.ts:42) of that same process.
+    // This pins the two-process case instead — this repo's one-instance-per-token rule is
+    // a convention the DB does not enforce, so a second stray process racing the same due
+    // row is exactly the scenario `attempted` (an in-memory, per-process set) cannot stop.
     const ctx = makeCtx({ nowMs: ESCAPE_AT - ESCAPE_WARN_MS });
     seedAtRiskPlayer(ctx);
     const { dms, sender } = capture();
@@ -135,7 +148,7 @@ describe('alert sweep', () => {
     expect(pending.some((p) => p.id !== row.id)).toBe(true);
   });
 
-  it('re-arms even when every DM throws', async () => {
+  it('re-arms even when every DM fails to send', async () => {
     const ctx = makeCtx({ nowMs: ESCAPE_AT - ESCAPE_WARN_MS });
     seedAtRiskPlayer(ctx);
     const sender: Sender = {

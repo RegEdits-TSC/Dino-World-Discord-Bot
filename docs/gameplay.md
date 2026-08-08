@@ -878,6 +878,13 @@ Alerts are on by default. Turn them off with `/park alerts state:off`
 the same per-player switch. It affects only these two alerts; the five
 notifications above keep firing regardless and have no mute of their own.
 
+Alerts are DM-only (see Where it goes, below), so they also require you to
+have direct messages from server members enabled for the server the bot is
+in. If they're off, the bot's DM silently fails to send and the alert is
+recorded as sent anyway — `/park alerts state:on` will still confirm alerts
+are on, but you won't actually receive them until you allow DMs from the
+server.
+
 ### Where it goes
 
 This section covers the four notifications that can be routed to a

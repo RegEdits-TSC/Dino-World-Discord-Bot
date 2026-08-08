@@ -276,7 +276,7 @@ mythic, park, sell, trade`. A prefix may contain no colon
 | notification | button | customId | handler |
 | --- | --- | --- | --- |
 | egg ready | 🥚 Hatch | `hatch:crack:<eggId>` | exists, reused verbatim |
-| breeding done | 🧬 Claim | `breed:claim:<userId>` | new branch, existing prefix |
+| breeding done | 🧬 Claim | `breed:claim:<breedingId>` (better than the userId originally planned here — it targets the specific breeding rather than resolving "the caller's next one", and stays safe via `claimBreeding`'s `(id, userId)` filter) | new branch, existing prefix |
 | expedition back | 🧭 Claim | `exp:claim:<userId>` | **new prefix** on the expeditions module |
 | escape | 🍖 Feed all | `alert:feedall:<userId>` | **new prefix**, appended to `parkModule.components` |
 | income cap | 💰 Collect | `alert:collect:<userId>` | same |
@@ -515,7 +515,11 @@ never put an `attachments` key on a payload reaching `deliverNotification`.
 1. `npm run deploy-commands` — 25 stays 25, but the `/park` builder changed.
    Exactly one bot instance per token.
 2. Restart the bot — migration 0009 applies via `migrateDb`, and the new timer
-   kind must be registered before `armAlertSweep` can arm it.
+   kind must be registered before `armAlertSweep` can arm it. Expect a
+   one-time alert burst on this first restart: `alerts_enabled` defaults to
+   true for every pre-existing row, so the first sweep DMs most idle players
+   at once (throttled to one send per 250ms — see `alert-sweep.ts`) — watch
+   the logs for 429s.
 3. `npm run test:live` — cosmetic review of the combined alert payload and the
    five button rows.
 
