@@ -129,5 +129,29 @@ export const expeditionsModule: ModuleManifest = {
         }
       } },
   ],
-  components: [],
+  components: [
+    {
+      prefix: 'exp',
+      async execute(ctx, i) {
+        const [, action, uid] = i.customId.split(':');
+        if (action !== 'claim') { await i.deferUpdate(); return; }
+        // The notification is a DM today, but a customId is client-supplied and this
+        // handler is reachable from anywhere — check the owner explicitly.
+        if (i.user.id !== uid) {
+          await i.reply({ content: 'That is not your expedition.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        try {
+          const { loot, site } = claimExpedition(ctx, i.user.id);
+          await i.update({
+            content: `🧭 **${site.name}** claimed — a **${loot.eggRarity}** egg, **${loot.cash}** cash, and **${loot.food.qty}× ${FOODS[loot.food.foodId].name}**.`,
+            embeds: [], components: [], attachments: [],
+          });
+        } catch (e) {
+          if (e instanceof ExpeditionError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+          else throw e;
+        }
+      },
+    },
+  ],
 };

@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
-import { EmbedBuilder } from 'discord.js';
-import type { Client, AttachmentBuilder, ActionRowBuilder, ButtonBuilder } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import type { Client, AttachmentBuilder } from 'discord.js';
 import { schema } from './db/index.js';
 import type { Ctx } from './context.js';
 import { logger } from './logger.js';
@@ -76,6 +76,9 @@ export function eggHatchHandler(sender: Sender, ctx: Ctx) {
         .setDescription(`Your ${egg.rarity} egg is ready to hatch! Use \`/hatch egg:${egg.id}\`.`);
       const payload: NotifyPayload & { embeds: EmbedBuilder[] } = { embeds: [embed] };
       attach(embed, payload, 'thumbnail', assetImage('eggs', egg.rarity));
+      payload.components = [new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(`hatch:crack:${egg.id}`)
+          .setLabel('🥚 Hatch').setStyle(ButtonStyle.Primary))];
       await deliverNotification(sender, ctx, t.userId, t.originGuildId, payload);
     } catch (e) { logger.warn({ err: e }, 'notify handler failed'); }
   };
@@ -90,6 +93,9 @@ export function breedingReadyHandler(sender: Sender, ctx: Ctx) {
         .setDescription('Your pairing has produced an egg! Use `/breed claim` to collect it.');
       const payload: NotifyPayload & { embeds: EmbedBuilder[] } = { embeds: [embed] };
       attach(embed, payload, 'image', assetImage('banners', 'gene_lab'));
+      payload.components = [new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(`breed:claim:${b.id}`)
+          .setLabel('🧬 Claim').setStyle(ButtonStyle.Primary))];
       await deliverNotification(sender, ctx, t.userId, t.originGuildId, payload);
     } catch (e) { logger.warn({ err: e }, 'notify handler failed'); }
   };
@@ -105,6 +111,9 @@ export function expeditionReturnHandler(sender: Sender, ctx: Ctx) {
         .setDescription('Use `/expedition claim` to collect the egg, cash, and food.');
       const payload: NotifyPayload & { embeds: EmbedBuilder[] } = { embeds: [embed] };
       attach(embed, payload, 'image', assetImage('sites', `${exp.siteId}-banner`));
+      payload.components = [new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(`exp:claim:${t.userId}`)
+          .setLabel('🧭 Claim').setStyle(ButtonStyle.Primary))];
       await deliverNotification(sender, ctx, t.userId, t.originGuildId, payload);
     } catch (e) { logger.warn({ err: e }, 'notify handler failed'); }
   };

@@ -4,6 +4,7 @@ import type { ButtonInteraction } from 'discord.js';
 import { makeCtx, fakeButton } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
+import { expeditionsModule } from '../src/modules/expeditions/index.js';
 
 const alertComp = () => parkModule.components.find((c) => c.prefix === 'alert')!;
 const seed = (ctx: ReturnType<typeof makeCtx>) =>
@@ -82,5 +83,14 @@ describe('alert buttons', () => {
     await alertComp().execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
     expect(b.deferOpts.length).toBe(1);
     expect(b.replies).toHaveLength(0);
+  });
+
+  it('exp:claim rejects a bystander', async () => {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    const comp = expeditionsModule.components.find((c) => c.prefix === 'exp')!;
+    const b = fakeButton({ customId: 'exp:claim:u1', user: 'nope' });
+    await comp.execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
+    expect(JSON.stringify(b.replies[0])).toContain('not your');
   });
 });
