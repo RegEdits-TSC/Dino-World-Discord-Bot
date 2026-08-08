@@ -242,10 +242,14 @@ describe('trading module', () => {
       content?: string;
       embeds: Array<{ toJSON(): { image?: { url: string } } }>;
       files?: Array<{ name?: string | null }>;
+      allowedMentions?: { users?: string[] };
     };
     expect(payload.content).toContain('<@b>');
     expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://trading.webp');
     expect(payload.files!.map((f) => f.name)).toContain('trading.webp');
+    // src/index.ts sets allowedMentions: { parse: [] } client-wide, so the bare
+    // <@b> above pings nobody unless this payload also whitelists the recipient.
+    expect(payload.allowedMentions).toEqual({ users: ['b'] });
   });
   it('/trade accept replies with an illustrated completion embed', async () => {
     ctx.economy.apply('a', { cash: 1_000 }, 'seed', 0);
