@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EmbedBuilder, AttachmentBuilder } from 'discord.js';
+import { EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { makeCtx } from './harness.js';
 import { deliverNotification, withMention, type Sender, type NotifyPayload } from '../src/core/notify.js';
 import { schema } from '../src/core/db/index.js';
@@ -43,6 +43,33 @@ describe('withMention', () => {
     const embedOnly = withMention('u1', { embeds: [new EmbedBuilder().setTitle('t')] });
     expect(contentOf(embedOnly)).toBe('<@u1>');
     expect((embedOnly as { embeds?: EmbedBuilder[] }).embeds).toHaveLength(1);
+  });
+
+  it('withMention whitelists exactly the notified user so the ping actually fires', () => {
+    // src/index.ts sets allowedMentions: { parse: [] } client-wide. A per-message
+    // value REPLACES that default (discord.js MessagePayload#resolveBody), so without
+    // this the <@id> is an inert grey chip and nobody is notified.
+    const out = withMention('u1', { embeds: [] }) as {
+      content?: string; allowedMentions?: { users?: string[]; parse?: string[] };
+    };
+    expect(out.content).toBe('<@u1>');
+    expect(out.allowedMentions).toEqual({ users: ['u1'] });
+  });
+
+  it('withMention does not widen the whitelist when the payload already has content', () => {
+    // A role or @everyone in caller-supplied content must stay unpingable.
+    const out = withMention('u1', { content: '@everyone <@&999> hello' }) as {
+      content?: string; allowedMentions?: { users?: string[] };
+    };
+    expect(out.content).toBe('<@u1> @everyone <@&999> hello');
+    expect(out.allowedMentions).toEqual({ users: ['u1'] });
+  });
+
+  it('withMention preserves a components array', () => {
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId('alert:mute:u1').setLabel('x').setStyle(ButtonStyle.Secondary));
+    const out = withMention('u1', { embeds: [], components: [row] }) as { components?: unknown[] };
+    expect(out.components).toHaveLength(1);
   });
 });
 
