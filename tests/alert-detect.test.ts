@@ -37,6 +37,17 @@ describe('escapeAlertsFor', () => {
     expect(escapeAlertsFor([c], [row({ escapedAt: 5 })], 10)).toHaveLength(0);
   });
 
+  it('never fires for an already-escaped dino even before the stamped instant', () => {
+    // Isolates the `row.escapedAt !== null` conjunct from the downtime guard
+    // (`esc <= now`): `now` sits BEFORE the stamped escape instant, so escapeAt(c)
+    // resolves to 1_000 (verbatim, since escapedAt is non-null) and 1_000 > now — the
+    // downtime guard would let this through on its own. Only the first conjunct can be
+    // the reason this returns empty. (The test above, with now=10 > escapedAt=5, cannot
+    // tell the two guards apart: either one alone suppresses it.)
+    const c = clock({ escapedAt: 1_000 });
+    expect(escapeAlertsFor([c], [row({ escapedAt: 1_000 })], 0)).toHaveLength(0);
+  });
+
   it('never fires for an unassigned dino', () => {
     // escapeAt returns null with no paddock: an unassigned dino cannot escape.
     const c = clock({ paddock: null });
