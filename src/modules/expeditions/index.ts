@@ -136,7 +136,14 @@ export const expeditionsModule: ModuleManifest = {
         const [, action, uid] = i.customId.split(':');
         if (action !== 'claim') { await i.deferUpdate(); return; }
         // The notification is a DM today, but a customId is client-supplied and this
-        // handler is reachable from anywhere — check the owner explicitly.
+        // handler is reachable from anywhere — check the owner explicitly. Unlike
+        // breed:claim, which lets claimBreeding's own (id, userId) filter reject a
+        // bystander for free (the breeding id in the customId belongs to someone
+        // else, so the lookup just fails), claimExpedition takes no id at all — it
+        // always resolves the CALLER's own active dig. Without this check, a
+        // bystander clicking someone else's notification would silently claim
+        // their OWN unrelated expedition rather than being rejected, so the
+        // ownership check has to happen here, explicitly, before the service call.
         if (i.user.id !== uid) {
           await i.reply({ content: 'That is not your expedition.', flags: MessageFlags.Ephemeral });
           return;

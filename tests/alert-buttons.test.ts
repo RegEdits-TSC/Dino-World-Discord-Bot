@@ -5,8 +5,10 @@ import { makeCtx, fakeButton } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
 import { expeditionsModule } from '../src/modules/expeditions/index.js';
+import { startExpedition } from '../src/modules/expeditions/service.js';
 
 const alertComp = () => parkModule.components.find((c) => c.prefix === 'alert')!;
+const expComp = () => expeditionsModule.components.find((c) => c.prefix === 'exp')!;
 const seed = (ctx: ReturnType<typeof makeCtx>) =>
   ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
 
@@ -92,5 +94,40 @@ describe('alert buttons', () => {
     const b = fakeButton({ customId: 'exp:claim:u1', user: 'nope' });
     await comp.execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
     expect(JSON.stringify(b.replies[0])).toContain('not your');
+  });
+
+  it('exp:claim succeeds for the owner and updates the message with the loot', async () => {
+    const ctx = makeCtx(); seed(ctx);
+    startExpedition(ctx, 'u1', 'coastal_dig', null);
+    ctx.setNow(ctx.now() + 15 * 60_000);   // coastal_dig's duration — now returned
+    const b = fakeButton({ customId: 'exp:claim:u1', user: 'u1' });
+    await expComp().execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
+    expect(JSON.stringify(b.replies[0])).toContain('Coastal Dig');
+    expect(JSON.stringify(b.replies[0])).toContain('claimed');
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'u1')).all()).toHaveLength(1);
+  });
+
+  it('exp:claim surfaces "not returned yet" on a stale click — the button carries no expedition id, so it always resolves the caller\'s CURRENT dig', async () => {
+    const ctx = makeCtx(); seed(ctx);
+    startExpedition(ctx, 'u1', 'coastal_dig', null);
+    // ctx.now() is still before returnsAt: the exact shape of clicking an old
+    // notification's button after re-departing on a trip that has not landed yet —
+    // claimExpedition always resolves the CALLER's own active dig, never the one the
+    // notification was originally about, since the button carries no expedition id.
+    const b = fakeButton({ customId: 'exp:claim:u1', user: 'u1' });
+    await expComp().execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
+    expect(JSON.stringify(b.replies[0])).toContain('not returned yet');
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'u1')).all()).toHaveLength(0);
+  });
+
+  it('exp defers before the owner check on an unknown action, even with a mismatched uid', async () => {
+    // Same shape as the alert-prefix ordering test above (Task 9's precedent): a
+    // matching uid can't distinguish "unknown-action first" from "owner check first",
+    // so the uid here deliberately does NOT match the clicker.
+    const ctx = makeCtx(); seed(ctx);
+    const b = fakeButton({ customId: 'exp:whatever:someone_else', user: 'u1' });
+    await expComp().execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
+    expect(b.deferOpts.length).toBe(1);
+    expect(b.replies).toHaveLength(0);
   });
 });

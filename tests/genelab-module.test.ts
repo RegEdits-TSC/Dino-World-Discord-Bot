@@ -251,6 +251,57 @@ describe('/breed status and claim', () => {
   });
 });
 
+describe('breed:claim button', () => {
+  it('claims for the owner and updates the message with the egg', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const lot = lab(ctx);
+    const { a, b } = pair(ctx, lot.id);
+    const confirmBtn = fakeButton({ customId: `breed:confirm:${a.id}:${b.id}`, user: 'u1' });
+    await breedBtn.execute(ctx, confirmBtn.asChatInput() as never);
+    const breeding = ctx.db.select().from(schema.breedings).all()[0];
+
+    ctx.setNow(BREED_MS.common);
+    const claimBtn = fakeButton({ customId: `breed:claim:${breeding.id}`, user: 'u1' });
+    await breedBtn.execute(ctx, claimBtn.asChatInput() as never);
+
+    const eggs = ctx.db.select().from(schema.eggs).all();
+    expect(eggs).toHaveLength(1);
+    expect(replyText(claimBtn.replies[0])).toMatch(/Claimed/);
+    expect(replyText(claimBtn.replies[0])).toContain(eggs[0].rarity);
+    expect(replyText(claimBtn.replies[0])).toContain(`/incubate egg:${eggs[0].id}`);
+    // The claim also flipped the breeding row — a second click hits the stale-claim
+    // branch below rather than minting a second egg.
+    expect(ctx.db.select().from(schema.breedings).all()[0].claimedAt).not.toBeNull();
+  });
+
+  it('rejects a non-integer claim id with an invalid-link ephemeral, never reaching the DB', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const btn = fakeButton({ customId: 'breed:claim:not-a-number', user: 'u1' });
+    await breedBtn.execute(ctx, btn.asChatInput() as never);
+    expect(replyText(btn.replies[0])).toMatch(/invalid/i);
+  });
+
+  it('reports the already-claimed error on a stale click (button clicked twice)', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    const lot = lab(ctx);
+    const { a, b } = pair(ctx, lot.id);
+    const confirmBtn = fakeButton({ customId: `breed:confirm:${a.id}:${b.id}`, user: 'u1' });
+    await breedBtn.execute(ctx, confirmBtn.asChatInput() as never);
+    const breeding = ctx.db.select().from(schema.breedings).all()[0];
+    ctx.setNow(BREED_MS.common);
+
+    const claim1 = fakeButton({ customId: `breed:claim:${breeding.id}`, user: 'u1' });
+    await breedBtn.execute(ctx, claim1.asChatInput() as never);
+
+    // The notification's button is still live in Discord after the first claim —
+    // clicking it again is exactly the stale-click case these buttons make more likely.
+    const claim2 = fakeButton({ customId: `breed:claim:${breeding.id}`, user: 'u1' });
+    await breedBtn.execute(ctx, claim2.asChatInput() as never);
+    expect(replyText(claim2.replies[0])).toMatch(/already been claimed/);
+    expect(ctx.db.select().from(schema.eggs).all()).toHaveLength(1);   // no second egg minted
+  });
+});
+
 describe('/splice autocomplete', () => {
   it('excludes a locked and an escaped dino outright, but keeps a Mythic visible', async () => {
     const ctx = makeCtx({ nowMs: 0 });
