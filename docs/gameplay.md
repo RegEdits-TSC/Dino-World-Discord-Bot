@@ -816,13 +816,16 @@ players who have used the bot in that server; global scope ranks every
 registered player anywhere. There's no tiebreak rule for players with equal
 values — their relative order isn't defined.
 
-## 14. Notifications
+## 14. Notifications and alerts
 
-The bot can proactively notify you about five things: an egg finishing
+The bot can proactively reach you in two ways. **Notifications** fire once
+when a specific action completes — five things in total: an egg finishing
 incubation, an expedition returning, a breeding pairing finishing, trade
-activity, and — since the world went live — a daily world bulletin. There
-are no hunger or escape notifications of any kind — those are only ever
-surfaced when you next run a command yourself.
+activity, and — since the world went live — a daily world bulletin.
+**Alerts** are different: a recurring sweep that watches two ongoing
+conditions — a dino heading toward escape, and income that's hit its cap
+with cash still pending — and DMs you a combined warning. See Alerts,
+below, for how those work and how to turn them off.
 
 - **Egg ready** — fires once the egg you're incubating finishes, naming its
   rarity and pointing you at `/hatch`.
@@ -842,17 +845,48 @@ surfaced when you next run a command yourself.
   channel yet, the bulletin simply has nowhere to post that day), and it
   carries no `@`-ping, since it isn't addressed to any one player.
 
-Any of the three timer-based, per-player notifications (egg, expedition,
-breeding) is simply skipped if you've already handled it yourself by the
-time it would have fired.
+Any of these four timer-based, per-player things — egg, expedition,
+breeding, and the alerts sweep — is simply skipped (or, for an alert,
+simply doesn't fire) if you've already handled the underlying condition
+yourself by the time it would have fired.
+
+### Alerts
+
+Alerts watch an ongoing condition rather than a one-time event, and they
+differ from the five notifications above in three ways: they run on their
+own 15-minute sweep rather than the 30-second tick that drives the others,
+they always arrive by DM — never routed to a server's notification channel
+— and they're the one proactive message you can turn off.
+
+- **Escape warning** — a dino projected to escape within 12 hours gets a
+  heads-up; inside 1 hour, that's replaced by a last call. (`/dino list`
+  and the `/park view` dashboard show the same countdown — see Escapes,
+  above.)
+- **Income cap** — your park has stopped earning because pending income
+  hit its cap (see Income, above) and cash is still sitting uncollected.
+
+Both conditions are re-checked from scratch on every sweep and each fires
+only once per instant, so feeding the dino or collecting income before the
+next sweep clears the warning — and the same condition returning later (a
+new projected escape time, a fresh cap after a later collect) sends a
+fresh one. Whichever of the two apply arrive together in a single combined
+DM, with buttons to act on the spot: 🍖 Feed all, 💰 Collect, and 🔕 Mute
+alerts.
+
+Alerts are on by default. Turn them off with `/park alerts state:off`
+(back on with `state:on`), or press 🔕 Mute on an alert itself — both flip
+the same per-player switch. It affects only these two alerts; the five
+notifications above keep firing regardless and have no mute of their own.
 
 ### Where it goes
 
-This section covers the four per-player notifications (egg, expedition,
-breeding, trade) — the world bulletin's delivery rule is different and is
-covered above. Notifications go to a server's configured notification
-channel first, with a ping, if one is set; otherwise they arrive as a DM
-with no ping. If the
+This section covers the four notifications that can be routed to a
+channel (egg, expedition, breeding, trade) — the world bulletin's delivery
+rule is different and is covered above, and alerts (escape warning, income
+cap) are never channel-routed at all; they're always a DM (see Alerts,
+above). Notifications go to a server's configured notification channel
+first, with a ping, if one is set; otherwise they arrive as a DM with no
+ping. If the
 channel can't be posted to for any reason, the bot silently falls back to a
 DM, and if that also fails, the notification is simply dropped. The channel
 used is always the one configured in the server where you started the
@@ -861,9 +895,11 @@ started the incubation or expedition inside a DM, the notification arrives
 by DM regardless. Trade notifications follow the same channel-then-DM rule.
 
 Notifications are checked roughly every 30 seconds, so one can land up to
-about half a minute after it technically came due. If the bot was offline
-when something became due, it still notifies you once it's back — late,
-never dropped.
+about half a minute after it technically came due. Alerts run on their own,
+coarser sweep — every 15 minutes — so an alert can land up to about 15
+minutes after its condition first became true. If the bot was offline when
+something became due, it still notifies you once it's back — late, never
+dropped.
 
 ### `/settings channel`
 
@@ -873,10 +909,13 @@ that server — it only accepts a normal text channel, and only works when
 run inside a server. Running it again simply replaces the previous
 channel; there's no way to clear or unset it once set. The same channel is
 also where the world bulletin posts, once a server opts in with
-`/settings world-news on` (see Notifications, above). There's no
-per-player notification preference anywhere in the game — no DM opt-out,
-no per-type toggle — everything stored is per server: one notification
-channel, plus the world bulletin's own on/off flag.
+`/settings world-news on` (see Notifications, above). It has no effect on
+alerts, which are always a DM (see Alerts, above).
+
+Alerts are the one per-player notification preference in the game:
+`/park alerts state:on|off` (default on) mutes or unmutes them for just
+you. Everything else here is still per server, not per player — one
+notification channel, plus the world bulletin's own on/off flag.
 
 ## 15. Traits
 

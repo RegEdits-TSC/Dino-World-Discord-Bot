@@ -420,6 +420,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    **m) `/settings channel channel:#some-channel`** (run as a user with Manage Guild permission)
    - Should confirm the notification channel was set.
    - Future hatch/expedition pings should post to that channel instead of falling back to DM.
+   - This channel does not receive the two proactive park alerts (escape warning, income cap) — those are always a DM; see step (q) below.
 
    **n) `/mythic species:<name>` (requires 8★ high-water park rating and 500 shards)**
    - Should show a confirm button and deduct nothing yet; confirming should deduct the shards and grant a Mythic egg of the requested species.
@@ -434,6 +435,11 @@ A ~5-minute manual test to run in a development Discord server after each releas
    - Leave a dino unfed long enough that its comfort drops below 25% and stays there past the 8-hour grace period.
    - `/park view` or `/dino list` should now show the dino as escaped, and its paddock's income should halt.
    - `/rescue dino:<id>` — should pay the recapture fee, clear the escape, and restore the dino's comfort.
+
+   **q) `/park alerts state:off`** then **`/park alerts state:on`**
+   - Should confirm alerts are off, then confirm they're back on.
+   - With alerts on and a dino inside its escape or income-cap window (from steps o/p above), wait for the next 15-minute alert sweep — you should receive a single combined DM with 🍖 Feed all / 💰 Collect / 🔕 Mute buttons, never a channel post even if step (m) set a notification channel.
+   - Pressing 🔕 Mute on that DM should have the same effect as `/park alerts state:off`.
 
 6. **Verify no errors in logs**:
    - Check the terminal (or `journalctl`) for any `ERROR` or `WARN` lines. The bot should log at `INFO` level with slash command invocations and results.

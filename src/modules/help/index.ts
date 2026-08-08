@@ -55,6 +55,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Dinos only eat their diet: herbivores get Ferns/Fruit Basket/Royal Greens, carnivores get Fish/Goat/Prime Steak.',
     'Premium food overfills hunger (up to 150) so dinos stay fed longer.',
     'Hunger drains over 48h. Low comfort long enough → the dino escapes and stops earning.',
+    'You get a DM 12h before a dino escapes, and a last call 1h out — `/park alerts state:off` to stop them.',
     '`/rescue dino:<id>` — recapture an escaped dino for a fee.',
   ].join('\n') },
   trading: { title: '🤝 Trading', art: { kind: 'banners', name: 'trading' }, body: [

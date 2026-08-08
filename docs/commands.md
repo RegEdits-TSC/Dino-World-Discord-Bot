@@ -15,6 +15,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | --- | --- | --- |
 | `/park view` | Your park dashboard, with a rendered map of your lots | Falls back to a text-only embed if the map cannot be rendered |
 | `/park rename` | Rename your park | Up to 60 characters |
+| `/park alerts` | Turn proactive park alerts on or off | DM-only warnings before a dino escapes and when your park's income hits its cap. On by default; also turned off by the 🔕 Mute button on an alert itself |
 | `/build` | Build on an empty lot | |
 | `/upgrade` | Upgrade a lot to the next level | Autocomplete: lot |
 | `/decorate` | Add decor to a paddock | Autocomplete: lot |
@@ -107,7 +108,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/settings channel` | Set where the bot posts hatch, expedition, breeding, trade, and world-bulletin notifications | **Requires the Manage Server permission** |
+| `/settings channel` | Set where the bot posts hatch, expedition, breeding, trade, and world-bulletin notifications | **Requires the Manage Server permission**. Doesn't cover the two proactive park alerts (escape warning, income cap) — those are always a DM, toggled per-player with `/park alerts` |
 | `/settings world-news` | Turn the daily world bulletin on or off for this server | **Requires the Manage Server permission**. Posts to the channel set by `/settings channel` — needs one configured to actually post |
 | `/admin give` | Grant resources to a player | Autocomplete: dino-species. **Bot owner only** |
 | `/admin inspect` | Dump a player's raw state | **Bot owner only** |
