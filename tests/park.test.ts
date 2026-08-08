@@ -595,6 +595,36 @@ describe('/dino list shows nickname and trait marks', () => {
   });
 });
 
+describe('/park alerts', () => {
+  it('/park alerts off then on toggles the per-user flag', async () => {
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const cmd = parkModule.commands.find((c) => c.data.name === 'park')!;
+
+    const off = fakeCommand({ name: 'park', sub: 'alerts', user: 'u1', options: { state: 'off' } });
+    await cmd.execute(ctx, off.asChatInput());
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.alertsEnabled).toBe(false);
+    expect(replyText(off.replies[0])).toContain('Park alerts are **off**');
+
+    const on = fakeCommand({ name: 'park', sub: 'alerts', user: 'u1', options: { state: 'on' } });
+    await cmd.execute(ctx, on.asChatInput());
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.alertsEnabled).toBe(true);
+    expect(replyText(on.replies[0])).toContain('Park alerts are **on**');
+  });
+
+  it('/park alerts does NOT fall through to the dashboard view path', async () => {
+    // /park dispatches on `=== 'rename'` and treats everything else as view. Without an
+    // explicit alerts branch this subcommand silently renders the park dashboard and
+    // reports success — the failure this test exists to catch.
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const cmd = parkModule.commands.find((c) => c.data.name === 'park')!;
+    const i = fakeCommand({ name: 'park', sub: 'alerts', user: 'u1', options: { state: 'off' } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(i.deferOpts).toHaveLength(0);              // the view path always defers
+    expect(i.replies).toHaveLength(1);
+    expect(replyText(i.replies[0])).toContain('Park alerts are **off**');
+  });
+});
+
 describe('/dino list full page stays within Discord embed limits', () => {
   it('renders 10 dinos each with 2 traits and a 32-char nickname without tripping validateMessagePayload', async () => {
     const ctx = makeCtx({ nowMs: 0 });

@@ -329,6 +329,8 @@ Then:
    ```
    Restart **after** `deploy-emojis`, not before — the runtime emoji map is fetched once at `ClientReady`, so an already-running process won't see new emoji IDs until it restarts.
 
+   On the first restart after this release, expect a one-time burst of proactive park alert DMs: `alerts_enabled` defaults to true for every pre-existing user row, so the first `alert_sweep` after boot finds most idle players already past their income cap. Sends are throttled (one per ~250ms) to keep this from hammering Discord's DM-open rate limit, but it's still worth watching the logs for 429s right after this restart.
+
 8. **Verify** it started: Check logs and confirm the bot is online in your test server.
 
 ## Release Smoke Test
@@ -420,6 +422,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    **m) `/settings channel channel:#some-channel`** (run as a user with Manage Guild permission)
    - Should confirm the notification channel was set.
    - Future hatch/expedition pings should post to that channel instead of falling back to DM.
+   - This channel does not receive the two proactive park alerts (escape warning, income cap) — those are always a DM; see step (p) below.
 
    **n) `/mythic species:<name>` (requires 8★ high-water park rating and 500 shards)**
    - Should show a confirm button and deduct nothing yet; confirming should deduct the shards and grant a Mythic egg of the requested species.
@@ -430,10 +433,16 @@ A ~5-minute manual test to run in a development Discord server after each releas
    - `/feed one dino:<id>` — should restore the dino's hunger and charge food.
    - `/feed all` — should feed every hungry dino, hungriest first, and report how many were fed (and how many were skipped for lack of food).
 
-   **p) Trigger and clear an escape**
+   **p) Trigger an escape, catching the proactive alert on the way, then clear it**
    - Leave a dino unfed long enough that its comfort drops below 25% and stays there past the 8-hour grace period.
+   - With alerts on (`/park alerts state:on` — see step (q) for the toggle command itself), check your DMs periodically **during that same unfed wait, before the next bullet below**: once the dino is projected to escape within 12 hours, the next 15-minute alert sweep should DM you with 🍖 Feed all and 🔕 Mute buttons, never a channel post even if step (m) set a notification channel. This is a *pre*-escape warning — check for it before you run the next bullet, which stamps the escape and closes the window for good; there is nothing left to warn about once the dino has actually escaped.
    - `/park view` or `/dino list` should now show the dino as escaped, and its paddock's income should halt.
    - `/rescue dino:<id>` — should pay the recapture fee, clear the escape, and restore the dino's comfort.
+
+   **q) `/park alerts state:off`** then **`/park alerts state:on`**
+   - Should confirm alerts are off, then confirm they're back on.
+   - Pressing 🔕 Mute on the alert DM from step (p) should have the same effect as `/park alerts state:off`.
+   - 💰 Collect only appears on that combined alert when pending income has separately hit its cap (see Income, `docs/gameplay.md` §4) — step (p)'s setup alone won't show it.
 
 6. **Verify no errors in logs**:
    - Check the terminal (or `journalctl`) for any `ERROR` or `WARN` lines. The bot should log at `INFO` level with slash command invocations and results.

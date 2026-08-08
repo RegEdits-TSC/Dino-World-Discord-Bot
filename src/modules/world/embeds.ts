@@ -1,5 +1,5 @@
 import { EmbedBuilder } from 'discord.js';
-import type { AttachmentBuilder } from 'discord.js';
+import type { AttachmentBuilder, ActionRowBuilder, ButtonBuilder } from 'discord.js';
 import { assetImage, attach } from '../../core/images.js';
 import { emojiTag } from '../../core/emojis.js';
 import { worldEventFor, eventMods, seasonFor, seasonDay, SEASON_DAYS, dayIndex } from '../../core/world.js';
@@ -8,7 +8,7 @@ import { NEUTRAL_MODS, type EventMods } from '../../data/world-events.js';
 const DAY_MS = 86_400_000;
 const SEASON_LABEL = { wet: 'Wet', dry: 'Dry', cold: 'Cold' } as const;
 
-export interface Payload { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] }
+export interface Payload { embeds: EmbedBuilder[]; files?: AttachmentBuilder[]; components?: ActionRowBuilder<ButtonBuilder>[] }
 
 /** True when any of `keys` differs from its neutral value. EventMods has
  *  three different neutral shapes: 1 for most fields, 0 for

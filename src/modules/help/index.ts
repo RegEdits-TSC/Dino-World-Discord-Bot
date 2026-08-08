@@ -23,6 +23,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
   park: { title: '🏞️ Park', body: [
     '`/park view [user]` — dashboard, park map, Collect button.',
     '`/park rename name:<text>` — rename your park.',
+    '`/park alerts state:on|off` — DM warnings before a dino escapes and when income caps. On by default.',
     '`/build kind:<lot>` — build on an empty lot. Paddocks stack; one facility of each kind, so upgrade rather than rebuild.',
     '`/upgrade lot:<id>` — raise a lot one level.',
     '`/decorate lot:<id> item:<decor>` — decor boosts comfort for matching biomes.',
@@ -54,6 +55,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Dinos only eat their diet: herbivores get Ferns/Fruit Basket/Royal Greens, carnivores get Fish/Goat/Prime Steak.',
     'Premium food overfills hunger (up to 150) so dinos stay fed longer.',
     'Hunger drains over 48h. Low comfort long enough → the dino escapes and stops earning.',
+    'You get a DM 12h before a dino escapes, and a last call 1h out — `/park alerts state:off` to stop them.',
     '`/rescue dino:<id>` — recapture an escaped dino for a fee.',
   ].join('\n') },
   trading: { title: '🤝 Trading', art: { kind: 'banners', name: 'trading' }, body: [

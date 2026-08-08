@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
 import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, toClockDinos } from './service.js';
+import { feedAll } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { earnedTierCount } from '../daily/service.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
@@ -77,7 +78,10 @@ export const parkModule: ModuleManifest = {
         .addSubcommand((s) => s.setName('view').setDescription('Park dashboard')
           .addUserOption((o) => o.setName('user').setDescription('View another player\'s park').setRequired(false)))
         .addSubcommand((s) => s.setName('rename').setDescription('Rename your park')
-          .addStringOption((o) => o.setName('name').setDescription('New name').setRequired(true).setMaxLength(60))),
+          .addStringOption((o) => o.setName('name').setDescription('New name').setRequired(true).setMaxLength(60)))
+        .addSubcommand((s) => s.setName('alerts').setDescription('Turn proactive park alerts on or off')
+          .addStringOption((o) => o.setName('state').setDescription('On or off').setRequired(true)
+            .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' }))),
       async execute(ctx, i) {
         const user = getOrCreateUser(ctx, i.user.id, i.user.displayName);
         if (i.options.getSubcommand() === 'rename') {
@@ -85,6 +89,21 @@ export const parkModule: ModuleManifest = {
           ctx.db.update(schema.users).set({ parkName: name })
             .where(eq(schema.users.discordId, i.user.id)).run();
           await i.reply({ content: `Park renamed to **${name}**.` });
+          return;
+        }
+        // Explicit branch, not an else-fallthrough: /park has no subcommand dispatch —
+        // `rename` is the only named case and everything else IS the view path below.
+        // A missing branch here renders the dashboard and reports success.
+        if (i.options.getSubcommand() === 'alerts') {
+          const on = i.options.getString('state', true) === 'on';
+          ctx.db.update(schema.users).set({ alertsEnabled: on })
+            .where(eq(schema.users.discordId, i.user.id)).run();
+          await i.reply({
+            content: on
+              ? '🔔 Park alerts are **on** — you will get a DM before a dino escapes and when your park hits its income cap.'
+              : '🔕 Park alerts are **off**. Egg, breeding, and expedition notifications are unaffected. Turn them back on with `/park alerts state:on`.',
+            flags: MessageFlags.Ephemeral,
+          });
           return;
         }
         const targetUser = i.options.getUser('user');
@@ -312,6 +331,54 @@ export const parkModule: ModuleManifest = {
           settleEscapes(ctx, i.user.id);
           await i.update({ ...dinoListPayload(ctx, i.user.id, Number(pageStr)), attachments: [] });
         }
+      },
+    },
+    {
+      prefix: 'alert',
+      async execute(ctx, i) {
+        const [, action, uid] = i.customId.split(':');
+        // deferUpdate BEFORE the owner check, copying daily/ach: a customId shape from an
+        // older deploy must be absorbed rather than shown as "This interaction failed".
+        if (action !== 'feedall' && action !== 'collect' && action !== 'mute') {
+          await i.deferUpdate();
+          return;
+        }
+        // Every alert button acts on the ALERTED user, so ownership is checked here — the
+        // park:assignyes pattern, not the self-serve park:collect one.
+        if (i.user.id !== uid) {
+          await i.reply({ content: 'That is not your park.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        if (action === 'mute') {
+          ctx.db.update(schema.users).set({ alertsEnabled: false })
+            .where(eq(schema.users.discordId, i.user.id)).run();
+          // attachments: [] sheds the alert's banner upload — this update carries no files.
+          await i.update({
+            content: '🔕 Park alerts muted. Turn them back on with `/park alerts state:on`.',
+            embeds: [], components: [], attachments: [],
+          });
+          return;
+        }
+        if (action === 'collect') {
+          settleEscapes(ctx, i.user.id);
+          const { amount } = collectIncome(ctx, i.user.id);
+          await i.update({
+            content: amount > 0
+              ? `💰 Collected **${amount.toLocaleString('en-US')}** cash.`
+              : 'Nothing to collect yet — give your dinos time to earn.',
+            embeds: [], components: [], attachments: [],
+          });
+          return;
+        }
+        // feedall
+        settleEscapes(ctx, i.user.id);
+        const { fed, skipped } = feedAll(ctx, i.user.id);
+        const line = fed.length === 0
+          ? (skipped.length > 0
+              ? '🍖 No matching food — buy some with `/shop food`.'
+              : '🍖 Nothing to feed — every dino is already full.')
+          : `🍖 Fed **${fed.length}** ${fed.length === 1 ? 'dino' : 'dinos'}${skipped.length ? ` — ${skipped.length} skipped for lack of matching food.` : '.'}`;
+        await i.update({ content: line, embeds: [], components: [], attachments: [] });
       },
     },
   ],

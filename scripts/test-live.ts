@@ -12,6 +12,7 @@ import { RARITY } from '../src/data/rarity.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { assignDino } from '../src/modules/park/dinos.js';
+import { alertSweepHandler, ALERT_TIMER } from '../src/modules/park/alert-sweep.js';
 import { incubateEgg } from '../src/modules/hatchery/service.js';
 import { startExpedition } from '../src/modules/expeditions/service.js';
 import { createTrade } from '../src/modules/trading/service.js';
@@ -22,9 +23,10 @@ import { rollDailyQuests } from '../src/modules/daily/service.js';
 import { track } from '../src/core/stats.js';
 import { dayKeyUTC } from '../src/core/clock.js';
 import { QUESTS } from '../src/data/quests.js';
-import { makeCtx, fakeCommand, fakeButton, type FakeInteraction } from '../tests/harness.js';
+import { makeCtx, fakeCommand, fakeButton } from '../tests/harness.js';
 import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
 import type { Ctx } from '../src/core/context.js';
+import type { Sender } from '../src/core/notify.js';
 
 const DAY_MS = 86_400_000;
 
@@ -173,7 +175,12 @@ track(ctx, P1, firstQuestDef.stat, dailyRows[0].target);
 // tests/*.test.ts show every call shape.
 
 // ---- 4. Run cases and post their real payloads --------------------------------
-interface Case { title: string; run(): Promise<FakeInteraction> }
+// A case yields captured payloads. Most produce them via a FakeInteraction; the alert
+// sweep produces them via a Sender fake, which has no interaction at all. FakeInteraction
+// already structurally satisfies Capture (it has `replies: unknown[]` and more), so every
+// existing case below compiles unchanged.
+interface Capture { replies: unknown[] }
+interface Case { title: string; run(): Promise<Capture> }
 const mod = (name: string) => ALL_MODULES.find((m) => m.name === name)!;
 const cmdOf = (m: string, c: string) => mod(m).commands.find((x) => x.data.name === c)!;
 const compOf = (m: string, p: string) => mod(m).components.find((x) => x.prefix === p)!;
@@ -186,6 +193,49 @@ const button = async (m: string, customId: string, user: string) => {
   const b = fakeButton({ customId, user });
   await compOf(m, customId.split(':')[0]).execute(ctx as Ctx, b.asInteraction() as unknown as ButtonInteraction);
   return b;
+};
+
+// The alert sweep has no interaction — it fans out over every alerts-enabled user and
+// DMs a Sender directly (src/modules/park/alert-sweep.ts). Captured the same way the
+// harness's other Sender-backed tests do: a hand-rolled fake, not a FakeInteraction.
+const sweepCapture = async (): Promise<Capture> => {
+  const replies: unknown[] = [];
+  const sender: Sender = {
+    // Alerts are DM-only: alertSweepHandler passes originGuildId: null, so
+    // deliverNotification never reaches the channel branch. Throwing here makes a
+    // routing regression fail loudly instead of silently posting to the wrong place.
+    channelSend: async () => { throw new Error('alerts are DM-only — routing regression'); },
+    dmSend: async (_userId, payload) => { replies.push(payload); },
+  };
+  // Drive P1's park into BOTH alert conditions off the paddock (`lot`) that `dino`
+  // (triceratops, no traits) and `mate` (dryosaurus, hardy) already share.
+  //
+  // Escape: for this paddock's fit (0.75 — no decor was ever placed on `lot`, so
+  // paddockFit's biome-match branch never applies) and a no-trait dino, escapeAt works
+  // out to lastFedAt + 40h EXACTLY (32h for comfort to cross ESCAPE_COMFORT + GRACE_MS's
+  // 8h, both from src/core/clock.ts). Offsetting lastFedAt by exactly 40h therefore lands
+  // escapeAt AT `now`, which fails escapeAlertsFor's `esc > now` guard (alert-detect.ts)
+  // — no alert. 34h instead leaves a clean 6h of runway: inside ESCAPE_WARN_MS (12h), so
+  // the tier lookup matches 'heads_up' with margin on both sides. This blanket update
+  // touches every P1 dino, but only paddock-assigned ones have a non-null
+  // comfortCrossing — every other seeded dino (unassigned) reads back escapeAt === null
+  // and is skipped, so nothing else seeded above is affected.
+  ctx.db.update(schema.dinos)
+    .set({ lastFedAt: ctx.now() - 34 * 3_600_000 })
+    .where(eq(schema.dinos.userId, P1)).run();
+  // Income cap: capHours defaults to 8 (P1 never built a visitor_center). Pushing
+  // lastCollectAt back 12h puts `now` 4h past that cap — incomeCapAlertFor's
+  // `now < capAt` guard fails, so the alert proceeds — and the assigned dinos are still
+  // comfortably fed (comfort > ESCAPE_COMFORT) across the whole 8h earning window, so
+  // accruedIncome's `pending` comes back positive rather than 0.
+  ctx.db.update(schema.users)
+    .set({ lastCollectAt: ctx.now() - 12 * 3_600_000 })
+    .where(eq(schema.users.discordId, P1)).run();
+  await alertSweepHandler(sender, ctx as Ctx)({
+    id: 1, kind: ALERT_TIMER, userId: '0', refId: 0, originGuildId: null,
+    firesAt: ctx.now(), handledAt: null,
+  });
+  return { replies };
 };
 
 const cases: Case[] = [
@@ -312,6 +362,13 @@ const cases: Case[] = [
   // above — page 1 shows real, non-zero progress on several tracks rather than a
   // freshly-seeded zero board.
   { title: '/achievements — page 1', run: () => slash('daily', 'achievements', { name: 'achievements', user: P1 }) },
+  // Run last of all: sweepCapture mutates lastFedAt (every P1 dino) and lastCollectAt,
+  // which several cases above read or rely on staying untouched (feed all, the breed
+  // hunger gate, park:collect, every battle case's squad). Nothing below this point
+  // reads either column again, so placing the sweep here — after even the achievements
+  // case — is what keeps every earlier case's seeded numbers intact.
+  { title: 'alert sweep — combined escape + income cap DM', run: sweepCapture },
+  { title: 'alert:mute — muted confirmation', run: () => button('park', `alert:mute:${P1}`, P1) },
 ];
 
 type RawFilePayload = { data: Buffer; name: string };

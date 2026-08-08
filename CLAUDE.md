@@ -76,14 +76,28 @@
   `HELP_TOPICS.park` declares no `art` — give that topic art and the banner
   vanishes silently under `withParkImage`.
 - Passive notifications carry a `NotifyPayload` (`src/core/notify.ts`):
-  `string | { content?, embeds?, files? }`. `Ctx.notify`'s third argument stays
-  `message: string` on purpose — a string is a valid payload, so every call site
-  keeps working and the `ctx.notifications` fake in `tests/harness.ts` is
-  untouched. `deliverNotification` merges the `<@id>` ping through `withMention`
-  on the CHANNEL path only; DMs go out unmentioned. `Sender` fakes are
-  hand-rolled per test file (`tests/notify.test.ts`,
-  `tests/notify-handlers.test.ts`, `tests/journeys.test.ts`), not in the harness
-  — and only `npm run typecheck` catches a stale one.
+  `string | { content?, embeds?, files?, components?, allowedMentions? }`.
+  `Ctx.notify`'s third argument stays `message: string` on purpose — a string
+  is a valid payload, so every call site keeps working and the
+  `ctx.notifications` fake in `tests/harness.ts` is untouched. `deliverNotification`
+  merges the `<@id>` ping through `withMention` on the CHANNEL path only; DMs go
+  out unmentioned. **Channel notifications did not actually ping before this
+  fix**: `src/index.ts` sets `allowedMentions: { parse: [] }` client-wide (so
+  `/dino rename`/`/park rename` can't echo a user-supplied role mention into
+  public content), and that default silently ate the `<@id>` on every
+  channel-routed notification too. `withMention` now sets a per-message
+  `allowedMentions: { users: [userId] }`, which REPLACES the client default for
+  that one message (discord.js `MessagePayload` doesn't merge the two),
+  restoring the ping without making anything else mentionable — the same fix
+  landed on the trade-offer reply. `Sender` fakes are hand-rolled per test
+  file, not in the harness, so a shape change has no single call site to grep
+  — `grep -rl 'channelSend' tests/` is the reliable way to find every one
+  (`tests/notify.test.ts`, `tests/notify-handlers.test.ts`,
+  `tests/journeys.test.ts`, `tests/world-broadcast.test.ts`,
+  `tests/alert-sweep.test.ts` — five today, and re-run the grep rather than
+  trusting this count, since the next sweep-style test to land will add a
+  sixth without anyone remembering to update this line) — and only
+  `npm run typecheck` catches a stale one.
 - Two assets in one payload: call `attach()` for both and the second can never
   clobber the first — appending is exactly what `attach` does, and hand-assigning
   `payload.files` (the idiom that shipped those defects) is banned outright by
@@ -525,3 +539,57 @@
   `loadParkArt`'s existing `Promise.all` alongside the base ground and both plates, so they
   inherit the same never-rejects guarantee for free — no second `Promise.all`, no separate
   top-level await for `worker.ts` to guard.
+- Proactive park alerts (escape warning + income cap) run on their own 15-minute sweep
+  timer, `alert_sweep` (`SWEEP_MS`, `src/modules/park/alert-sweep.ts`) — separate from the
+  30-second scheduler tick that drives the five passive notifications above. It enqueues
+  with the same sentinel pattern as the world broadcast timer: `userId: '0'`, because
+  `Scheduler.enqueue` requires one even though the sweep isn't per-player. That sentinel
+  must never collide with a real snowflake for the same reason as the broadcast timer's:
+  `adminReset` deletes timers BY `userId` and `adminFastForward` shifts them BY `userId`
+  (`src/modules/admin/service.ts`), so a collision would let one player's reset or
+  fast-forward silently kill or shift alerts for every server.
+  `alerts_sent` (`schema.alertsSent`, read/written via `src/modules/park/alert-record.ts`)
+  is deliberately NOT the same kind of thing as the derived escrow locks or derived quest
+  progress documented above — it's a record of a SIDE EFFECT (a DM already sent for a
+  specific instant), not a value re-derived at read time, because the underlying
+  conditions aren't monotone: `incomeCapAlertFor`'s `pending` can drop to 0 and jump back
+  up to a fresh capped payout the moment its owner feeds, so "has this exact instant
+  already been warned about" has no answer without a row that says so. `alreadySent`
+  compares `firedForMs` to the stored value, not mere row existence, so a moved instant
+  (the player fed, reassigned, or spliced) earns exactly one fresh warning rather than
+  being silently suppressed by an old record.
+  Escape alerts have two tiers — heads-up at 12h out (`ESCAPE_WARN_MS`), last call at 1h
+  out (`ESCAPE_LAST_CALL_MS`) — and `ESCAPE_TIERS` is ordered MOST URGENT FIRST on purpose:
+  `recordEscapeSent` collapses every LESS urgent tier behind whichever one just fired,
+  never a more urgent one. Firing last call also marks heads-up sent for that same instant
+  (it logically already happened), but firing heads-up must leave last call free, since
+  that's a genuinely later beat still to come. Reversing `ESCAPE_TIERS`' order breaks tier
+  *selection* — every dino matches heads-up first and last call never fires at all — and
+  reversing the collapse *direction* breaks it a second way: heads-up firing would
+  pre-mark last call as sent (same `firedForMs`, since the dino hasn't been fed), so the
+  real last-call DM at the 1-hour mark would find `alreadySent` already true and silently
+  never go out.
+  The sweep must never call `settleEscapes`: it reads `escapedAt` straight off the row via
+  `toClockDinos`, never a settling call, so a dino crossing the escape threshold mid-sweep
+  still gets its last-call DM before anything stamps it escaped. Calling `settleEscapes`
+  here would race the alert against itself — `escapeAlertsFor` filters out any row with
+  `escapedAt !== null`, so a sweep that settled first would silently swallow the very
+  warning it exists to send — and it would also turn "escapes are only settled when a
+  command touches your park" (the Escapes section of `docs/gameplay.md`) into a lie, since
+  a background timer isn't a command anyone touched.
+  `/park`'s dispatch is a trap for the next subcommand: there is no subcommand switch,
+  only one explicit `i.options.getSubcommand() === 'rename'` check, then (since `/park
+  alerts` shipped) one explicit `=== 'alerts'` check, and everything else — including a
+  brand-new subcommand nobody wrote a branch for — falls through unguarded to the view
+  path below and renders the dashboard successfully. A forgotten branch for a future
+  subcommand doesn't error; it silently does nothing and reports success.
+  A payload reaching `deliverNotification` must never carry an `attachments` key — the
+  inverse of the `i.update` rule the battles bullet above documents. `fightFrames`'s F1/F4
+  sends need an explicit `attachments: []` on every call because two send sites reuse one
+  `MessagePayload` object and each must shed the other's stale set. `alertPayload`
+  (`src/modules/park/alert-embeds.ts`) is the same one-object-two-send-sites shape
+  (`deliverNotification` tries `channelSend` then falls back to `dmSend` on failure) but
+  needs the opposite fix — omit `attachments` entirely — because discord.js's
+  `MessagePayload.create()` pushes resolved files into that array IN PLACE and only
+  shallow-copies it, so a pre-set key on the shared object would carry a mutation from the
+  first send attempt into the second.

@@ -123,9 +123,12 @@ export const tradingModule: ModuleManifest = {
                 `You want: ${summarize(request, emojiTag)}`,
                 `They run \`/trade accept id:${t.id}\`.`,
               ].join('\n'));
-            // The ping stays in `content`: a mention inside an embed does not notify.
-            const offerPayload: { content: string; embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } =
-              { content: `<@${target.id}>`, embeds: [offerEmbed] };
+            // The ping goes in `content` AND in allowedMentions: the client-wide
+            // `allowedMentions: { parse: [] }` (src/index.ts) means a bare <@id> in
+            // content notifies nobody. A per-message value replaces that default, so
+            // whitelisting just the recipient pings them and nothing else.
+            const offerPayload: { content: string; embeds: EmbedBuilder[]; files?: AttachmentBuilder[]; allowedMentions: { users: string[] } } =
+              { content: `<@${target.id}>`, embeds: [offerEmbed], allowedMentions: { users: [target.id] } };
             attach(offerEmbed, offerPayload, 'image', assetImage('banners', 'trading'));
             await i.reply(offerPayload);
             // originGuildId is the acting user's guild, so delivery falls back to DM when the counterparty isn't in that guild's notify channel.

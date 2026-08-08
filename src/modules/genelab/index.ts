@@ -206,7 +206,27 @@ export const geneLabModule: ModuleManifest = {
       prefix: 'breed',
       async execute(ctx, i) {
         const [, action, aRaw, bRaw] = i.customId.split(':');
-        if (action !== 'confirm') return;
+        if (action === 'claim') {
+          const id = Number(aRaw);
+          if (!Number.isInteger(id)) {
+            await i.reply({ content: 'That claim link is invalid — use `/breed claim`.', flags: MessageFlags.Ephemeral });
+            return;
+          }
+          try {
+            // claimBreeding filters on (id, userId), so ownership is enforced server-side
+            // exactly as it is for the slash command — the customId is never trusted.
+            const { egg } = claimBreeding(ctx, i.user.id, id);
+            await i.update({
+              content: `🧬 Claimed — a **${egg.rarity}** egg is yours. Incubate it with \`/incubate egg:${egg.id}\`.`,
+              embeds: [], components: [], attachments: [],
+            });
+          } catch (e) {
+            if (e instanceof BreedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+            else throw e;
+          }
+          return;
+        }
+        if (action !== 'confirm') { await i.deferUpdate(); return; }
         // The custom id is client-supplied: never trusted for ownership (startBreeding
         // re-validates that below), and not even trusted to parse — a malformed id
         // must not reach the DB lookup as NaN.

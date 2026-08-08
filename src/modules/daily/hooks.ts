@@ -5,7 +5,10 @@ import { schema } from '../../core/db/index.js';
 import { rollDailyQuests, questProgress } from './service.js';
 
 const EXEMPT_COMMANDS = new Set(['daily', 'achievements']);
-const EXEMPT_PREFIXES = new Set(['daily', 'ach']);
+// `alert` is exempt for the same reason daily/ach are: an alert is a DM, where an
+// "ephemeral" followUp is just a second visible message — and a quest-complete hint
+// immediately after clicking Mute is absurd.
+const EXEMPT_PREFIXES = new Set(['daily', 'ach', 'alert']);
 
 // Router-level hooks that wire the daily quest board into every command and button
 // dispatch. Both preDispatch and postDispatch are called from routeInteraction inside

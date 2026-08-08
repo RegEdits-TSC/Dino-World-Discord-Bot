@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { EmbedBuilder } from 'discord.js';
 import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
-import { eggHatchHandler, expeditionReturnHandler, clientSender, type Sender, type NotifyPayload } from '../src/core/notify.js';
+import { eggHatchHandler, breedingReadyHandler, expeditionReturnHandler, clientSender, type Sender, type NotifyPayload } from '../src/core/notify.js';
 
 function capture() {
   const dms: NotifyPayload[] = [];
@@ -80,6 +80,44 @@ describe('scheduler notification handlers', () => {
     };
     await expect(eggHatchHandler(hostile, ctx)({ userId: 'u1', refId: egg.id, originGuildId: null }))
       .resolves.toBeUndefined();
+  });
+});
+
+const customIds = (p: NotifyPayload | undefined) =>
+  ((p as { components?: Array<{ toJSON(): { components: Array<{ custom_id: string }> } }> })?.components ?? [])
+    .flatMap((r) => r.toJSON().components.map((c) => c.custom_id));
+
+describe('notification handler buttons', () => {
+  it('the egg-ready notification carries a Hatch button pointed at the existing handler', async () => {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'rare', source: 'shop', obtainedAt: 0 }).returning().get();
+    const { dms, sender } = capture();
+    await eggHatchHandler(sender, ctx)({ userId: 'u1', refId: egg.id, originGuildId: null });
+    expect(customIds(dms[0])).toEqual([`hatch:crack:${egg.id}`]);
+  });
+
+  it('the breeding-complete notification carries a Claim button', async () => {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    const b = ctx.db.insert(schema.breedings).values({
+      userId: 'u1', parentA: 1, parentB: 2, rarity: 'common', startedAt: 0, readyAt: 0,
+    }).returning().get();
+    const { dms, sender } = capture();
+    await breedingReadyHandler(sender, ctx)({ userId: 'u1', refId: b.id, originGuildId: null });
+    expect(customIds(dms[0])).toEqual([`breed:claim:${b.id}`]);
+  });
+
+  it('the expedition-return notification carries a Claim button', async () => {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    const exp = ctx.db.insert(schema.expeditions).values({
+      userId: 'u1', siteId: 'coastal_dig', departedAt: 0, returnsAt: 0,
+    }).returning().get();
+    const { dms, sender } = capture();
+    await expeditionReturnHandler(sender, ctx)({ userId: 'u1', refId: exp.id, originGuildId: null });
+    expect(customIds(dms[0])).toEqual(['exp:claim:u1']);
   });
 });
 
