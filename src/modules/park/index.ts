@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
 import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, toClockDinos } from './service.js';
+import { feedAll } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { earnedTierCount } from '../daily/service.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
@@ -330,6 +331,54 @@ export const parkModule: ModuleManifest = {
           settleEscapes(ctx, i.user.id);
           await i.update({ ...dinoListPayload(ctx, i.user.id, Number(pageStr)), attachments: [] });
         }
+      },
+    },
+    {
+      prefix: 'alert',
+      async execute(ctx, i) {
+        const [, action, uid] = i.customId.split(':');
+        // deferUpdate BEFORE the owner check, copying daily/ach: a customId shape from an
+        // older deploy must be absorbed rather than shown as "This interaction failed".
+        if (action !== 'feedall' && action !== 'collect' && action !== 'mute') {
+          await i.deferUpdate();
+          return;
+        }
+        // Every alert button acts on the ALERTED user, so ownership is checked here — the
+        // park:assignyes pattern, not the self-serve park:collect one.
+        if (i.user.id !== uid) {
+          await i.reply({ content: 'That is not your park.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        if (action === 'mute') {
+          ctx.db.update(schema.users).set({ alertsEnabled: false })
+            .where(eq(schema.users.discordId, i.user.id)).run();
+          // attachments: [] sheds the alert's banner upload — this update carries no files.
+          await i.update({
+            content: '🔕 Park alerts muted. Turn them back on with `/park alerts state:on`.',
+            embeds: [], components: [], attachments: [],
+          });
+          return;
+        }
+        if (action === 'collect') {
+          settleEscapes(ctx, i.user.id);
+          const { amount } = collectIncome(ctx, i.user.id);
+          await i.update({
+            content: amount > 0
+              ? `💰 Collected **${amount.toLocaleString('en-US')}** cash.`
+              : 'Nothing to collect yet — give your dinos time to earn.',
+            embeds: [], components: [], attachments: [],
+          });
+          return;
+        }
+        // feedall
+        settleEscapes(ctx, i.user.id);
+        const { fed, skipped } = feedAll(ctx, i.user.id);
+        const line = fed.length === 0
+          ? (skipped.length > 0
+              ? '🍖 No matching food — buy some with `/shop food`.'
+              : '🍖 Nothing to feed — every dino is already full.')
+          : `🍖 Fed **${fed.length}** ${fed.length === 1 ? 'dino' : 'dinos'}${skipped.length ? ` — ${skipped.length} skipped for lack of matching food.` : '.'}`;
+        await i.update({ content: line, embeds: [], components: [], attachments: [] });
       },
     },
   ],
