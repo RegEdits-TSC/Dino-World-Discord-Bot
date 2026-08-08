@@ -38,6 +38,8 @@ describe('alert buttons', () => {
     const b = fakeButton({ customId: 'alert:collect:u1', user: 'u1' });
     await alertComp().execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
     expect(JSON.stringify(b.replies[0]).toLowerCase()).toContain('nothing to collect');
+    const p = b.replies[0] as { attachments?: unknown[] };
+    expect(p.attachments).toEqual([]);                 // the alert carried a banner file
   });
 
   it('feed all with no food reports it instead of throwing', async () => {
@@ -50,15 +52,35 @@ describe('alert buttons', () => {
     const b = fakeButton({ customId: 'alert:feedall:u1', user: 'u1' });
     await alertComp().execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
     expect(JSON.stringify(b.replies[0]).toLowerCase()).toMatch(/food|fed 0|nothing/);
+    const p = b.replies[0] as { attachments?: unknown[] };
+    expect(p.attachments).toEqual([]);                 // the alert carried a banner file
   });
 
-  it('an unknown action defers instead of leaving the interaction unacknowledged', async () => {
+  it('an unknown action defers before the owner check, even with a mismatched uid', async () => {
     // Seven of the ten live prefixes have no fallback; an unhandled click shows the user
     // "This interaction failed". daily/ach are the precedent: deferUpdate, before the
     // owner check, so a stale customId from an older deploy is silently absorbed.
+    //
+    // uid deliberately does NOT match the clicker here: with a matching uid the owner
+    // check falls through regardless of guard order, so that shape can't distinguish
+    // "unknown-action check first" from "owner check first". A mismatched uid can —
+    // the correct order defers silently; a swapped order would hit the owner check
+    // first and reply with the ephemeral "not your park" message instead.
     const ctx = makeCtx(); seed(ctx);
-    const b = fakeButton({ customId: 'alert:whatever:u1', user: 'u1' });
+    const b = fakeButton({ customId: 'alert:whatever:someone_else', user: 'u1' });
     await alertComp().execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
-    expect(b.deferOpts.length + b.replies.length).toBeGreaterThan(0);
+    expect(b.deferOpts.length).toBe(1);
+    expect(b.replies).toHaveLength(0);
+  });
+
+  it('a truncated customId with no uid segment also defers rather than erroring', async () => {
+    // The more realistic stale-deploy case: an older customId shape with fewer
+    // segments, so `uid` is `undefined` — still must not match the clicker's id,
+    // and must still resolve through the unknown-action branch first.
+    const ctx = makeCtx(); seed(ctx);
+    const b = fakeButton({ customId: 'alert:whatever', user: 'u1' });
+    await alertComp().execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
+    expect(b.deferOpts.length).toBe(1);
+    expect(b.replies).toHaveLength(0);
   });
 });
