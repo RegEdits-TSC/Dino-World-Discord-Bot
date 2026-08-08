@@ -431,15 +431,16 @@ A ~5-minute manual test to run in a development Discord server after each releas
    - `/feed one dino:<id>` — should restore the dino's hunger and charge food.
    - `/feed all` — should feed every hungry dino, hungriest first, and report how many were fed (and how many were skipped for lack of food).
 
-   **p) Trigger and clear an escape**
+   **p) Trigger an escape, catching the proactive alert on the way, then clear it**
    - Leave a dino unfed long enough that its comfort drops below 25% and stays there past the 8-hour grace period.
+   - With alerts on (`/park alerts state:on` — see step (q) for the toggle command itself), check your DMs periodically **during that same unfed wait, before the next bullet below**: once the dino is projected to escape within 12 hours, the next 15-minute alert sweep should DM you with 🍖 Feed all and 🔕 Mute buttons, never a channel post even if step (m) set a notification channel. This is a *pre*-escape warning — check for it before you run the next bullet, which stamps the escape and closes the window for good; there is nothing left to warn about once the dino has actually escaped.
    - `/park view` or `/dino list` should now show the dino as escaped, and its paddock's income should halt.
    - `/rescue dino:<id>` — should pay the recapture fee, clear the escape, and restore the dino's comfort.
 
    **q) `/park alerts state:off`** then **`/park alerts state:on`**
    - Should confirm alerts are off, then confirm they're back on.
-   - With alerts on and the unfed dino from step (p) still inside its escape window (before you rescue it), wait for the next 15-minute alert sweep — you should receive a DM with 🍖 Feed all and 🔕 Mute buttons, never a channel post even if step (m) set a notification channel. 💰 Collect only appears when pending income has separately hit its cap (see Income, `docs/gameplay.md` §4) — this setup alone won't show it.
-   - Pressing 🔕 Mute on that DM should have the same effect as `/park alerts state:off`.
+   - Pressing 🔕 Mute on the alert DM from step (p) should have the same effect as `/park alerts state:off`.
+   - 💰 Collect only appears on that combined alert when pending income has separately hit its cap (see Income, `docs/gameplay.md` §4) — step (p)'s setup alone won't show it.
 
 6. **Verify no errors in logs**:
    - Check the terminal (or `journalctl`) for any `ERROR` or `WARN` lines. The bot should log at `INFO` level with slash command invocations and results.
