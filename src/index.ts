@@ -12,6 +12,7 @@ import { Scheduler } from './core/scheduler.js';
 import { ALL_MODULES } from './core/module-list.js';
 import { dailyRouterHooks } from './modules/daily/hooks.js';
 import { armWorldBroadcast, worldBroadcastHandler } from './modules/world/broadcast.js';
+import { ALERT_TIMER, armAlertSweep, alertSweepHandler } from './modules/park/alert-sweep.js';
 import type { Ctx } from './core/context.js';
 
 const config = loadConfig();
@@ -36,6 +37,7 @@ scheduler.register('egg_hatch', eggHatchHandler(sender, ctx));
 scheduler.register('expedition_return', expeditionReturnHandler(sender, ctx));
 scheduler.register('breeding_ready', breedingReadyHandler(sender, ctx));
 scheduler.register('world_broadcast', worldBroadcastHandler(sender, ctx));
+scheduler.register(ALERT_TIMER, alertSweepHandler(sender, ctx));
 
 setInterval(() => { scheduler.tick(Date.now()).catch((e) => logger.error({ err: e }, 'scheduler tick failed')); }, 30_000);
 
@@ -47,6 +49,7 @@ client.once(Events.ClientReady, (c) => {
   logger.info(`Logged in as ${c.user.tag}`);
   void loadAppEmojis(client);
   armWorldBroadcast(ctx);
+  armAlertSweep(ctx);
   scheduler.tick(Date.now()).catch((e) => logger.error({ err: e }, 'scheduler boot scan failed'));
 });
 await client.login(config.token);
