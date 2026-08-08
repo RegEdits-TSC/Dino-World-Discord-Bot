@@ -410,3 +410,43 @@ describe('0008 world broadcast via the real drizzle migrator (production path)',
     }
   });
 });
+
+describe('0009 park alerts via the real drizzle migrator (production path)', () => {
+  it('adds alerts_enabled defaulting to on, creates alerts_sent, and preserves existing rows', () => {
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig9-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^000[0-8].*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 8);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });   // apply 0000-0008 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, last_collect_at_ms, created_at_ms) VALUES ('u1', 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO dinos (user_id, species_id, hunger, last_fed_at_ms, hatched_at_ms)
+                    VALUES ('u1', 'triceratops', 100, 0, 0)`).run();
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+      // A row that predates the column defaults to alerts ON.
+      const users = sqlite.prepare(`SELECT discord_id, alerts_enabled FROM users`).all() as
+        Array<{ discord_id: string; alerts_enabled: number }>;
+      expect(users).toEqual([{ discord_id: 'u1', alerts_enabled: 1 }]);
+      // The child row the FK bracket exists to protect survived.
+      expect((sqlite.prepare(`SELECT COUNT(*) c FROM dinos`).get() as { c: number }).c).toBe(1);
+      // alerts_sent exists and enforces its composite primary key.
+      sqlite.prepare(`INSERT INTO alerts_sent (user_id, kind, ref_id, tier, fired_for_ms, sent_at_ms)
+                      VALUES ('u1', 'escape', 1, 'heads_up', 500, 100)`).run();
+      expect(() => sqlite.prepare(`INSERT INTO alerts_sent (user_id, kind, ref_id, tier, fired_for_ms, sent_at_ms)
+                      VALUES ('u1', 'escape', 1, 'heads_up', 900, 200)`).run()).toThrow();
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});

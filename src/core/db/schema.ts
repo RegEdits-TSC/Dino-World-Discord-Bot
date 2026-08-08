@@ -16,6 +16,11 @@ export const users = sqliteTable('users', {
   questStreak: integer('quest_streak').notNull().default(0),
   questStreakBest: integer('quest_streak_best').notNull().default(0),
   lastQuestClaimAt: integer('last_quest_claim_at_ms').notNull().default(0),
+  // Gates ONLY the two proactive alerts (escape, income cap). The three completion
+  // notifications stay unconditional: those were asked for by starting the hatch,
+  // the breeding, the expedition. adminReset deliberately does not restore this —
+  // see the comment in admin/service.ts.
+  alertsEnabled: integer('alerts_enabled', { mode: 'boolean' }).notNull().default(true),
   lastCollectAt: integer('last_collect_at_ms').notNull(),
   createdAt: integer('created_at_ms').notNull(),
 }, (t) => [
@@ -188,3 +193,19 @@ export const achievementClaims = sqliteTable('achievement_claims', {
   tier: integer('tier').notNull(),
   claimedAt: integer('claimed_at_ms').notNull(),
 }, (t) => [primaryKey({ columns: [t.userId, t.trackId, t.tier] })]);
+
+// Idempotency record for the proactive alert sweep. This is NOT derived state: it
+// records that a side effect (a DM) happened, so it can never drift the way a stored
+// escapeAt would. The sweep sends iff the condition holds now AND no row exists whose
+// firedForMs equals the current instant.
+//   kind:  'escape' | 'income_cap'
+//   refId: dinoId for escape, 0 for income_cap
+//   tier:  'heads_up' | 'last_call' for escape, '' for income_cap
+export const alertsSent = sqliteTable('alerts_sent', {
+  userId: text('user_id').notNull().references(() => users.discordId),
+  kind: text('kind').notNull(),
+  refId: integer('ref_id').notNull(),
+  tier: text('tier').notNull(),
+  firedForMs: integer('fired_for_ms').notNull(),
+  sentAt: integer('sent_at_ms').notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.kind, t.refId, t.tier] })]);
