@@ -42,3 +42,32 @@ export function escapeAlertsFor(clockDinos: ClockDino[], dinos: DinoLike[], now:
   }
   return out.sort((a, b) => a.escapeAt - b.escapeAt);
 }
+
+import { accruedIncome } from '../../core/clock.js';
+import { capHours, facilityBonusPct, type Lot } from './service.js';
+
+export interface IncomeCapAlert { capAt: number; pending: number; capHours: number }
+
+/**
+ * The park has stopped earning and has money waiting.
+ *
+ * `capAt` is an UPPER BOUND, not the instant earning stopped: accruedIncome clamps each
+ * dino independently at its own escapeAt and hungerZero (clock.ts:96-99), so a starving
+ * park stops earlier. The embed must therefore never quote a precise instant — only that
+ * the cap has been reached.
+ *
+ * `pending > 0` is NOT monotone: accruedIncome recomputes the whole window from CURRENT
+ * hunger, so a starved park reading 0 jumps to a full capped payout the moment its owner
+ * feeds. That is exactly why this is level-triggered — the alert fires on the sweep where
+ * the condition first becomes true, rather than being missed forever by an edge test.
+ */
+export function incomeCapAlertFor(
+  clockDinos: ClockDino[], lots: Lot[], lastCollectAt: number, now: number,
+): IncomeCapAlert | null {
+  const hours = capHours(lots);
+  const capAt = lastCollectAt + hours * 3_600_000;
+  if (now < capAt) return null;
+  const pending = accruedIncome(clockDinos, facilityBonusPct(lots), hours, lastCollectAt, now);
+  if (pending <= 0) return null;
+  return { capAt, pending, capHours: hours };
+}

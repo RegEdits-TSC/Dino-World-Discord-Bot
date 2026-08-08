@@ -99,3 +99,42 @@ describe('escapeAlertsFor', () => {
     expect(esc).toBe(HUNGER_DRAIN_MS * (2 / 3) + GRACE_MS);
   });
 });
+
+import { incomeCapAlertFor } from '../src/modules/park/alert-detect.js';
+import type { Lot } from '../src/modules/park/service.js';
+
+// capHours and facilityBonusPct read only `kind` and `level`, so a partial row cast to
+// Lot is honest here — building real rows would drag a DB into a pure-function test.
+const lot = (over: Partial<Lot> = {}) =>
+  ({ id: 1, userId: 'u1', type: 'paddock', kind: 'herbivore_paddock', name: 'p',
+     level: 1, decor: [], ...over }) as unknown as Lot;
+
+describe('incomeCapAlertFor', () => {
+  it('is null before the cap instant and non-null at or after it', () => {
+    const c = clock();
+    const CAP = 8 * 3_600_000;                       // no visitor center → capHours 8
+    expect(incomeCapAlertFor([c], [lot()], 0, CAP - 1)).toBeNull();
+    const hit = incomeCapAlertFor([c], [lot()], 0, CAP);
+    expect(hit).not.toBeNull();
+    expect(hit!.capAt).toBe(CAP);
+    expect(hit!.capHours).toBe(8);
+    expect(hit!.pending).toBeGreaterThan(0);
+  });
+
+  it('is null when nothing is pending, even past the cap', () => {
+    // An empty park, or one whose dinos are all unassigned, must not be nagged.
+    expect(incomeCapAlertFor([], [lot()], 0, 100 * 3_600_000)).toBeNull();
+    const unassigned = clock({ paddock: null });
+    expect(incomeCapAlertFor([unassigned], [lot()], 0, 100 * 3_600_000)).toBeNull();
+  });
+
+  it('uses the Visitor Center cap when one is built above level 1', () => {
+    // Level 1 is capHours[0] = 8, identical to no facility at all — only L2+ widens it.
+    const c = clock();
+    const vc1 = [lot(), lot({ id: 2, type: 'facility', kind: 'visitor_center', level: 1 })];
+    const vc2 = [lot(), lot({ id: 2, type: 'facility', kind: 'visitor_center', level: 2 })];
+    expect(incomeCapAlertFor([c], vc1, 0, 8 * 3_600_000)!.capHours).toBe(8);
+    expect(incomeCapAlertFor([c], vc2, 0, 8 * 3_600_000)).toBeNull();
+    expect(incomeCapAlertFor([c], vc2, 0, 12 * 3_600_000)!.capHours).toBe(12);
+  });
+});
