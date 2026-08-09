@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { recordSpeciesSeen, seenSpecies, firstSeenAt } from '../src/core/species-seen.js';
@@ -7,6 +7,17 @@ import { incubateEgg, hatchEgg } from '../src/modules/hatchery/service.js';
 import { adminGive } from '../src/modules/admin/service.js';
 import { createTrade, acceptTrade } from '../src/modules/trading/service.js';
 import { TRADE_MIN_RATING } from '../src/data/trade.js';
+
+// recordSpeciesSeen is a pass-through spy by default (calls the real implementation),
+// so every test in this file except the rollback test below is unaffected — same
+// technique as assetImage in tests/hatchery.test.ts and tests/battles-embeds.test.ts.
+// That one test overrides exactly the next call via mockImplementationOnce to make
+// the credit itself throw AFTER genuinely writing the row, which is what proves the
+// write sits inside the caller's transaction rather than merely being reachable.
+vi.mock('../src/core/species-seen.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/core/species-seen.js')>();
+  return { ...actual, recordSpeciesSeen: vi.fn(actual.recordSpeciesSeen) };
+});
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); });
@@ -68,17 +79,27 @@ describe('write sites', () => {
     expect(seenSpecies(ctx, 'u2').has('triceratops')).toBe(true);
   });
 
-  it('a rolled-back hatch leaves no credit', () => {
+  it('a rolled-back hatch leaves no credit', async () => {
     // hatchEgg's own transaction has no failure path reachable through the public API
     // after the dino insert: the species is resolved and validated before the
-    // transaction opens, and track() never throws. So this exercises the same
-    // transaction-boundary property hatchEgg (and adminGive, and moveItems) all rely
-    // on directly — recordSpeciesSeen is a plain write against ctx.db, and a throw
-    // later in the same ctx.db.transaction must roll it back with everything else.
-    expect(() => ctx.db.transaction(() => {
-      recordSpeciesSeen(ctx, 'u1', 'triceratops');
-      throw new Error('boom');
-    })).toThrow('boom');
+    // transaction opens, and track() never throws. So instead of contriving one, this
+    // makes the credit itself the failure: recordSpeciesSeen is the LAST statement
+    // inside hatchEgg's transaction, which is exactly why throwing from it (after it
+    // has genuinely written the row) is the lever that proves PLACEMENT — mocking an
+    // earlier statement like track() would mean the credit never ran at all, proving
+    // nothing about whether the call sits inside the transaction boundary.
+    const { recordSpeciesSeen: realRecordSpeciesSeen } =
+      await vi.importActual<typeof import('../src/core/species-seen.js')>('../src/core/species-seen.js');
+    vi.mocked(recordSpeciesSeen).mockImplementationOnce((c, u, s) => {
+      realRecordSpeciesSeen(c, u, s);   // the row genuinely gets written...
+      throw new Error('boom');          // ...then whatever transaction it's inside must roll back
+    });
+    const egg = ctx.db.insert(schema.eggs)
+      .values({ userId: 'u1', rarity: 'common', speciesId: 'triceratops', source: 'shop', obtainedAt: 0 })
+      .returning().get();
+    incubateEgg(ctx, 'u1', egg.id, 'g1');
+    ctx.setNow(ctx.now() + 15 * 60_000);
+    expect(() => hatchEgg(ctx, 'u1', egg.id)).toThrow('boom');
     expect(seenSpecies(ctx, 'u1').size).toBe(0);
   });
 });
