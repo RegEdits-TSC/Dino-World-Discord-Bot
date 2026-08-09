@@ -652,6 +652,20 @@
   `addChoices` THROWS once called past that cap, at builder-construction time — i.e.
   module init, i.e. bot boot. Get this wrong and the bot never starts at all; it is a crash,
   never a degrade.
+  `/dex list` is the one paginated surface that does NOT use the shared `pageRow`
+  (`src/core/paginate.ts`): its list is FILTERED, and `pageRow`'s
+  `<prefix>:<action>:<userId>:<page>` customId has nowhere to put that state, so paging
+  through it silently returned the unfiltered page — wrong rows, wrong title suffix, wrong
+  page count, no error. `dexPageRow` (`src/modules/dex/embeds.ts`) builds
+  `dex:page:<uid>:<page>:<rarity|->:<diet|->:<archetype|->` instead — 59 of Discord's 100
+  customId characters at worst — and `pageRow` stays untouched for its four other callers
+  (`ach`, `hatch`, `park:dinos`, `trade:list`). Any future filtered list needs the same
+  treatment; do not widen `pageRow`. Everything after the prefix is CLIENT-supplied, so
+  `parseDexFilters` (`src/modules/dex/service.ts`) validates each slug against the real
+  union and degrades an unrecognised one (including the `-` placeholder) to "no filter" —
+  a raw slug reaching `dexRows` would match nothing and render an empty compendium. The
+  command path reads its own options through that same parser rather than casting, so
+  there is exactly one validated way into `DexFilters`.
   Alert tolerance had to widen for enrichment: `ALERT_INSTANT_EPSILON_MS`
   (`src/modules/park/alert-record.ts`, 2 hours) exists because a decor purchase moves a
   dino's `escapeAt` by only 34–65 minutes (one or two rungs) — comfortably inside the 12h
