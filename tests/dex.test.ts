@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeCtx } from './harness.js';
+import { makeCtx, fakeCommand, fakeAutocomplete, fakeButton, replyText } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { recordSpeciesSeen } from '../src/core/species-seen.js';
 import { dexRows, dexEntry, dexProgress } from '../src/modules/dex/service.js';
 import { dexListPayload, dexViewPayload } from '../src/modules/dex/embeds.js';
+import { dexModule } from '../src/modules/dex/index.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { RARITY } from '../src/data/rarity.js';
+import { schema } from '../src/core/db/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); });
@@ -120,5 +122,43 @@ describe('dexViewPayload', () => {
     // assetImage returns null for a missing asset and attach is then a total no-op,
     // so files must be undefined rather than [].
     expect(payload.files === undefined || payload.files.length === 1).toBe(true);
+  });
+});
+
+describe('dex module', () => {
+  it('/dex list replies with the first page', async () => {
+    const i = fakeCommand({ name: 'dex', sub: 'list', user: 'u1' });
+    await dexModule.commands[0].execute(ctx, i.asChatInput());
+    expect(JSON.stringify(i.replies[0])).toContain('Page 1/5');
+  });
+  it('/dex list accepts filters', async () => {
+    const i = fakeCommand({ name: 'dex', sub: 'list', user: 'u1', options: { rarity: 'mythic' } });
+    await dexModule.commands[0].execute(ctx, i.asChatInput());
+    expect(JSON.stringify(i.replies[0])).toContain('Mythic');
+  });
+  it('/dex view renders a species', async () => {
+    const i = fakeCommand({ name: 'dex', sub: 'view', user: 'u1', options: { species: 'triceratops' } });
+    await dexModule.commands[0].execute(ctx, i.asChatInput());
+    expect(JSON.stringify(i.replies[0])).toContain('Triceratops');
+  });
+  it('/dex view answers an unknown species without throwing', async () => {
+    const i = fakeCommand({ name: 'dex', sub: 'view', user: 'u1', options: { species: 'barney' } });
+    await dexModule.commands[0].execute(ctx, i.asChatInput());
+    expect(JSON.stringify(i.replies[0])).toContain('No such species');
+  });
+  it('the species provider suggests names and never creates a user row', async () => {
+    const i = fakeAutocomplete({
+      name: 'dex', sub: 'view', user: 'u_new',
+      focused: { name: 'species', value: 'trice' },
+    });
+    await dexModule.commands[0].autocomplete!(ctx, i.asAutocomplete());
+    const rows = i.replies[0] as Array<{ value: string }>;
+    expect(rows.some((r) => r.value === 'triceratops')).toBe(true);
+    expect(ctx.db.select().from(schema.users).all()).toHaveLength(1);   // only the beforeEach u1
+  });
+  it('the page button rejects a click from another player', async () => {
+    const i = fakeButton({ customId: 'dex:page:u1:2', user: 'u2' });
+    await dexModule.components[0].execute(ctx, i.asInteraction() as never);
+    expect(replyText(i.replies[0])).toContain('Not your dex');
   });
 });
