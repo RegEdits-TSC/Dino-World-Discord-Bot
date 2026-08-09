@@ -164,6 +164,7 @@ describe('dex module', () => {
   it('an unrecognised action still degrades to deferUpdate', async () => {
     const i = fakeButton({ customId: 'dex:sort:u1:2:-:-:-', user: 'u1' });
     await dexModule.components[0].execute(ctx, i.asInteraction() as never);
+    expect(i.deferOpts).toHaveLength(1);        // deferred, not answered
     expect(i.replies).toHaveLength(0);
   });
 });
