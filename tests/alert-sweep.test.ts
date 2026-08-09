@@ -164,4 +164,53 @@ describe('alert sweep', () => {
       .where(and(eq(schema.timers.kind, ALERT_TIMER), isNull(schema.timers.handledAt))).all();
     expect(pending).toHaveLength(1);
   });
+
+  // One matching decor tile puts this dino at paddockFit 1.0 (the same fit fedTrike()
+  // pins in tests/clock.test.ts) -> escapeAt 36h + GRACE_MS = 44h. See src/data/decor.ts's
+  // ENRICHMENT_STEPS comment for the pinned reference values this fixture matches.
+  const ESCAPE_AT_ENRICHED = 36 * 3_600_000 + GRACE_MS;
+
+  it('decorating a warned dino does not earn a second heads-up', async () => {
+    // Six hours of margin keeps the dino inside the 12h heads-up window both before and
+    // after the second decor tile lands (the move below is only ~34 minutes).
+    const ctx = makeCtx({ nowMs: ESCAPE_AT_ENRICHED - 6 * 3_600_000 });
+    ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    const lot = ctx.db.insert(schema.lots)
+      .values({ userId: 'u1', type: 'paddock', kind: 'herbivore_paddock', name: 'p', decor: ['palm_tree'] })
+      .returning().get();
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }).run();
+    const { dms, sender } = capture();
+    const handler = alertSweepHandler(sender, ctx);
+    await handler(timer(ctx.now()));
+    expect(dms).toHaveLength(1);
+    // A second matching tile: matchedKindCount 1 -> 2, enrichmentMult 1.0 -> 1.05 (one
+    // rung, a ~34-minute move per src/data/decor.ts's ENRICHMENT_STEPS comment: 44.000h ->
+    // 44.571h). Well inside ALERT_INSTANT_EPSILON_MS, so this must not earn a second DM.
+    ctx.db.update(schema.lots).set({ decor: ['palm_tree', 'fern'] })
+      .where(eq(schema.lots.id, lot.id)).run();
+    await handler(timer(ctx.now()));
+    expect(dms).toHaveLength(1);
+  });
+
+  it('an instant that moves beyond the epsilon still earns exactly one fresh warning', async () => {
+    // Six hours of margin (rather than sitting exactly on the boundary, as ESCAPE_AT -
+    // ESCAPE_WARN_MS does elsewhere in this file) keeps the dino inside the 12h window
+    // both before and after the three-hour shift below.
+    const ctx = makeCtx({ nowMs: ESCAPE_AT - 6 * 3_600_000 });
+    seedAtRiskPlayer(ctx);
+    const { dms, sender } = capture();
+    const handler = alertSweepHandler(sender, ctx);
+    await handler(timer(ctx.now()));
+    expect(dms).toHaveLength(1);
+    // A three-hour move: past ALERT_INSTANT_EPSILON_MS, so the player is warned about the
+    // new instant -- the behaviour the firedForMs comparison exists to provide.
+    ctx.db.update(schema.dinos).set({ lastFedAt: 3 * 3_600_000 })
+      .where(eq(schema.dinos.userId, 'u1')).run();
+    await handler(timer(ctx.now()));
+    expect(dms).toHaveLength(2);
+    await handler(timer(ctx.now()));
+    expect(dms).toHaveLength(2);
+  });
 });
