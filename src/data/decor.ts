@@ -14,6 +14,20 @@ export const DECOR: Record<string, DecorDef> = {
   hydrothermal_vent: { kind: 'hydrothermal_vent', name: 'Hydrothermal Vent', biomeTags: ['marine'], cost: 1_100 },
   containment_fence: { kind: 'containment_fence', name: 'Containment Fence', biomeTags: ['containment'], cost: 1_000 },
   floodlight_rig:    { kind: 'floodlight_rig', name: 'Floodlight Rig', biomeTags: ['containment'], cost: 1_200 },
+  // Three kinds per biome is the enrichment cap's precondition: on the original
+  // twelve-kind table coast, tundra and volcanic offered one kind each, so four
+  // species could not reach even the first rung. tests/roster.test.ts gates it.
+  cycad_grove:    { kind: 'cycad_grove', name: 'Cycad Grove', biomeTags: ['forest'], cost: 600 },
+  termite_mound:  { kind: 'termite_mound', name: 'Termite Mound', biomeTags: ['plains'], cost: 550 },
+  mangrove_root:  { kind: 'mangrove_root', name: 'Mangrove Root', biomeTags: ['swamp'], cost: 650 },
+  coral_shelf:    { kind: 'coral_shelf', name: 'Coral Shelf', biomeTags: ['marine'], cost: 1_000 },
+  warning_klaxon: { kind: 'warning_klaxon', name: 'Warning Klaxon', biomeTags: ['containment'], cost: 1_100 },
+  driftwood_pile: { kind: 'driftwood_pile', name: 'Driftwood Pile', biomeTags: ['coast'], cost: 750 },
+  dune_grass:     { kind: 'dune_grass', name: 'Dune Grass', biomeTags: ['coast'], cost: 650 },
+  snow_drift:     { kind: 'snow_drift', name: 'Snow Drift', biomeTags: ['tundra'], cost: 650 },
+  frost_pine:     { kind: 'frost_pine', name: 'Frost Pine', biomeTags: ['tundra'], cost: 800 },
+  ash_vent:       { kind: 'ash_vent', name: 'Ash Vent', biomeTags: ['volcanic'], cost: 850 },
+  basalt_column:  { kind: 'basalt_column', name: 'Basalt Column', biomeTags: ['volcanic'], cost: 900 },
 };
 
 /** Distinct matching kinds at which the enrichment ladder tops out. */
