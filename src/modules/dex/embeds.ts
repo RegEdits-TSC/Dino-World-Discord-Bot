@@ -11,9 +11,7 @@ import { dexRows, dexEntry, dexProgress, type DexFilters } from './service.js';
 export interface Payload { embeds: EmbedBuilder[]; components?: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[] }
 
 function filterLabel(filters: DexFilters): string {
-  const parts = ([filters.rarity, filters.diet, filters.archetype] as (string | undefined)[])
-    .filter((v): v is string => v !== undefined)
-    .map(capitalize);
+  const parts = [filters.rarity, filters.diet, filters.archetype].filter(Boolean).map((p) => capitalize(String(p)));
   return parts.length ? ` — ${parts.join(' · ')}` : '';
 }
 
