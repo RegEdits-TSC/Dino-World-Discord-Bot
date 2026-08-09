@@ -298,13 +298,17 @@ describe('enrichmentAt', () => {
 });
 ```
 
-Note: `cycad_grove` is added in Task 6. Until then those two assertions fail on the
-missing kind, which is expected and called out in Step 2.
+Note: `cycad_grove` is added in Task 6. Until then exactly ONE assertion fails on the
+missing kind — the three-kind line of "steps above 1.0 at two and three matching kinds",
+which reads 1.05 instead of 1.1. The `paddockFitBase` three-kind line PASSES throughout,
+because the base is a boolean gate: `palm_tree` + `fern` already match, so an unknown
+third slug cannot move it off 1.0. Only `paddockFit`'s `enrichmentMult(kinds)` branch is
+count-sensitive.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run tests/enrichment.test.ts`
-Expected: FAIL — `paddockFitBase`, `baseComfortAt` and `enrichmentAt` are not exported. The two `cycad_grove` assertions will still fail after this task; they pass in Task 6. Run with `-t 'is unchanged at zero and one matching kind'` to confirm the boundary test specifically.
+Expected: FAIL — `paddockFitBase`, `baseComfortAt` and `enrichmentAt` are not exported. One `cycad_grove` assertion will still fail after this task and passes in Task 6 (see the note above for why it is one and not two). Run with `-t 'is unchanged at zero and one matching kind'` to confirm the boundary test specifically.
 
 - [ ] **Step 3: Implement the split**
 
@@ -374,7 +378,7 @@ Keep the existing comment block above `paddockFitBase` (the one explaining that
 - [ ] **Step 4: Run the full offline suite**
 
 Run: `npx vitest run`
-Expected: PASS except the two `cycad_grove` assertions from Step 1. **No other test may fail.** If any pinned income, escape, comfort or rating integer moves, stop: the additive-above-1.0 premise has broken somewhere and the plan needs revisiting rather than the test being edited.
+Expected: PASS except the single `cycad_grove` assertion from Step 1. **No other test may fail.** If any pinned income, escape, comfort or rating integer moves, stop: the additive-above-1.0 premise has broken somewhere and the plan needs revisiting rather than the test being edited.
 
 - [ ] **Step 5: Typecheck and commit**
 
@@ -570,7 +574,7 @@ These tests exercise Task 2's code. If any fails, fix Task 2 rather than the tes
 - [ ] **Step 4: Run the full suite**
 
 Run: `npx vitest run`
-Expected: PASS except the `cycad_grove` assertions still pending Task 6.
+Expected: PASS except the single `cycad_grove` assertion still pending Task 6.
 
 - [ ] **Step 5: Typecheck and commit**
 
@@ -764,7 +768,7 @@ as they are. Costs sit in the same band as each biome's existing kinds:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run tests/roster.test.ts tests/data.test.ts tests/enrichment.test.ts`
-Expected: PASS — including the two `cycad_grove` assertions from Task 2, which have been failing until now.
+Expected: PASS — including the `cycad_grove` assertion from Task 2, which has been failing until now.
 
 Then run the full suite: `npx vitest run`. Expected: all green. One thing to watch: `/decorate`'s builder now holds 23 static choices against Discord's cap of 25. `addChoices` throws at the 26th during module init, which is a bot-boot crash rather than a degrade, so `tests/contract.test.ts` passing here is load-bearing. Task 7 removes the ceiling.
 
@@ -2169,9 +2173,11 @@ Task 18 Step 5.
 Two spec items intentionally carry no task, both because the spec puts them out of
 scope: the park-PNG enrichment glyph, and any reward for dex completion.
 
-**Known cross-task dependency.** Task 2's two `cycad_grove` assertions fail until
-Task 6 adds that kind. This is called out in both tasks rather than hidden, and it is
-the reason Task 2's Step 4 says "except the two `cycad_grove` assertions".
+**Known cross-task dependency.** One assertion in Task 2 fails until Task 6 adds the
+`cycad_grove` kind. Called out in both tasks rather than hidden. An earlier draft of this
+plan predicted two failures; the `paddockFitBase` three-kind line actually passes
+throughout, because the base value is a boolean gate that an unknown third slug cannot
+move off 1.0.
 
 **Type consistency.** `matchedKindCount` / `enrichmentMult` / `enrichingKindsFor` /
 `ENRICHMENT_STEPS` / `ENRICHMENT_CAP_KINDS` keep the same names from Task 1 through
