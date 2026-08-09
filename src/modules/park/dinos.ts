@@ -5,7 +5,7 @@ import { getSpecies } from '../../data/species/index.js';
 import { DECOR } from '../../data/decor.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import type { Diet } from '../../data/types.js';
-import { comfortAt, escapeAt } from '../../core/clock.js';
+import { comfortAt, escapeAt, enrichmentAt } from '../../core/clock.js';
 import { toClockDinos, type Lot } from './service.js';
 import { recomputeRating } from './rating.js';
 
@@ -80,6 +80,7 @@ export function listDinos(ctx: Ctx, userId: string) {
     dino: d,
     species: getSpecies(d.speciesId),
     comfort: comfortAt(clockDinos[i], ctx.now()),
+    enrichment: enrichmentAt(clockDinos[i]),
     escapeAt: escapeAt(clockDinos[i]),
     mismatch: clockDinos[i].paddock !== null && clockDinos[i].paddock!.diet !== clockDinos[i].species.diet,
   }));

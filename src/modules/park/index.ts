@@ -48,7 +48,15 @@ function dinoListPayload(ctx: Ctx, userId: string, page: number) {
   const nowMs = ctx.now();
   const lines = items.length
     ? items.map((d) => {
-        const status = d.dino.escapedAt !== null ? `${emojiTag('dw_alert')} ESCAPED — /rescue` : `${Math.round(d.comfort * 100)}% comfort`;
+        // Comfort is clamped for display only: the raw value drives income and the
+        // escape instant, but "is this animal all right" is a 0-100% question, and
+        // docs/gameplay.md states in writing that it does not exceed 100%. The rung
+        // gets its own mark so the player can see what the decor bought.
+        const comfortPct = Math.round(Math.min(1, d.comfort) * 100);
+        const rung = d.enrichment > 1 ? ` · enriched +${Math.round((d.enrichment - 1) * 100)}%` : '';
+        const status = d.dino.escapedAt !== null
+          ? `${emojiTag('dw_alert')} ESCAPED — /rescue`
+          : `${comfortPct}% comfort${rung}`;
         const warn = d.dino.escapedAt === null && d.escapeAt !== null && d.escapeAt - nowMs <= ESCAPE_WARN_MS
           ? ` — ${emojiTag('dw_hunger')} escapes <t:${Math.floor(d.escapeAt / 1000)}:R>` : '';
         const loc = d.dino.lotId ? `lot ${d.dino.lotId}` : 'unassigned';
