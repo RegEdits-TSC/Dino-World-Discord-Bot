@@ -9,6 +9,7 @@ import { FOODS, type FoodId } from '../../data/foods.js';
 import { TRADE_MIN_RATING, TRADE_DAILY_CAP, TRADE_MAX_ITEMS_PER_SIDE, TRADE_EXPIRY_MS } from '../../data/trade.js';
 import { recomputeRating } from '../park/rating.js';
 import { track } from '../../core/stats.js';
+import { recordSpeciesSeen } from '../../core/species-seen.js';
 
 export { TradeError } from './validate.js';
 export type Trade = typeof schema.trades.$inferSelect;
@@ -81,9 +82,20 @@ export function createTrade(ctx: Ctx, fromUser: string, toUser: string, offer: T
 // Move one side's dinos/eggs to their new owner: unassigned (no lot) and flagged via_trade
 // (via_trade items sell for 0 shards — closes the sell-for-shards alt-funnel through trading).
 function moveItems(ctx: Ctx, side: TradeSide, toUser: string): void {
-  if (side.dinoIds.length) ctx.db.update(schema.dinos)
-    .set({ userId: toUser, lotId: null, viaTrade: true })
-    .where(inArray(schema.dinos.id, side.dinoIds)).run();
+  if (side.dinoIds.length) {
+    // Credit the RECIPIENT's dex before the ownership change: a traded dino is a
+    // species that player now owns, and nothing else on this path records it. Read
+    // first — after the update below these rows belong to toUser and the id list is
+    // the only handle back to which species just moved.
+    const moving = ctx.db.select().from(schema.dinos)
+      .where(inArray(schema.dinos.id, side.dinoIds)).all();
+    for (const d of moving) recordSpeciesSeen(ctx, toUser, d.speciesId);
+    ctx.db.update(schema.dinos)
+      .set({ userId: toUser, lotId: null, viaTrade: true })
+      .where(inArray(schema.dinos.id, side.dinoIds)).run();
+  }
+  // Eggs are deliberately NOT credited: eggs.speciesId is nullable (a wild egg rolls
+  // its species at hatch), and hatchEgg credits the hatcher itself.
   if (side.eggIds.length) ctx.db.update(schema.eggs)
     .set({ userId: toUser, viaTrade: true })
     .where(inArray(schema.eggs.id, side.eggIds)).run();

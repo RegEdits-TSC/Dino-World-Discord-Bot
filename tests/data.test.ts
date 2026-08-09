@@ -4,6 +4,7 @@ import { getSpecies, allSpecies } from '../src/data/species/index.js';
 import { FACILITIES } from '../src/data/facilities.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
 import { FOODS, foodsForDiet, getFood, STARTER_FOOD } from '../src/data/foods.js';
+import { DECOR } from '../src/data/decor.js';
 
 describe('game data', () => {
   it('every species has a valid rarity entry', () => {
@@ -44,6 +45,25 @@ describe('game data', () => {
     expect(PADDOCKS.carnivore_paddock).toBeDefined();
     expect(PADDOCKS.carnivore_paddock.diet).toBe('carnivore');
     expect(PADDOCKS.carnivore_paddock.buildCost).toBe(2000);
+  });
+  it('DECOR values match the spec', () => {
+    expect(Object.keys(DECOR)).toHaveLength(23);
+    for (const [key, d] of Object.entries(DECOR)) {
+      expect(d.kind).toBe(key);
+      expect(d.name.length).toBeGreaterThan(0);
+      expect(d.biomeTags.length).toBeGreaterThan(0);
+      expect(d.cost).toBeGreaterThan(0);
+    }
+    expect(DECOR.palm_tree).toEqual({ kind: 'palm_tree', name: 'Palm Tree', biomeTags: ['forest'], cost: 500 });
+    expect(DECOR.fern).toEqual({ kind: 'fern', name: 'Fern Cluster', biomeTags: ['forest', 'swamp'], cost: 500 });
+    expect(DECOR.cycad_grove).toEqual({ kind: 'cycad_grove', name: 'Cycad Grove', biomeTags: ['forest'], cost: 600 });
+    expect(DECOR.snow_drift).toEqual({ kind: 'snow_drift', name: 'Snow Drift', biomeTags: ['tundra'], cost: 650 });
+    expect(DECOR.basalt_column).toEqual({ kind: 'basalt_column', name: 'Basalt Column', biomeTags: ['volcanic'], cost: 900 });
+  });
+  // /shop view renders every kind into ONE embed field, capped at 1024 chars by Discord.
+  it('the shop decor line fits in an embed field', () => {
+    const line = Object.values(DECOR).map((d) => `${d.name} (${d.cost})`).join(' · ');
+    expect(line.length).toBeLessThan(1024);
   });
 });
 

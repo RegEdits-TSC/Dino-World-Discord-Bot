@@ -17,6 +17,7 @@ import { track } from '../src/core/stats.js';
 import { dayKeyUTC, DAY_MS } from '../src/core/clock.js';
 import { QUESTS } from '../src/data/quests.js';
 import { rollDailyQuests, claimQuests } from '../src/modules/daily/service.js';
+import { recordSpeciesSeen, seenSpecies, firstSeenAt } from '../src/core/species-seen.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });   // config.ownerId === 'owner'
@@ -365,4 +366,20 @@ it('adminFastForward does not shift alert records, which is what lets it force a
   const row = ctx.db.select().from(schema.alertsSent).all()[0];
   expect(row.firedForMs).toBe(5);
   expect(row.sentAt).toBe(5);
+});
+
+it('reset clears the species-seen record', () => {
+  getOrCreateUser(ctx, 'u1', 'U1');
+  recordSpeciesSeen(ctx, 'u1', 'triceratops');
+  adminReset(ctx, 'u1');
+  expect(seenSpecies(ctx, 'u1').size).toBe(0);
+});
+
+it('fast-forward leaves first_at_ms alone', () => {
+  getOrCreateUser(ctx, 'u1', 'U1');
+  ctx.setNow(10 * 3_600_000);
+  recordSpeciesSeen(ctx, 'u1', 'triceratops');
+  const before = firstSeenAt(ctx, 'u1', 'triceratops');
+  adminFastForward(ctx, 'u1', 48);
+  expect(firstSeenAt(ctx, 'u1', 'triceratops')).toBe(before);
 });

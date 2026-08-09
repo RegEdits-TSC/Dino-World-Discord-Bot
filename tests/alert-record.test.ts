@@ -4,7 +4,7 @@ import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import {
   alreadySent, recordSent, recordEscapeSent, pruneAlertRecords,
-  ESCAPE_TIERS, ALERT_RECORD_TTL_MS,
+  ESCAPE_TIERS, ALERT_RECORD_TTL_MS, ALERT_INSTANT_EPSILON_MS,
 } from '../src/modules/park/alert-record.js';
 
 const seed = (ctx: ReturnType<typeof makeCtx>) =>
@@ -18,12 +18,30 @@ describe('alert record', () => {
     expect(alreadySent(ctx, 'u1', 'escape', 7, 'heads_up', 5000)).toBe(true);
   });
 
-  it('reports not-sent when the instant moved, so a changed escapeAt re-alerts once', () => {
+  it('reports not-sent when the instant moved beyond the tolerance, so a changed escapeAt re-alerts once', () => {
     // The whole point of storing firedForMs rather than a bare boolean: feeding moves
     // the escape instant, and a dino still inside its window deserves one fresh warning.
+    // The move must clear ALERT_INSTANT_EPSILON_MS (2h) — this pins a 3h move, not the
+    // sub-tolerance moves ALERT_INSTANT_EPSILON_MS exists to absorb (see the dedicated
+    // epsilon test below).
     const ctx = makeCtx(); seed(ctx);
     recordSent(ctx, 'u1', 'escape', 7, 'heads_up', 5000);
-    expect(alreadySent(ctx, 'u1', 'escape', 7, 'heads_up', 9000)).toBe(false);
+    expect(alreadySent(ctx, 'u1', 'escape', 7, 'heads_up', 5000 + 3 * 3_600_000)).toBe(false);
+  });
+
+  it('treats an instant within the epsilon as already warned, in both directions', () => {
+    // Enrichment moves an escape instant by only 34-65 minutes (one or two rungs) — well
+    // inside this tolerance — while a real re-alert-worthy move (feeding, an income-cap
+    // shift) clears it. See ALERT_INSTANT_EPSILON_MS's own comment for the reasoning.
+    const ctx = makeCtx(); seed(ctx);
+    const base = 100 * 3_600_000;
+    recordSent(ctx, 'u1', 'escape', 1, 'heads_up', base);
+    expect(alreadySent(ctx, 'u1', 'escape', 1, 'heads_up', base)).toBe(true);
+    expect(alreadySent(ctx, 'u1', 'escape', 1, 'heads_up', base + 3_600_000)).toBe(true);
+    expect(alreadySent(ctx, 'u1', 'escape', 1, 'heads_up', base - 3_600_000)).toBe(true);
+    // Exact boundary, inclusive.
+    expect(alreadySent(ctx, 'u1', 'escape', 1, 'heads_up', base + ALERT_INSTANT_EPSILON_MS)).toBe(true);
+    expect(alreadySent(ctx, 'u1', 'escape', 1, 'heads_up', base + ALERT_INSTANT_EPSILON_MS + 1)).toBe(false);
   });
 
   it('recordSent overwrites rather than throwing on the composite primary key', () => {

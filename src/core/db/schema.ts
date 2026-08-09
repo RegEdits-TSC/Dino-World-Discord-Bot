@@ -209,3 +209,15 @@ export const alertsSent = sqliteTable('alerts_sent', {
   firedForMs: integer('fired_for_ms').notNull(),
   sentAt: integer('sent_at_ms').notNull(),
 }, (t) => [primaryKey({ columns: [t.userId, t.kind, t.refId, t.tier] })]);
+
+// Which species a player has EVER owned. Like alerts_sent above, this records that a
+// side effect happened — it is NOT derived state, and it deliberately cannot be
+// re-derived: ownership is destructive (/sell deletes the dino, trading moves it,
+// adminReset deletes it) and tx_log carries no species column, so live inventory
+// cannot answer "have they ever had one". firstAt is the earliest acquisition, kept
+// by INSERT OR IGNORE on the composite key rather than overwritten.
+export const speciesSeen = sqliteTable('species_seen', {
+  userId: text('user_id').notNull().references(() => users.discordId),
+  speciesId: text('species_id').notNull(),
+  firstAt: integer('first_at_ms').notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.speciesId] })]);

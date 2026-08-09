@@ -8,6 +8,7 @@ import { getOrCreateUser } from '../park/service.js';
 import { recomputeRating } from '../park/rating.js';
 import { settleEscapes } from '../park/escapes.js';
 import { ENERGY_CAP } from '../../data/battle/constants.js';
+import { recordSpeciesSeen } from '../../core/species-seen.js';
 
 export class AdminError extends Error {}
 
@@ -30,9 +31,12 @@ export function adminGive(ctx: Ctx, targetId: string, displayName: string, args:
     if (eggRarity) ctx.db.insert(schema.eggs).values({
       userId: targetId, rarity: eggRarity, speciesId: null, source: 'admin', obtainedAt: ctx.now(),
     }).run();
-    if (dinoSpecies) ctx.db.insert(schema.dinos).values({
-      userId: targetId, lotId: null, speciesId: dinoSpecies, hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),
-    }).run();
+    if (dinoSpecies) {
+      ctx.db.insert(schema.dinos).values({
+        userId: targetId, lotId: null, speciesId: dinoSpecies, hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),
+      }).run();
+      recordSpeciesSeen(ctx, targetId, dinoSpecies);
+    }
   });
   recomputeRating(ctx, targetId);
 }
@@ -67,6 +71,10 @@ export function adminReset(ctx: Ctx, targetId: string): void {
     // table the feature reads. A surviving alerts_sent row would suppress the first
     // alert a "fresh" account earns.
     ctx.db.delete(schema.alertsSent).where(eq(schema.alertsSent.userId, targetId)).run();
+    // Same rule again: reset must delete from every table the feature reads. A
+    // surviving species_seen row would leave a "fresh" account with a partly complete
+    // dex. Unlike alertsEnabled below, this is progress, not communication consent.
+    ctx.db.delete(schema.speciesSeen).where(eq(schema.speciesSeen.userId, targetId)).run();
     // alertsEnabled is deliberately NOT reset. Every other column here is progress or a
     // cosmetic default; this one is communication consent. Restoring it would start
     // DMing a player who explicitly opted out.
@@ -100,6 +108,10 @@ export function adminFastForward(ctx: Ctx, targetId: string, hours: number): num
     // lastQuestClaimAt cannot ride the combined shift above: 0 is its "never claimed"
     // sentinel, and an unguarded shift would drive it negative and invent a claim
     // history for a player who has never claimed a quest.
+    // species_seen.first_at_ms is deliberately NOT shifted. It is a historical record with
+    // no timer semantics — nothing reads it to decide whether something is due — so
+    // shifting it would only misdate a discovery. Contrast breedings.readyAt, which IS a
+    // timer and is a genuine omission here.
     // daily_quests.dayKey is deliberately NOT shifted: fast-forward cannot move the UTC
     // calendar, so today's board stays today's. Shifting the claim anchor is what lets a
     // streak gap or continuation be simulated.

@@ -593,3 +593,108 @@
   `MessagePayload.create()` pushes resolved files into that array IN PLACE and only
   shallow-copies it, so a pre-set key on the shared object would carry a mutation from the
   first send attempt into the second.
+- Habitat enrichment stacks decor on TOP of the existing diet split, never underneath it:
+  `paddockFit`/`paddockFitBase` (`src/core/clock.ts`) both still return 0.5 off-diet and
+  0.75 on-diet-with-no-match, byte-identical to pre-enrichment behaviour — enrichment only
+  ever applies once a paddock has already reached fit 1.0 (correct diet, ≥1 matching decor
+  kind). `matchedKindCount` (`src/data/decor.ts`) counts DISTINCT decor kinds whose
+  `biomeTags` intersect the resident's, deduped via a `Set` since `decorateLot` appends
+  with no dedupe; `ENRICHMENT_STEPS` (`[1.0, 1.05, 1.1]`, indexed by matched-kinds − 1) is
+  deliberately 1.0 at index 0 — the rung only starts climbing at a SECOND distinct match,
+  never the first. That boundary is load-bearing: three tests (`tests/clock.test.ts`,
+  `tests/tundra.test.ts`, `tests/dinos.test.ts`) each independently pin "one matching tile
+  ⇒ exactly 1.0", and it's the reason shipping enrichment moved no existing income or
+  escape figure anywhere in the suite — every fixture that predates the feature used at
+  most one matching decor kind.
+  `paddockFitBase` (no enrichment) vs `paddockFit` (enrichment included) is a REAL split,
+  not a display-only clamp: `recomputeRating` (`src/modules/park/rating.ts`) is
+  `baseComfortAt`'s ONLY caller, specifically so `ratingHighWater` — monotone, and the gate
+  behind lot slots, expedition sites, battle chapters, the shop ceiling and the Mythic
+  unlock — can never move just because a paddock got decorated past its first match. A
+  `Math.min(1, comfort)` clamp on the enriched value is NOT a substitute: it bounds the
+  ceiling, not the sensitivity, so a hunger-80 dino at fit 1.05 would still read 0.84 there
+  instead of the correct pre-enrichment 0.80. `/dino list`'s own `Math.min(1, d.comfort)`
+  clamp (`dinoListPayload`, `src/modules/park/index.ts`) is a different, legitimate use of
+  that same shape — it only bounds what's DISPLAYED, never what's computed or stored, and
+  the rung is broken out as its own `enriched +N%` mark rather than folded into the percentage.
+  The ladder stops at fit 1.10 for a real mechanical reason, not just balance: past a point
+  `escapeAt` outruns `hungerZero` and a dino sits at comfort 0 — earning nothing — while its
+  8h grace runs out. The boundary is **not** a bare fit of 1.5, and the earlier "`12/fit < 8`
+  once fit ≥ 1.5" wording was wrong twice over (inverted inequality, and blind to traits).
+  The real algebra, from `src/core/clock.ts`, is
+  `escapeAt − hungerZero = GRACE_MS − (ESCAPE_COMFORT / fit) · drainMs`, and `drainMs` is
+  `HUNGER_DRAIN_MS / drainMult`, so that dead window opens iff
+  **`fit · drainMult > 1.5`** where `drainMult = modProduct(traits, 'drain')` — independent
+  of `hungerAtFed`, but NOT of the dino's traits. `grazer` (domain `income`) and `skittish`
+  (domain `care`) both carry `drain: 1.20` in DIFFERENT domains, so one dino can legally hold
+  both: `drainMult` 1.44, `drainMs` 33.33h, boundary at fit **1.0417** — under both shipped
+  rungs. Measured against the real `escapeAt`, a grazer+skittish dino's dead window is
+  −20 min (i.e. none) at fit 1.00, **+3.81 min at 1.05 and +25.45 min at 1.10**. This branch
+  is what made the condition reachable at all: before it, fit topped out at 1.00 and no trait
+  combination could cross the line. It ships knowingly — the window is bounded and small, and
+  income stays monotone in enrichment — but the OLD guard (`expect(step).toBeLessThan(1.5)`)
+  was toothless, since it passed while the condition it existed to prevent was already
+  violated. `tests/enrichment.test.ts` now derives `MAX_DRAIN_MULT` (1.44 today) from the real
+  `TRAITS` table — the product of the two largest per-domain `drain` maxima, since a dino holds
+  at most two traits and never two from one domain — and bounds the worst reachable dead window
+  against an explicit tolerance, so raising the cap or shipping a third drain trait moves the
+  gate on its own. Any future cap raise is a decision about how long a dino may earn nothing,
+  not a balance question.
+  The three-kinds-per-biome decor catalog (`src/data/decor.ts`, grown from 12 kinds to 23)
+  is a precondition for the cap, not incidental content: `tests/roster.test.ts`'s "every
+  species can reach the enrichment cap" test is the machine gate, and it would fail on the
+  original 12-kind table, where coast, tundra and volcanic each offered only one kind.
+  Never ship a species whose `biomeTags` aren't covered by at least `ENRICHMENT_CAP_KINDS`
+  distinct decor kinds.
+  `/dex view`'s `species` option and `/admin give`'s `dino-species` option both use
+  `.setAutocomplete(true)` with free-text search rather than `addChoices(...allSpecies())`
+  — not a style choice. Discord's option choices cap at 25; 42 species is well past it, and
+  `addChoices` THROWS once called past that cap, at builder-construction time — i.e.
+  module init, i.e. bot boot. Get this wrong and the bot never starts at all; it is a crash,
+  never a degrade.
+  `/dex list` is the one paginated surface that does NOT use the shared `pageRow`
+  (`src/core/paginate.ts`): its list is FILTERED, and `pageRow`'s
+  `<prefix>:<action>:<userId>:<page>` customId has nowhere to put that state, so paging
+  through it silently returned the unfiltered page — wrong rows, wrong title suffix, wrong
+  page count, no error. `dexPageRow` (`src/modules/dex/embeds.ts`) builds
+  `dex:page:<uid>:<page>:<rarity|->:<diet|->:<archetype|->` instead — 59 of Discord's 100
+  customId characters at worst — and `pageRow` stays untouched for its four other callers
+  (`ach`, `hatch`, `park:dinos`, `trade:list`). Any future filtered list needs the same
+  treatment; do not widen `pageRow`. Everything after the prefix is CLIENT-supplied, so
+  `parseDexFilters` (`src/modules/dex/service.ts`) validates each slug against the real
+  union and degrades an unrecognised one (including the `-` placeholder) to "no filter" —
+  a raw slug reaching `dexRows` would match nothing and render an empty compendium. The
+  command path reads its own options through that same parser rather than casting, so
+  there is exactly one validated way into `DexFilters`.
+  Alert tolerance had to widen for enrichment: `ALERT_INSTANT_EPSILON_MS`
+  (`src/modules/park/alert-record.ts`, 2 hours) exists because a decor purchase moves a
+  dino's `escapeAt` by only 34–65 minutes (one or two rungs) — comfortably inside the 12h
+  heads-up window — so a bare `firedForMs` equality check would re-fire a fresh DM on every
+  single decor purchase. Row EXISTENCE alone is not an alternative fix: it would also
+  suppress the legitimate case where a fed dino's escape instant leaves the window and
+  later genuinely re-enters it, which is exactly what comparing `firedForMs` (with
+  tolerance, not just presence) exists to allow.
+  `recordSpeciesSeen` (`src/core/species-seen.ts`) has exactly three write sites, each
+  inside the transaction that mints or transfers the dino so a rollback can't leave a
+  credit behind: `hatchEgg` (`src/modules/hatchery/service.ts`), a trade's receiving side
+  (`src/modules/trading/service.ts`), and `/admin give` (`src/modules/admin/service.ts`).
+  Eggs are deliberately NOT credited at any point, including a species-pinned Mythic egg
+  bought with shards — the dex only credits a species once a DINO of it actually exists,
+  never a promise of one.
+  A fourth writer exists but runs exactly once, by hand: `npm run backfill-species-seen`
+  (`scripts/backfill-species-seen.ts`), an operator step to be run AFTER migration 0010,
+  never as migration SQL — a failure there would block boot. It credits every player for
+  every species still in their inventory via `INSERT OR IGNORE` + `MIN(hatched_at_ms)`, so
+  a real `recordSpeciesSeen` credit always wins and re-running it is safe. Worth knowing
+  because **once it has run there is no trace that the table was seeded rather than
+  accumulated**: `species_seen` looks identical either way, and a species a player sold or
+  traded away before the backfill reads as never-seen — `tx_log` has no species column, so
+  that history is genuinely gone, which is the accepted cost of backfilling from live
+  inventory instead of shipping every dex empty.
+  Standing hazard, now worse than before: retiring a decor `kind` from `DECOR`
+  (`src/data/decor.ts`) silently drops every paddock relying on it — `matchedKindCount`
+  treats an unknown slug as a non-match rather than throwing, the same tolerance
+  `traitDefs` gives a retired trait id. Pre-enrichment this could only cost a dino its
+  1.0 → 0.75 fall; now it can also cost a rung on top — a paddock sitting at fit 1.10 in
+  reliance on a since-retired kind silently drops to 1.05 or 1.00 the next time anything
+  reads it, with no error and no record of what changed.

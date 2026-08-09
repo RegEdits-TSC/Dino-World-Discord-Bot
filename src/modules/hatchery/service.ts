@@ -12,6 +12,7 @@ import { eventMods } from '../../core/world.js';
 import { recomputeRating } from '../park/rating.js';
 import { facilityLevel, type Lot } from '../park/service.js';
 import { track } from '../../core/stats.js';
+import { recordSpeciesSeen } from '../../core/species-seen.js';
 
 export class HatcheryError extends Error {}
 export type Egg = typeof schema.eggs.$inferSelect;
@@ -77,6 +78,8 @@ export function hatchEgg(ctx: Ctx, userId: string, eggId: number): { species: Sp
     }).returning().get();
     ctx.db.delete(schema.eggs).where(eq(schema.eggs.id, eggId)).run();
     track(ctx, userId, 'eggs_hatched', 1);
+    // Inside the transaction on purpose: a rolled-back hatch must not credit the dex.
+    recordSpeciesSeen(ctx, userId, species.id);
     return dino.id;
   });
   recomputeRating(ctx, userId);

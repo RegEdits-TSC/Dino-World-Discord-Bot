@@ -1,6 +1,6 @@
 import { RARITY } from '../data/rarity.js';
 import { modProduct } from '../data/traits.js';
-import { DECOR } from '../data/decor.js';
+import { matchedKindCount, enrichmentMult } from '../data/decor.js';
 import type { Species, PaddockDef } from '../data/types.js';
 import { incomeMultAt, utcMidnightsBetween } from './world.js';
 
@@ -43,17 +43,53 @@ export function dayKeyUTC(ms: number): string {
 // cross-referenced against the species' before a match counts. An unknown or
 // since-removed slug degrades to no match rather than throwing, the same
 // tolerance traitDefs gives a retired trait id.
+export function paddockFitBase(species: Species, paddock: PaddockDef, decor: string[]): number {
+  if (paddock.diet !== species.diet) return 0.5;
+  return matchedKindCount(species, decor) > 0 ? 1.0 : 0.75;
+}
+
+/**
+ * Habitat fit, enrichment included. Enrichment stacks ONLY above the 1.0 case, so
+ * the 0.5 and 0.75 branches are byte-identical to their pre-enrichment behaviour.
+ * A step function of stored state, never of elapsed time: comfortCrossing below
+ * solves the escape instant algebraically by dividing by a CONSTANT fit, and a
+ * time-varying term would force a piecewise segment walk through five call sites.
+ */
 export function paddockFit(species: Species, paddock: PaddockDef, decor: string[]): number {
   if (paddock.diet !== species.diet) return 0.5;
-  const biomeMatch = decor.some((kind) => DECOR[kind]?.biomeTags.some((tag) => species.biomeTags.includes(tag)));
-  return biomeMatch ? 1.0 : 0.75;
+  const kinds = matchedKindCount(species, decor);
+  if (kinds === 0) return 0.75;
+  return enrichmentMult(kinds);
+}
+
+function comfortWith(d: ClockDino, at: number, fit: number): number {
+  // Overfilled dinos (fillTo up to 150) sit at full comfort until hunger drains back under 100.
+  return (Math.min(100, hungerAt(d.hungerAtFed, d.lastFedAt, at, drainMsFor(d.traits))) / 100) * fit;
 }
 
 export function comfortAt(d: ClockDino, at: number): number {
   if (!d.paddock) return 0;
-  // Overfilled dinos (fillTo up to 150) sit at full comfort until hunger drains back under 100.
-  return (Math.min(100, hungerAt(d.hungerAtFed, d.lastFedAt, at, drainMsFor(d.traits))) / 100)
-    * paddockFit(d.species, d.paddock, d.decor);
+  return comfortWith(d, at, paddockFit(d.species, d.paddock, d.decor));
+}
+
+/**
+ * Comfort WITHOUT enrichment. recomputeRating (src/modules/park/rating.ts) is the only
+ * caller, and that is the whole point: rating stays byte-identical to its
+ * pre-enrichment value, so monotone ratingHighWater cannot hand out lot slots, sites,
+ * shop tiers or the mythic unlock nobody earned. A Math.min(1, comfort) clamp is NOT a
+ * substitute — it bounds the ceiling but not the sensitivity, so a hunger-80 dino at
+ * fit 1.05 would still read 0.84 instead of 0.80.
+ */
+export function baseComfortAt(d: ClockDino, at: number): number {
+  if (!d.paddock) return 0;
+  return comfortWith(d, at, paddockFitBase(d.species, d.paddock, d.decor));
+}
+
+/** The enrichment multiplier alone, for display. 1.0 unless the paddock reaches full fit. */
+export function enrichmentAt(d: ClockDino): number {
+  if (!d.paddock) return 1.0;
+  if (paddockFitBase(d.species, d.paddock, d.decor) < 1.0) return 1.0;
+  return enrichmentMult(matchedKindCount(d.species, d.decor));
 }
 
 /** Time at which comfort first crosses below ESCAPE_COMFORT, or null if it never does while assigned. */

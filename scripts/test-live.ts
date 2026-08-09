@@ -11,7 +11,7 @@ import { PADDOCKS } from '../src/data/paddocks.js';
 import { RARITY } from '../src/data/rarity.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
-import { assignDino } from '../src/modules/park/dinos.js';
+import { assignDino, decorateLot } from '../src/modules/park/dinos.js';
 import { alertSweepHandler, ALERT_TIMER } from '../src/modules/park/alert-sweep.js';
 import { incubateEgg } from '../src/modules/hatchery/service.js';
 import { startExpedition } from '../src/modules/expeditions/service.js';
@@ -23,6 +23,8 @@ import { rollDailyQuests } from '../src/modules/daily/service.js';
 import { track } from '../src/core/stats.js';
 import { dayKeyUTC } from '../src/core/clock.js';
 import { QUESTS } from '../src/data/quests.js';
+import { recordSpeciesSeen } from '../src/core/species-seen.js';
+import { dexListPayload, dexViewPayload } from '../src/modules/dex/embeds.js';
 import { makeCtx, fakeCommand, fakeButton } from '../tests/harness.js';
 import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
 import type { Ctx } from '../src/core/context.js';
@@ -171,6 +173,36 @@ const dailyRows = ctx.db.select().from(schema.dailyQuests)
 const firstQuestDef = QUESTS.find((q) => q.id === dailyRows[0].questId)!;
 track(ctx, P1, firstQuestDef.stat, dailyRows[0].target);
 
+// Dex fixture: its own player, credited via recordSpeciesSeen — never via the raw
+// dino/egg inserts P1 gets above. species_seen is a distinct side-effect record
+// (src/core/species-seen.ts), not derived from ownership, so crediting it is the
+// only way any of these marks show up as seen. Half of the six sit in allSpecies()'s
+// first 10 (dex list's page 1 at PAGE_SIZE 10), so the ✅/▫️ split is visible on that
+// page; the rest just deepen the progress footer. nanuqsaurus doubles as the /dex
+// view case below, so that case's "Your record" field shows a real first-owned date
+// instead of "Never owned".
+const P3 = 'live-p3';
+getOrCreateUser(ctx, P3, 'DexScout');
+for (const speciesId of ['triceratops', 'dryosaurus', 'stegosaurus', 'tyrannosaurus', 'indominus', 'nanuqsaurus']) {
+  recordSpeciesSeen(ctx, P3, speciesId);
+}
+
+// Enriched-roster fixture: its own player and paddock, deliberately never `lot` —
+// that paddock is calibrated below (sweepCapture) for the escape alert at fit 0.75
+// with NO decor, and placing any here would move that timing. Ankylosaurus is
+// forest-tagged; Palm Tree and Fern Cluster both match, so matchedKindCount is 2
+// and paddockFit resolves to enrichmentMult(2) = 1.05 — /dino list renders that as
+// the clamped "100% comfort · enriched +5%" row.
+const P4 = 'live-p4';
+getOrCreateUser(ctx, P4, 'Groundskeeper');
+ctx.db.update(schema.users).set({ cash: 10_000 }).where(eq(schema.users.discordId, P4)).run();
+const enrichedLot = buildLot(ctx, P4, 'herbivore_paddock');
+decorateLot(ctx, P4, enrichedLot.id, 'palm_tree');
+decorateLot(ctx, P4, enrichedLot.id, 'fern');
+ctx.db.insert(schema.dinos).values({ userId: P4, speciesId: 'ankylosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
+const enrichedDino = ctx.db.select().from(schema.dinos).all().find((d) => d.userId === P4)!;
+assignDino(ctx, P4, enrichedDino.id, enrichedLot.id);
+
 // If any service signature above disagrees with the source, match the source —
 // tests/*.test.ts show every call shape.
 
@@ -272,6 +304,9 @@ const cases: Case[] = [
     } },
   { title: '/feed all — care banner', run: () => slash('care', 'feed', { name: 'feed', sub: 'all', user: P1 }) },
   { title: '/dino list — roster', run: () => slash('park', 'dino', { name: 'dino', sub: 'list', user: P1 }) },
+  { title: '/dino list — enriched paddock: clamped "100% comfort · enriched +5%" row', run: () => slash('park', 'dino', { name: 'dino', sub: 'list', user: P4 }) },
+  { title: '/dex list — page 1, no filter: seen marks + progress footer + page row', run: async () => ({ replies: [dexListPayload(ctx, P3, {}, 1)] }) },
+  { title: '/dex view — nanuqsaurus: three enriching kinds + archetype thumb', run: async () => ({ replies: [dexViewPayload(ctx, P3, 'nanuqsaurus')] }) },
   { title: '/trade list — pending trades', run: () => slash('trading', 'trade', { name: 'trade', sub: 'list', user: P1 }) },
   { title: '/trade offer — new offer', run: () => {
       // hatchEgg/claimExpedition above run recomputeRating, which can drop parkRating

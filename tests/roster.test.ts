@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { allSpecies, speciesByRarity, getSpecies } from '../src/data/species/index.js';
-import { DECOR } from '../src/data/decor.js';
+import { DECOR, ENRICHMENT_CAP_KINDS, enrichingKindsFor } from '../src/data/decor.js';
 
 const EXPECTED = { common: 8, uncommon: 9, rare: 9, epic: 8, legendary: 5, mythic: 3 } as const;
 
@@ -37,12 +37,20 @@ describe('biome vocabulary', () => {
   // shares a biomeTag with the species, so a species carrying a tag no decor offers
   // is capped at 0.75 comfort forever — and a typo ('Marine' for 'marine') ships
   // exactly that with every other test still green.
-  it('every species biome tag is offered by at least one decor kind', () => {
-    const offered = new Set(Object.values(DECOR).flatMap((d) => d.biomeTags));
+  it('every species can reach the enrichment cap', () => {
     for (const s of allSpecies()) {
-      for (const tag of s.biomeTags) {
-        expect(offered, `${s.id} wants biome '${tag}' but no decor offers it`).toContain(tag);
-      }
+      expect(
+        enrichingKindsFor(s).length,
+        `${s.id} (biomes ${s.biomeTags.join(',')}) can only ever match ${enrichingKindsFor(s).length} decor kinds`,
+      ).toBeGreaterThanOrEqual(ENRICHMENT_CAP_KINDS);
+    }
+  });
+  it('every biome tag any species wants is offered by at least the cap in distinct kinds', () => {
+    const wanted = new Set(allSpecies().flatMap((s) => s.biomeTags));
+    for (const tag of wanted) {
+      const kinds = Object.values(DECOR).filter((d) => d.biomeTags.includes(tag));
+      expect(kinds.length, `biome '${tag}' is offered by only ${kinds.length} kinds`)
+        .toBeGreaterThanOrEqual(ENRICHMENT_CAP_KINDS);
     }
   });
 });

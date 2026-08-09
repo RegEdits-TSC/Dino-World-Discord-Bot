@@ -8,6 +8,11 @@ import type { ClockDino } from '../src/core/clock.js';
 
 const trike = getSpecies('triceratops');
 const herb = PADDOCKS.herbivore_paddock;
+const H = 3_600_000;
+// The instant an unenriched, fed-to-100 dino first has exactly 12 h of runway left:
+// escapeAt(fedTrike()) is 36h + GRACE_MS (see tests/clock.test.ts), minus the
+// ESCAPE_WARN_MS lead.
+const PLAIN_WARN_INSTANT = 36 * H + GRACE_MS - ESCAPE_WARN_MS;
 
 const clock = (over: Partial<ClockDino> = {}): ClockDino => ({
   species: trike, paddock: herb, decor: [],
@@ -97,6 +102,16 @@ describe('escapeAlertsFor', () => {
     // fedTrike()'s 'palm_tree') is the one that lands at 75% (36h) — see
     // tests/clock.test.ts's `escapeAt(fedTrike())` pin.
     expect(esc).toBe(HUNGER_DRAIN_MS * (2 / 3) + GRACE_MS);
+  });
+
+  it('an enriched dino enters the heads-up window later than an unenriched one', () => {
+    const plain = escapeAlertsFor([clock({ decor: ['palm_tree'] })], [row()], PLAIN_WARN_INSTANT);
+    const rung = escapeAlertsFor([clock({ decor: ['palm_tree', 'fern'] })], [row()], PLAIN_WARN_INSTANT);
+    expect(plain).toHaveLength(1);
+    expect(plain[0].tier).toBe('heads_up');
+    // 34 minutes of extra runway is enough to push it clear of the 12h lead at the
+    // instant the unenriched dino qualifies.
+    expect(rung).toHaveLength(0);
   });
 });
 

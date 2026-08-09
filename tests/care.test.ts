@@ -3,6 +3,7 @@ import type { EmbedBuilder } from 'discord.js';
 import { MessageFlags } from 'discord.js';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
+import { decorateLot } from '../src/modules/park/dinos.js';
 import { feedDino, feedAll, rescueDino, feedCostFor, CareError } from '../src/modules/care/service.js';
 import { careModule } from '../src/modules/care/index.js';
 import { schema } from '../src/core/db/index.js';
@@ -135,6 +136,42 @@ describe('rescueDino', () => {
     // hunger = min(100, round(50/0.75)) = 67 → comfort = 0.67 * 0.75 ≈ 0.5
     expect(row.hunger).toBe(67);
   });
+  // The `50 / fit` divisor must stay UNCLAMPED at an enriched fit (spec §14): a better
+  // paddock needs LESS hunger to land the dino back at the same ~0.5 comfort, which is
+  // the whole reason the restore is a division and not a constant. A Math.min(1, fit)
+  // there would silently restore 50 at every rung, and docs/gameplay.md publishes these
+  // exact figures. Decor goes on through the real decorateLot, so the stored slug shape
+  // is exercised end-to-end rather than hand-assembled.
+  const escapedIn = (lotId: number) => ctx.db.insert(schema.dinos).values({
+    userId: 'u1', lotId, speciesId: 'triceratops', hunger: 0, lastFedAt: 0, hatchedAt: 0,
+    escapedAt: 40 * 3_600_000,
+  }).returning().get();
+
+  it('restores 48 hunger at fit 1.05 — two matching decor kinds', () => {
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', 0);
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    decorateLot(ctx, 'u1', lot.id, 'palm_tree');
+    decorateLot(ctx, 'u1', lot.id, 'fern');            // two distinct forest kinds → fit 1.05
+    const d = escapedIn(lot.id);
+    rescueDino(ctx, 'u1', d.id);
+    // round(50 / 1.05) = 48 → comfort 0.48 × 1.05 ≈ 0.504, still the ~50% target.
+    expect(dinoRow(d.id).hunger).toBe(48);
+    expect(dinoRow(d.id).escapedAt).toBeNull();
+  });
+
+  it('restores 45 hunger at fit 1.10 — three matching decor kinds', () => {
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', 0);
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    decorateLot(ctx, 'u1', lot.id, 'palm_tree');
+    decorateLot(ctx, 'u1', lot.id, 'fern');
+    decorateLot(ctx, 'u1', lot.id, 'cycad_grove');     // third distinct forest kind → fit 1.10
+    const d = escapedIn(lot.id);
+    rescueDino(ctx, 'u1', d.id);
+    // round(50 / 1.1) = 45 → comfort 0.45 × 1.1 ≈ 0.495.
+    expect(dinoRow(d.id).hunger).toBe(45);
+    expect(dinoRow(d.id).escapedAt).toBeNull();
+  });
+
   it('refuses to rescue a dino that has not escaped', () => {
     const d = addDino();
     expect(() => rescueDino(ctx, 'u1', d.id)).toThrow(CareError);

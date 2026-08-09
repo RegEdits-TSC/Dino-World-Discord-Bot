@@ -83,6 +83,27 @@ describe('dino assignment', () => {
     expect(assigned.species.id).toBe('triceratops');
     expect(assigned.comfort).toBeGreaterThan(0);     // assigned + fed
   });
+  it('reports enrichment alongside comfort', () => {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    decorateLot(ctx, 'u1', lot.id, 'palm_tree');
+    decorateLot(ctx, 'u1', lot.id, 'fern');           // palm_tree + fern both match triceratops' forest tag
+    const d = addDino(); assignDino(ctx, 'u1', d.id, lot.id);
+    const rows = listDinos(ctx, 'u1');
+    expect(rows[0].comfort).toBeCloseTo(1.05);
+    expect(rows[0].enrichment).toBe(1.05);
+  });
+  it('the roster row clamps comfort at 100% and shows the rung separately', async () => {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    decorateLot(ctx, 'u1', lot.id, 'palm_tree');
+    decorateLot(ctx, 'u1', lot.id, 'fern');
+    const d = addDino(); assignDino(ctx, 'u1', d.id, lot.id);
+    const i = fakeCommand({ name: 'dino', sub: 'list', user: 'u1' });
+    await parkModule.commands.find((c) => c.data.name === 'dino')!.execute(ctx, i.asChatInput());
+    const text = JSON.stringify(i.replies[0]);
+    expect(text).toContain('100% comfort');
+    expect(text).toContain('enriched +5%');
+    expect(text).not.toContain('105% comfort');
+  });
 });
 
 describe('park dino commands', () => {
@@ -128,6 +149,24 @@ describe('park dino commands', () => {
     };
     expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://dino_roster.webp');
     expect(payload.files!.map((f) => f.name)).toEqual(['dino_roster.webp']);
+    // An unenriched dino (enrichment exactly 1.0) must carry NO rung: the mark is gated
+    // on `enrichment > 1`, and a `>= 1` there would print "enriched +0%" on every row.
+    expect(JSON.stringify(i.replies[0])).not.toContain('enriched');
+  });
+
+  it('the roster row shows +10% at the three-kind ceiling', async () => {
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    // palm_tree, fern and cycad_grove are three DISTINCT forest kinds → fit 1.10.
+    decorateLot(ctx, 'u1', lot.id, 'palm_tree');
+    decorateLot(ctx, 'u1', lot.id, 'fern');
+    decorateLot(ctx, 'u1', lot.id, 'cycad_grove');
+    const d = addDino(); assignDino(ctx, 'u1', d.id, lot.id);
+    const i = fakeCommand({ name: 'dino', sub: 'list', user: 'u1' });
+    await parkModule.commands.find((c) => c.data.name === 'dino')!.execute(ctx, i.asChatInput());
+    const text = JSON.stringify(i.replies[0]);
+    expect(text).toContain('100% comfort');
+    expect(text).toContain('enriched +10%');
+    expect(text).not.toContain('110% comfort');
   });
 });
 

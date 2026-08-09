@@ -450,3 +450,41 @@ describe('0009 park alerts via the real drizzle migrator (production path)', () 
     }
   });
 });
+
+describe('0010 species_seen via the real drizzle migrator (production path)', () => {
+  it('creates species_seen, enforces its key, and preserves existing rows', () => {
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig10-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^000[0-9].*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 9);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });   // apply 0000-0009 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, last_collect_at_ms, created_at_ms) VALUES ('u1', 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO dinos (user_id, species_id, hunger, last_fed_at_ms, hatched_at_ms)
+                    VALUES ('u1', 'triceratops', 100, 0, 0)`).run();
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+      // The child row the FK bracket exists to protect survived.
+      expect((sqlite.prepare(`SELECT COUNT(*) c FROM dinos`).get() as { c: number }).c).toBe(1);
+      sqlite.prepare(`INSERT INTO species_seen (user_id, species_id, first_at_ms)
+                      VALUES ('u1', 'triceratops', 500)`).run();
+      expect(() => sqlite.prepare(`INSERT INTO species_seen (user_id, species_id, first_at_ms)
+                      VALUES ('u1', 'triceratops', 900)`).run()).toThrow();
+      // The FK is real: an unknown owner is rejected.
+      expect(() => sqlite.prepare(`INSERT INTO species_seen (user_id, species_id, first_at_ms)
+                      VALUES ('nobody', 'triceratops', 500)`).run()).toThrow();
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});

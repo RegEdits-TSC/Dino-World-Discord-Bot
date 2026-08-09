@@ -61,10 +61,17 @@ function pickBoard(pool: QuestDef[], rng: () => number): QuestDef[] {
   return board;
 }
 
-// A CAPACITY figure, not an actual-income one: unlike accruedIncome (src/core/clock.ts)
-// it ignores comfort and paddock fit entirely, summing each assigned, non-escaped dino's
-// flat rarity rate (with its income trait modifier) over the user's cap hours. It exists
-// only to size the collect_cash quest target, which needs a ceiling, not a live estimate.
+// A rough SIZING INPUT, not a live estimate or a ceiling: unlike accruedIncome
+// (src/core/clock.ts) it deliberately ignores comfort, paddock fit (enrichment
+// included), facility income bonuses, and the day's event multiplier, summing only
+// each assigned, non-escaped dino's flat rarity rate (with its income trait modifier)
+// over the user's cap hours. Real accrued income routinely runs well above this
+// figure, not below it: facilityBonusPct alone reaches +32% and Heat Wave's
+// incomeMultAt reaches 1.20, a combined 1.584x this number even before enrichment's
+// own income bonus stacks on top. The looseness is harmless because rollDailyQuests
+// only feeds this into a clamp — the half-day-income quest target is
+// max(500, min(50_000, capacity / 2)) — so it only needs to land somewhere sane
+// inside that range, never to bound the real number from above.
 export function dailyEarningCapacity(ctx: Ctx, userId: string): number {
   const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, userId)).all();
   const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all();

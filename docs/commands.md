@@ -18,7 +18,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/park alerts` | Turn proactive park alerts on or off | DM-only warnings before a dino escapes and when your park's income hits its cap. On by default; also turned off by the 🔕 Mute button on an alert itself |
 | `/build` | Build on an empty lot | |
 | `/upgrade` | Upgrade a lot to the next level | Autocomplete: lot |
-| `/decorate` | Add decor to a paddock | Autocomplete: lot |
+| `/decorate` | Add decor to a paddock | Autocomplete: lot, item |
 | `/dino list` | List every dino you own, with nickname and trait line | Paginated, 10 per page |
 | `/dino assign` | Put a dino in a paddock so it starts earning | Autocomplete: dino, lot |
 | `/dino unassign` | Take a dino out of its paddock | Autocomplete: dino |
@@ -96,6 +96,13 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | Command | What it does | Notes |
 | --- | --- | --- |
 | `/world` | Today's world event, the season, and what changes | Also names tomorrow's event, by name only |
+
+## 📖 Dex
+
+| Command | What it does | Notes |
+| --- | --- | --- |
+| `/dex list` | Browse every species | Optional filters: rarity, diet, archetype, page. Paginated |
+| `/dex view` | One species in detail | Autocomplete: species |
 
 ## 🏆 Progress
 
