@@ -4,6 +4,7 @@ import { getOrCreateUser } from '../src/modules/park/service.js';
 import { recordSpeciesSeen } from '../src/core/species-seen.js';
 import { dexRows, dexEntry, dexProgress } from '../src/modules/dex/service.js';
 import { allSpecies } from '../src/data/species/index.js';
+import { RARITY } from '../src/data/rarity.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); });
@@ -21,9 +22,15 @@ describe('dexRows', () => {
     expect(dexRows(ctx, 'u1', { rarity: 'mythic' })).toHaveLength(3);
     expect(dexRows(ctx, 'u1', { diet: 'herbivore' })).toHaveLength(18);
     expect(dexRows(ctx, 'u1', { archetype: 'tank' })).toHaveLength(9);
-    const combo = dexRows(ctx, 'u1', { rarity: 'mythic', diet: 'carnivore' });
+    // rare has 9 species, of which ankylosaurus is the sole herbivore — the other 8
+    // are carnivore (verified against src/data/species/*.ts). Unlike a mythic+carnivore
+    // pair (all 3 mythic species are carnivore, so a dropped diet clause would still
+    // pass), this pair has a real herbivore for a broken AND to leak through.
+    const combo = dexRows(ctx, 'u1', { rarity: 'rare', diet: 'carnivore' });
+    expect(combo).toHaveLength(8);
+    expect(combo.some((r) => r.species.id === 'ankylosaurus')).toBe(false);
     for (const r of combo) {
-      expect(r.species.rarity).toBe('mythic');
+      expect(r.species.rarity).toBe('rare');
       expect(r.species.diet).toBe('carnivore');
     }
   });
@@ -42,8 +49,11 @@ describe('dexEntry', () => {
     expect(e.species.name).toBe('Triceratops');
     expect(e.seen).toBe(false);
     expect(e.firstAt).toBeNull();
-    expect(e.incomePerHr).toBeGreaterThan(0);
-    expect(e.incubationMs).toBeGreaterThan(0);
+    // Pinned against the live table, not just >0, so a field-swap bug (incomePerHr and
+    // incubationMs assigned from each other) turns this red instead of staying green —
+    // both fields are positive numbers on every tier, so >0 could not catch a swap.
+    expect(e.incomePerHr).toBe(RARITY.common.incomePerHr);
+    expect(e.incubationMs).toBe(RARITY.common.incubationMs);
     expect(e.enrichingKinds).toContain('palm_tree');
   });
   it('reports the first-owned instant once seen', () => {
