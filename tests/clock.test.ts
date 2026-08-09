@@ -186,6 +186,40 @@ describe('trait-modified income', () => {
   });
 });
 
+describe('enrichment downstream', () => {
+  const enriched = (over: Partial<Parameters<typeof comfortAt>[0]> = {}) =>
+    fedTrike({ decor: ['palm_tree', 'fern'], ...over });
+
+  it('comfort reads the rung at full hunger', () => {
+    expect(comfortAt(enriched(), 0)).toBeCloseTo(1.05);
+  });
+
+  // 44.5714 h against 44.0 h unenriched: hungerThreshold = (0.25/1.05)*100 = 23.8095,
+  // crossing = ((100 − 23.8095)/100) * 48 h = 36.5714 h, + GRACE_MS.
+  it('lengthens the escape window by 34 minutes at the first rung', () => {
+    expect(escapeAt(enriched())).toBeCloseTo(36.5714 * H + GRACE_MS, -3);
+    expect(escapeAt(fedTrike())).toBe(36 * H + GRACE_MS);
+  });
+
+  // 462 against 440: an 8h cap window from a fresh feed, comfort falling from 1.05 to
+  // 0.875 as hunger drains 100 → 83.33, times the common rate of 60/hr.
+  it('raises income over the cap window', () => {
+    expect(accruedIncome([enriched()], 0, 8, 0, 12 * H)).toBe(462);
+    expect(accruedIncome([fedTrike()], 0, 8, 0, 12 * H)).toBe(440);
+  });
+
+  // accruedIncome splits its window at every UTC midnight and samples the world
+  // multiplier at each segment's START. Enrichment is a constant factor, so the split
+  // must be untouched by it — day 0 is Clear Skies, so the totals are directly
+  // comparable at exactly the rung ratio.
+  it('scales cleanly across a UTC-midnight crossing', () => {
+    const plain = accruedIncome([fedTrike({ hungerAtFed: 150 })], 0, 24, 0, 30 * H);
+    const rung = accruedIncome([enriched({ hungerAtFed: 150 })], 0, 24, 0, 30 * H);
+    expect(rung).toBeGreaterThan(plain);
+    expect(rung / plain).toBeCloseTo(1.05, 2);
+  });
+});
+
 describe('dayKeyUTC', () => {
   it('formats an epoch ms as a UTC YYYY-MM-DD key', () => {
     expect(dayKeyUTC(0)).toBe('1970-01-01');
