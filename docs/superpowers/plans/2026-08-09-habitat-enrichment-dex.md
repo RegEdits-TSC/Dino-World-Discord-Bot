@@ -1826,12 +1826,10 @@ export function dexListPayload(ctx: Ctx, userId: string, filters: DexFilters, pa
     .setTitle(`📖 Dex${filterLabel(filters)}`)
     .setDescription(lines)
     .setFooter({ text: `${progress.seen}/${progress.total} owned · Page ${p}/${pages}` });
-  const payload: Payload = {
+  return {
     embeds: [embed],
     components: pages > 1 ? [pageRow('dex', 'page', userId, p, pages)] : [],
   };
-  attach(embed, payload, 'image', assetImage('banners', 'dex'));
-  return payload;
 }
 
 export function dexViewPayload(ctx: Ctx, userId: string, speciesId: string): Payload {
@@ -1861,9 +1859,12 @@ export function dexViewPayload(ctx: Ctx, userId: string, speciesId: string): Pay
 }
 ```
 
-`assetImage('banners', 'dex')` returns `null` until a banner exists, and `attach` is
-then a total no-op — that is the intended degrade, not a gap. Do **not** hand-assign
-`payload.files`; `tests/images.test.ts` bans the idiom by source grep.
+**The dex list payload references NO banner.** `tests/images.test.ts` scrapes every
+literal `assetImage('banners', '<name>')` call out of `src/` and asserts the file exists,
+so referencing a `dex` banner would fail that gate — and this spec ships no art at all
+(§15). The species page's `assetImage('dinos', ...)` thumbnail is safe: those eight
+archetype×diet files exist, and the scrape only covers the `banners` kind. Do **not**
+hand-assign `payload.files`; `tests/images.test.ts` bans that idiom by source grep.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
