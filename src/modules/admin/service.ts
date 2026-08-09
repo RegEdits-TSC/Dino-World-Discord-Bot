@@ -8,6 +8,7 @@ import { getOrCreateUser } from '../park/service.js';
 import { recomputeRating } from '../park/rating.js';
 import { settleEscapes } from '../park/escapes.js';
 import { ENERGY_CAP } from '../../data/battle/constants.js';
+import { recordSpeciesSeen } from '../../core/species-seen.js';
 
 export class AdminError extends Error {}
 
@@ -30,9 +31,12 @@ export function adminGive(ctx: Ctx, targetId: string, displayName: string, args:
     if (eggRarity) ctx.db.insert(schema.eggs).values({
       userId: targetId, rarity: eggRarity, speciesId: null, source: 'admin', obtainedAt: ctx.now(),
     }).run();
-    if (dinoSpecies) ctx.db.insert(schema.dinos).values({
-      userId: targetId, lotId: null, speciesId: dinoSpecies, hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),
-    }).run();
+    if (dinoSpecies) {
+      ctx.db.insert(schema.dinos).values({
+        userId: targetId, lotId: null, speciesId: dinoSpecies, hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(),
+      }).run();
+      recordSpeciesSeen(ctx, targetId, dinoSpecies);
+    }
   });
   recomputeRating(ctx, targetId);
 }
