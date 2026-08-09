@@ -617,12 +617,29 @@
   clamp (`dinoListPayload`, `src/modules/park/index.ts`) is a different, legitimate use of
   that same shape — it only bounds what's DISPLAYED, never what's computed or stored, and
   the rung is broken out as its own `enriched +N%` mark rather than folded into the percentage.
-  The ladder stops at fit 1.10 for a real mechanical reason, not just balance: past fit 1.5
-  `escapeAt` outruns `hungerZero`, because `12/fit < 8` once fit ≥ 1.5, and a dino would sit
-  at comfort 0 — earning nothing — for the whole 8h grace window before it actually
-  escapes. `tests/enrichment.test.ts`'s "never reaches the 1.5 escape cliff" test is the
-  guard; raising `ENRICHMENT_STEPS` past that line reopens a real gameplay bug, not a
-  balance question.
+  The ladder stops at fit 1.10 for a real mechanical reason, not just balance: past a point
+  `escapeAt` outruns `hungerZero` and a dino sits at comfort 0 — earning nothing — while its
+  8h grace runs out. The boundary is **not** a bare fit of 1.5, and the earlier "`12/fit < 8`
+  once fit ≥ 1.5" wording was wrong twice over (inverted inequality, and blind to traits).
+  The real algebra, from `src/core/clock.ts`, is
+  `escapeAt − hungerZero = GRACE_MS − (ESCAPE_COMFORT / fit) · drainMs`, and `drainMs` is
+  `HUNGER_DRAIN_MS / drainMult`, so that dead window opens iff
+  **`fit · drainMult > 1.5`** where `drainMult = modProduct(traits, 'drain')` — independent
+  of `hungerAtFed`, but NOT of the dino's traits. `grazer` (domain `income`) and `skittish`
+  (domain `care`) both carry `drain: 1.20` in DIFFERENT domains, so one dino can legally hold
+  both: `drainMult` 1.44, `drainMs` 33.33h, boundary at fit **1.0417** — under both shipped
+  rungs. Measured against the real `escapeAt`, a grazer+skittish dino's dead window is
+  −20 min (i.e. none) at fit 1.00, **+3.81 min at 1.05 and +25.45 min at 1.10**. This branch
+  is what made the condition reachable at all: before it, fit topped out at 1.00 and no trait
+  combination could cross the line. It ships knowingly — the window is bounded and small, and
+  income stays monotone in enrichment — but the OLD guard (`expect(step).toBeLessThan(1.5)`)
+  was toothless, since it passed while the condition it existed to prevent was already
+  violated. `tests/enrichment.test.ts` now derives `MAX_DRAIN_MULT` (1.44 today) from the real
+  `TRAITS` table — the product of the two largest per-domain `drain` maxima, since a dino holds
+  at most two traits and never two from one domain — and bounds the worst reachable dead window
+  against an explicit tolerance, so raising the cap or shipping a third drain trait moves the
+  gate on its own. Any future cap raise is a decision about how long a dino may earn nothing,
+  not a balance question.
   The three-kinds-per-biome decor catalog (`src/data/decor.ts`, grown from 12 kinds to 23)
   is a precondition for the cap, not incidental content: `tests/roster.test.ts`'s "every
   species can reach the enrichment cap" test is the machine gate, and it would fail on the

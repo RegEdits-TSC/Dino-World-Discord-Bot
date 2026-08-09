@@ -44,10 +44,23 @@ export const ENRICHMENT_CAP_KINDS = 3;
  *   1.05 → 4,790,016 (+228,096), escapeAt 44.571 h
  *   1.10 → 5,018,112 (+456,192), escapeAt 45.091 h
  * The ceiling is 1.10 on purpose. The escape channel's total gain is bounded —
- * (25 − 25/fit)/100 × 48 h has supremum +12 h as fit → ∞ — and fit 1.5 is a cliff:
- * escapeAt < hungerZero iff 12/fit < 8, so at fit ≥ 1.5 a dino sits at comfort 0
- * earning nothing while its 8 h grace runs out. Every 0.05 also lands entirely in an
- * endgame cash surplus that is already 94% unspent.
+ * (25 − 25/fit)/100 × 48 h has supremum +12 h as fit → ∞ — and past a point fit opens
+ * a DEAD WINDOW in which a dino sits at comfort 0, earning nothing, while its 8 h
+ * grace runs out. The boundary is NOT a bare fit of 1.5. From src/core/clock.ts,
+ *   escapeAt − hungerZero = GRACE_MS − (ESCAPE_COMFORT / fit) · drainMs
+ * and drainMs is HUNGER_DRAIN_MS / drainMult, so the window opens iff
+ *   fit · drainMult > 1.5,     drainMult = modProduct(traits, 'drain')
+ * independent of hungerAtFed but NOT of the dino's traits. Fit 1.5 is only the
+ * boundary for an untraited dino. `grazer` (income domain) and `skittish` (care
+ * domain) each carry drain 1.20 and sit in DIFFERENT domains, so one dino may legally
+ * hold both: drainMult 1.44, drainMs 33.33 h, boundary at fit 1.0417 — which BOTH
+ * rungs clear. Measured against the real escapeAt on such a dino: −20 min (no window)
+ * at fit 1.00, +3.81 min at 1.05, +25.45 min at 1.10. Pre-enrichment the case was
+ * unreachable at every trait combination, because fit topped out at 1.00. It ships
+ * because the window is bounded and small and income stays monotone in enrichment;
+ * tests/enrichment.test.ts derives the worst legal drain product from TRAITS and fails
+ * if a raised cap or a new drain trait makes the window large.
+ * Every 0.05 also lands entirely in an endgame cash surplus that is already 94% unspent.
  */
 export const ENRICHMENT_STEPS: readonly number[] = [1.0, 1.05, 1.1];
 

@@ -225,10 +225,31 @@ legendary / 684,288 mythic**. One rung is 2.70× that park's entire daily food b
    a 44-hour window; at 1.10, 65 minutes. Paying more multiplier buys almost
    nothing here, so the ceiling should be set by the income channel — where every
    0.05 lands entirely in an untouched surplus.
-2. **Fit 1.5 is an undocumented cliff.** `escapeAt < hungerZero` iff `12/fit < 8`,
-   i.e. iff **fit < 1.5**, independent of `hungerAtFed`. At fit ≥ 1.5 a dino sits
-   at comfort 0, earning nothing, while the 8-hour grace runs out. Nothing in code
-   or tests guards it, so the cap is machine-gated (§10).
+2. **Past a point, fit opens a dead window** in which a dino sits at comfort 0,
+   earning nothing, while the 8-hour grace runs out. **Corrected 2026-08-09** — as
+   originally written this wall claimed the boundary was a bare fit of 1.5
+   ("`escapeAt < hungerZero` iff `12/fit < 8`, i.e. iff fit < 1.5, independent of
+   `hungerAtFed`"), which was wrong twice: the inequality was inverted, and the
+   boundary is not independent of the dino's *traits*. The real algebra, from
+   `clock.ts`, is
+
+   ```
+   escapeAt − hungerZero = GRACE_MS − (ESCAPE_COMFORT / fit) · drainMs
+   drainMs = HUNGER_DRAIN_MS / drainMult,  drainMult = modProduct(traits, 'drain')
+   ```
+
+   so the window opens iff **`fit · drainMult > 1.5`** — independent of `hungerAtFed`,
+   but not of traits. Fit 1.5 is only the boundary at `drainMult = 1`. `grazer`
+   (domain `income`) and `skittish` (domain `care`) each carry `drain: 1.20` in
+   *different* domains, so one dino may legally hold both: `drainMult` 1.44,
+   `drainMs` 33.33 h, boundary at fit **1.0417** — below both shipped rungs.
+   Measured against the real `escapeAt`, that dino's dead window is −20 min (none) at
+   fit 1.00, **+3.81 min at 1.05** and **+25.45 min at 1.10**. This spec is what makes
+   the condition reachable at all: pre-enrichment fit topped out at 1.00, where no
+   trait combination crosses the line. It ships knowingly — the window is bounded and
+   small, and income stays monotone in enrichment — and the gate in §10 bounds the
+   worst *reachable* window rather than comparing a step against 1.5, which passes
+   while the condition it guards is already violated.
 
 **Five properties are load-bearing.**
 
@@ -487,8 +508,15 @@ mythic egg for nobody who earned them.
   kinds sharing one biome tag as two.
 - `paddockFit`: the three existing values unchanged, each rung, and a wrong-diet
   paddock still 0.5 however enriched.
-- **The cap is below the 1.5 cliff** — a machine gate on
-  `max(ENRICHMENT_STEPS) < 1.5`, with the reason cited at the assertion.
+- **The cap keeps the dead window small** — **corrected 2026-08-09**, since the gate
+  as originally specified (`max(ENRICHMENT_STEPS) < 1.5`) cannot detect the case this
+  spec actually crosses: the boundary is `fit · drainMult > 1.5` (§4 wall 2), and a
+  grazer+skittish dino (`drainMult` 1.44) is already past it at both rungs. The gate
+  instead derives `MAX_DRAIN_MULT` from the real `TRAITS` table — the product of the
+  two largest per-domain `drain` maxima, a dino holding at most two traits and never
+  two from one domain — measures the worst reachable window against the real
+  `escapeAt` and the real hunger-zero instant, and bounds it by an explicit,
+  commented tolerance. A raised cap or a new drain trait moves the gate on its own.
 - **The catalog invariant** — every species in `allSpecies()` can reach the cap. A
   gate on the property, so a future kind cannot reintroduce the asymmetry §5 fixes.
   `tests/roster.test.ts:40-47` is extended from "≥1 kind per tag" to "≥ cap distinct
@@ -611,8 +639,13 @@ No `deploy-emojis`: this spec adds no emoji, and no art of any kind.
   `baseComfortAt`; a `Math.min` clamp is not a substitute, because it bounds the
   ceiling and not the sensitivity, and monotone `ratingHighWater` makes any gain a
   permanent unlock.
-- **Never raise the cap to 1.5 or beyond.** Past fit 1.5 `escapeAt` outruns
-  `hungerZero` and a dino earns nothing while its grace runs.
+- **Never raise the cap without re-measuring the dead window.** The boundary is
+  `fit · drainMult > 1.5`, not fit 1.5 (§4 wall 2 as corrected): with
+  `MAX_DRAIN_MULT` 1.44 the crossing already happens at fit 1.0417, so both shipped
+  rungs sit above it with a +3.81 min / +25.45 min window in which a dino earns
+  nothing while its grace runs. What must stay true is that the worst *reachable*
+  window stays small — `tests/enrichment.test.ts` bounds it — never that some step
+  value stays under 1.5.
 - **Never clamp `rescueDino`'s `50 / fit` divisor.** The division is what holds
   post-rescue comfort at ~0.5 across the band.
 - **Never add a decor kind without checking the catalog invariant** — the test
