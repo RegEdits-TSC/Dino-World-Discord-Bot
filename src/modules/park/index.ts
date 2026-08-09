@@ -286,7 +286,7 @@ export const parkModule: ModuleManifest = {
     {
       data: new SlashCommandBuilder().setName('decorate').setDescription('Add decor to a paddock')
         .addIntegerOption((o) => o.setName('lot').setDescription('Paddock — type to search').setRequired(true).setAutocomplete(true))
-        .addStringOption((o) => o.setName('item').setDescription('Decoration').setRequired(true).addChoices(...Object.values(DECOR).map((d) => ({ name: d.name, value: d.kind })))),
+        .addStringOption((o) => o.setName('item').setDescription('Decoration — type to search').setRequired(true).setAutocomplete(true)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         try {
@@ -299,10 +299,24 @@ export const parkModule: ModuleManifest = {
         }
       },
       async autocomplete(ctx, i) {
+        const focused = i.options.getFocused(true);
+        if (focused.name === 'item') {
+          // Static data only — no DB read, no user row. Biomes and cost are in the
+          // label because the purchase is permanent: there is no removal or refund
+          // path short of adminReset, so the buying surface is the only place a
+          // mistake can be prevented.
+          await respondRanked(i, Object.values(DECOR)
+            .filter((d) => matches(String(focused.value), d.name, d.kind, ...d.biomeTags))
+            .map((d) => ({
+              value: d.kind, valid: true,
+              label: `${d.name} — ${d.biomeTags.join('/')} — ${d.cost} cash`,
+            })));
+          return;
+        }
         const paddocks = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, i.user.id)).all()
           .filter((l) => l.type === 'paddock');
         if (!paddocks.length) { await respondRanked(i, [emptyRow('No paddocks — /build one first', 0)]); return; }
-        const q = String(i.options.getFocused());
+        const q = String(focused.value);
         await respondRanked(i, paddocks
           .filter((l) => matches(q, l.id, l.name))
           .map((l) => ({ value: l.id, valid: true, label: `🏗️ #${l.id} ${l.name} (lvl ${l.level})` })));

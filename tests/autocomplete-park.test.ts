@@ -112,4 +112,47 @@ describe('/decorate lot autocomplete', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toEqual({ name: `🏗️ #${pad.id} Herbivore Paddock (lvl 1)`, value: pad.id });
   });
+
+  it('still suggests paddocks on the lot option', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1');
+    seedLot(ctx);
+    const i = fakeAutocomplete({
+      name: 'decorate', user: 'u1',
+      focused: { name: 'lot', value: '' },
+    });
+    await cmd('decorate').autocomplete!(ctx, i.asAutocomplete());
+    expect((i.replies[0] as unknown[]).length).toBeGreaterThan(0);
+  });
+});
+
+describe('/decorate item autocomplete', () => {
+  it('suggests decor kinds with their biomes and cost', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1');
+    seedLot(ctx);
+    const i = fakeAutocomplete({
+      name: 'decorate', user: 'u1',
+      focused: { name: 'item', value: 'fern' },
+      options: { lot: 1 },
+    });
+    await cmd('decorate').autocomplete!(ctx, i.asAutocomplete());
+    const rows = i.replies[0] as Array<{ name: string; value: string }>;
+    expect(rows.some((r) => r.value === 'fern')).toBe(true);
+    // The biomes are in the label because a decor purchase is permanent: there is no
+    // removal or refund path short of adminReset, so the buying surface is the only
+    // place a mistake can be prevented.
+    expect(rows.find((r) => r.value === 'fern')!.name).toContain('forest');
+    expect(rows.find((r) => r.value === 'fern')!.name).toContain('swamp');
+  });
+
+  it('never puts a custom emoji tag in a decor label', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const i = fakeAutocomplete({
+      name: 'decorate', user: 'u1', focused: { name: 'item', value: '' },
+    });
+    await cmd('decorate').autocomplete!(ctx, i.asAutocomplete());
+    for (const r of i.replies[0] as Array<{ name: string }>) expect(r.name).not.toMatch(/<a?:\w+:\d+>/);
+  });
 });
