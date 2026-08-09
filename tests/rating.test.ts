@@ -9,6 +9,19 @@ import { schema } from '../src/core/db/index.js';
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
 
+const seedPaddock = (ctx: ReturnType<typeof makeCtx>, decor: string[]) =>
+  ctx.db.insert(schema.lots).values({
+    userId: 'u1', type: 'paddock', kind: 'herbivore_paddock', name: 'Herbivore Paddock',
+    level: 1, decor,
+  }).returning().get().id;
+
+const seedAssignedDino = (
+  ctx: ReturnType<typeof makeCtx>, lotId: number, speciesId: string,
+  over: Partial<typeof schema.dinos.$inferInsert> = {},
+) => ctx.db.insert(schema.dinos).values({
+  userId: 'u1', lotId, speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0, ...over,
+}).returning().get();
+
 describe('gating helpers (re-exported from rating.ts)', () => {
   it('lotSlots grows 3→10 across all thresholds', () => {
     expect(lotSlots(0)).toBe(3);
@@ -89,5 +102,41 @@ describe('recomputeRating', () => {
     // collection saturated at 1.0 → 0.40 × 1000 = 400 from that term alone, and the
     // park and comfort terms are unassigned/zero here.
     expect(rating).toBe(400);
+  });
+
+  // Rating must be IDENTICAL with and without enrichment. ratingHighWater is monotone
+  // (rating.ts), so any enrichment-driven gain would permanently unlock lot slots,
+  // sites, the shop ceiling and the mythic egg for every existing player the day this
+  // ships. Watch this test fail by pointing rating.ts at comfortAt before trusting it.
+  // The "before" paddock carries 3 decor pieces, same as "after", not the brief's literal
+  // single-item list: rating's park term sums level + decor.length (unrelated to
+  // enrichment), so a 1-vs-3 decor count would leave the two ratings apart even once the
+  // comfort leak is fixed, for a reason that has nothing to do with enrichment. grass_tuft
+  // and boulder are plains-tagged, so they don't match triceratops's forest biome — one
+  // matching kind (palm_tree) either way, holding enrichment coverage constant too.
+  it('enrichment does not change park rating, at full or partial hunger', () => {
+    const oneKind = makeCtx();
+    getOrCreateUser(oneKind, 'u1', 'Reg');
+    const lotA = seedPaddock(oneKind, ['palm_tree', 'grass_tuft', 'boulder']);
+    seedAssignedDino(oneKind, lotA, 'triceratops', { hunger: 80, lastFedAt: 0 });
+    const before = recomputeRating(oneKind, 'u1');
+
+    const threeKinds = makeCtx();
+    getOrCreateUser(threeKinds, 'u1', 'Reg');
+    const lotB = seedPaddock(threeKinds, ['palm_tree', 'fern', 'cycad_grove']);
+    seedAssignedDino(threeKinds, lotB, 'triceratops', { hunger: 80, lastFedAt: 0 });
+    const after = recomputeRating(threeKinds, 'u1');
+
+    expect(after.rating).toBe(before.rating);
+    expect(after.highWater).toBe(before.highWater);
+  });
+
+  it('a fully enriched saturated park still reports at most 1000', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const lot = seedPaddock(ctx, ['palm_tree', 'fern', 'cycad_grove']);
+    seedAssignedDino(ctx, lot, 'triceratops', { hunger: 100, lastFedAt: 0 });
+    const { rating } = recomputeRating(ctx, 'u1');
+    expect(rating).toBeLessThanOrEqual(1000);
   });
 });
