@@ -26,7 +26,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '`/park alerts state:on|off` — DM warnings before a dino escapes and when income caps. On by default.',
     '`/build kind:<lot>` — build on an empty lot. Paddocks stack; one facility of each kind, so upgrade rather than rebuild.',
     '`/upgrade lot:<id>` — raise a lot one level.',
-    '`/decorate lot:<id> item:<decor>` — decor boosts comfort for matching biomes.',
+    '`/decorate lot:<id> item:<decor>` — matching biome decor lifts fit to 100%, then a 2nd/3rd distinct matching kind adds +5%/+10% to income and escape resistance (never rating).',
     'Income accrues while dinos are comfortable, up to your Visitor Center cap — collect often.',
     'Dinos in the wrong-diet paddock earn half comfort — the bot warns before you assign one.',
   ].join('\n') },

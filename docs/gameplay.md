@@ -319,21 +319,28 @@ percentage, multiplied by how well the paddock suits that dino:
 
 - A dino in the **wrong-diet** paddock keeps only 50% of its hunger-based
   comfort, regardless of decor.
-- A dino in the **correct-diet** paddock keeps 75% — or **100%** if the
-  paddock also carries at least one piece of decor tagged to that species'
-  biome (see Decor above; a Gallimimus, tagged `plains`, gets the full bonus
-  from a Grass Tuft or a Boulder but not from a Palm Tree). Any decor beyond
-  the first matching piece raises rating through the park build-out term, but
-  does not push comfort past 100%.
+- A dino in the **correct-diet** paddock keeps 75% — or **100%** the moment
+  the paddock carries at least one piece of decor tagged to that species'
+  biome (see Decor above; a Gallimimus, tagged `plains`, gets the bonus from
+  a Grass Tuft or a Boulder but not from a Palm Tree). Fit keeps climbing
+  from there with more **distinct** matching decor kinds on the same
+  paddock: a **second** distinct match takes it to **105%**, and a
+  **third** to **110%**, the ceiling — a fourth matching kind adds nothing
+  further. That extra fit pays out as more income and more time before the
+  dino is at risk of escaping (see Income and Escapes, below); it does not
+  raise your park rating, which is always computed from the pre-enrichment
+  75%/100% figure (see Rating and leaderboards, below). `/dino list` still
+  shows comfort capped at 100%, with the enrichment rung shown as its own
+  mark beside it, e.g. `100% comfort · enriched +5%`.
 - A dino with **no paddock at all** has 0% comfort, full stop — it earns
   nothing and cannot escape, since escaping requires being somewhere to
   escape from.
 
 Assigning a dino to the wrong-diet paddock isn't blocked — the game warns you
 first and asks you to confirm — but it halves that dino's comfort for as
-long as it stays there. Comfort feeds both your income (see Income above)
-and the comfort third of your park rating (see Rating and leaderboards
-below).
+long as it stays there. Comfort feeds your income (see Income above); the
+comfort third of your park rating (see Rating and leaderboards below) uses
+this same hunger-driven figure but without any enrichment bonus on top.
 
 ### Escapes
 
@@ -346,12 +353,16 @@ anyone noticed.
 
 Feeding a higher tier buys more time before that clock can even start,
 because it takes longer for hunger to fall far enough to drop comfort under
-25%. Roughly, from a fresh feed:
+25% — and a paddock with a higher habitat fit buys even more, since it takes
+less hunger to keep comfort above that line. Roughly, from a fresh feed:
 
 | Paddock | Fed to 100 | Fed to 125 | Fed to 150 |
 | --- | --- | --- | --- |
-| Correct-diet paddock | about 40 h | about 52 h | about 64 h |
-| Wrong-diet paddock | 32 h | about 44 h | about 56 h |
+| Correct diet, 3 matching decor kinds (fit 1.10) | about 45.1 h | about 57.1 h | about 69.1 h |
+| Correct diet, 2 matching decor kinds (fit 1.05) | about 44.6 h | about 56.6 h | about 68.6 h |
+| Correct diet, 1 matching decor kind (fit 1.00) | 44 h | 56 h | 68 h |
+| Correct diet, no matching decor (fit 0.75) | 40 h | 52 h | 64 h |
+| Wrong-diet paddock (fit 0.50) | 32 h | 44 h | 56 h |
 
 The dashboard flags a dino as "at risk" once its projected escape is within
 12 hours, and `/dino list` shows the same countdown per dino — but only for
@@ -382,11 +393,14 @@ that dino's normal income rate:
 | Mythic | 36,000 |
 
 Rescue doesn't fully restore the dino — it resets hunger to about half of
-what full comfort would take: 67 in a correct-diet paddock, or 100 in a
-wrong-diet paddock (which is halved anyway, so it ends up at a similar
-comfort either way). The escaped flag clears immediately and the dino starts
-earning again right away. You can't rescue a dino that hasn't escaped, and
-if you can't afford the fee, nothing changes.
+what full comfort at that paddock's fit would take: 100 in a wrong-diet
+paddock (which is halved anyway, so it ends up at a similar comfort either
+way), 67 in a correct-diet paddock with no matching decor, and less still as
+enrichment climbs — 50 at one matching decor kind, 48 at two, 45 at the
+three-kind ceiling — since a better-fitting paddock needs less hunger to
+land the dino back at the same ~50% comfort. The escaped flag clears
+immediately and the dino starts earning again right away. You can't rescue a
+dino that hasn't escaped, and if you can't afford the fee, nothing changes.
 
 ## 8. Food
 
@@ -772,7 +786,7 @@ Park rating is built from three weighted components, each capped at 1 (100%):
 | --- | --- | --- |
 | Collection | 40% | The summed rarity value of the **distinct** species you own, out of a frozen target of 190. That target does not move as new species ship — it's fixed at the rarity-weight sum of the roster the game shipped with, not a live count of every species that exists today, so new species only ever open more paths to the same target. Owning duplicates of a species you already have adds nothing further. |
 | Park | 35% | The combined levels of all your lots plus the total number of decor pieces you've placed, out of a maximum of 40. |
-| Comfort | 25% | The average comfort of dinos that are currently assigned to a paddock and haven't escaped. Unassigned or escaped dinos are simply left out of the average — they don't drag it down, but they also don't help. |
+| Comfort | 25% | The average comfort of dinos that are currently assigned to a paddock and haven't escaped, measured **before** any enrichment bonus (see Comfort and habitat fit, above) — decorating a paddock past its first matching kind pays more income and buys more time before an escape, but never moves this component. Unassigned or escaped dinos are simply left out of the average — they don't drag it down, but they also don't help. |
 
 The three components combine into a score out of 1000, which is what's
 displayed as stars to one decimal place — a rating of 550 shows as 5.5★.
