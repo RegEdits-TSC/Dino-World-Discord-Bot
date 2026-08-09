@@ -7,6 +7,7 @@ import { incubateEgg, hatchEgg } from '../src/modules/hatchery/service.js';
 import { adminGive } from '../src/modules/admin/service.js';
 import { createTrade, acceptTrade } from '../src/modules/trading/service.js';
 import { TRADE_MIN_RATING } from '../src/data/trade.js';
+import { backfillSpeciesSeen } from '../scripts/backfill-species-seen.js';
 
 // recordSpeciesSeen is a pass-through spy by default (calls the real implementation),
 // so every test in this file except the rollback test below is unaffected — same
@@ -101,5 +102,31 @@ describe('write sites', () => {
     ctx.setNow(ctx.now() + 15 * 60_000);
     expect(() => hatchEgg(ctx, 'u1', egg.id)).toThrow('boom');
     expect(seenSpecies(ctx, 'u1').size).toBe(0);
+  });
+});
+
+describe('backfill', () => {
+  it('credits every species a player currently owns, dated to the hatch', () => {
+    ctx.db.insert(schema.dinos).values([
+      { userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 700 },
+      { userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 200 },
+      { userId: 'u1', speciesId: 'velociraptor', hunger: 100, lastFedAt: 0, hatchedAt: 900 },
+    ]).run();
+    const n = backfillSpeciesSeen(ctx.db);
+    expect(n).toBe(2);
+    expect(seenSpecies(ctx, 'u1')).toEqual(new Set(['triceratops', 'velociraptor']));
+    // The EARLIEST hatch wins, not whichever row the scan happened to see first.
+    expect(firstSeenAt(ctx, 'u1', 'triceratops')).toBe(200);
+  });
+
+  it('is safe to run twice and never overwrites a real credit', () => {
+    ctx.setNow(50);
+    recordSpeciesSeen(ctx, 'u1', 'triceratops');
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 700,
+    }).run();
+    backfillSpeciesSeen(ctx.db);
+    backfillSpeciesSeen(ctx.db);
+    expect(firstSeenAt(ctx, 'u1', 'triceratops')).toBe(50);
   });
 });
