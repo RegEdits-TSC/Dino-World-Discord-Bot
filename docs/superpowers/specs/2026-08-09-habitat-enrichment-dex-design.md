@@ -370,9 +370,12 @@ Enriched fit above 1.0 is a new regime for the one surface that renders comfort.
   true. `listDinos` (`park/dinos.ts:77-86`) returns the enrichment multiplier
   alongside `comfort`, derived from the same `ClockDino`; the clamp lives at the
   render site so the data stays raw.
-- **`/park view`'s dashboard** gains an enrichment line for the paddocks that have
-  it. The at-risk badge (`park/index.ts:136-140`) needs no change: it reads
-  `escapeAt`, which already reflects enrichment through `comfortCrossing`.
+- **`/park view`'s dashboard** is left alone. The at-risk badge
+  (`park/index.ts:136-140`) needs no change either way: it reads `escapeAt`, which
+  already reflects enrichment through `comfortCrossing`. An earlier draft of this
+  section promised a per-paddock enrichment line here; it was **cut** (§15) rather
+  than implemented, so `src/modules/park/embeds.ts` is untouched and `/dino list` is
+  the single surface that renders the rung.
 - **Park rating** is unchanged, through `baseComfortAt` (§3) — no clamp, no new
   display, nothing to reconcile.
 - **The park PNG is deliberately untouched.** `tests/render-draw.test.ts:163-165`
@@ -674,6 +677,12 @@ No `deploy-emojis`: this spec adds no emoji, and no art of any kind.
   `COLLECTION_TARGET`, and discovery count is 2b's rank input instead.
 - **An enrichment glyph on the park PNG** — the one change here that could cost the
   whole park image, for the least gained.
+- **A `/park view` dashboard enrichment line** — promised by §6 in an earlier draft and
+  **cut during implementation** (recorded 2026-08-09). `/dino list` already names the
+  rung per dino, which is where the rung is actionable, and the dashboard aggregates
+  per-park figures rather than per-paddock ones. Nothing in code or docs claims the
+  line exists, so this is a scope cut, not a defect; `src/modules/park/embeds.ts` was
+  never touched by this spec.
 - **Per-species artwork** — declined by earlier design and still declined; the
   archetype×diet keying is what keeps a new species a data-only change.
 - **A decor removal or refund path.** Decor is append-only today. Enrichment makes

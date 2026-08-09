@@ -142,8 +142,10 @@ Lab is refused outright, naming the facility that's already built.
 
 ### Decor
 
-Decor is bought per paddock with `/decorate`. There are twelve items, each
-tagged to a biome:
+Decor is bought per paddock with `/decorate`. There are twenty-three items,
+each tagged to a biome — and **every biome is served by at least three
+kinds**, which is what makes the top of the habitat-fit ladder reachable no
+matter what your species is tagged for (see Comfort and habitat fit below):
 
 | Decoration | Cash | Biome tag |
 | --- | --- | --- |
@@ -151,14 +153,29 @@ tagged to a biome:
 | Palm Tree | 500 | forest |
 | Fern Cluster | 500 | forest, swamp |
 | Boulder | 500 | plains |
+| Termite Mound | 550 | plains |
 | Reed Bed | 600 | swamp |
+| Cycad Grove | 600 | forest |
+| Dune Grass | 650 | coast |
+| Mangrove Root | 650 | swamp |
+| Snow Drift | 650 | tundra |
 | Tide Pool | 700 | coast |
 | Ice Block | 700 | tundra |
+| Driftwood Pile | 750 | coast |
 | Lava Rock | 800 | volcanic |
+| Frost Pine | 800 | tundra |
+| Ash Vent | 850 | volcanic |
 | Kelp Bed | 900 | marine |
+| Basalt Column | 900 | volcanic |
 | Containment Fence | 1,000 | containment |
+| Coral Shelf | 1,000 | marine |
 | Hydrothermal Vent | 1,100 | marine |
+| Warning Klaxon | 1,100 | containment |
 | Floodlight Rig | 1,200 | containment |
+
+Only **distinct** kinds count toward habitat fit, so three Grass Tufts on one
+paddock are worth no more than one — it takes three *different* matching
+kinds to reach the ceiling.
 
 Decor can only be placed on paddocks, not facilities. You can stack as many
 pieces on a paddock as you like — there's no per-paddock limit and no way to

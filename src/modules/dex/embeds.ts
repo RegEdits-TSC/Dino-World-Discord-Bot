@@ -73,7 +73,10 @@ export function dexViewPayload(ctx: Ctx, userId: string, speciesId: string): Pay
       { name: 'Rarity', value: capitalize(e.species.rarity), inline: true },
       { name: 'Diet', value: capitalize(e.species.diet), inline: true },
       { name: 'Role', value: capitalize(e.species.archetype), inline: true },
-      { name: 'Income', value: `${e.incomePerHr.toLocaleString('en-US')}/hr at full comfort`, inline: true },
+      // "base rate", not "at full comfort": this is the bare rarity figure, and income
+      // traits, enrichment and facility bonuses all scale it upward from here — so a
+      // player reading this on /dex view must not take it for what a dino will pay.
+      { name: 'Income', value: `${e.incomePerHr.toLocaleString('en-US')}/hr base rate`, inline: true },
       { name: 'Incubation', value: fmtDuration(e.incubationMs), inline: true },
       { name: 'Habitat', value: e.species.biomeTags.map(capitalize).join(', '), inline: true },
       { name: 'Enriched by', value: kinds },

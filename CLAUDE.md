@@ -667,6 +667,16 @@
   Eggs are deliberately NOT credited at any point, including a species-pinned Mythic egg
   bought with shards — the dex only credits a species once a DINO of it actually exists,
   never a promise of one.
+  A fourth writer exists but runs exactly once, by hand: `npm run backfill-species-seen`
+  (`scripts/backfill-species-seen.ts`), an operator step to be run AFTER migration 0010,
+  never as migration SQL — a failure there would block boot. It credits every player for
+  every species still in their inventory via `INSERT OR IGNORE` + `MIN(hatched_at_ms)`, so
+  a real `recordSpeciesSeen` credit always wins and re-running it is safe. Worth knowing
+  because **once it has run there is no trace that the table was seeded rather than
+  accumulated**: `species_seen` looks identical either way, and a species a player sold or
+  traded away before the backfill reads as never-seen — `tx_log` has no species column, so
+  that history is genuinely gone, which is the accepted cost of backfilling from live
+  inventory instead of shipping every dex empty.
   Standing hazard, now worse than before: retiring a decor `kind` from `DECOR`
   (`src/data/decor.ts`) silently drops every paddock relying on it — `matchedKindCount`
   treats an unknown slug as a non-match rather than throwing, the same tolerance
