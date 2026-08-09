@@ -3,6 +3,7 @@ import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { recordSpeciesSeen } from '../src/core/species-seen.js';
 import { dexRows, dexEntry, dexProgress } from '../src/modules/dex/service.js';
+import { dexListPayload, dexViewPayload } from '../src/modules/dex/embeds.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { RARITY } from '../src/data/rarity.js';
 
@@ -77,5 +78,47 @@ describe('dexProgress', () => {
   it('ignores a seen species that is no longer in the roster', () => {
     recordSpeciesSeen(ctx, 'u1', 'retired_dino');
     expect(dexProgress(ctx, 'u1').seen).toBe(0);
+  });
+});
+
+describe('dexListPayload', () => {
+  it('pages the roster ten at a time and clamps an out-of-range page', () => {
+    const first = dexListPayload(ctx, 'u1', {}, 1);
+    expect(JSON.stringify(first)).toContain('Page 1/5');
+    const clamped = dexListPayload(ctx, 'u1', {}, 99);
+    expect(JSON.stringify(clamped)).toContain('Page 5/5');
+  });
+  it('drops the page row when a filter fits on one page', () => {
+    const payload = dexListPayload(ctx, 'u1', { rarity: 'mythic' }, 1);
+    expect(payload.components ?? []).toHaveLength(0);
+  });
+  it('shows progress and marks a seen species', () => {
+    recordSpeciesSeen(ctx, 'u1', 'triceratops');
+    const text = JSON.stringify(dexListPayload(ctx, 'u1', {}, 1));
+    expect(text).toContain('1/42');
+    expect(text).toContain('Triceratops');
+  });
+  it('renders an empty filter result without throwing', () => {
+    // legendary+support is empty on the current roster — see the note in the dexRows
+    // tests above for the other three empty pairs.
+    const payload = dexListPayload(ctx, 'u1', { rarity: 'legendary', archetype: 'support' }, 1);
+    expect(JSON.stringify(payload)).toContain('No species');
+  });
+});
+
+describe('dexViewPayload', () => {
+  it('names the decor kinds that enrich the species', () => {
+    const text = JSON.stringify(dexViewPayload(ctx, 'u1', 'triceratops'));
+    expect(text).toContain('Palm Tree');
+    expect(text).toContain('Cycad Grove');
+  });
+  it('says so when the reader has never owned it', () => {
+    expect(JSON.stringify(dexViewPayload(ctx, 'u1', 'triceratops'))).toContain('Never owned');
+  });
+  it('ships at most one file and never an empty files array', () => {
+    const payload = dexViewPayload(ctx, 'u1', 'triceratops');
+    // assetImage returns null for a missing asset and attach is then a total no-op,
+    // so files must be undefined rather than [].
+    expect(payload.files === undefined || payload.files.length === 1).toBe(true);
   });
 });
