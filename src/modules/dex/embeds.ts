@@ -1,18 +1,41 @@
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import type { AttachmentBuilder } from 'discord.js';
 import type { Ctx } from '../../core/context.js';
-import { paginate, pageRow } from '../../core/paginate.js';
+import { paginate } from '../../core/paginate.js';
 import { attach, assetImage } from '../../core/images.js';
 import { rarityEmoji } from '../../core/emojis.js';
 import { fmtDuration, capitalize } from '../../core/autocomplete.js';
 import { DECOR } from '../../data/decor.js';
-import { dexRows, dexEntry, dexProgress, type DexFilters } from './service.js';
+import { dexRows, dexEntry, dexProgress, FILTER_NONE, type DexFilters } from './service.js';
 
 export interface Payload { embeds: EmbedBuilder[]; components?: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[] }
 
 function filterLabel(filters: DexFilters): string {
   const parts = [filters.rarity, filters.diet, filters.archetype].filter(Boolean).map((p) => capitalize(String(p)));
   return parts.length ? ` — ${parts.join(' · ')}` : '';
+}
+
+/**
+ * The page row, `dex:page:<uid>:<page>:<rarity|->:<diet|->:<archetype|->`.
+ *
+ * Built here rather than through the shared `pageRow` (src/core/paginate.ts) because
+ * that customId has no room for filter state, and paging a FILTERED list without it
+ * silently returns the unfiltered page — wrong rows, wrong title, wrong page count, no
+ * error. Teaching `pageRow` about dex filters would push a dex concern onto its four
+ * other callers (`ach`, `hatch`, `park:dinos`, `trade:list`), so the format lives beside
+ * the payload that reads it back.
+ *
+ * Worst case is 59 of Discord's 100 customId characters: 'dex:page:' (9) + a 19-digit
+ * snowflake + ':' + a 2-digit page + ':legendary' + ':herbivore' + ':bruiser'. Pinned in
+ * tests/dex.test.ts, and the harness validates every payload's custom_id length anyway.
+ */
+export function dexPageRow(userId: string, filters: DexFilters, page: number, pages: number) {
+  const slugs = [filters.rarity ?? FILTER_NONE, filters.diet ?? FILTER_NONE, filters.archetype ?? FILTER_NONE].join(':');
+  const id = (p: number) => `dex:page:${userId}:${p}:${slugs}`;
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(id(page - 1)).setLabel('◀ Prev').setStyle(ButtonStyle.Secondary).setDisabled(page <= 1),
+    new ButtonBuilder().setCustomId(id(page + 1)).setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= pages),
+  );
 }
 
 // Models achievementsPayload (src/modules/daily/embeds.ts:92): the payload builder
@@ -33,7 +56,7 @@ export function dexListPayload(ctx: Ctx, userId: string, filters: DexFilters, pa
     .setFooter({ text: `${progress.seen}/${progress.total} seen · Page ${p}/${pages}` });
   return {
     embeds: [embed],
-    components: pages > 1 ? [pageRow('dex', 'page', userId, p, pages)] : [],
+    components: pages > 1 ? [dexPageRow(userId, filters, p, pages)] : [],
   };
 }
 

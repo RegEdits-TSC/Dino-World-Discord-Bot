@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { makeCtx, fakeCommand, fakeAutocomplete, fakeButton, replyText } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { recordSpeciesSeen } from '../src/core/species-seen.js';
-import { dexRows, dexEntry, dexProgress } from '../src/modules/dex/service.js';
-import { dexListPayload, dexViewPayload } from '../src/modules/dex/embeds.js';
+import { dexRows, dexEntry, dexProgress, parseDexFilters, RARITIES, DIETS, ARCHETYPES } from '../src/modules/dex/service.js';
+import { dexListPayload, dexViewPayload, dexPageRow } from '../src/modules/dex/embeds.js';
 import { dexModule } from '../src/modules/dex/index.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { RARITY } from '../src/data/rarity.js';
@@ -157,8 +157,77 @@ describe('dex module', () => {
     expect(ctx.db.select().from(schema.users).all()).toHaveLength(1);   // only the beforeEach u1
   });
   it('the page button rejects a click from another player', async () => {
-    const i = fakeButton({ customId: 'dex:page:u1:2', user: 'u2' });
+    const i = fakeButton({ customId: 'dex:page:u1:2:-:-:-', user: 'u2' });
     await dexModule.components[0].execute(ctx, i.asInteraction() as never);
     expect(replyText(i.replies[0])).toContain('Not your dex');
+  });
+  it('an unrecognised action still degrades to deferUpdate', async () => {
+    const i = fakeButton({ customId: 'dex:sort:u1:2:-:-:-', user: 'u1' });
+    await dexModule.components[0].execute(ctx, i.asInteraction() as never);
+    expect(i.replies).toHaveLength(0);
+  });
+});
+
+// The filters ride in the customId because pageRow (src/core/paginate.ts) has no room
+// for them: paging with `{}` returned the UNFILTERED page — wrong rows, wrong title,
+// wrong page count, and no error anywhere.
+describe('/dex list paging carries its filters', () => {
+  type ListEmbed = { title?: string; footer?: { text: string }; description?: string };
+  const embedOf = (payload: unknown) =>
+    (payload as { embeds: Array<{ toJSON(): ListEmbed }> }).embeds[0].toJSON();
+  const buttons = (payload: { components?: Array<{ toJSON(): unknown }> }) =>
+    (payload.components![0].toJSON() as { components: Array<{ custom_id: string }> }).components;
+
+  it('the Next button carries the active filters as slugs', () => {
+    const payload = dexListPayload(ctx, 'u1', { diet: 'herbivore' }, 1);
+    expect(buttons(payload)[1].custom_id).toBe('dex:page:u1:2:-:herbivore:-');
+  });
+
+  it('clicking Next on a filtered list stays filtered', async () => {
+    // diet:herbivore is 18 of 42 species — two pages, so the row renders and page 2 is
+    // real. Unfiltered the same click used to answer 'Page 2/5' with no filter suffix.
+    const first = dexListPayload(ctx, 'u1', { diet: 'herbivore' }, 1);
+    const i = fakeButton({ customId: buttons(first)[1].custom_id, user: 'u1' });
+    await dexModule.components[0].execute(ctx, i.asInteraction() as never);
+    const embed = embedOf(i.replies[0]);
+    expect(embed.footer!.text).toContain('Page 2/2');
+    expect(embed.title).toBe('📖 Dex — Herbivore');
+    // ...and the rows really are the filtered ones: no carnivore leaked onto page 2.
+    for (const row of dexRows(ctx, 'u1', { diet: 'carnivore' })) {
+      expect(embed.description).not.toContain(row.species.name);
+    }
+  });
+
+  it('an unrecognised filter slug degrades to no filter rather than an empty dex', async () => {
+    const i = fakeButton({ customId: 'dex:page:u1:2:banana:tofu:wizard', user: 'u1' });
+    await dexModule.components[0].execute(ctx, i.asInteraction() as never);
+    const embed = embedOf(i.replies[0]);
+    expect(embed.title).toBe('📖 Dex');                    // no filter suffix
+    expect(embed.footer!.text).toContain('Page 2/5');      // the whole roster
+    expect(embed.description).not.toContain('No species match');
+  });
+
+  it('parseDexFilters accepts only real union members', () => {
+    expect(parseDexFilters('mythic', 'herbivore', 'tank'))
+      .toEqual({ rarity: 'mythic', diet: 'herbivore', archetype: 'tank' });
+    // '-' is the absent-filter placeholder, and a swapped-in value from another union
+    // (a diet in the rarity slot) is just as unrecognised as nonsense.
+    expect(parseDexFilters('-', 'herbivore', '-')).toEqual({ rarity: undefined, diet: 'herbivore', archetype: undefined });
+    expect(parseDexFilters('herbivore', 'mythic', 'legendary'))
+      .toEqual({ rarity: undefined, diet: undefined, archetype: undefined });
+  });
+
+  it('the worst-case page customId fits Discord’s 100-character limit', () => {
+    // 19-digit snowflake (the widest Discord issues), the longest member of each union,
+    // and a two-digit page: 59 characters. Recompute this pin if a union grows a longer
+    // value — the ≤ 100 assertion is the actual contract.
+    const longest = <T extends string>(pool: T[]) => pool.reduce((a, b) => (b.length > a.length ? b : a));
+    const row = dexPageRow(
+      '1234567890123456789',
+      { rarity: longest(RARITIES), diet: longest(DIETS), archetype: longest(ARCHETYPES) },
+      10, 99,
+    ).toJSON() as { components: Array<{ custom_id: string }> };
+    for (const b of row.components) expect(b.custom_id.length).toBeLessThanOrEqual(100);
+    expect(row.components[1].custom_id).toHaveLength(59);
   });
 });

@@ -8,6 +8,32 @@ import { seenSpecies, firstSeenAt } from '../../core/species-seen.js';
 export interface DexFilters { rarity?: Rarity; diet?: Diet; archetype?: Archetype }
 export interface DexRow { species: Species; seen: boolean }
 
+// The three filter unions, in the order /dex list offers them as choices. Exported so
+// the builder and the customId parser below cannot drift apart.
+export const RARITIES: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+export const DIETS: Diet[] = ['herbivore', 'carnivore'];
+export const ARCHETYPES: Archetype[] = ['bruiser', 'tank', 'swift', 'support'];
+
+/** The absent-filter slug in a page button's customId. Never a real filter value. */
+export const FILTER_NONE = '-';
+
+/**
+ * Build filters from three raw strings. Both callers hand over untrusted input — a
+ * command option is server-validated but still arrives as a string, and a page button's
+ * customId is CLIENT-supplied and can say anything — so an unrecognised value (including
+ * the FILTER_NONE placeholder) degrades to "no filter" rather than reaching dexRows,
+ * where it would silently match nothing and render an empty compendium.
+ */
+export function parseDexFilters(rarity?: string, diet?: string, archetype?: string): DexFilters {
+  const pick = <T extends string>(pool: T[], raw?: string): T | undefined =>
+    pool.find((v) => v === raw);
+  return {
+    rarity: pick(RARITIES, rarity),
+    diet: pick(DIETS, diet),
+    archetype: pick(ARCHETYPES, archetype),
+  };
+}
+
 /**
  * The roster with the reader's seen marks. seenSpecies is read ONCE and membership
  * tested in memory — never a query per row (the batch-per-user rule src/core/locks.ts

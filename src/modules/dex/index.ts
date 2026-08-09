@@ -3,12 +3,8 @@ import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
 import { matches, respondRanked, capitalize } from '../../core/autocomplete.js';
 import { allSpecies } from '../../data/species/index.js';
-import type { Archetype, Diet, Rarity } from '../../data/types.js';
 import { dexListPayload, dexViewPayload } from './embeds.js';
-
-const RARITIES: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
-const DIETS: Diet[] = ['herbivore', 'carnivore'];
-const ARCHETYPES: Archetype[] = ['bruiser', 'tank', 'swift', 'support'];
+import { RARITIES, DIETS, ARCHETYPES, parseDexFilters } from './service.js';
 
 export const dexModule: ModuleManifest = {
   name: 'dex',
@@ -40,11 +36,14 @@ export const dexModule: ModuleManifest = {
           return;
         }
         if (sub === 'list') {
-          await i.reply(dexListPayload(ctx, i.user.id, {
-            rarity: (i.options.getString('rarity') as Rarity | null) ?? undefined,
-            diet: (i.options.getString('diet') as Diet | null) ?? undefined,
-            archetype: (i.options.getString('archetype') as Archetype | null) ?? undefined,
-          }, i.options.getInteger('page') ?? 1));
+          // Same parser as the page button, so a filter reaches dexRows through exactly
+          // one validated path rather than a cast here and a raw slug there.
+          const filters = parseDexFilters(
+            i.options.getString('rarity') ?? undefined,
+            i.options.getString('diet') ?? undefined,
+            i.options.getString('archetype') ?? undefined,
+          );
+          await i.reply(dexListPayload(ctx, i.user.id, filters, i.options.getInteger('page') ?? 1));
           return;
         }
         // Deliberately not the /park dispatch trap: an unrecognised subcommand
@@ -68,10 +67,20 @@ export const dexModule: ModuleManifest = {
         // the customId's uid segment is checked against the clicker before any read
         // or write, and an unrecognized action degrades to deferUpdate rather than
         // erroring.
-        const [, action, uid, pageStr] = i.customId.split(':');
+        const [, action, uid, pageStr, rarity, diet, archetype] = i.customId.split(':');
         if (action !== 'page') { await i.deferUpdate(); return; }
         if (i.user.id !== uid) { await i.reply({ content: 'Not your dex.', flags: MessageFlags.Ephemeral }); return; }
-        await i.update({ ...dexListPayload(ctx, i.user.id, {}, Number(pageStr)), attachments: [] });
+        // The filters ride along in the customId (dexPageRow, ./embeds.ts) — paging with
+        // `{}` here silently dropped them and returned the UNFILTERED page. Everything
+        // after the prefix is client-supplied, so both are validated: unknown filter
+        // slugs degrade to no filter, and a non-numeric page to page 1 (paginate clamps
+        // the rest, but NaN would render "Page NaN" and an empty list).
+        const page = Number(pageStr);
+        const filters = parseDexFilters(rarity, diet, archetype);
+        await i.update({
+          ...dexListPayload(ctx, i.user.id, filters, Number.isFinite(page) ? page : 1),
+          attachments: [],
+        });
       },
     },
   ],
