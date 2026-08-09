@@ -414,7 +414,12 @@ rather than inventing a second helper):
   it('enrichment does not change park rating, at full or partial hunger', () => {
     const oneKind = makeCtx();
     getOrCreateUser(oneKind, 'u1', 'Reg');
-    const lotA = seedPaddock(oneKind, ['palm_tree']);
+    // Three decor items in BOTH parks, but only one MATCHING kind here: grass_tuft and
+    // boulder are plains, which a forest triceratops does not want. Holding decor.length
+    // equal is essential — the park term is min(1, sum(level + decor.length)/40), so a
+    // 1-vs-3 comparison separates the two parks by ~17 rating points that have nothing
+    // to do with enrichment, and the test could never converge.
+    const lotA = seedPaddock(oneKind, ['palm_tree', 'grass_tuft', 'boulder']);
     seedAssignedDino(oneKind, lotA, 'triceratops', { hunger: 80, lastFedAt: 0 });
     const before = recomputeRating(oneKind, 'u1');
 
@@ -426,6 +431,8 @@ rather than inventing a second helper):
 
     expect(after.rating).toBe(before.rating);
     expect(after.highWater).toBe(before.highWater);
+    // Watched to fail before the fix: 237 (one matching kind) vs 247 (two), a 10-point
+    // enrichment leak through the unclamped comfort mean.
   });
 
   it('a fully enriched saturated park still reports at most 1000', () => {
