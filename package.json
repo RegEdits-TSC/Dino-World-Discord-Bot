@@ -46,7 +46,7 @@
   },
   "type": "module",
   "dependencies": {
-    "@napi-rs/canvas": "^1.0.3",
+    "@napi-rs/canvas": "^1.0.5",
     "better-sqlite3": "^13.0.3",
     "discord.js": "^14.27.0",
     "dotenv": "^17.4.2",
@@ -55,11 +55,11 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^26.1.2",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.2.0",
     "drizzle-kit": "^0.31.10",
     "ffmpeg-static": "^5.3.0",
-    "tsx": "^4.23.9",
+    "tsx": "^4.23.11",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
