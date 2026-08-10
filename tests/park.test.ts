@@ -723,7 +723,7 @@ describe('facility level arrays are bounds-guarded', () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
     seedLot({ kind: 'hatchery_lab', name: 'Hatchery Lab', level: 9 });
     const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all();
-    expect(incubatorSlots(lots)).toBe(3);
+    expect(incubatorSlots(lots)).toBe(5);
   });
   // No absent-facility case here: capHours([]) === 8, breedingSlots([]) === 0, and
   // incubatorSlots([]) === 1 are already pinned by 'keeps the no-facility defaults'

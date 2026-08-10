@@ -41,7 +41,10 @@ describe('game data', () => {
     expect(FACILITIES.visitor_center.incomeBonusPct).toEqual([0, 5, 10, 15, 20]);
     expect(FACILITIES.visitor_center.buildCost).toBe(5000);
     expect(FACILITIES.visitor_center.upgradeCosts).toEqual([12_500, 31_000, 78_000, 500_000]);
-    expect(FACILITIES.hatchery_lab.incubatorSlots).toEqual([1, 2, 3]);
+    expect(FACILITIES.hatchery_lab.maxLevel).toBe(5);
+    expect(FACILITIES.hatchery_lab.incubatorSlots).toEqual([1, 2, 3, 4, 5]);
+    expect(FACILITIES.hatchery_lab.incomeBonusPct).toEqual([0, 0, 0, 0, 0]);
+    expect(FACILITIES.hatchery_lab.upgradeCosts).toEqual([25_000, 150_000, 375_000, 2_250_000]);
     expect(FACILITIES.food_court.incomeBonusPct).toEqual([4, 8, 12]);
   });
   it('PADDOCKS values match the spec', () => {

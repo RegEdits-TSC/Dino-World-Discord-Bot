@@ -177,6 +177,38 @@ describe('hatchery', () => {
   });
 });
 
+describe('hatchery lab levels 4 and 5', () => {
+  it('grants one incubator slot per level', () => {
+    for (const [level, slots] of [[3, 3], [4, 4], [5, 5]] as const) {
+      const c = makeCtx();
+      getOrCreateUser(c, 'u1', 'Reg');
+      c.db.insert(schema.lots).values({
+        userId: 'u1', type: 'facility', kind: 'hatchery_lab', name: 'Hatchery Lab', level,
+      }).run();
+      const lots = c.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all();
+      expect(incubatorSlots(lots), `level ${level}`).toBe(slots);
+    }
+  });
+
+  it('refuses a fourth concurrent incubation at L3 but allows it at L4', () => {
+    // Seed four eggs and incubate three; the fourth is the assertion.
+    const atLevel = (level: number) => {
+      const c = makeCtx();
+      getOrCreateUser(c, 'u1', 'Reg');
+      c.db.insert(schema.lots).values({
+        userId: 'u1', type: 'facility', kind: 'hatchery_lab', name: 'Hatchery Lab', level,
+      }).run();
+      const ids = [0, 1, 2, 3].map(() => c.db.insert(schema.eggs).values({
+        userId: 'u1', rarity: 'common', source: 'admin', obtainedAt: 0,
+      }).returning().get().id);
+      for (const id of ids.slice(0, 3)) incubateEgg(c, 'u1', id, null);
+      return () => incubateEgg(c, 'u1', ids[3], null);
+    };
+    expect(atLevel(3)).toThrow(HatcheryError);
+    expect(atLevel(4)).not.toThrow();
+  });
+});
+
 describe('traitLines', () => {
   it('degrades to a placeholder for a dino with no traits, never an empty field value', () => {
     expect(traitLines([])).toBe('_No traits_');
