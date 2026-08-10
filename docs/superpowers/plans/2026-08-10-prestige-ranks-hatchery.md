@@ -78,6 +78,10 @@
 
 Append to `tests/park.test.ts`. `seedLot` already exists at the top of that file — read it and reuse it; it inserts directly, which is what lets a level above `maxLevel` exist at all:
 
+Each of these needs its owner row to exist first — `lots.user_id` is a foreign key to
+`users.discord_id`, enforced outside migrations — so call `getOrCreateUser(ctx, 'u1', 'Reg')`
+before `seedLot` in every case below.
+
 ```ts
 describe('facility level arrays are bounds-guarded', () => {
   // A level above maxLevel is not reachable through upgradeLot, but it IS reachable on a
@@ -127,7 +131,7 @@ Extend the existing `facility arrays match maxLevel` test in `tests/data.test.ts
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run tests/park.test.ts -t 'bounds-guarded'`
-Expected: FAIL — `capHours` returns `NaN`, `breedingSlots` and `incubatorSlots` return `undefined`. Record the three actual values in your report; they are the defect.
+Expected: FAIL — all three return `undefined` at the call boundary. Note that `capHours`' `NaN` appears one level up, inside `accruedIncome`'s arithmetic on that `undefined`, not at `capHours` itself. Record the three actual values in your report; they are the defect.
 
 The `tests/data.test.ts` change should PASS at this commit (all three arrays currently match their `maxLevel`). That is correct — it is a guard against Task 3, not a bug report. Say so in your report.
 
