@@ -1602,7 +1602,9 @@ describe('/park view legacy rank wiring', () => {
   it('shows the TARGET player rank when viewing another park, not the viewer own', async () => {
     getOrCreateUser(ctx, 'u2', 'Other');
     // Give u2 enough points to rank and u1 none.
-    for (const s of allSpecies().slice(0, 20)) recordSpeciesSeen(ctx, 'u2', s.id);
+    // 35 species = exactly Keeper (rank 2). 20 would only reach Groundskeeper (rank 1) —
+    // LEGACY_TIERS is 15/35/65/100/140/170, so seed against the real thresholds.
+    for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u2', s.id);
     const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1', options: { user: { id: 'u2' } } });
     await parkModule.commands[0].execute(ctx, i.asChatInput());
     expect(JSON.stringify(i.replies[0])).toContain('Keeper');
@@ -1673,7 +1675,8 @@ git commit -m "Show the legacy rank on the park dashboard"
 
 ```ts
   it('shows the legacy rank in the footer once ranked', () => {
-    for (const s of allSpecies().slice(0, 20)) recordSpeciesSeen(ctx, 'u1', s.id);
+    // 35 species = exactly Keeper (rank 2); 20 would only reach Groundskeeper.
+    for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u1', s.id);
     expect(JSON.stringify(dexListPayload(ctx, 'u1', {}, 1))).toContain('Keeper');
   });
   it('omits it entirely when unranked', () => {
