@@ -408,8 +408,15 @@ export const parkModule: ModuleManifest = {
           // in the same way and buyLandmark's LandmarkMaxedError names the reason better than
           // this branch could — only a below-the-top mismatch is answered here.
           if (current < MAX_LANDMARK_TIER && offered !== current + 1) {
+            // A genuinely stale button always offers a rung at or below the current tier, but
+            // offered > current + 1 is reachable two ways — a forged customId, and an old
+            // higher-rung message still live after adminReset zeroed the tier — so the two
+            // directions get their own wording rather than one claiming a rung is built when
+            // it is actually still ahead of the player.
             await i.reply({
-              content: `Tier ${offered} — the ${rung.name} — is already built. Run \`/park landmark\` again for the rung you can buy now.`,
+              content: offered <= current
+                ? `Tier ${offered} — the ${rung.name} — is already built. Run \`/park landmark\` again for the rung you can buy now.`
+                : `Tier ${offered} — the ${rung.name} — isn't next: you can buy tier ${current + 1}. Run \`/park landmark\` again.`,
               flags: MessageFlags.Ephemeral,
             });
             return;

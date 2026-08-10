@@ -248,6 +248,11 @@ describe('/park landmark', () => {
     expect(row.landmarkTier).toBe(0);
     expect(row.cash).toBe(300_000_000);
     expect(replyText(i.replies[0])).toContain('Titan Monument');
+    // A rung AHEAD of the next one is not built, so it must not claim otherwise. Reachable
+    // without forging a customId: adminReset zeroes the tier while an old higher-rung message
+    // is still live.
+    expect(replyText(i.replies[0])).not.toContain('already built');
+    expect(replyText(i.replies[0])).toContain('you can buy tier 1');
   });
 
   // Everything after the prefix is CLIENT-supplied, so a forged or truncated tier segment must

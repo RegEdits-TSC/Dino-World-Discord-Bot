@@ -363,7 +363,9 @@ Nothing else is stored. Legacy rank adds no column and no table.
 
 ## 10. Testing
 
-- `landmarkCostFor` at every tier boundary, at 0, and above the top.
+- `landmarkFor` and `landmarkBandFor` at every tier boundary, at 0, and above the top.
+  (§4 records why `landmarkCostFor` was dropped: every surface needs the rung's name as
+  well as its price, so all of them hold the `LandmarkDef` and read `.cost` off it.)
 - `buyLandmark`: charges the next tier's cost, increments by exactly one, refuses at
   tier 6, refuses on insufficient funds, and — the regression that matters — leaves
   the tier unchanged when the charge throws, since both live in one transaction.
