@@ -6,7 +6,7 @@ import { LANDMARKS, MAX_LANDMARK_TIER, landmarkFor, landmarkBandFor } from '../s
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
-import { makeCtx, fakeCommand, fakeButton } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { buyLandmark, nextLandmark, LandmarkMaxedError } from '../src/modules/park/landmarks.js';
 import { landmarkPayload } from '../src/modules/park/embeds.js';
 import { parkModule } from '../src/modules/park/index.js';
@@ -150,7 +150,6 @@ describe('buyLandmark', () => {
 type EmbedFields = Array<{ name: string; value: string }>;
 const fieldsOf = (payload: unknown): EmbedFields =>
   (payload as { embeds: Array<{ toJSON(): { fields?: EmbedFields } }> }).embeds[0].toJSON().fields!;
-const replyText = (payload: unknown): string => (payload as { content?: string }).content ?? '';
 
 const click = async (customId: string, user = 'u1') => {
   const i = fakeButton({ customId, user });
@@ -267,8 +266,7 @@ describe('/park landmark', () => {
 
   it('rejects a click from another player before charging anyone', async () => {
     ctx.db.update(schema.users).set({ cash: 5_000_000 }).where(eq(schema.users.discordId, 'u1')).run();
-    const i = fakeButton({ customId: 'park:landmark:buy:u1:1', user: 'u2' });
-    await parkModule.components.find((c) => c.prefix === 'park')!.execute(ctx, i.asInteraction() as never);
+    const i = await click('park:landmark:buy:u1:1', 'u2');
     expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.landmarkTier).toBe(0);
     expect(replyText(i.replies[0])).toContain('Not your park');
   });
