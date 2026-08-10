@@ -24,6 +24,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '`/park view [user]` — dashboard, park map, Collect button.',
     '`/park rename name:<text>` — rename your park.',
     '`/park alerts state:on|off` — DM warnings before a dino escapes and when income caps. On by default.',
+    '`/park landmark` — your park\'s prestige monument: a six-rung ladder from 5,000,000 to 160,000,000. Purely cosmetic, and the one place endgame cash has to go.',
     '`/build kind:<lot>` — build on an empty lot. Paddocks stack; one facility of each kind, so upgrade rather than rebuild.',
     '`/upgrade lot:<id>` — raise a lot one level.',
     '`/decorate lot:<id> item:<decor>` — matching biome decor lifts fit to 100%, then a 2nd/3rd distinct matching kind adds +5%/+10% to income and escape resistance (never rating).',

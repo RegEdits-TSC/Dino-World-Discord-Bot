@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { ApplicationCommandOptionType } from 'discord.js';
 import { makeCtx, fakeCommand } from './harness.js';
 import { helpModule, HELP_TOPICS } from '../src/modules/help/index.js';
+import { parkModule } from '../src/modules/park/index.js';
 import { schema } from '../src/core/db/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
@@ -55,6 +57,18 @@ describe('/help', () => {
   });
   it('carries a genelab topic', () => {
     expect(Object.keys(HELP_TOPICS)).toContain('genelab');
+  });
+  // /help is the surface players actually read, and it is the one that drifted: the
+  // /park landmark branch shipped with docs/commands.md and docs/gameplay.md updated and
+  // this topic left listing view/rename/alerts only. The subcommand list is scraped from
+  // the real builder JSON rather than hand-typed, so the next /park subcommand fails here
+  // instead of quietly going unmentioned. A topic BODY is not builder data — no redeploy.
+  it('the park topic mentions every /park subcommand the builder defines', () => {
+    const subs = (parkModule.commands.find((c) => c.data.name === 'park')!.data.toJSON().options ?? [])
+      .filter((o) => o.type === ApplicationCommandOptionType.Subcommand)
+      .map((o) => o.name);
+    expect(subs.length, 'no subcommands scraped — wrong builder?').toBeGreaterThan(3);
+    for (const sub of subs) expect(HELP_TOPICS.park.body, `/park ${sub}`).toContain(`/park ${sub}`);
   });
   it('the park topic defers and still renders one embed when the map render fails', async () => {
     // 'no-park' has no user row, so buildParkSnapshot throws inside the try —
