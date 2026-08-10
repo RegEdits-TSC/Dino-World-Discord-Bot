@@ -145,6 +145,7 @@ describe('renderParkPng', () => {
     plateFacility: svgStub('#ff8800', 270, 150),
     lotIcons: { carnivore_paddock: svgStub('#00ffff', 64, 64), hatchery_lab: svgStub('#00ffff', 64, 64) },
     dinoChips: { common: null, uncommon: null, rare: null, epic: null, legendary: svgStub('#ffff00', 64, 64), mythic: null },
+    landmarks: { a: null, b: null, c: null },
   };
 
   async function sampler(png: Buffer): Promise<(x: number, y: number) => number[]> {

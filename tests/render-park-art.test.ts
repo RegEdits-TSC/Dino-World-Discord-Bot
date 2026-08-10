@@ -3,7 +3,7 @@ import { createCanvas, Image } from '@napi-rs/canvas';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { renderParkPng, gridDims } from '../src/core/render/draw.js';
-import { loadParkArt } from '../src/core/render/art.js';
+import { EMPTY_ART, loadParkArt } from '../src/core/render/art.js';
 import type { ParkSnapshot } from '../src/modules/park/snapshot.js';
 
 const sample: ParkSnapshot = {
@@ -137,5 +137,16 @@ describe('park render with the committed art', () => {
       const real = await decodeToCanvas(png);
       expect(pixelAt(real, 10, 240), season).toEqual(pixelAt(seasonRef, 10, 240));
     }
+  });
+
+  it('EMPTY_ART initialises every landmark band, so a lookup never reads undefined', () => {
+    for (const band of ['a', 'b', 'c'] as const) {
+      expect(band in EMPTY_ART.landmarks, band).toBe(true);
+      expect(EMPTY_ART.landmarks[band]).toBeNull();
+    }
+  });
+  it('loadParkArt resolves with a landmarks record and never rejects', async () => {
+    const art = await loadParkArt();
+    expect(Object.keys(art.landmarks).sort()).toEqual(['a', 'b', 'c']);
   });
 });
