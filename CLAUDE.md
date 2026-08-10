@@ -766,17 +766,20 @@
   (`dexProgress`, max 42), achievement tiers claimed (`earnedTierCount`, max 48), and
   battle stars (`battle_progress.stars`, max 90) — 180 points total, nothing spent,
   nothing stored.
-- `capHours`, `breedingSlots` and `incubatorSlots` (`src/modules/park/service.ts`,
-  `src/modules/hatchery/service.ts`) each resolve a facility's level through the
-  shared `levelValue` helper, which clamps a level ABOVE its per-level array to the
-  array's top entry instead of indexing off the end into `undefined`. This is the safe
-  direction on purpose: neither `npm test` nor `npm run typecheck` can see the
-  alternative failure (`tsconfig` has `strict` but not `noUncheckedIndexedAccess`), and
-  the failure mode is silent rather than a crash — an unguarded `capHours` reading
-  `undefined` past its array's end turns `from + undefined` into `NaN`, and the
-  Collect button on `/park view` renders the literal text "Collect NaN". Any future
-  per-level facility array needs the same guard through `levelValue`, never a raw
-  index.
+- `capHours`, `breedingSlots`, `incubatorSlots` and `facilityBonusPct`
+  (`src/modules/park/service.ts`, `src/modules/hatchery/service.ts`) each resolve a
+  facility's level through the shared `levelValue` helper, which clamps a level ABOVE its
+  per-level array to the array's top entry instead of indexing off the end into
+  `undefined`. This is the safe direction on purpose: neither `npm test` nor
+  `npm run typecheck` can see the alternative failure (`tsconfig` has `strict` but not
+  `noUncheckedIndexedAccess`), and the failure mode is silent rather than a crash — an
+  unguarded `capHours` reading `undefined` past its array's end turns `from + undefined`
+  into `NaN`, and the Collect button on `/park view` renders the literal text
+  "Collect NaN". `facilityBonusPct` was the last holdout, on its own inline `?? 0`: it
+  could not produce `NaN`, but an over-range level silently zeroed that facility's whole
+  income contribution rather than clamping, so it now goes through `levelValue` too and
+  the rule has no exceptions. Any future per-level facility array needs the same guard,
+  never a raw index.
 - `PARK_TARGET` (`src/data/progression.ts`, 40) must never move, for any reason,
   including to compensate for a new cash sink or a new content ceiling. It's the
   denominator of the rating's park term, so raising it is a retroactive rating CUT for

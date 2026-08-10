@@ -166,10 +166,12 @@ function drawLandmark(c: SKRSContext2D, x: number, y: number, img: Image | null,
     rrect(c, x, y, TILE_W, TILE_H, 12); c.fillStyle = '#4a4133'; c.fill();
     c.lineWidth = 3; c.strokeStyle = '#c9a227'; rrect(c, x, y, TILE_W, TILE_H, 12); c.stroke();
   }
-  const def = landmarkFor(tier);
+  // Non-null, not defensive: renderParkPng only calls this when landmarkBandFor(tier) is
+  // non-null, and both helpers are landmarkFor(tier) plus one field read — so there is no
+  // reachable tier with a band and no def. A 'Landmark' fallback here would be dead code.
   c.fillStyle = '#f5e6b8';
   c.font = `18px "${SANS}"`;
-  c.fillText(trunc(c, def ? def.name : 'Landmark', TILE_W - 28), x + 14, y + TILE_H - 16);
+  c.fillText(trunc(c, landmarkFor(tier)!.name, TILE_W - 28), x + 14, y + TILE_H - 16);
 }
 
 export function renderParkPng(snap: ParkSnapshot, art: ParkArt = EMPTY_ART): Buffer {

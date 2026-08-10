@@ -45,13 +45,6 @@ export function facilityLevel(lots: Lot[], kind: string): number {
   return lots.reduce((best, l) => (l.kind === kind && l.level > best ? l.level : best), 0);
 }
 
-export function facilityBonusPct(lots: Lot[]): number {
-  return Object.keys(FACILITIES).reduce((sum, kind) => {
-    const level = facilityLevel(lots, kind);
-    return sum + (level > 0 ? FACILITIES[kind].incomeBonusPct[level - 1] ?? 0 : 0);
-  }, 0);
-}
-
 /**
  * Read a per-level facility array safely. `level` is 1-based; 0 means "absent" and takes
  * the fallback. A level ABOVE the array clamps to its top entry rather than reading
@@ -64,6 +57,18 @@ export function facilityBonusPct(lots: Lot[]): number {
 export function levelValue(table: number[] | undefined, level: number, fallback: number): number {
   if (level <= 0 || !table || table.length === 0) return fallback;
   return table[Math.min(level, table.length) - 1] ?? fallback;
+}
+
+// Routed through levelValue like capHours/incubatorSlots/breedingSlots, so every per-level
+// facility array in the codebase resolves the same way. It kept its own inline `?? 0` for a
+// while, which was safe (a bonus of 0 cannot make NaN) but differed in its out-of-range
+// semantics: a level above the array silently zeroed the whole facility's contribution.
+// levelValue clamps to the top entry instead — chosen deliberately, because a level past the
+// array's end means the array is stale, and paying the top bonus is the direction that does
+// not quietly cut income for a player who legitimately upgraded.
+export function facilityBonusPct(lots: Lot[]): number {
+  return Object.keys(FACILITIES).reduce(
+    (sum, kind) => sum + levelValue(FACILITIES[kind].incomeBonusPct, facilityLevel(lots, kind), 0), 0);
 }
 
 export function capHours(lots: Lot[]): number {

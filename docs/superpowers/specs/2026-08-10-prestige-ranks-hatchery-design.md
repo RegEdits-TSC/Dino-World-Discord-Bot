@@ -184,8 +184,13 @@ grows twice without six generated rasters.
 column; it refuses at tier 6 and refuses on insufficient funds with the existing
 `InsufficientFundsError`. There is no tier argument — the only legal purchase is the
 next rung, which is what removes the misclick surface. Cost is quoted through one
-exported `landmarkCostFor(tier)`, per the standing rule that every price a surface
-displays and every price it charges come from the same helper.
+source, per the standing rule that every price a surface displays and every price it
+charges come from the same place — **as built, that source is `LandmarkDef.cost` read
+off the single frozen table, not a `landmarkCostFor(tier)` wrapper.** The wrapper shipped
+and then had no `src/` caller: no world event scales the ladder, so there is no
+multiplier for a helper to centralise, and every surface needs the rung's *name* too and
+therefore already holds the def. It was removed in the final review rather than given a
+contrived caller.
 
 **Surface.** `/park landmark` with no options: it shows the current tier, its name,
 the next tier and its price, and a buy button. The button carries the owner id **and

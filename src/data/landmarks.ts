@@ -36,10 +36,13 @@ export function landmarkFor(tier: number): LandmarkDef | null {
   return LANDMARKS[tier - 1];
 }
 
-export function landmarkCostFor(tier: number): number | null {
-  return landmarkFor(tier)?.cost ?? null;
-}
-
+/**
+ * There is deliberately no `landmarkCostFor(tier)`. The standing one-price-helper rule
+ * exists because a world event scales a price between the quote and the charge, and every
+ * surface has to sample the same multiplier — no event touches the ladder, so `def.cost`
+ * read off the single frozen `LandmarkDef` IS that one source. A separate accessor had no
+ * caller: every surface needs the rung's name too, so all of them hold the def already.
+ */
 export function landmarkBandFor(tier: number): LandmarkBand | null {
   return landmarkFor(tier)?.band ?? null;
 }

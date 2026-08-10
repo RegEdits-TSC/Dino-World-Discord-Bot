@@ -798,6 +798,17 @@ describe('facility level arrays are bounds-guarded', () => {
     const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all();
     expect(incubatorSlots(lots)).toBe(5);
   });
+  // The fourth per-level array, and the one that kept its own inline `?? 0` after the other
+  // three were routed through levelValue. It could not produce NaN, so the risk was smaller
+  // — but the semantics differed: an over-range level silently ZEROED that facility's whole
+  // contribution instead of clamping to the top entry. Food Court is the discriminating
+  // fixture because its top bonus is nonzero (12%), so 0 and 12 are distinguishable.
+  it('facilityBonusPct clamps to the top bonus instead of dropping the facility to 0%', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    seedLot({ kind: 'food_court', name: 'Food Court', level: 9 });
+    const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all();
+    expect(facilityBonusPct(lots)).toBe(12);
+  });
   // No absent-facility case here: capHours([]) === 8, breedingSlots([]) === 0, and
   // incubatorSlots([]) === 1 are already pinned by 'keeps the no-facility defaults'
   // (this file), 'grants no breeding slots without one' (this file, gene lab describe),
