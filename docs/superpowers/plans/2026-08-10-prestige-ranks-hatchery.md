@@ -1680,9 +1680,13 @@ git commit -m "Show the legacy rank on the park dashboard"
     expect(JSON.stringify(dexListPayload(ctx, 'u1', {}, 1))).toContain('Keeper');
   });
   it('omits it entirely when unranked', () => {
-    const text = JSON.stringify(dexListPayload(ctx, 'u1', {}, 1));
-    expect(text).toContain('0/42');
-    expect(text).not.toContain('rank');
+    // Assert the footer's EXACT text. `not.toContain('rank')` cannot fail — no rank title
+    // contains that substring (Keeper, Groundskeeper, Curator, Warden, Conservator,
+    // Director) — so it would pass even if an unranked player wrongly got a rank segment.
+    // An exact comparison also catches a missing segment and any separator/order drift,
+    // and sidesteps the case trap where 'Groundskeeper' ends in a lowercase 'keeper'.
+    const footer = (p: ReturnType<typeof dexListPayload>) => p.embeds[0].toJSON().footer!.text;
+    expect(footer(dexListPayload(ctx, 'u1', {}, 1))).toBe('0/42 seen · Page 1/5');
   });
 ```
 
