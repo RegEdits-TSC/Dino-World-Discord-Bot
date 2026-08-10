@@ -113,9 +113,15 @@ describe('/park landmark', () => {
 
   it('shows the current rung once one is built', async () => {
     ctx.db.update(schema.users).set({ landmarkTier: 2 }).where(eq(schema.users.discordId, 'u1')).run();
-    const text = JSON.stringify((await run()).replies[0]);
-    expect(text).toContain('Fossil Plinth');    // current
-    expect(text).toContain('Bronze Sentinel');  // next
+    const i = await run();
+    // Asserting on the field values directly, not the stringified whole payload: the
+    // description line also carries current.name, so a substring check on 'Fossil Plinth'
+    // would still pass even if the Built field itself regressed (e.g. a wrong tier number
+    // or a hardcoded 'Nothing yet') — the description's redundant mention would mask it.
+    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> })
+      .embeds[0].toJSON().fields!;
+    expect(fields.find((f) => f.name === 'Built')!.value).toBe('Tier 2 — Fossil Plinth');
+    expect(fields.find((f) => f.name === 'Next')!.value).toBe('Bronze Sentinel — 20,000,000 cash');
   });
 
   it('offers no button at the top of the ladder', async () => {
