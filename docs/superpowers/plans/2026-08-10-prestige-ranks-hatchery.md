@@ -24,6 +24,7 @@
 - **Never add a second top-level await to `worker.ts`.** A rejected worker boot terminates and nulls the worker, so every later `/park view` loses its image permanently until restart. New art loads inside `loadParkArt`'s existing single `Promise.all`.
 - **Every `drawImage` site needs its own non-null guard.** `drawImage(null)` and `drawImage(undefined)` both throw, and the worker protocol swallows the throw into a text-only embed with no log.
 - **Never call `emojiTag` in a module-level constant**, and never put a custom emoji tag in an autocomplete label or in text drawn through `iconValue` (that path renders entirely in SANS — an emoji there is a tofu box).
+- **Create the owner row before seeding anything that references it.** `lots.user_id`, `dinos.user_id` and every other user-scoped table are foreign keys to `users.discord_id`, and `createDb` sets `foreign_keys = ON` outside migrations — so `getOrCreateUser(ctx, 'u1', 'Reg')` (or a `beforeEach` that does) must precede any direct insert. A missing owner row throws an FK error that masks whatever the test was actually checking.
 - **Mutation-test every assertion.** 2a's execution found twelve test specifications across two plans that could not fail. For each assertion: break the thing it targets, watch it go red, revert, and report what you observed.
 
 ---
@@ -222,13 +223,15 @@ describe('upgradeCostFor', () => {
     expect(upgradeCostFor('herbivore_paddock', 3)).toBe(31_250);
   });
   it('charges exactly what it quotes', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');                       // owner row first: lots.user_id is an FK
     const lot = seedLot({ type: 'paddock', kind: 'herbivore_paddock', name: 'Pen', level: 1 });
     const quoted = upgradeCostFor('herbivore_paddock', 1);
-    const before = getOrCreateUser(ctx, 'u1', 'Reg').cash;
     ctx.db.update(schema.users).set({ cash: quoted }).where(eq(schema.users.discordId, 'u1')).run();
     upgradeLot(ctx, 'u1', lot.id);
+    // Funded with EXACTLY the quote, so landing on 0 proves the charge equals the quote.
+    // (An `expect(before).toBeGreaterThanOrEqual(0)` here would assert nothing — cash is a
+    // non-negative column by CHECK constraint.)
     expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.cash).toBe(0);
-    expect(before).toBeGreaterThanOrEqual(0);
   });
 });
 ```
