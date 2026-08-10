@@ -1191,12 +1191,17 @@ describe('landmark cell', () => {
   it('a landmark adds exactly one cell, growing the grid', () => {
     // sample has 2 lots and lotCap 5, so hasBuild is true: 3 cells, 1 row, 254 tall.
     // A landmark makes 4 cells, 2 rows.
-    const plain = gridDims(3), withMark = gridDims(4);
-    expect(renderParkPng(sample, EMPTY_ART).length).toBeGreaterThan(0);
+    //
+    // Do NOT write this as `expect(gridDims(4).height).toBeGreaterThan(gridDims(3).height)`
+    // — that compares two pure arithmetic calls and no draw.ts bug can fail it. The
+    // assertion has to reach the RENDERED output: decode the PNG's height (or compare the
+    // rendered buffer against a render at the expected cell count) so that a cell drawn
+    // unconditionally, or not drawn at all, actually turns it red.
     const marked = renderParkPng({ ...sample, landmarkTier: 1 }, EMPTY_ART);
     expect(marked.equals(renderParkPng(sample, EMPTY_ART))).toBe(false);
-    expect(withMark.height).toBeGreaterThan(plain.height);
-    expect(marked.length).toBeGreaterThan(0);
+    // Pin the rendered height against the expected grid, not against another gridDims call.
+    expect(pngHeight(marked)).toBe(gridDims(4).height);
+    expect(pngHeight(renderParkPng(sample, EMPTY_ART))).toBe(gridDims(3).height);
   });
 
   it('draws the monument art when the band loaded, and the flat fill when it did not', async () => {
