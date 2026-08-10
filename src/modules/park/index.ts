@@ -1,16 +1,19 @@
 import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
-import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, toClockDinos } from './service.js';
+import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, toClockDinos } from './service.js';
 import { feedAll } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { earnedTierCount } from '../daily/service.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
-import { dashboardPayload, withParkImage } from './embeds.js';
+import { dashboardPayload, withParkImage, landmarkPayload } from './embeds.js';
+import { legacyRank } from './ranks.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
 import { InsufficientFundsError } from '../../core/economy.js';
+import { buyLandmark, nextLandmark, landmarkTierOf, LandmarkMaxedError } from './landmarks.js';
+import { landmarkFor, MAX_LANDMARK_TIER } from '../../data/landmarks.js';
 import { escapeAt, ESCAPE_WARN_MS } from '../../core/clock.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { FACILITIES } from '../../data/facilities.js';
@@ -89,30 +92,44 @@ export const parkModule: ModuleManifest = {
           .addStringOption((o) => o.setName('name').setDescription('New name').setRequired(true).setMaxLength(60)))
         .addSubcommand((s) => s.setName('alerts').setDescription('Turn proactive park alerts on or off')
           .addStringOption((o) => o.setName('state').setDescription('On or off').setRequired(true)
-            .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' }))),
+            .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' })))
+        .addSubcommand((s) => s.setName('landmark').setDescription('Your park landmark — the prestige ladder')),
       async execute(ctx, i) {
         const user = getOrCreateUser(ctx, i.user.id, i.user.displayName);
-        if (i.options.getSubcommand() === 'rename') {
-          const name = i.options.getString('name', true);
-          ctx.db.update(schema.users).set({ parkName: name })
-            .where(eq(schema.users.discordId, i.user.id)).run();
-          await i.reply({ content: `Park renamed to **${name}**.` });
-          return;
-        }
-        // Explicit branch, not an else-fallthrough: /park has no subcommand dispatch —
-        // `rename` is the only named case and everything else IS the view path below.
-        // A missing branch here renders the dashboard and reports success.
-        if (i.options.getSubcommand() === 'alerts') {
-          const on = i.options.getString('state', true) === 'on';
-          ctx.db.update(schema.users).set({ alertsEnabled: on })
-            .where(eq(schema.users.discordId, i.user.id)).run();
-          await i.reply({
-            content: on
-              ? '🔔 Park alerts are **on** — you will get a DM before a dino escapes and when your park hits its income cap.'
-              : '🔕 Park alerts are **off**. Egg, breeding, and expedition notifications are unaffected. Turn them back on with `/park alerts state:on`.',
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
+        // A real switch, not a chain of equality checks with the view path as the
+        // fallthrough: /park previously reported success for any subcommand nobody had
+        // implemented, because the last branch WAS the dashboard.
+        switch (i.options.getSubcommand()) {
+          case 'rename': {
+            const name = i.options.getString('name', true);
+            ctx.db.update(schema.users).set({ parkName: name })
+              .where(eq(schema.users.discordId, i.user.id)).run();
+            await i.reply({ content: `Park renamed to **${name}**.` });
+            return;
+          }
+          case 'alerts': {
+            const on = i.options.getString('state', true) === 'on';
+            ctx.db.update(schema.users).set({ alertsEnabled: on })
+              .where(eq(schema.users.discordId, i.user.id)).run();
+            await i.reply({
+              content: on
+                ? '🔔 Park alerts are **on** — you will get a DM before a dino escapes and when your park hits its income cap.'
+                : '🔕 Park alerts are **off**. Egg, breeding, and expedition notifications are unaffected. Turn them back on with `/park alerts state:on`.',
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
+          case 'landmark': {
+            // getOrCreateUser already returned the row with landmarkTier in hand:
+            // landmarkTierOf and nextLandmark would each re-select the same row for one render.
+            await i.reply(landmarkPayload(user, landmarkFor(user.landmarkTier), landmarkFor(user.landmarkTier + 1)));
+            return;
+          }
+          case 'view':
+            break;
+          default:
+            await i.reply({ content: 'Unknown /park subcommand.', flags: MessageFlags.Ephemeral });
+            return;
         }
         const targetUser = i.options.getUser('user');
         if (targetUser && targetUser.id !== i.user.id) {
@@ -127,7 +144,7 @@ export const parkModule: ModuleManifest = {
           const tinv = ctx.economy.getFoodInventory(targetUser.id);
           const tfoodLine = (Object.entries(tinv) as Array<[FoodId, number]>)
             .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
-          const payload = dashboardPayload(fresh, tlots, tdinos.length, 0, tescaped, { foodLine: tfoodLine, earnedTiers: earnedTierCount(ctx, targetUser.id), now: ctx.now() });
+          const payload = dashboardPayload(fresh, tlots, tdinos.length, 0, tescaped, { foodLine: tfoodLine, earnedTiers: earnedTierCount(ctx, targetUser.id), legacyRank: legacyRank(ctx, targetUser.id), now: ctx.now() });
           const base = { embeds: payload.embeds };
           let png: Buffer | undefined;
           try { png = await renderPark(buildParkSnapshot(ctx, targetUser.id)); } catch { png = undefined; }
@@ -153,7 +170,7 @@ export const parkModule: ModuleManifest = {
         const inv = ctx.economy.getFoodInventory(i.user.id);
         const foodLine = (Object.entries(inv) as Array<[FoodId, number]>)
           .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
-        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine, earnedTiers: earnedTierCount(ctx, i.user.id), now: nowMs });
+        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine, earnedTiers: earnedTierCount(ctx, i.user.id), legacyRank: legacyRank(ctx, i.user.id), now: nowMs });
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
         await i.editReply(png ? withParkImage(base, png) : base);
@@ -182,13 +199,22 @@ export const parkModule: ModuleManifest = {
         .addIntegerOption((o) => o.setName('lot').setDescription('Lot — type to search').setRequired(true).setAutocomplete(true)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        const lotId = i.options.getInteger('lot', true);
+        // Hoisted so the InsufficientFundsError branch below can quote the price: upgradeLot
+        // does the same lookup internally, so this is one cheap extra read, not a second
+        // source of truth for the cost (upgradeCostFor stays the only place that computes it).
+        const lotRow = ctx.db.select().from(schema.lots)
+          .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, i.user.id))).get();
         try {
-          const lot = upgradeLot(ctx, i.user.id, i.options.getInteger('lot', true));
+          const lot = upgradeLot(ctx, i.user.id, lotId);
           await i.reply({ content: `⬆️ **${lot.name}** is now level ${lot.level}.` });
         } catch (e) {
           if (e instanceof LotLimitError) await i.reply({ content: 'Already max level.', flags: MessageFlags.Ephemeral });
           else if (e instanceof UnknownKindError) await i.reply({ content: 'No such lot.', flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({
+            content: `Not enough cash — that upgrade costs ${upgradeCostFor(lotRow!.kind, lotRow!.level).toLocaleString('en-US')}.`,
+            flags: MessageFlags.Ephemeral,
+          });
           else throw e;
         }
       },
@@ -201,7 +227,8 @@ export const parkModule: ModuleManifest = {
           .map((l) => {
             const maxLevel = FACILITIES[l.kind]?.maxLevel ?? 4;
             const valid = l.level < maxLevel;
-            return { value: l.id, valid, label: `🏗️ #${l.id} ${l.name} (lvl ${l.level})${valid ? '' : ' — MAX LEVEL'}` };
+            const price = valid ? ` — ${upgradeCostFor(l.kind, l.level).toLocaleString('en-US')} cash` : '';
+            return { value: l.id, valid, label: `🏗️ #${l.id} ${l.name} (lvl ${l.level})${valid ? price : ' — MAX LEVEL'}` };
           }));
       },
     },
@@ -352,6 +379,67 @@ export const parkModule: ModuleManifest = {
           if (i.user.id !== uid) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
           settleEscapes(ctx, i.user.id);
           await i.update({ ...dinoListPayload(ctx, i.user.id, Number(pageStr)), attachments: [] });
+          return;
+        }
+        if (action === 'landmark') {
+          // customId is park:landmark:buy:<userId>:<tier> — five parts, so the owner id sits
+          // at index 3 (not the outer destructure's `uid`, which caught 'buy' there) and the
+          // rung the button OFFERED at index 4.
+          //
+          // The tier is checked, not trusted, and that check is the actual guard against a
+          // stale button: a /park landmark message is never refreshed by anything else, so its
+          // label stays frozen on the rung it was minted for while buyLandmark re-derives
+          // current+1 fresh on every click. Four clicks of one button labelled "Build Stone
+          // Marker" charged 5,000,000, 10,000,000, 20,000,000 and 40,000,000 — 32x its own
+          // label, and there is no refund path. The i.update on success is a second layer
+          // only: another open message still holds a stale button.
+          const [, , , landmarkUid, tierStr] = parts;
+          if (i.user.id !== landmarkUid) { await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral }); return; }
+          // tierStr is CLIENT-supplied. Number('') is 0 and Number(undefined) is NaN, so a
+          // truncated or forged customId is rejected here rather than reaching buyLandmark.
+          const offered = Number(tierStr);
+          if (!Number.isInteger(offered) || offered < 1 || offered > MAX_LANDMARK_TIER) {
+            await i.reply({ content: 'That landmark button is no longer valid — run `/park landmark` again.', flags: MessageFlags.Ephemeral });
+            return;
+          }
+          const rung = landmarkFor(offered)!;
+          const current = landmarkTierOf(ctx, i.user.id);
+          // At the top of the ladder there is no next rung at all, so every button is stale
+          // in the same way and buyLandmark's LandmarkMaxedError names the reason better than
+          // this branch could — only a below-the-top mismatch is answered here.
+          if (current < MAX_LANDMARK_TIER && offered !== current + 1) {
+            // A genuinely stale button always offers a rung at or below the current tier, but
+            // offered > current + 1 is reachable two ways — a forged customId, and an old
+            // higher-rung message still live after adminReset zeroed the tier — so the two
+            // directions get their own wording rather than one claiming a rung is built when
+            // it is actually still ahead of the player.
+            await i.reply({
+              content: offered <= current
+                ? `Tier ${offered} — the ${rung.name} — is already built. Run \`/park landmark\` again for the rung you can buy now.`
+                : `Tier ${offered} — the ${rung.name} — isn't next: you can buy tier ${current + 1}. Run \`/park landmark\` again.`,
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
+          try {
+            const def = buyLandmark(ctx, i.user.id);
+            const fresh = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, i.user.id)).get()!;
+            // i.update, not i.reply: the message the player just clicked must stop offering a
+            // rung it has already sold. No attachments key — landmarkPayload attaches no
+            // files, so this message has no attachment set for the update to shed.
+            await i.update({
+              ...landmarkPayload(fresh, def, nextLandmark(ctx, i.user.id)),
+              content: `🏛️ Built the **${def.name}**.`,
+            });
+          } catch (e) {
+            if (e instanceof LandmarkMaxedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+            else if (e instanceof InsufficientFundsError) {
+              await i.reply({
+                content: `Not enough cash — the ${rung.name} costs ${rung.cost.toLocaleString('en-US')}.`,
+                flags: MessageFlags.Ephemeral,
+              });
+            } else throw e;
+          }
         }
       },
     },

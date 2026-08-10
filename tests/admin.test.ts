@@ -81,6 +81,12 @@ describe('adminReset', () => {
     expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'p')).all()).toHaveLength(0);
     expect(u.displayName).toBe('P');   // user row kept
   });
+  it('reset clears the landmark tier', () => {
+    getOrCreateUser(ctx, 'u1', 'U1');
+    ctx.db.update(schema.users).set({ landmarkTier: 4 }).where(eq(schema.users.discordId, 'u1')).run();
+    adminReset(ctx, 'u1');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.landmarkTier).toBe(0);
+  });
 });
 
 describe('adminReset + trades', () => {

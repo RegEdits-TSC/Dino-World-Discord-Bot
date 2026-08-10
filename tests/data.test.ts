@@ -15,8 +15,14 @@ describe('game data', () => {
   });
   it('facility arrays match maxLevel', () => {
     for (const f of Object.values(FACILITIES)) {
-      expect(f.incomeBonusPct).toHaveLength(f.maxLevel);
-      expect(f.upgradeCosts).toHaveLength(f.maxLevel - 1);
+      expect(f.incomeBonusPct, f.kind).toHaveLength(f.maxLevel);
+      expect(f.upgradeCosts, f.kind).toHaveLength(f.maxLevel - 1);
+      // The optional per-level arrays are indexed by level exactly like incomeBonusPct.
+      // Without these three, a maxLevel bump that leaves one stale reads undefined at the
+      // new top level — and `count >= undefined` is false, so the cap silently vanishes.
+      if (f.capHours) expect(f.capHours, f.kind).toHaveLength(f.maxLevel);
+      if (f.incubatorSlots) expect(f.incubatorSlots, f.kind).toHaveLength(f.maxLevel);
+      if (f.breedingSlots) expect(f.breedingSlots, f.kind).toHaveLength(f.maxLevel);
     }
   });
   it('RARITY values match the spec economy table', () => {
@@ -35,7 +41,10 @@ describe('game data', () => {
     expect(FACILITIES.visitor_center.incomeBonusPct).toEqual([0, 5, 10, 15, 20]);
     expect(FACILITIES.visitor_center.buildCost).toBe(5000);
     expect(FACILITIES.visitor_center.upgradeCosts).toEqual([12_500, 31_000, 78_000, 500_000]);
-    expect(FACILITIES.hatchery_lab.incubatorSlots).toEqual([1, 2, 3]);
+    expect(FACILITIES.hatchery_lab.maxLevel).toBe(5);
+    expect(FACILITIES.hatchery_lab.incubatorSlots).toEqual([1, 2, 3, 4, 5]);
+    expect(FACILITIES.hatchery_lab.incomeBonusPct).toEqual([0, 0, 0, 0, 0]);
+    expect(FACILITIES.hatchery_lab.upgradeCosts).toEqual([25_000, 150_000, 375_000, 2_250_000]);
     expect(FACILITIES.food_court.incomeBonusPct).toEqual([4, 8, 12]);
   });
   it('PADDOCKS values match the spec', () => {

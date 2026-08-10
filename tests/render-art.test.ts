@@ -55,6 +55,19 @@ describe('loadParkArt', () => {
     }
   });
 
+  // The "resolves with all-null art" test below proves loadParkArt degrades cleanly when nothing is
+  // on disk, but an all-null result is exactly what a MISSPELLED filename ('landmark-a.wepb') also
+  // produces — that test can't tell "file missing" from "filename wrong" apart, since both resolve
+  // null. This is the only assertion that reads the real committed assets/images/park/landmark-*.webp
+  // files and would catch a typo in art.ts's raster('landmark-a.webp') calls.
+  it('loads all three landmark bands from the real asset directory', async () => {
+    const art = await loadParkArt();
+    for (const band of ['a', 'b', 'c'] as const) {
+      expect(art.landmarks[band], `assets/images/park/landmark-${band}.webp missing or undecodable`).not.toBeNull();
+      expect(art.landmarks[band]!.width).toBeGreaterThan(0);
+    }
+  });
+
   it('resolves with all-null art instead of rejecting when nothing is on disk', async () => {
     // Every read is relative to process.cwd(), so an empty temp cwd reproduces a deploy that shipped
     // without assets/. Rejection is the failure mode that matters: worker.ts top-level-awaits this,
@@ -71,6 +84,7 @@ describe('loadParkArt', () => {
       expect(art.plateFacility).toBeNull();
       expect(art.lotIcons['carnivore_paddock']).toBeNull();
       expect(art.dinoChips.mythic).toBeNull();
+      expect(art.landmarks).toEqual({ a: null, b: null, c: null });
     } finally {
       process.chdir(cwd);
     }

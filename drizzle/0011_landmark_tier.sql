@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `landmark_tier` integer DEFAULT 0 NOT NULL;

@@ -19,6 +19,11 @@ export interface ParkSnapshot {
   // snapshot with no season resolves to the base (non-seasonal) ground art in draw.ts,
   // rather than requiring every literal ParkSnapshot in the codebase to name one.
   season?: Season;
+  // Cosmetic landmark tier the map draws a monument for — optional for the same reason
+  // season is: two hand-built ParkSnapshot literals in the render tests would otherwise
+  // fail to typecheck, and a snapshot built before this feature must still render.
+  // Omitted entirely at tier 0, so a park with no landmark produces byte-identical output.
+  landmarkTier?: number;
   lots: SnapshotLot[];
 }
 
@@ -47,6 +52,7 @@ export function buildParkSnapshot(ctx: Ctx, userId: string): ParkSnapshot {
     parkName: user.parkName, cash: user.cash, parkRating: user.parkRating,
     dinoCount: dinos.length, escapedCount, lotCap: lotSlots(user.ratingHighWater),
     season: seasonFor(ctx.now()),
+    ...(user.landmarkTier > 0 ? { landmarkTier: user.landmarkTier } : {}),
     lots: lots.map((l) => ({
       id: l.id, type: l.type, kind: l.kind, name: l.name, level: l.level,
       decorCount: l.decor.length, dinos: byLot.get(l.id) ?? [],

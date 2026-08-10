@@ -488,3 +488,35 @@ describe('0010 species_seen via the real drizzle migrator (production path)', ()
     }
   });
 });
+
+describe('0011 landmark tier via the real drizzle migrator (production path)', () => {
+  it('adds landmark_tier defaulting to 0 and preserves existing rows', () => {
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig11-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^00(0[0-9]|10).*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 10);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });   // apply 0000-0010 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, last_collect_at_ms, created_at_ms) VALUES ('u1', 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO dinos (user_id, species_id, hunger, last_fed_at_ms, hatched_at_ms)
+                    VALUES ('u1', 'triceratops', 100, 0, 0)`).run();
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+      const rows = sqlite.prepare(`SELECT discord_id, landmark_tier FROM users`).all();
+      expect(rows).toEqual([{ discord_id: 'u1', landmark_tier: 0 }]);
+      expect((sqlite.prepare(`SELECT COUNT(*) c FROM dinos`).get() as { c: number }).c).toBe(1);
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});

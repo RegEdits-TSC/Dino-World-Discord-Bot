@@ -2,15 +2,19 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { MessageFlags } from 'discord.js';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
-import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, BASE_LOT_SLOTS, breedingSlots } from '../src/modules/park/service.js';
+import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, upgradeCostFor, BASE_LOT_SLOTS, breedingSlots } from '../src/modules/park/service.js';
+import { incubatorSlots } from '../src/modules/hatchery/service.js';
 import { renameDino } from '../src/modules/park/dinos.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
 import { dashboardPayload } from '../src/modules/park/embeds.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
+import { FACILITIES } from '../src/data/facilities.js';
 import { DECOR } from '../src/data/decor.js';
 import { lotSlots } from '../src/data/progression.js';
+import { allSpecies } from '../src/data/species/index.js';
+import { recordSpeciesSeen } from '../src/core/species-seen.js';
 
 const H = 3_600_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -174,6 +178,26 @@ describe('park module commands', () => {
   });
 });
 
+describe('/park subcommand dispatch', () => {
+  it('rejects an unrecognised subcommand instead of rendering the dashboard', async () => {
+    // Synthetic name: the harness skips builder lookup for a command name the module
+    // registry does not know, which is exactly the deployed-but-unimplemented case this
+    // guards — 'park' itself would reject 'sabotage' at fixture-build time since the real
+    // builder only advertises view/rename/alerts.
+    const i = fakeCommand({ name: 'zzz-test', sub: 'sabotage', user: 'u1' });
+    await parkModule.commands[0].execute(ctx, i.asChatInput());
+    const text = JSON.stringify(i.replies[0]);
+    expect(text).not.toContain('Cash');            // not the dashboard
+    expect(text.toLowerCase()).toContain('unknown');
+  });
+
+  it('still renders the dashboard for view', async () => {
+    const i = fakeCommand({ name: 'zzz-test', sub: 'view', user: 'u1' });
+    await parkModule.commands[0].execute(ctx, i.asChatInput());
+    expect(JSON.stringify(i.replies[0])).toContain('Cash');
+  });
+});
+
 describe('Collect button', () => {
   it('shows a plain numeric label with the coin as a real emoji, not text', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
@@ -265,6 +289,57 @@ describe('/park view achievements badge wiring', () => {
   });
 });
 
+describe('dashboard legacy rank', () => {
+  it('shows the title and rank number when ranked', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 0, 0, { legacyRank: { rank: 3, title: 'Curator', points: 65 } });
+    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏛️ Legacy');
+    expect(field).toBeTruthy();
+    expect(field!.value).toContain('Curator');
+    expect(field!.value).toContain('3');           // rank number, not just the title
+  });
+  it('omits the field when unranked (explicit null and opts unset alike)', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    for (const opts of [{ legacyRank: null }, {}]) {
+      const names = dashboardPayload(user, [], 0, 0, 0, opts).embeds[0].toJSON().fields!.map((f) => f.name);
+      expect(names).not.toContain('🏛️ Legacy');
+    }
+  });
+});
+
+describe('/park view legacy rank wiring', () => {
+  // allSpecies().slice(0, 15/35) seeds exactly the Groundskeeper/Keeper thresholds
+  // (LEGACY_TIERS in src/modules/park/ranks.js) via species points alone — species alone
+  // caps at allSpecies().length (42, tests/ranks.test.ts), which is why these two tests
+  // stay within Groundskeeper/Keeper rather than reaching for a higher tier. u1 and u2
+  // land on DIFFERENT titles on purpose: a title mismatch fails louder than a
+  // missing-vs-present field would if the wrong id were ever passed at a call site.
+  it('passes the viewer own rank into the own-park dashboard', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    for (const s of allSpecies().slice(0, 15)) recordSpeciesSeen(ctx, 'u1', s.id);   // Groundskeeper (rank 1)
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
+    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field = fields.find((f) => f.name === '🏛️ Legacy');
+    expect(field).toBeTruthy();
+    expect(field!.value).toContain('Groundskeeper');
+  });
+
+  it('shows the TARGET player rank when viewing another park, not the viewer own', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    getOrCreateUser(ctx, 'u2', 'Other');
+    for (const s of allSpecies().slice(0, 15)) recordSpeciesSeen(ctx, 'u1', s.id);   // Groundskeeper (rank 1)
+    for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u2', s.id);   // Keeper (rank 2)
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1', options: { user: { id: 'u2' } } });
+    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
+    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field = fields.find((f) => f.name === '🏛️ Legacy');
+    expect(field).toBeTruthy();
+    expect(field!.value).toContain('Keeper');       // u2's rank
+    expect(field!.value).not.toContain('Groundskeeper');   // never u1's (the viewer's) rank
+  });
+});
+
 describe('/park view cap warning condition', () => {
   const viewFields = async () => {
     const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
@@ -346,6 +421,34 @@ describe('upgradeLot service', () => {
   });
 });
 
+describe('upgradeCostFor', () => {
+  it('matches the facility table for every kind and level', () => {
+    for (const f of Object.values(FACILITIES)) {
+      for (let level = 1; level < f.maxLevel; level++) {
+        expect(upgradeCostFor(f.kind, level), `${f.kind} L${level}`).toBe(f.upgradeCosts[level - 1]);
+      }
+    }
+  });
+  it('prices a paddock off its build cost', () => {
+    expect(upgradeCostFor('herbivore_paddock', 1)).toBe(5_000);
+    expect(upgradeCostFor('herbivore_paddock', 3)).toBe(31_250);
+  });
+  it('charges exactly what it quotes', () => {
+    // getOrCreateUser must run before seedLot: lots.userId has a FK on users.discordId
+    // (see createDb's foreign_keys = ON), so seeding the lot first throws a constraint
+    // error that has nothing to do with upgradeCostFor — every other seedLot call in this
+    // file creates the user first for the same reason.
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const lot = seedLot({ type: 'paddock', kind: 'herbivore_paddock', name: 'Pen', level: 1 });
+    const quoted = upgradeCostFor('herbivore_paddock', 1);
+    ctx.db.update(schema.users).set({ cash: quoted }).where(eq(schema.users.discordId, 'u1')).run();
+    upgradeLot(ctx, 'u1', lot.id);
+    // Exact-charge check: if upgradeLot ever drifted from upgradeCostFor's quote, cash would
+    // land above or below 0 instead of landing exactly on it.
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.cash).toBe(0);
+  });
+});
+
 describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () => {
   it('/upgrade execute success and each error reply', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
@@ -362,6 +465,19 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     const maxI = fakeCommand({ name: 'upgrade', user: 'u1', options: { lot: lot.id } });
     await cmd.execute(ctx, maxI.asChatInput());
     expect(replyText(maxI.replies[0])).toContain('max level');
+  });
+  it('/upgrade execute quotes the price on the insufficient-funds reply', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
+    const lot = buildLot(ctx, 'u1', Object.keys(PADDOCKS)[0]);   // herbivore_paddock, level 1
+    ctx.db.update(schema.users).set({ cash: 0 }).run();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'upgrade')!;
+    const brokeI = fakeCommand({ name: 'upgrade', user: 'u1', options: { lot: lot.id } });
+    await cmd.execute(ctx, brokeI.asChatInput());
+    // Exact, not toContain('5,000'): that substring is satisfied by '15,000' and by
+    // '5,000,000' just as happily. herbivore_paddock L1 -> L2 is round(2,000 x 2.5) = 5,000
+    // (upgradeCostFor), and the whole point of the quote is that the FIGURE is right.
+    expect(replyText(brokeI.replies[0])).toBe('Not enough cash — that upgrade costs 5,000.');
   });
   it('/decorate execute adds decor', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
@@ -660,4 +776,46 @@ describe('/dino list full page stays within Discord embed limits', () => {
     expect(totalEmbedText).toBeLessThanOrEqual(6000);
     expect(longestRow).toBeLessThan(300);
   });
+});
+
+describe('facility level arrays are bounds-guarded', () => {
+  // A level above maxLevel is not reachable through upgradeLot, but it IS reachable on a
+  // live database: nothing constrains lots.level, and a future maxLevel bump that forgets
+  // to extend an array produces the same read. Every one of these resolves to the TOP
+  // defined entry — the safe direction — rather than undefined.
+  it('capHours clamps instead of returning NaN', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    seedLot({ kind: 'visitor_center', name: 'Visitor Center', level: 9 });
+    const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all();
+    expect(capHours(lots)).toBe(24);
+  });
+  it('breedingSlots clamps instead of returning undefined', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    seedLot({ kind: 'gene_lab', name: 'Gene Lab', level: 9 });
+    const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all();
+    expect(breedingSlots(lots)).toBe(3);
+  });
+  it('incubatorSlots clamps instead of returning undefined', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    seedLot({ kind: 'hatchery_lab', name: 'Hatchery Lab', level: 9 });
+    const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all();
+    expect(incubatorSlots(lots)).toBe(5);
+  });
+  // The fourth per-level array, and the one that kept its own inline `?? 0` after the other
+  // three were routed through levelValue. It could not produce NaN, so the risk was smaller
+  // — but the semantics differed: an over-range level silently ZEROED that facility's whole
+  // contribution instead of clamping to the top entry. Food Court is the discriminating
+  // fixture because its top bonus is nonzero (12%), so 0 and 12 are distinguishable.
+  it('facilityBonusPct clamps to the top bonus instead of dropping the facility to 0%', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    seedLot({ kind: 'food_court', name: 'Food Court', level: 9 });
+    const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all();
+    expect(facilityBonusPct(lots)).toBe(12);
+  });
+  // No absent-facility case here: capHours([]) === 8, breedingSlots([]) === 0, and
+  // incubatorSlots([]) === 1 are already pinned by 'keeps the no-facility defaults'
+  // (this file), 'grants no breeding slots without one' (this file, gene lab describe),
+  // and tests/hatchery.test.ts's slot-limit tests, respectively — the level<=0 branch of
+  // levelValue is unchanged from the pre-fix code, so a fourth copy here would not
+  // discriminate this task's fix from the old implementation.
 });

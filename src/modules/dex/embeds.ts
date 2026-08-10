@@ -5,6 +5,7 @@ import { paginate } from '../../core/paginate.js';
 import { attach, assetImage } from '../../core/images.js';
 import { rarityEmoji } from '../../core/emojis.js';
 import { fmtDuration, capitalize } from '../../core/autocomplete.js';
+import { legacyRank } from '../park/ranks.js';
 import { DECOR } from '../../data/decor.js';
 import { dexRows, dexEntry, dexProgress, FILTER_NONE, type DexFilters } from './service.js';
 
@@ -47,13 +48,15 @@ export function dexListPayload(ctx: Ctx, userId: string, filters: DexFilters, pa
   const all = dexRows(ctx, userId, filters);
   const { items, page: p, pages } = paginate(all, page);
   const progress = dexProgress(ctx, userId);
+  const rank = legacyRank(ctx, userId);
+  const rankPart = rank ? ` · ${rank.title}` : '';
   const lines = items.length
     ? items.map((r) => `${r.seen ? '✅' : '▫️'} ${rarityEmoji(r.species.rarity)}${r.species.name} — ${capitalize(r.species.diet)} ${capitalize(r.species.archetype)}`).join('\n')
     : 'No species match that filter.';
   const embed = new EmbedBuilder().setColor(0x9b59b6)
     .setTitle(`📖 Dex${filterLabel(filters)}`)
     .setDescription(lines)
-    .setFooter({ text: `${progress.seen}/${progress.total} seen · Page ${p}/${pages}` });
+    .setFooter({ text: `${progress.seen}/${progress.total} seen · Page ${p}/${pages}${rankPart}` });
   return {
     embeds: [embed],
     components: pages > 1 ? [dexPageRow(userId, filters, p, pages)] : [],

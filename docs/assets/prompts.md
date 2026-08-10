@@ -38,6 +38,9 @@ icons in `assets/images/eggs/` (glossy cartoon game style):
 | `assets/images/park/ground-cold.webp` | 1200×800 (3:2) | `/park view` canvas backdrop for the cold season, selected by `ParkSnapshot.season` |
 | `assets/images/park/plate-paddock.webp` | 270×150 | `/park view` paddock tile plate |
 | `assets/images/park/plate-facility.webp` | 270×150 | `/park view` facility tile plate |
+| `assets/images/park/landmark-a.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 1–2 (Stone Marker, Fossil Plinth) |
+| `assets/images/park/landmark-b.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 3–4 (Bronze Sentinel, Amber Obelisk) |
+| `assets/images/park/landmark-c.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 5–6 (Grand Rotunda, Titan Monument) |
 
 \* Except the shipped `assets/images/sites/volcano_core-thumb.webp`, which is
 **1254×1254** — a discrepancy from the original PNG's IHDR that predates the
@@ -1202,6 +1205,84 @@ the border dark and rivet-detailed. A future regeneration from either
 earlier prompt is not guaranteed to avoid its respective failure again — use
 the version above, and re-verify both busyness (by eye) and contrast (by
 measurement, against the offsets and floor described above) before shipping.
+
+**park/landmark-{a,b,c}** — the prestige monument cell (`drawLandmark`,
+`draw.ts`), one raster per `LandmarkBand` (`src/data/landmarks.ts`): band `a`
+covers tiers 1–2 (Stone Marker, Fossil Plinth), band `b` tiers 3–4 (Bronze
+Sentinel, Amber Obelisk), band `c` tiers 5–6 (Grand Rotunda, Titan Monument) —
+three bands rather than six rasters, so the monument visibly grows twice.
+Generated with model `nano_banana_pro` (the API silently routes this to
+`nano_banana_2`) at aspect ratio `16:9`, source output 1376×768, cover-scaled
+and center-cropped to 270×150 WebP q95 — the same cover-and-crop idea as
+`fit-art.mjs`'s `ground`/`banner` modes, but 270×150 has no committed mode of
+its own; these three were fitted with a one-off pass rather than a new
+`fit-art.mjs` mode.
+
+**Contrast requirement (hard gate, not a style preference):** same reasoning
+as the two plates above — `drawLandmark` paints the tier name in
+`#f5e6b8` directly over the art with no scrim, at tile-local `(14, 134)`
+(`fillText(name, x+14, y+TILE_H-16)`, 18px), so the label band at the bottom
+of the art must independently clear legibility. Measured worst-pixel contrast
+in the 200×18 label band (roughly tile-local y+118 to y+136) at tile-local
+(14, 118) against `#f5e6b8`: **band a 7.06:1, band b 10.23:1, band c
+11.09:1** — all above the ~6:1 target the plates set.
+
+**park/landmark-a — Stone Marker / Fossil Plinth:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the ENTIRE
+> frame edge to edge with no border, no plain background margin and no
+> framing device: a modest carved grey standing stone marker with a small
+> fossil bone motif inlaid on its face stands at the centre on short green
+> turf, low hedges and a few ferns behind it. The BOTTOM FIFTH of the frame
+> is a solid dark slate kerb band running the full width, clearly darker than
+> everything above it, calm and untextured with no detail, so pale cream text
+> can sit on it legibly. Even flat lighting, no cast shadows. Glossy cartoon
+> mobile-game art style, bold dark outlines, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no characters, no UI
+> elements.
+
+**park/landmark-b — Bronze Sentinel / Amber Obelisk:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the ENTIRE
+> frame edge to edge with no border, no plain background margin and no
+> framing device: a tall verdigris-bronze dinosaur statue on a dark stone
+> pedestal stands centre-left, a glowing translucent amber obelisk with warm
+> gold highlights stands centre-right, paved plaza and low greenery behind
+> them. The BOTTOM FIFTH of the frame is a solid dark slate kerb band running
+> the full width, clearly darker than everything above it, calm and
+> untextured with no detail, so pale cream text can sit on it legibly. Even
+> flat lighting, no cast shadows. Glossy cartoon mobile-game art style, bold
+> dark outlines, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no characters, no UI elements.
+
+**park/landmark-c — Grand Rotunda / Titan Monument:**
+
+> A single rectangular game-UI tile for a dinosaur park: a grand domed
+> rotunda of pale marble columns with a colossal mounted dinosaur skeleton
+> displayed at its centre, gold trim on the dome, banners between the
+> columns. The LOWER THIRD of the image must be a deep, dark
+> marble-and-shadow band, clearly darker than the upper area, calm and
+> untextured with no detail, so pale cream text can sit on it legibly.
+> Glossy cartoon mobile-game art style, bold dark outlines, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no
+> characters, no UI elements.
+
+**Lesson — describe full scenes, not single objects.** A first attempt
+described bands a and b as a single OBJECT (a monument on a plain
+background) rather than a scene; the model returned a portrait-framed tile
+object centred on a pale background, and band a measured **1.14:1** in the
+label band — illegible. Applying this file's documented crop-tight-to-the-
+object fix (the one that worked for the two plates above) made it WORSE, not
+better — band a fell to 2.06:1 and band b to 4.31:1 — because cover-scaling a
+portrait crop into a landscape tile keeps the bright monument body and
+discards the dark base band that a tighter object crop had already cropped
+away. The fix was rewriting the prompts as full-bleed SCENES with an
+explicit dark ground band baked into the composition (the versions above),
+which is why band c — already scene-framed, not object-framed, on the first
+attempt — passed with no rework needed. Also worth recording: band a's MEAN
+contrast in the failed first pass was a healthy 5.53:1 while its WORST pixel
+was 1.14:1 — judging by eye, or by an average rather than the worst pixel, on
+the final WebP would have shipped an illegible label.
 
 ## Hatch cracks
 

@@ -2,6 +2,8 @@ import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentB
 import type { User, Lot } from './service.js';
 import { emojiTag } from '../../core/emojis.js';
 import { eventHeaderLine } from '../world/embeds.js';
+import type { LandmarkDef } from '../../data/landmarks.js';
+import type { LegacyTier } from './ranks.js';
 
 const LOT_EMOJI: Record<string, string> = {
   carnivore_paddock: 'dw_lot_carnivore', herbivore_paddock: 'dw_lot_herbivore',
@@ -21,7 +23,7 @@ export function dashboardPayload(
   // every real call site (src/modules/park/index.ts) always passes ctx.now().
   // Missing defaults to a calm day, the same convention ChaptersView.now uses
   // in src/modules/battles/embeds.ts.
-  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number; now?: number } = {},
+  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number; legacyRank?: LegacyTier | null; now?: number } = {},
 ) {
   const extras: string[] = [];
   if (escapedCount > 0) extras.push(`${escapedCount} ${emojiTag('dw_alert')} escaped`);
@@ -46,6 +48,13 @@ export function dashboardPayload(
   if (earnedTiers > 0) {
     embed.addFields({ name: '🏆 Achievements', value: `${earnedTiers} tier${earnedTiers === 1 ? '' : 's'} earned`, inline: true });
   }
+  if (opts.legacyRank) {
+    embed.addFields({
+      name: '🏛️ Legacy',
+      value: `${opts.legacyRank.title} (rank ${opts.legacyRank.rank})`,
+      inline: true,
+    });
+  }
   if (opts.capped) {
     embed.addFields({ name: '⛔ Income capped', value: 'Idle earnings hit the Visitor Center cap — collect now to restart them.' });
   }
@@ -60,4 +69,33 @@ export function dashboardPayload(
 export function withParkImage<T extends { embeds: EmbedBuilder[] }>(payload: T, png: Buffer): T & { files: AttachmentBuilder[] } {
   payload.embeds[0].setImage('attachment://park.png');
   return { ...payload, files: [new AttachmentBuilder(png, { name: 'park.png' })] };
+}
+
+// No setEmoji here on purpose: rarityEmoji and friends return '' with no emoji map
+// loaded (always true in tests), and setEmoji throws on that rather than degrading —
+// see the repo-wide note on this. The unicode glyph lives in the title text instead.
+export function landmarkPayload(user: User, current: LandmarkDef | null, next: LandmarkDef | null) {
+  const embed = new EmbedBuilder()
+    .setTitle('🏛️ Park Landmark')
+    .setColor(0xc9a227)
+    .setDescription(current
+      ? `**${user.parkName}** is crowned by the **${current.name}**.`
+      : `**${user.parkName}** has no landmark yet. It buys nothing but standing.`)
+    .addFields(
+      { name: 'Built', value: current ? `Tier ${current.tier} — ${current.name}` : 'Nothing yet', inline: true },
+      { name: 'Next', value: next ? `${next.name} — ${next.cost.toLocaleString('en-US')} cash` : 'The ladder is complete', inline: true },
+    );
+  const payload: { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } = { embeds: [embed], components: [] };
+  if (next) {
+    // The OFFERED tier travels in the customId — the hatch:crack:<eggId> /
+    // dex:page:<uid>:<page>:<slugs> precedent — because the label is frozen the moment
+    // this message is posted while buyLandmark re-derives current+1 on every click. The
+    // handler rejects any rung that is no longer next. Worst case 40 of Discord's 100
+    // characters: 18 for the prefix, 20 for a snowflake, 1 colon, 1 digit of tier.
+    payload.components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`park:landmark:buy:${user.discordId}:${next.tier}`)
+        .setLabel(`Build ${next.name}`).setStyle(ButtonStyle.Primary),
+    ));
+  }
+  return payload;
 }

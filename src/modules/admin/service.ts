@@ -78,11 +78,13 @@ export function adminReset(ctx: Ctx, targetId: string): void {
     // alertsEnabled is deliberately NOT reset. Every other column here is progress or a
     // cosmetic default; this one is communication consent. Restoring it would start
     // DMing a player who explicitly opted out.
+    // landmarkTier is progress (a prestige cosmetic the player paid for), not communication
+    // consent, so it IS reset.
     ctx.db.update(schema.users).set({
       cash: 500, shards: 0, parkRating: 0, ratingHighWater: 0, parkName: 'New Park',
       shardsWindowStart: 0, shardsWindowEarned: 0, lastCollectAt: ctx.now(),
       energy: ENERGY_CAP, energyUpdatedAt: ctx.now(),
-      questStreak: 0, questStreakBest: 0, lastQuestClaimAt: 0,
+      questStreak: 0, questStreakBest: 0, lastQuestClaimAt: 0, landmarkTier: 0,
     }).where(eq(schema.users.discordId, targetId)).run();
     ctx.db.delete(schema.foodInventory).where(eq(schema.foodInventory.userId, targetId)).run();
     for (const [foodId, qty] of Object.entries(STARTER_FOOD)) {
@@ -112,6 +114,8 @@ export function adminFastForward(ctx: Ctx, targetId: string, hours: number): num
     // no timer semantics — nothing reads it to decide whether something is due — so
     // shifting it would only misdate a discovery. Contrast breedings.readyAt, which IS a
     // timer and is a genuine omission here.
+    // users.landmark_tier is deliberately NOT touched: the landmark ladder carries no timer
+    // semantics, so there is nothing for a clock shift to move.
     // daily_quests.dayKey is deliberately NOT shifted: fast-forward cannot move the UTC
     // calendar, so today's board stays today's. Shifting the claim anchor is what lets a
     // streak gap or continuation be simulated.

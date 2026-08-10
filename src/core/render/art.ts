@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { RARITY } from '../../data/rarity.js';
 import type { Rarity } from '../../data/types.js';
 import type { Season } from '../world.js';
+import type { LandmarkBand } from '../../data/landmarks.js';
 
 export interface ParkArt {
   ground: Image | null;
@@ -17,6 +18,11 @@ export interface ParkArt {
   plateFacility: Image | null;
   lotIcons: Record<string, Image | null>;
   dinoChips: Record<Rarity, Image | null>;
+  // One raster per landmark art band (src/data/landmarks.ts). Keyed exhaustively for the
+  // same reason dinoChips and groundBySeason are: a lookup by a real band must read back
+  // Image | null, never undefined, because drawImage(undefined) throws exactly like
+  // drawImage(null) and costs the whole park image.
+  landmarks: Record<LandmarkBand, Image | null>;
 }
 
 // Lot kind -> SVG basename. Not mechanical: hatchery_lab -> dw_lot_hatchery and
@@ -39,9 +45,13 @@ function nullSeasons(): Record<Season, Image | null> {
   return { wet: null, dry: null, cold: null };
 }
 
+function nullLandmarks(): Record<LandmarkBand, Image | null> {
+  return { a: null, b: null, c: null };
+}
+
 export const EMPTY_ART: ParkArt = {
   ground: null, groundBySeason: nullSeasons(), platePaddock: null, plateFacility: null,
-  lotIcons: {}, dinoChips: nullChips(),
+  lotIcons: {}, dinoChips: nullChips(), landmarks: nullLandmarks(),
 };
 
 // SVG only. @napi-rs/canvas decodes SVG buffers synchronously, so there is nothing to await — which
@@ -74,9 +84,10 @@ export async function loadParkArt(): Promise<ParkArt> {
   const raster = (name: string) => loadRasterImage(resolve(process.cwd(), 'assets/images/park', name));
   const svg = (name: string) => loadSvgImage(resolve(process.cwd(), 'assets/emojis/svg', `${name}.svg`));
 
-  const [ground, platePaddock, plateFacility, groundWet, groundDry, groundCold] = await Promise.all([
+  const [ground, platePaddock, plateFacility, groundWet, groundDry, groundCold, markA, markB, markC] = await Promise.all([
     raster('ground.webp'), raster('plate-paddock.webp'), raster('plate-facility.webp'),
     raster('ground-wet.webp'), raster('ground-dry.webp'), raster('ground-cold.webp'),
+    raster('landmark-a.webp'), raster('landmark-b.webp'), raster('landmark-c.webp'),
   ]);
 
   const lotIcons: Record<string, Image | null> = {};
@@ -88,5 +99,6 @@ export async function loadParkArt(): Promise<ParkArt> {
   return {
     ground, groundBySeason: { wet: groundWet, dry: groundDry, cold: groundCold },
     platePaddock, plateFacility, lotIcons, dinoChips,
+    landmarks: { a: markA, b: markB, c: markC },
   };
 }

@@ -9,6 +9,7 @@ import { setEmojiMap } from '../src/core/emojis.js';
 import { FOODS } from '../src/data/foods.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
 import { RARITY } from '../src/data/rarity.js';
+import { allSpecies } from '../src/data/species/index.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { assignDino, decorateLot } from '../src/modules/park/dinos.js';
@@ -173,6 +174,20 @@ const dailyRows = ctx.db.select().from(schema.dailyQuests)
 const firstQuestDef = QUESTS.find((q) => q.id === dailyRows[0].questId)!;
 track(ctx, P1, firstQuestDef.stat, dailyRows[0].target);
 
+// Landmark seed: tier 3 (Bronze Sentinel, band 'b') is a mid-ladder rung one step past
+// the 'a' band's top, so /park landmark shows both a built rung and its next rung (tier
+// 4, Amber Obelisk) with a grouped price, and the map render below shows the 'b' art.
+// Set directly on the row rather than through buyLandmark — the ladder is a pure cash
+// sink with no refund path, and landmarkTier is orthogonal to everything buildLot/
+// assignDino above touched: rating.ts, clock.ts, lotSlots and matchedKindCount all skip
+// it (src/data/landmarks.ts's own comment), so this cannot disturb the single incubator
+// slot the /hatch → hatch:crack → /incubate ordering above depends on. It DOES change
+// the park PNG's geometry though: P1 currently renders 2 lots + 1 build slot = 3 cells
+// in one row (882×254); the landmark is a fourth cell, so the already-registered
+// /park view case below now wraps to two rows — that growth is exactly what wants a
+// human's eyes on it.
+ctx.db.update(schema.users).set({ landmarkTier: 3 }).where(eq(schema.users.discordId, P1)).run();
+
 // Dex fixture: its own player, credited via recordSpeciesSeen — never via the raw
 // dino/egg inserts P1 gets above. species_seen is a distinct side-effect record
 // (src/core/species-seen.ts), not derived from ownership, so crediting it is the
@@ -202,6 +217,18 @@ decorateLot(ctx, P4, enrichedLot.id, 'fern');
 ctx.db.insert(schema.dinos).values({ userId: P4, speciesId: 'ankylosaurus', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
 const enrichedDino = ctx.db.select().from(schema.dinos).all().find((d) => d.userId === P4)!;
 assignDino(ctx, P4, enrichedDino.id, enrichedLot.id);
+
+// Legacy rank fixture: its own player, credited the same way P3's dex fixture is —
+// recordSpeciesSeen only, no dinos/eggs/battles/achievements, so legacyPoints
+// (src/modules/park/ranks.ts) equals exactly the discovery count with nothing else
+// added in. LEGACY_TIERS starts Groundskeeper at 15, Keeper at 35: crediting the
+// roster's first 35 (of 42) species lands exactly on Keeper (rank 2) rather than only
+// clearing Groundskeeper (rank 1) the way, say, 20 would — the dashboard's Legacy field
+// only renders once legacyRank returns non-null, so a threshold has to be cleared
+// deliberately, not merely approached.
+const P5 = 'live-p5';
+getOrCreateUser(ctx, P5, 'LegacyKeeper');
+for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, P5, s.id);
 
 // If any service signature above disagrees with the source, match the source —
 // tests/*.test.ts show every call shape.
@@ -277,7 +304,9 @@ const cases: Case[] = [
   { title: '/help topic:battles — chapter banner', run: () => slash('help', 'help', { name: 'help', user: P1, options: { topic: 'battles' } }) },
   { title: '/daily — hub, one quest complete', run: () => slash('daily', 'daily', { name: 'daily', user: P1 }) },
   { title: 'daily:claim — claim reply (ephemeral in production)', run: () => button('daily', `daily:claim:${P1}`, P1) },
-  { title: '/park view — dashboard + render', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P1 }) },
+  { title: '/park view — dashboard + render: landmark tile bumps the canvas to 2 rows', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P1 }) },
+  { title: '/park landmark — Bronze Sentinel built, Amber Obelisk next (grouped price)', run: () => slash('park', 'park', { name: 'park', sub: 'landmark', user: P1 }) },
+  { title: '/park view — P5, Legacy rank Keeper at 35 of 42 species discovered', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P5 }) },
   { title: '/eggs — list', run: () => slash('hatchery', 'eggs', { name: 'eggs', user: P1 }) },
   { title: '/hatch — pre-hatch embed', run: () => slash('hatchery', 'hatch', { name: 'hatch', user: P1, options: { egg: readyEgg.id } }) },
   { title: 'hatch:crack — reveal', run: () => button('hatchery', `hatch:crack:${readyEgg.id}`, P1) },
