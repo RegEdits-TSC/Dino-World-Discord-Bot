@@ -90,6 +90,17 @@ justification than the one 2a gave it.
    expensive irreversible mistake in the game. A ladder dissolves it: the only legal
    purchase is the *next* rung, so there is nothing to mis-buy. This is the second
    reason to prefer a column over a catalog of purchasable objects.
+   **Corrected during the final review:** that reasoning is sound for `buyLandmark`
+   and unsound for the *button*. A Discord message is durable and its label is never
+   re-derived, so a customId of `park:landmark:buy:<uid>` with an `i.reply` handler
+   left one "Build Stone Marker" button live forever while `buyLandmark` advanced
+   underneath it — four clicks charged 5,000,000 / 10,000,000 / 20,000,000 /
+   40,000,000, 32x the label, with no refund path to undo it. The rung now travels in
+   the customId (`park:landmark:buy:<uid>:<tier>`) and is validated against the live
+   tier after the owner check and before any read or write; `i.update` refreshing the
+   clicked message is a second layer, not the guard, since other open messages still
+   hold stale buttons. Any future button that spends money carries the same
+   obligation.
 4. **The rank is derived from breadth, and never from wealth.** `dexProgress` (42)
    + `earnedTierCount` (48) + `battle_progress.stars` (90) = 180 points. All three
    are monotone, ceilinged, readable in one query each, and — critically — complete
@@ -177,8 +188,10 @@ exported `landmarkCostFor(tier)`, per the standing rule that every price a surfa
 displays and every price it charges come from the same helper.
 
 **Surface.** `/park landmark` with no options: it shows the current tier, its name,
-the next tier and its price, and a buy button. The button carries the owner id and
-is owner-locked before any read or write, following the `ach` prefix precedent.
+the next tier and its price, and a buy button. The button carries the owner id **and
+the rung it offers** and is owner-locked before any read or write, following the `ach`
+prefix precedent for ownership and the `hatch:crack:<eggId>` precedent for the state
+— see §2.3's correction for why the tier is not optional.
 Prices render through `toLocaleString('en-US')` — both existing decor surfaces print
 raw (`${d.cost}`), which is tolerable at 400 and unreadable at 160,000,000.
 

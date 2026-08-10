@@ -1,10 +1,15 @@
 import { eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
-import { landmarkFor, MAX_LANDMARK_TIER, type LandmarkDef } from '../../data/landmarks.js';
+import { LANDMARKS, landmarkFor, MAX_LANDMARK_TIER, type LandmarkDef } from '../../data/landmarks.js';
 
 export class LandmarkMaxedError extends Error {
-  constructor() { super('Your park already has the Titan Monument — there is nothing further to build.'); }
+  // The top rung's name is read off LANDMARKS rather than retyped: nothing else pinned
+  // the literal to the table, so renaming the last rung or appending a seventh would
+  // have left this message naming a landmark that is no longer the top of the ladder.
+  constructor() {
+    super(`Your park already has the ${LANDMARKS[MAX_LANDMARK_TIER - 1].name} — there is nothing further to build.`);
+  }
 }
 
 export function landmarkTierOf(ctx: Ctx, userId: string): number {
@@ -21,6 +26,12 @@ export function nextLandmark(ctx: Ctx, userId: string): LandmarkDef | null {
  * next one, which is what removes the misclick surface a catalog of 5,000,000-plus objects
  * would have had — and therefore the refund path this feature does not ship.
  *
+ * That is a property of THIS function, not of the surface: a buy button is a durable
+ * message that nobody refreshes, so the rung it was minted for has to travel in its
+ * customId and be re-checked against the live tier before this is called. Without that
+ * check, one button labelled "Build Stone Marker" charged 5M, 10M, 20M and then 40M on
+ * four clicks — see the landmark branch in src/modules/park/index.ts.
+ *
  * Charge and increment share one transaction, so a rejected charge cannot leave the tier
  * advanced. economy.apply throws InsufficientFundsError, which the caller reports.
  */
@@ -35,5 +46,3 @@ export function buyLandmark(ctx: Ctx, userId: string): LandmarkDef {
   });
   return def;
 }
-
-export { MAX_LANDMARK_TIER };

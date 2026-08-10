@@ -731,6 +731,28 @@
   `landmarkTierOf(ctx, userId) + 1` — which is what removes the refund path rather
   than merely deferring it: with only one buyable rung at any moment, there is no
   wrong one to click.
+  That argument holds for the FUNCTION and not for the SURFACE, and the difference
+  cost real money before it was fixed. `park:landmark:buy:<uid>` carried no tier and
+  its handler answered with `i.reply`, so an old `/park landmark` message kept its
+  original label and a live button forever while `buyLandmark` re-derived `current + 1`
+  on every click: four clicks of one button labelled "Build Stone Marker" charged
+  5,000,000, then 10,000,000, then 20,000,000, then 40,000,000 — 32x its own label,
+  against a feature that ships no refund path precisely because a monotone ladder was
+  believed to have nothing to mis-buy. The customId is now
+  `park:landmark:buy:<uid>:<tier>` (the `hatch:crack:<eggId>` /
+  `dex:page:<uid>:<page>:<slugs>` precedent — 40 of Discord's 100 characters at a
+  20-digit snowflake), and the handler validates the parsed tier as an integer rung and
+  rejects anything that is no longer `current + 1`, in that order, after the owner check
+  and before any read or write. The success path additionally answers with `i.update` of
+  a freshly built `landmarkPayload`, so the message just used advances to the next rung —
+  but that is a second layer only, never the guard: any OTHER open message still holds a
+  stale button, which is why the tier check is what actually protects the purchase. The
+  top of the ladder is deliberately NOT pre-rejected — at tier 6 no `offered` can equal
+  `current + 1`, so the click falls through to `buyLandmark`'s `LandmarkMaxedError`,
+  whose text names `LANDMARKS[MAX_LANDMARK_TIER - 1].name` rather than a retyped
+  literal. Any future button that spends money needs the same treatment: the rung, page
+  or amount it was minted for belongs in the customId, because a Discord message is
+  durable and its label is not re-derived.
 - Legacy rank (`legacyPoints`/`legacyRank`, `src/modules/park/ranks.ts`) is DERIVED,
   same philosophy as escrow locks and quest progress documented above, and must NEVER
   be rebuilt on top of `user_stats`. Migration `0006_daily_loop.sql` backfilled only 6

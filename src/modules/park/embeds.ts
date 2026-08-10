@@ -87,8 +87,13 @@ export function landmarkPayload(user: User, current: LandmarkDef | null, next: L
     );
   const payload: { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } = { embeds: [embed], components: [] };
   if (next) {
+    // The OFFERED tier travels in the customId — the hatch:crack:<eggId> /
+    // dex:page:<uid>:<page>:<slugs> precedent — because the label is frozen the moment
+    // this message is posted while buyLandmark re-derives current+1 on every click. The
+    // handler rejects any rung that is no longer next. Worst case 40 of Discord's 100
+    // characters: 18 for the prefix, 20 for a snowflake, 1 colon, 1 digit of tier.
     payload.components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId(`park:landmark:buy:${user.discordId}`)
+      new ButtonBuilder().setCustomId(`park:landmark:buy:${user.discordId}:${next.tier}`)
         .setLabel(`Build ${next.name}`).setStyle(ButtonStyle.Primary),
     ));
   }

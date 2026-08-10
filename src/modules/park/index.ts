@@ -13,7 +13,7 @@ import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { buyLandmark, nextLandmark, landmarkTierOf, LandmarkMaxedError } from './landmarks.js';
-import { landmarkFor } from '../../data/landmarks.js';
+import { landmarkFor, MAX_LANDMARK_TIER } from '../../data/landmarks.js';
 import { escapeAt, ESCAPE_WARN_MS } from '../../core/clock.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { FACILITIES } from '../../data/facilities.js';
@@ -120,8 +120,9 @@ export const parkModule: ModuleManifest = {
             return;
           }
           case 'landmark': {
-            const tier = landmarkTierOf(ctx, i.user.id);
-            await i.reply(landmarkPayload(user, landmarkFor(tier), nextLandmark(ctx, i.user.id)));
+            // getOrCreateUser already returned the row with landmarkTier in hand:
+            // landmarkTierOf and nextLandmark would each re-select the same row for one render.
+            await i.reply(landmarkPayload(user, landmarkFor(user.landmarkTier), landmarkFor(user.landmarkTier + 1)));
             return;
           }
           case 'view':
@@ -381,19 +382,53 @@ export const parkModule: ModuleManifest = {
           return;
         }
         if (action === 'landmark') {
-          // customId is park:landmark:buy:<userId> — four parts, so the owner id sits
-          // at index 3, not the outer destructure's `uid` (which caught 'buy' there).
-          const [, , , landmarkUid] = parts;
+          // customId is park:landmark:buy:<userId>:<tier> — five parts, so the owner id sits
+          // at index 3 (not the outer destructure's `uid`, which caught 'buy' there) and the
+          // rung the button OFFERED at index 4.
+          //
+          // The tier is checked, not trusted, and that check is the actual guard against a
+          // stale button: a /park landmark message is never refreshed by anything else, so its
+          // label stays frozen on the rung it was minted for while buyLandmark re-derives
+          // current+1 fresh on every click. Four clicks of one button labelled "Build Stone
+          // Marker" charged 5,000,000, 10,000,000, 20,000,000 and 40,000,000 — 32x its own
+          // label, and there is no refund path. The i.update on success is a second layer
+          // only: another open message still holds a stale button.
+          const [, , , landmarkUid, tierStr] = parts;
           if (i.user.id !== landmarkUid) { await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral }); return; }
+          // tierStr is CLIENT-supplied. Number('') is 0 and Number(undefined) is NaN, so a
+          // truncated or forged customId is rejected here rather than reaching buyLandmark.
+          const offered = Number(tierStr);
+          if (!Number.isInteger(offered) || offered < 1 || offered > MAX_LANDMARK_TIER) {
+            await i.reply({ content: 'That landmark button is no longer valid — run `/park landmark` again.', flags: MessageFlags.Ephemeral });
+            return;
+          }
+          const rung = landmarkFor(offered)!;
+          const current = landmarkTierOf(ctx, i.user.id);
+          // At the top of the ladder there is no next rung at all, so every button is stale
+          // in the same way and buyLandmark's LandmarkMaxedError names the reason better than
+          // this branch could — only a below-the-top mismatch is answered here.
+          if (current < MAX_LANDMARK_TIER && offered !== current + 1) {
+            await i.reply({
+              content: `Tier ${offered} — the ${rung.name} — is already built. Run \`/park landmark\` again for the rung you can buy now.`,
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
           try {
             const def = buyLandmark(ctx, i.user.id);
-            await i.reply({ content: `🏛️ Built the **${def.name}**.` });
+            const fresh = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, i.user.id)).get()!;
+            // i.update, not i.reply: the message the player just clicked must stop offering a
+            // rung it has already sold. No attachments key — landmarkPayload attaches no
+            // files, so this message has no attachment set for the update to shed.
+            await i.update({
+              ...landmarkPayload(fresh, def, nextLandmark(ctx, i.user.id)),
+              content: `🏛️ Built the **${def.name}**.`,
+            });
           } catch (e) {
             if (e instanceof LandmarkMaxedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
             else if (e instanceof InsufficientFundsError) {
-              const next = landmarkFor(landmarkTierOf(ctx, i.user.id) + 1);
               await i.reply({
-                content: `Not enough cash — the ${next?.name ?? 'next landmark'} costs ${(next?.cost ?? 0).toLocaleString('en-US')}.`,
+                content: `Not enough cash — the ${rung.name} costs ${rung.cost.toLocaleString('en-US')}.`,
                 flags: MessageFlags.Ephemeral,
               });
             } else throw e;
