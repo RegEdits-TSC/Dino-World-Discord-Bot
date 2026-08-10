@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { MessageFlags } from 'discord.js';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
-import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, BASE_LOT_SLOTS, breedingSlots } from '../src/modules/park/service.js';
+import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, upgradeCostFor, BASE_LOT_SLOTS, breedingSlots } from '../src/modules/park/service.js';
 import { incubatorSlots } from '../src/modules/hatchery/service.js';
 import { renameDino } from '../src/modules/park/dinos.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
@@ -10,6 +10,7 @@ import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
 import { dashboardPayload } from '../src/modules/park/embeds.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
+import { FACILITIES } from '../src/data/facilities.js';
 import { DECOR } from '../src/data/decor.js';
 import { lotSlots } from '../src/data/progression.js';
 
@@ -347,6 +348,34 @@ describe('upgradeLot service', () => {
   });
 });
 
+describe('upgradeCostFor', () => {
+  it('matches the facility table for every kind and level', () => {
+    for (const f of Object.values(FACILITIES)) {
+      for (let level = 1; level < f.maxLevel; level++) {
+        expect(upgradeCostFor(f.kind, level), `${f.kind} L${level}`).toBe(f.upgradeCosts[level - 1]);
+      }
+    }
+  });
+  it('prices a paddock off its build cost', () => {
+    expect(upgradeCostFor('herbivore_paddock', 1)).toBe(5_000);
+    expect(upgradeCostFor('herbivore_paddock', 3)).toBe(31_250);
+  });
+  it('charges exactly what it quotes', () => {
+    // getOrCreateUser must run before seedLot: lots.userId has a FK on users.discordId
+    // (see createDb's foreign_keys = ON), so seeding the lot first throws a constraint
+    // error that has nothing to do with upgradeCostFor — every other seedLot call in this
+    // file creates the user first for the same reason.
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const lot = seedLot({ type: 'paddock', kind: 'herbivore_paddock', name: 'Pen', level: 1 });
+    const quoted = upgradeCostFor('herbivore_paddock', 1);
+    ctx.db.update(schema.users).set({ cash: quoted }).where(eq(schema.users.discordId, 'u1')).run();
+    upgradeLot(ctx, 'u1', lot.id);
+    // Exact-charge check: if upgradeLot ever drifted from upgradeCostFor's quote, cash would
+    // land above or below 0 instead of landing exactly on it.
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.cash).toBe(0);
+  });
+});
+
 describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () => {
   it('/upgrade execute success and each error reply', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
@@ -363,6 +392,16 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     const maxI = fakeCommand({ name: 'upgrade', user: 'u1', options: { lot: lot.id } });
     await cmd.execute(ctx, maxI.asChatInput());
     expect(replyText(maxI.replies[0])).toContain('max level');
+  });
+  it('/upgrade execute quotes the price on the insufficient-funds reply', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
+    const lot = buildLot(ctx, 'u1', Object.keys(PADDOCKS)[0]);   // herbivore_paddock, level 1
+    ctx.db.update(schema.users).set({ cash: 0 }).run();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'upgrade')!;
+    const brokeI = fakeCommand({ name: 'upgrade', user: 'u1', options: { lot: lot.id } });
+    await cmd.execute(ctx, brokeI.asChatInput());
+    expect(replyText(brokeI.replies[0])).toContain('5,000');     // upgradeCostFor('herbivore_paddock', 1)
   });
   it('/decorate execute adds decor', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');

@@ -108,6 +108,17 @@ export function buildLot(ctx: Ctx, userId: string, kind: string): Lot {
   return lot;
 }
 
+/**
+ * Cost to take `kind` from `level` to `level + 1`. One helper so the autocomplete label,
+ * the failure message and the actual charge cannot disagree — the same rule the shop's
+ * price helpers follow. Bounds-guarded through levelValue for the same reason capHours is.
+ */
+export function upgradeCostFor(kind: string, level: number): number {
+  const def = FACILITIES[kind];
+  if (def) return levelValue(def.upgradeCosts, level, def.upgradeCosts[def.upgradeCosts.length - 1] ?? 0);
+  return Math.round(PADDOCKS[kind].buildCost * 2.5 ** level);
+}
+
 export function upgradeLot(ctx: Ctx, userId: string, lotId: number): Lot {
   const lot = ctx.db.select().from(schema.lots)
     .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, userId))).get();
@@ -115,8 +126,7 @@ export function upgradeLot(ctx: Ctx, userId: string, lotId: number): Lot {
   const def = FACILITIES[lot.kind];
   const maxLevel = def ? def.maxLevel : 4;                       // paddock max level 4 (capacity 8)
   if (lot.level >= maxLevel) throw new LotLimitError();
-  const cost = def ? def.upgradeCosts[lot.level - 1]
-                   : Math.round(PADDOCKS[lot.kind].buildCost * 2.5 ** lot.level);
+  const cost = upgradeCostFor(lot.kind, lot.level);
   // See buildLot: charge + level bump must be atomic against a failed update.
   const updated = ctx.db.transaction(() => {
     ctx.economy.apply(userId, { cash: -cost }, `upgrade:${lot.kind}:${lot.level + 1}`, ctx.now());

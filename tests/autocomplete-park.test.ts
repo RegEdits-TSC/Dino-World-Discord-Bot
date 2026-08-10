@@ -27,7 +27,8 @@ describe('/upgrade lot autocomplete', () => {
     await cmd('upgrade').autocomplete!(ctx, i.asAutocomplete());
     const rows = i.replies[0] as Array<{ name: string; value: number }>;
     expect(rows.map((r) => r.value)).toEqual([open.id, maxed.id]);
-    expect(rows[0].name).toBe(`🏗️ #${open.id} Hatchery Lab (lvl 2)`);
+    // hatchery_lab L2 -> L3 costs upgradeCosts[1] = 150,000 (src/data/facilities.ts).
+    expect(rows[0].name).toBe(`🏗️ #${open.id} Hatchery Lab (lvl 2) — 150,000 cash`);
     expect(rows[1].name).toBe(`🏗️ #${maxed.id} Herbivore Paddock (lvl 4) — MAX LEVEL`);
   });
 
@@ -37,6 +38,16 @@ describe('/upgrade lot autocomplete', () => {
     const i = fakeAutocomplete({ name: 'upgrade', user: 'u1', focused: { name: 'lot', value: '' } });
     await cmd('upgrade').autocomplete!(ctx, i.asAutocomplete());
     expect(i.replies[0]).toEqual([{ name: 'No lots — /build one first', value: 0 }]);
+  });
+
+  it('quotes the next level price in the upgrade label', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1');
+    seedLot(ctx, { type: 'paddock', kind: 'herbivore_paddock', name: 'Pen', level: 1 });
+    const i = fakeAutocomplete({ name: 'upgrade', user: 'u1', focused: { name: 'lot', value: '' } });
+    await cmd('upgrade').autocomplete!(ctx, i.asAutocomplete());
+    const rows = i.replies[0] as Array<{ name: string }>;
+    expect(rows[0].name).toContain('5,000');
   });
 });
 

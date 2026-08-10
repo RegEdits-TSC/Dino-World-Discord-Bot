@@ -1,8 +1,8 @@
 import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
-import { getOrCreateUser, buildLot, upgradeLot, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, toClockDinos } from './service.js';
+import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, toClockDinos } from './service.js';
 import { feedAll } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { earnedTierCount } from '../daily/service.js';
@@ -182,13 +182,22 @@ export const parkModule: ModuleManifest = {
         .addIntegerOption((o) => o.setName('lot').setDescription('Lot — type to search').setRequired(true).setAutocomplete(true)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        const lotId = i.options.getInteger('lot', true);
+        // Hoisted so the InsufficientFundsError branch below can quote the price: upgradeLot
+        // does the same lookup internally, so this is one cheap extra read, not a second
+        // source of truth for the cost (upgradeCostFor stays the only place that computes it).
+        const lotRow = ctx.db.select().from(schema.lots)
+          .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, i.user.id))).get();
         try {
-          const lot = upgradeLot(ctx, i.user.id, i.options.getInteger('lot', true));
+          const lot = upgradeLot(ctx, i.user.id, lotId);
           await i.reply({ content: `⬆️ **${lot.name}** is now level ${lot.level}.` });
         } catch (e) {
           if (e instanceof LotLimitError) await i.reply({ content: 'Already max level.', flags: MessageFlags.Ephemeral });
           else if (e instanceof UnknownKindError) await i.reply({ content: 'No such lot.', flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({
+            content: `Not enough cash — that upgrade costs ${upgradeCostFor(lotRow!.kind, lotRow!.level).toLocaleString('en-US')}.`,
+            flags: MessageFlags.Ephemeral,
+          });
           else throw e;
         }
       },
@@ -201,7 +210,8 @@ export const parkModule: ModuleManifest = {
           .map((l) => {
             const maxLevel = FACILITIES[l.kind]?.maxLevel ?? 4;
             const valid = l.level < maxLevel;
-            return { value: l.id, valid, label: `🏗️ #${l.id} ${l.name} (lvl ${l.level})${valid ? '' : ' — MAX LEVEL'}` };
+            const price = valid ? ` — ${upgradeCostFor(l.kind, l.level).toLocaleString('en-US')} cash` : '';
+            return { value: l.id, valid, label: `🏗️ #${l.id} ${l.name} (lvl ${l.level})${valid ? price : ' — MAX LEVEL'}` };
           }));
       },
     },
