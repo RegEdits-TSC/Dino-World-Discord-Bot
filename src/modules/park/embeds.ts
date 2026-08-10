@@ -3,6 +3,7 @@ import type { User, Lot } from './service.js';
 import { emojiTag } from '../../core/emojis.js';
 import { eventHeaderLine } from '../world/embeds.js';
 import type { LandmarkDef } from '../../data/landmarks.js';
+import type { LegacyTier } from './ranks.js';
 
 const LOT_EMOJI: Record<string, string> = {
   carnivore_paddock: 'dw_lot_carnivore', herbivore_paddock: 'dw_lot_herbivore',
@@ -22,7 +23,7 @@ export function dashboardPayload(
   // every real call site (src/modules/park/index.ts) always passes ctx.now().
   // Missing defaults to a calm day, the same convention ChaptersView.now uses
   // in src/modules/battles/embeds.ts.
-  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number; now?: number } = {},
+  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number; legacyRank?: LegacyTier | null; now?: number } = {},
 ) {
   const extras: string[] = [];
   if (escapedCount > 0) extras.push(`${escapedCount} ${emojiTag('dw_alert')} escaped`);
@@ -46,6 +47,13 @@ export function dashboardPayload(
   const earnedTiers = opts.earnedTiers ?? 0;
   if (earnedTiers > 0) {
     embed.addFields({ name: '🏆 Achievements', value: `${earnedTiers} tier${earnedTiers === 1 ? '' : 's'} earned`, inline: true });
+  }
+  if (opts.legacyRank) {
+    embed.addFields({
+      name: '🏛️ Legacy',
+      value: `${opts.legacyRank.title} (rank ${opts.legacyRank.rank})`,
+      inline: true,
+    });
   }
   if (opts.capped) {
     embed.addFields({ name: '⛔ Income capped', value: 'Idle earnings hit the Visitor Center cap — collect now to restart them.' });

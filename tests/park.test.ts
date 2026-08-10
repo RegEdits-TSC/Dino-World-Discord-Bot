@@ -13,6 +13,8 @@ import { PADDOCKS } from '../src/data/paddocks.js';
 import { FACILITIES } from '../src/data/facilities.js';
 import { DECOR } from '../src/data/decor.js';
 import { lotSlots } from '../src/data/progression.js';
+import { allSpecies } from '../src/data/species/index.js';
+import { recordSpeciesSeen } from '../src/core/species-seen.js';
 
 const H = 3_600_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -284,6 +286,57 @@ describe('/park view achievements badge wiring', () => {
     const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
     const field = fields.find((f) => f.name === '🏆 Achievements')!;
     expect(field.value).toContain('1');
+  });
+});
+
+describe('dashboard legacy rank', () => {
+  it('shows the title and rank number when ranked', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 0, 0, { legacyRank: { rank: 3, title: 'Curator', points: 65 } });
+    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏛️ Legacy');
+    expect(field).toBeTruthy();
+    expect(field!.value).toContain('Curator');
+    expect(field!.value).toContain('3');           // rank number, not just the title
+  });
+  it('omits the field when unranked (explicit null and opts unset alike)', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    for (const opts of [{ legacyRank: null }, {}]) {
+      const names = dashboardPayload(user, [], 0, 0, 0, opts).embeds[0].toJSON().fields!.map((f) => f.name);
+      expect(names).not.toContain('🏛️ Legacy');
+    }
+  });
+});
+
+describe('/park view legacy rank wiring', () => {
+  // allSpecies().slice(0, 15/35) seeds exactly the Groundskeeper/Keeper thresholds
+  // (LEGACY_TIERS in src/modules/park/ranks.js) via species points alone — species alone
+  // caps at allSpecies().length (42, tests/ranks.test.ts), which is why these two tests
+  // stay within Groundskeeper/Keeper rather than reaching for a higher tier. u1 and u2
+  // land on DIFFERENT titles on purpose: a title mismatch fails louder than a
+  // missing-vs-present field would if the wrong id were ever passed at a call site.
+  it('passes the viewer own rank into the own-park dashboard', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    for (const s of allSpecies().slice(0, 15)) recordSpeciesSeen(ctx, 'u1', s.id);   // Groundskeeper (rank 1)
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
+    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field = fields.find((f) => f.name === '🏛️ Legacy');
+    expect(field).toBeTruthy();
+    expect(field!.value).toContain('Groundskeeper');
+  });
+
+  it('shows the TARGET player rank when viewing another park, not the viewer own', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    getOrCreateUser(ctx, 'u2', 'Other');
+    for (const s of allSpecies().slice(0, 15)) recordSpeciesSeen(ctx, 'u1', s.id);   // Groundskeeper (rank 1)
+    for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u2', s.id);   // Keeper (rank 2)
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1', options: { user: { id: 'u2' } } });
+    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
+    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field = fields.find((f) => f.name === '🏛️ Legacy');
+    expect(field).toBeTruthy();
+    expect(field!.value).toContain('Keeper');       // u2's rank
+    expect(field!.value).not.toContain('Groundskeeper');   // never u1's (the viewer's) rank
   });
 });
 
