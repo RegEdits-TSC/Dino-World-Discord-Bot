@@ -109,12 +109,14 @@ describe('dexListPayload', () => {
   it('shows the legacy rank in the footer once ranked', () => {
     // 35 species = exactly Keeper (rank 2); 20 would only reach Groundskeeper.
     for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u1', s.id);
-    expect(JSON.stringify(dexListPayload(ctx, 'u1', {}, 1))).toContain('Keeper');
+    const payload = dexListPayload(ctx, 'u1', {}, 1);
+    const footer = payload.embeds[0].toJSON().footer!.text;
+    expect(footer).toBe('35/42 seen · Page 1/5 · Keeper');
   });
   it('omits it entirely when unranked', () => {
-    const text = JSON.stringify(dexListPayload(ctx, 'u1', {}, 1));
-    expect(text).toContain('0/42');
-    expect(text).not.toContain('rank');
+    const payload = dexListPayload(ctx, 'u1', {}, 1);
+    const footer = payload.embeds[0].toJSON().footer!.text;
+    expect(footer).toBe('0/42 seen · Page 1/5');
   });
 });
 
