@@ -105,6 +105,17 @@ justification than the one 2a gave it.
    + `earnedTierCount` (48) + `battle_progress.stars` (90) = 180 points. All three
    are monotone, ceilinged, readable in one query each, and — critically — complete
    for legacy accounts.
+   **Corrected during the final review:** that last clause holds fully for the dex and
+   battle-star terms and only *transitively* for the achievement term. `earnedTierCount`
+   counts `achievement_claims` — the right thing to count, and never lost — but every
+   `ACHIEVEMENTS` track is gated on a `user_stats` counter, and **7 of the 12** sit on
+   counters `0006` did not backfill (`eggs_hatched`, `dinos_fed`, `income_collected`,
+   `battles_fought`, `battles_won`, `splices_done`, `dinos_sold`). A pre-0006 account
+   cannot claim **28 of the 48** achievement points from history it already lived, so
+   **15.6% of the 180 ceiling inherits the very gap this decision rejected `user_stats`
+   to avoid.** The design still stands, for a narrower reason than "complete": the
+   shortfall is re-earnable by playing, where a rank built directly on the counters
+   would have been permanently unrecoverable.
    *Rejected: the 18 `user_stats` counters as the basis*, which is what 2a assumed.
    Migration `0006_daily_loop.sql:37-58` backfilled only **6 of 18**; the other
    twelve, including `dinos_fed`, `eggs_hatched` and `battles_fought`, start at 0 for
@@ -428,10 +439,18 @@ new WebPs, no emoji.
 1. `npm run typecheck` — the only gate covering `tests/` and `scripts/`, and it will
    **not** catch an out-of-bounds facility array index.
 2. `npm test`.
-3. `npm run deploy-commands` — `/park` gains the `landmark` subcommand. Command count
+3. **Restart first** — this applies migration 0011 and lands the new code.
+4. `npm run deploy-commands` — `/park` gains the `landmark` subcommand. Command count
    stays 26. Exactly one bot process per token.
-4. Restart — migration 0011 applies at boot.
 5. `npm run test:live` — confirm the landmark cell renders on the P1 park.
+
+**Steps 3 and 4 are in this order deliberately; do not swap them back.** An earlier
+draft of this checklist deployed the builder before restarting, which opens a window
+where Discord offers `/park landmark` while the still-running old build handles it — and
+the old build is exactly the unguarded-fallthrough dispatch this branch replaced, so it
+would render the dashboard and report success for a purchase surface that does not exist
+yet. Restarting first inverts the failure into a harmless one: for a few seconds the code
+can serve a subcommand Discord has not advertised, which nobody can invoke.
 
 No `deploy-emojis`: the landmark art is WebP through `loadParkArt`, deliberately not
 an SVG. An SVG icon would drag in the whole app-emoji contract — the SVG directory is
