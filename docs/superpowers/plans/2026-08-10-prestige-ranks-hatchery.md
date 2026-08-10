@@ -1444,12 +1444,19 @@ describe('legacyRank', () => {
     expect(legacyRank(ctx, 'u1')).toBeNull();
   });
   it('resolves each threshold exactly, and one point under it', () => {
+    // Seed ACROSS ALL THREE SOURCES. Species alone cap at 42, so a species-only fixture
+    // cannot reach the 100 / 140 / 170 thresholds at all — a conditional skip there would
+    // silently leave half the ladder untested. Spend species first, then achievement
+    // claims, then battle stars, to hit an exact point total.
     for (const tier of LEGACY_TIERS) {
-      const c = makeCtx(); getOrCreateUser(c, 'u1', 'Reg');
-      for (const s of allSpecies().slice(0, Math.min(tier.points, allSpecies().length))) recordSpeciesSeen(c, 'u1', s.id);
-      if (tier.points <= allSpecies().length) {
-        expect(legacyRank(c, 'u1')!.rank, `at ${tier.points}`).toBeGreaterThanOrEqual(tier.rank);
-      }
+      const at = makeCtx(); getOrCreateUser(at, 'u1', 'Reg');
+      seedPoints(at, tier.points);
+      expect(legacyRank(at, 'u1')!.rank, `at ${tier.points}`).toBe(tier.rank);
+
+      const under = makeCtx(); getOrCreateUser(under, 'u1', 'Reg');
+      seedPoints(under, tier.points - 1);
+      const below = legacyRank(under, 'u1');
+      expect(below?.rank ?? 0, `one under ${tier.points}`).toBe(tier.rank - 1);
     }
   });
   it('returns the HIGHEST tier reached, not the first', () => {
