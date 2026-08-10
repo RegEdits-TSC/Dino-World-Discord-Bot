@@ -588,12 +588,18 @@
   warning it exists to send — and it would also turn "escapes are only settled when a
   command touches your park" (the Escapes section of `docs/gameplay.md`) into a lie, since
   a background timer isn't a command anyone touched.
-  `/park`'s dispatch is a trap for the next subcommand: there is no subcommand switch,
-  only one explicit `i.options.getSubcommand() === 'rename'` check, then (since `/park
-  alerts` shipped) one explicit `=== 'alerts'` check, and everything else — including a
-  brand-new subcommand nobody wrote a branch for — falls through unguarded to the view
-  path below and renders the dashboard successfully. A forgotten branch for a future
-  subcommand doesn't error; it silently does nothing and reports success.
+  `/park`'s dispatch used to be a trap for the next subcommand: before `/park landmark`
+  shipped, there was no subcommand switch, only a chain of explicit `=== 'rename'` /
+  `=== 'alerts'` checks with the view path as the fallthrough, so a brand-new
+  subcommand nobody had written a branch for fell through unguarded and rendered the
+  dashboard — reporting success for a command that did nothing. `execute`
+  (`src/modules/park/index.ts`) now dispatches on a real `switch (i.options.getSubcommand())`
+  with a `case` for `rename`, `alerts` and `landmark`, `case 'view': break;` to reach the
+  dashboard path below the switch, and a `default` arm that replies
+  `'Unknown /park subcommand.'` ephemerally and returns — so an unrecognised subcommand
+  now errors visibly instead of silently doing nothing. The switch's own comment records
+  why it exists. Any future `/park` subcommand MUST be added as its own `case`; there is
+  no longer a fallthrough to lean on, and none should be reintroduced.
   A payload reaching `deliverNotification` must never carry an `attachments` key — the
   inverse of the `i.update` rule the battles bullet above documents. `fightFrames`'s F1/F4
   sends need an explicit `attachments: []` on every call because two send sites reuse one
