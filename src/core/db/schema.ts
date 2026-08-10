@@ -21,6 +21,11 @@ export const users = sqliteTable('users', {
   // the breeding, the expedition. adminReset deliberately does not restore this —
   // see the comment in admin/service.ts.
   alertsEnabled: integer('alerts_enabled', { mode: 'boolean' }).notNull().default(true),
+  // Cosmetic prestige ladder (src/data/landmarks.ts). Deliberately read by NOTHING in
+  // rating.ts, clock.ts, lotSlots or matchedKindCount: the sink's power-freedom is
+  // structural rather than a filter someone has to remember. Monotone — only the next
+  // tier is ever purchasable — which is also what removes the refund question.
+  landmarkTier: integer('landmark_tier').notNull().default(0),
   lastCollectAt: integer('last_collect_at_ms').notNull(),
   createdAt: integer('created_at_ms').notNull(),
 }, (t) => [
