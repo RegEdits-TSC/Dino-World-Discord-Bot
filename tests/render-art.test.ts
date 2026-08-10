@@ -71,6 +71,7 @@ describe('loadParkArt', () => {
       expect(art.plateFacility).toBeNull();
       expect(art.lotIcons['carnivore_paddock']).toBeNull();
       expect(art.dinoChips.mythic).toBeNull();
+      expect(art.landmarks).toEqual({ a: null, b: null, c: null });
     } finally {
       process.chdir(cwd);
     }
