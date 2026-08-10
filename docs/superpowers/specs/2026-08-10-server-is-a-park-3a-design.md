@@ -71,21 +71,41 @@ explaining why. A score table cuts directly against that design language.
 
 ### The design
 
-Replace the per-user loop with a fixed set of grouped reads, each returning a
-`Map<userId, number>`, then assemble rows from those maps.
+Replace the per-user loop with a fixed set of **batched reads** — one query per
+source table, grouped into a `Map<userId, number>` in JS — then assemble rows
+from those maps.
 
-| Metric | Source | Read |
+| Metric | Source | Reads |
 | --- | --- | --- |
-| `rating` | `users.park_rating` | already in the candidate scan |
-| `cash` | `users.cash` | already in the candidate scan |
-| `collection` | `dinos` | `SELECT DISTINCT user_id, species_id`, rarity weights applied in JS |
-| `legacy` *(new)* | `species_seen`, `achievement_claims`, `battle_progress` | three grouped reads |
-| `stars` *(new)* | `battle_progress` | `SUM(stars) GROUP BY user_id` |
+| `rating` | `users.park_rating` | 0 — already in the candidate scan |
+| `cash` | `users.cash` | 0 — already in the candidate scan |
+| `collection` | `dinos` | 1 |
+| `legacy` *(new)* | `species_seen`, `achievement_claims`, `battle_progress` | 3 |
+| `stars` *(new)* | `battle_progress` | 1 |
 
-Worst case is five queries regardless of how many players exist. Nothing is
-stored, nothing needs refreshing, and nothing can go stale. The `legacy`
-metric on `/top` is exactly as derived as `legacyPoints` is today, which
-answers 2b's objection rather than overriding it.
+Worst case is four queries plus the candidate scan, regardless of how many
+players exist. Nothing is stored, nothing needs refreshing, and nothing can go
+stale. The `legacy` metric on `/top` is exactly as derived as `legacyPoints` is
+today, which answers 2b's objection rather than overriding it.
+
+**Not `GROUP BY`, and that is a deliberate reversal of this spec's first
+draft.** Recon over the whole tree found that `src/` has never used `groupBy`,
+`count()`, `sum()`, `countDistinct`, `selectDistinct`, `.having()`, `.limit()`,
+or a partial `.select({ … })` projection — not once. Every read in the codebase
+is `.select().from(t).where(…).all()` followed by JS aggregation, and the four
+files that import `sql` use it only for CHECK bodies and `UPDATE … SET` column
+arithmetic, never in a SELECT. Introducing an aggregate here would be a new
+idiom, and it buys nothing the batched read does not already deliver: the
+guarantee that matters is a **fixed query count**, which both satisfy. Two
+concrete hazards also argue against it — `SUM(stars)` over an empty row set
+returns SQL `NULL` where `.reduce(…, 0)` returns `0` (a fresh account's legacy
+points would become `NaN`, and `NaN >= threshold` is `false`, so `legacyRank`
+would silently return null rather than crash), and drizzle's aggregate builders
+have no in-repo precedent for how the result is unwrapped on better-SQLite3.
+
+Server scope keeps its existing `inArray` predicate — the one helper on this
+list the codebase already uses — so a server board reads only its candidates'
+rows rather than the whole table.
 
 New exported functions in `leaderboards/service.ts`:
 
@@ -218,6 +238,32 @@ help-topic payload, which calls `attach()` only when the topic declares `art`,
 and `HELP_TOPICS.park` declares none. After this change that would no longer
 break even if it did.
 
+### A second drop on the same path, which the fix above does not cover
+
+The other-player `/park view` branch does not forward the payload it built. It
+rebuilds one:
+
+```ts
+const base = { embeds: payload.embeds };
+```
+
+That single line is the entire mechanism keeping the Collect button off someone
+else's park — `park:collect` carries no user id, so a viewer clicking it would
+collect **their own** income from a message about another player. It must keep
+dropping `components`. But it drops `files` with them, so the featured dino's
+upload would vanish on exactly the surface visits exist for, leaving a dangling
+`attachment://<archetype>-<diet>.webp` in the embed.
+
+Both drops are load-bearing in opposite directions, which is why §5's shared
+visit builder constructs its components from scratch — forwarding `embeds` and
+`files`, never `components` — instead of filtering a dashboard payload.
+
+`tests/park-view-image.test.ts` currently pins that branch with
+`expect(reply.components).toBeUndefined()`. Discovery puts a **Next park**
+button there, so that assertion must change — to "carries no `park:collect`",
+which is the property it was actually protecting. Widening it is not weakening
+it: the current form would equally pass if the embed lost its image.
+
 ## 5. Discovery: buttons only
 
 `src/core/router.ts:44` reads `if (!isCommand && !isButton) return;`. A select
@@ -262,13 +308,17 @@ park; if none qualifies, the button is not rendered at all.
 
 `pageRow`'s customId embeds a `userId` because paging a list belongs to the
 list's owner. Visiting does not: these messages are public and the paths are
-read-only, so there is no owner to lock to and no state to protect. Both
-handlers must stay write-free — no `getOrCreateUser`, no `settleEscapes` on
-the viewer, nothing that mints a row for a passer-by who clicked a button.
+read-only, so there is no owner to lock to and no state to protect. In both
+customIds the id segment is the **target park**, never an owner — a fact worth
+a comment at the handler, because turning it into an ownership check would make
+**Next park** work only for the player whose park is on screen.
 
-The visited player's own `settleEscapes` call stays where it already is, in
-the existing other-player view branch, because that path is what makes the
-displayed park accurate.
+Neither handler may touch the clicker: no `getOrCreateUser`, nothing that mints
+a row or mutates state for a passer-by who clicked a button. It does still
+settle the **target's** escapes — that is the existing other-player view
+behaviour, and it is what makes the displayed park accurate. (The router's own
+`touchPresence` writes on every interaction regardless, so "writes nothing at
+all" was never the achievable property; "creates nothing for the clicker" is.)
 
 ### No privacy opt-out
 
@@ -287,7 +337,15 @@ alone would not verify the thing this section of the spec is for.
 
 Wrap `ctx.db` in a counting proxy, build a three-user fixture and a
 thirty-user fixture, and assert the query count is **identical** across the
-two. That test fails the moment a per-user read reappears inside `scored()`.
+two — and pin the exact number per metric, so a rewrite that reads everything
+twice cannot pass by being equally wasteful at both sizes. That test fails the
+moment a per-user read reappears inside `scored()`.
+
+Drive it through `topPlayers` directly, **not** through `/top`. The command's
+footer branch calls `playerRank`, which runs `scored()` a second time, and that
+branch flips between the two fixtures (the caller is inside the top 10 at three
+players and outside it at thirty) — so a command-level count would differ for a
+reason that has nothing to do with the N+1.
 
 ### Agreement
 
@@ -317,9 +375,11 @@ already depend on that convention.
 - single-eligible ring: Next resolves to the same park;
 - zero-eligible ring: no button rendered;
 - own `/park view` carries no Next park button, the other-player branch does;
+- the other-player branch carries no `park:collect`, and **does** carry the
+  featured dino's file — the two opposite drops of §4;
 - Visit buttons: at most five, and each targets the right player;
-- both handlers write nothing — asserted against a database snapshot taken
-  before the click.
+- neither handler creates a row for the clicker: click as a user with no
+  `users` row and assert none exists afterwards.
 
 ### Contract and migration
 
