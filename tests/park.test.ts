@@ -474,7 +474,10 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     const cmd = parkModule.commands.find((c) => c.data.name === 'upgrade')!;
     const brokeI = fakeCommand({ name: 'upgrade', user: 'u1', options: { lot: lot.id } });
     await cmd.execute(ctx, brokeI.asChatInput());
-    expect(replyText(brokeI.replies[0])).toContain('5,000');     // upgradeCostFor('herbivore_paddock', 1)
+    // Exact, not toContain('5,000'): that substring is satisfied by '15,000' and by
+    // '5,000,000' just as happily. herbivore_paddock L1 -> L2 is round(2,000 x 2.5) = 5,000
+    // (upgradeCostFor), and the whole point of the quote is that the FIGURE is right.
+    expect(replyText(brokeI.replies[0])).toBe('Not enough cash — that upgrade costs 5,000.');
   });
   it('/decorate execute adds decor', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');

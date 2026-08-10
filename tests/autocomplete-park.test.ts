@@ -43,11 +43,14 @@ describe('/upgrade lot autocomplete', () => {
   it('quotes the next level price in the upgrade label', async () => {
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'u1');
-    seedLot(ctx, { type: 'paddock', kind: 'herbivore_paddock', name: 'Pen', level: 1 });
+    const lot = seedLot(ctx, { type: 'paddock', kind: 'herbivore_paddock', name: 'Pen', level: 1 });
     const i = fakeAutocomplete({ name: 'upgrade', user: 'u1', focused: { name: 'lot', value: '' } });
     await cmd('upgrade').autocomplete!(ctx, i.asAutocomplete());
     const rows = i.replies[0] as Array<{ name: string }>;
-    expect(rows[0].name).toContain('5,000');
+    // Exact label, matching the sibling test above: toContain('5,000') is satisfied by
+    // '15,000' and by '5,000,000' alike, so it cannot tell a right price from a wrong one.
+    // herbivore_paddock L1 -> L2 is round(2,000 x 2.5) = 5,000 (upgradeCostFor).
+    expect(rows[0].name).toBe(`🏗️ #${lot.id} Pen (lvl 1) — 5,000 cash`);
   });
 });
 

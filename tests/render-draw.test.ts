@@ -208,12 +208,15 @@ describe('renderParkPng', () => {
   // The landmark is drawn as one extra grid cell AFTER the build slot, so every existing tile keeps
   // its coordinates — that placement is why none of the seven pinned pixel samples above move.
   describe('landmark cell', () => {
-    it('a snapshot with no landmark renders byte-identically to today', () => {
-      const before = renderParkPng(sample, EMPTY_ART);
-      expect(renderParkPng({ ...sample }, EMPTY_ART).equals(before)).toBe(true);
-      expect(sample.landmarkTier).toBeUndefined();
-    });
-
+    // A test that rendered `sample` twice with the same art and compared the buffers used to
+    // sit here, called "a snapshot with no landmark renders byte-identically to today". It was
+    // DELETED rather than strengthened: two identical calls test determinism, which the
+    // all-null-ParkArt pin above already covers, and it could not fail for its stated reason —
+    // if drawLandmark ran unconditionally at tier 0, both renders would change identically and
+    // it would still pass. Its `expect(sample.landmarkTier).toBeUndefined()` line asserted a
+    // property of the fixture two screens up, not of the renderer. The real gate for "tier 0
+    // draws no cell" is the decoded gridDims(3).height pin in the next test, which is where a
+    // fourth cell at tier 0 shows up as a second row.
     it('a landmark adds exactly one cell, growing the grid', async () => {
       // sample has 2 lots and lotCap 5, so hasBuild is true: 3 cells, 1 row, 254 tall.
       // A landmark makes 4 cells, 2 rows, 420 tall. Decode both PNGs and check the actual

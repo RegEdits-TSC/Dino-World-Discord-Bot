@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { LANDMARKS, MAX_LANDMARK_TIER, landmarkFor, landmarkBandFor } from '../src/data/landmarks.js';
 import { schema } from '../src/core/db/index.js';
@@ -13,6 +15,55 @@ let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => {
   ctx = makeCtx();
   getOrCreateUser(ctx, 'u1', 'Reg');
+});
+
+// The invariant the whole feature rests on, given a machine gate instead of a promise.
+// The design's argument for putting the tier on a `users` column rather than shipping it as
+// a DECOR kind is that its power-freedom is STRUCTURAL — nothing in rating.ts, clock.ts,
+// lotSlots or matchedKindCount reads the column, so there is no filter anyone can forget.
+// That argument is only true while the set of files touching it stays this small, and
+// "structural rather than remembered" is not something a comment can enforce. Same idiom as
+// tests/images.test.ts's "no source file hand-assigns an embed payload files array".
+//
+// The list is CLOSED in both directions: a new file mentioning the tier fails, and so does an
+// allowlisted file that stops mentioning it, so the list cannot rot into a superset that
+// quietly re-permits a reader it no longer names.
+const LANDMARK_TIER_READERS = [
+  'core/db/schema.ts',            // the column itself
+  'core/render/draw.ts',          // draws the cosmetic tile — pixels, never mechanics
+  'modules/admin/service.ts',     // adminReset zeroes it
+  'modules/park/index.ts',        // /park landmark and its buy button
+  'modules/park/landmarks.ts',    // the ladder: the only reader AND the only writer
+  'modules/park/snapshot.ts',     // stamps it onto ParkSnapshot for the renderer
+];
+
+describe('landmark power-freedom', () => {
+  const srcFiles = (dir: string): string[] => readdirSync(dir, { withFileTypes: true })
+    .flatMap((e) => {
+      const p = join(dir, e.name);
+      return e.isDirectory() ? srcFiles(p) : e.name.endsWith('.ts') ? [p] : [];
+    });
+
+  it('is read by exactly the files allowed to read it, and by nothing that computes power', () => {
+    const root = resolve(process.cwd(), 'src');
+    // The drizzle FIELD name, not the raw `landmark_tier` column: every `sql` template in
+    // src/ interpolates drizzle column references rather than name strings (there is no raw
+    // SQL outside drizzle/), so `landmarkTier` is the only way code can reach the value. The
+    // raw name is deliberately not matched — src/data/landmarks.ts names it in prose, in the
+    // comment explaining why the tier lives on a users column at all.
+    const mentions = srcFiles(root)
+      .filter((f) => /\blandmarkTier\b/.test(readFileSync(f, 'utf8')))
+      .map((f) => f.slice(root.length + 1).replaceAll('\\', '/'))
+      .sort();
+    expect(mentions, [
+      'users.landmark_tier is a purely cosmetic prestige counter and its power-freedom is',
+      'structural: it must never reach parkRaw, paddockFit, lotSlots, matchedKindCount or any',
+      'income path. This list is closed on purpose — if you are adding a file, the tier is',
+      'about to become a filter someone has to remember, which is exactly the design the',
+      'spec rejected. If you are removing one, delete its entry in the same change.',
+      `expected: ${LANDMARK_TIER_READERS.join(', ')}`,
+    ].join('\n')).toEqual([...LANDMARK_TIER_READERS].sort());
+  });
 });
 
 describe('landmark ladder', () => {

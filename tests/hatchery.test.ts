@@ -190,22 +190,32 @@ describe('hatchery lab levels 4 and 5', () => {
     }
   });
 
-  it('refuses a fourth concurrent incubation at L3 but allows it at L4', () => {
-    // Seed four eggs and incubate three; the fourth is the assertion.
-    const atLevel = (level: number) => {
+  it('refuses one incubation past the slot count at every level from L3 up', () => {
+    // Seed six eggs, incubate `busy` of them, and hand back the next one as the assertion.
+    const atLevel = (level: number, busy: number) => {
       const c = makeCtx();
       getOrCreateUser(c, 'u1', 'Reg');
       c.db.insert(schema.lots).values({
         userId: 'u1', type: 'facility', kind: 'hatchery_lab', name: 'Hatchery Lab', level,
       }).run();
-      const ids = [0, 1, 2, 3].map(() => c.db.insert(schema.eggs).values({
+      const ids = [0, 1, 2, 3, 4, 5].map(() => c.db.insert(schema.eggs).values({
         userId: 'u1', rarity: 'common', source: 'admin', obtainedAt: 0,
       }).returning().get().id);
-      for (const id of ids.slice(0, 3)) incubateEgg(c, 'u1', id, null);
-      return () => incubateEgg(c, 'u1', ids[3], null);
+      for (const id of ids.slice(0, busy)) incubateEgg(c, 'u1', id, null);
+      return () => incubateEgg(c, 'u1', ids[busy], null);
     };
-    expect(atLevel(3)).toThrow(HatcheryError);
-    expect(atLevel(4)).not.toThrow();
+    expect(atLevel(3, 3)).toThrow(HatcheryError);
+    expect(atLevel(4, 3)).not.toThrow();
+    // The `not.toThrow()` above is NOT this guard's coverage, and must not be mistaken for it:
+    // pre-guard, incubatorSlots(L4) read past its array and returned undefined, `count >=
+    // undefined` was false, and the fourth incubation was allowed anyway — for exactly the
+    // wrong reason. The discriminating coverage is the slot-count test above (4 and 5 slots at
+    // L4/L5) and 'incubatorSlots clamps instead of returning undefined' in tests/park.test.ts.
+    // The two REFUSALS below are what this test adds on its own: an unguarded read imposed no
+    // cap at all, so a fifth at L4 and a sixth at L5 both went through.
+    expect(atLevel(4, 4)).toThrow(HatcheryError);
+    expect(atLevel(5, 4)).not.toThrow();
+    expect(atLevel(5, 5)).toThrow(HatcheryError);
   });
 });
 
