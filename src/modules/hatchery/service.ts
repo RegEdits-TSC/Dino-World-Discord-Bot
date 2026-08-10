@@ -10,7 +10,7 @@ import { rollTraits } from '../../data/traits.js';
 import { locksFor } from '../../core/locks.js';
 import { eventMods } from '../../core/world.js';
 import { recomputeRating } from '../park/rating.js';
-import { facilityLevel, type Lot } from '../park/service.js';
+import { facilityLevel, levelValue, type Lot } from '../park/service.js';
 import { track } from '../../core/stats.js';
 import { recordSpeciesSeen } from '../../core/species-seen.js';
 
@@ -18,8 +18,7 @@ export class HatcheryError extends Error {}
 export type Egg = typeof schema.eggs.$inferSelect;
 
 export function incubatorSlots(lots: Lot[]): number {
-  const level = facilityLevel(lots, 'hatchery_lab');
-  return level > 0 ? FACILITIES.hatchery_lab.incubatorSlots![level - 1] : 1;
+  return levelValue(FACILITIES.hatchery_lab.incubatorSlots, facilityLevel(lots, 'hatchery_lab'), 1);
 }
 
 export function incubatingCount(ctx: Ctx, userId: string): number {

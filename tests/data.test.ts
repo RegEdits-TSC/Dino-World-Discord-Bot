@@ -15,8 +15,14 @@ describe('game data', () => {
   });
   it('facility arrays match maxLevel', () => {
     for (const f of Object.values(FACILITIES)) {
-      expect(f.incomeBonusPct).toHaveLength(f.maxLevel);
-      expect(f.upgradeCosts).toHaveLength(f.maxLevel - 1);
+      expect(f.incomeBonusPct, f.kind).toHaveLength(f.maxLevel);
+      expect(f.upgradeCosts, f.kind).toHaveLength(f.maxLevel - 1);
+      // The optional per-level arrays are indexed by level exactly like incomeBonusPct.
+      // Without these three, a maxLevel bump that leaves one stale reads undefined at the
+      // new top level — and `count >= undefined` is false, so the cap silently vanishes.
+      if (f.capHours) expect(f.capHours, f.kind).toHaveLength(f.maxLevel);
+      if (f.incubatorSlots) expect(f.incubatorSlots, f.kind).toHaveLength(f.maxLevel);
+      if (f.breedingSlots) expect(f.breedingSlots, f.kind).toHaveLength(f.maxLevel);
     }
   });
   it('RARITY values match the spec economy table', () => {

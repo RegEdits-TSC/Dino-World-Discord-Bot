@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { MessageFlags } from 'discord.js';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, BASE_LOT_SLOTS, breedingSlots } from '../src/modules/park/service.js';
+import { incubatorSlots } from '../src/modules/hatchery/service.js';
 import { renameDino } from '../src/modules/park/dinos.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
@@ -659,5 +660,35 @@ describe('/dino list full page stays within Discord embed limits', () => {
     expect(embed.description!.length).toBeLessThanOrEqual(4096);
     expect(totalEmbedText).toBeLessThanOrEqual(6000);
     expect(longestRow).toBeLessThan(300);
+  });
+});
+
+describe('facility level arrays are bounds-guarded', () => {
+  // A level above maxLevel is not reachable through upgradeLot, but it IS reachable on a
+  // live database: nothing constrains lots.level, and a future maxLevel bump that forgets
+  // to extend an array produces the same read. Every one of these resolves to the TOP
+  // defined entry — the safe direction — rather than undefined.
+  it('capHours clamps instead of returning NaN', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    seedLot({ kind: 'visitor_center', name: 'Visitor Center', level: 9 });
+    const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all();
+    expect(capHours(lots)).toBe(24);
+  });
+  it('breedingSlots clamps instead of returning undefined', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    seedLot({ kind: 'gene_lab', name: 'Gene Lab', level: 9 });
+    const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all();
+    expect(breedingSlots(lots)).toBe(3);
+  });
+  it('incubatorSlots clamps instead of returning undefined', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    seedLot({ kind: 'hatchery_lab', name: 'Hatchery Lab', level: 9 });
+    const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all();
+    expect(incubatorSlots(lots)).toBe(3);
+  });
+  it('an absent facility still returns its documented fallback', () => {
+    expect(capHours([])).toBe(8);
+    expect(breedingSlots([])).toBe(0);
+    expect(incubatorSlots([])).toBe(1);
   });
 });

@@ -52,16 +52,28 @@ export function facilityBonusPct(lots: Lot[]): number {
   }, 0);
 }
 
+/**
+ * Read a per-level facility array safely. `level` is 1-based; 0 means "absent" and takes
+ * the fallback. A level ABOVE the array clamps to its top entry rather than reading
+ * undefined — the safe direction, because `undefined` does not throw here, it silently
+ * disables the thing being read: `count >= undefined` is false (no incubation cap at all),
+ * and `from + undefined` is NaN (no income, and a literal "Collect NaN" button). Neither
+ * npm test nor npm run typecheck can see that class of bug; tsconfig has strict but not
+ * noUncheckedIndexedAccess.
+ */
+export function levelValue(table: number[] | undefined, level: number, fallback: number): number {
+  if (level <= 0 || !table || table.length === 0) return fallback;
+  return table[Math.min(level, table.length) - 1] ?? fallback;
+}
+
 export function capHours(lots: Lot[]): number {
-  const level = facilityLevel(lots, 'visitor_center');
-  return level > 0 ? FACILITIES.visitor_center.capHours![level - 1] : 8;
+  return levelValue(FACILITIES.visitor_center.capHours, facilityLevel(lots, 'visitor_center'), 8);
 }
 
 // Returns 0 without a Gene Lab, unlike capHours/incubatorSlots: there is no free
 // breeding slot the way every park gets a free incubator.
 export function breedingSlots(lots: Lot[]): number {
-  const level = facilityLevel(lots, 'gene_lab');
-  return level > 0 ? FACILITIES.gene_lab.breedingSlots![level - 1] : 0;
+  return levelValue(FACILITIES.gene_lab.breedingSlots, facilityLevel(lots, 'gene_lab'), 0);
 }
 
 export function buildLot(ctx: Ctx, userId: string, kind: string): Lot {
