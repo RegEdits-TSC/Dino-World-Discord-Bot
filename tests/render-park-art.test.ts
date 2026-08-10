@@ -21,7 +21,7 @@ const sample: ParkSnapshot = {
 // Tile/grid geometry mirrors src/core/render/draw.ts's own module-private constants (COLS, TILE_W,
 // TILE_H, GAP, PAD, HEADER_H are not exported), the same way tests/render-draw.test.ts already
 // restates them for its own pixel assertions. Tile 0 sits at (PAD, HEADER_H + PAD).
-const PAD = 20, HEADER_H = 64, TILE_W = 270, TILE_H = 150;
+const PAD = 20, HEADER_H = 64, TILE_W = 270, TILE_H = 150, GAP = 16;
 const TILE0_X = PAD, TILE0_Y = HEADER_H + PAD;
 
 async function decodeToCanvas(png: Buffer) {
@@ -148,5 +148,34 @@ describe('park render with the committed art', () => {
   it('loadParkArt resolves with a landmarks record and never rejects', async () => {
     const art = await loadParkArt();
     expect(Object.keys(art.landmarks).sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  // Every other family drawn on the grid (ground, plates, lot icons, dino chips) gets a positive
+  // real-asset render check above; landmarks were the one exception, because the art didn't exist
+  // until this task shipped it. Same pattern as the ground/plate/icon/chip assertions: render an
+  // independent single-asset reference with the identical drawImage arguments draw.ts uses, then
+  // compare a sample pixel in the real render against it — proof the raster was actually blitted,
+  // not just loaded.
+  it('paints the real landmark art onto the canvas at the landmark cell draw.ts targets', async () => {
+    const art = await loadParkArt();
+    expect(art.landmarks.a, 'assets/images/park/landmark-a.webp missing or undecodable').not.toBeNull();
+
+    // `sample` has 2 lots and lotCap 5, so hasBuild is true (a build slot occupies cell index 2) and
+    // a landmarkTier puts the monument at cell index 3 — draw.ts's own
+    // `snap.lots.length + (hasBuild ? 1 : 0)` — which is column `3 % COLS = 0`, row
+    // `floor(3 / COLS) = 1` at 3 columns. That resolves to origin
+    // (PAD, HEADER_H + PAD + (TILE_H + GAP)) = (20, 64 + 20 + 166) = (20, 250).
+    const snapWithLandmark: ParkSnapshot = { ...sample, landmarkTier: 1 };
+    const png = renderParkPng(snapWithLandmark, art);
+    const real = await decodeToCanvas(png);
+
+    const cellX = PAD, cellY = HEADER_H + PAD + (TILE_H + GAP);
+
+    const landmark = art.landmarks.a!;
+    const landmarkRef = renderAlone(TILE_W, TILE_H, (c) => c.drawImage(landmark, 0, 0, TILE_W, TILE_H));
+    // Tile-local (135, 60): horizontally centered, well clear of the rounded-rect corners and of the
+    // label band, which `drawLandmark` paints at roughly tile-local y+118 to y+136 (18px text baseline
+    // at y + TILE_H - 16 = y + 134).
+    expect(pixelAt(real, cellX + 135, cellY + 60)).toEqual(pixelAt(landmarkRef, 135, 60));
   });
 });

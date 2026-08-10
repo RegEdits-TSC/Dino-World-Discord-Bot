@@ -33,6 +33,7 @@ describe('docs track the committed assets', () => {
     for (const f of [
       'park/ground.webp', 'park/ground-wet.webp', 'park/ground-dry.webp', 'park/ground-cold.webp',
       'park/plate-paddock.webp', 'park/plate-facility.webp',
+      'park/landmark-a.webp', 'park/landmark-b.webp', 'park/landmark-c.webp',
     ]) {
       expect(prompts, `prompts.md is missing the regeneration target ${f}`).toContain(f);
     }
