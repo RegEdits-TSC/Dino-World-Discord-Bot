@@ -61,8 +61,9 @@ justification than the one 2a gave it.
 ## 2. Design decisions
 
 1. **The sink is a six-rung ladder, not one purchase.** 5M / 10M / 20M / 40M / 80M /
-   160M, **315,000,000 total** — roughly 47 days of the reference park's surplus and
-   73 days at the income-maximal build, against a game whose entire existing
+   160M, **315,000,000 total** — roughly 73 days of the reference park's surplus
+   (315,000,000 / 4,297,440 per day) and about 48 days at the income-maximal enriched
+   build, which drains it FASTER because it earns more, against a game whose entire existing
    purchasable content is 1,674,000. A single 5,000,000 item is **1.16 days of
    surplus**; it would not drain anything.
 2. **It lives on a `users` column, not in `lots.decor`.** `recomputeRating` sums
