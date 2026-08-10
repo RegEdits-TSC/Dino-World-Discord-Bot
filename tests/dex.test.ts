@@ -106,6 +106,16 @@ describe('dexListPayload', () => {
     const payload = dexListPayload(ctx, 'u1', { rarity: 'legendary', archetype: 'support' }, 1);
     expect(JSON.stringify(payload)).toContain('No species');
   });
+  it('shows the legacy rank in the footer once ranked', () => {
+    // 35 species = exactly Keeper (rank 2); 20 would only reach Groundskeeper.
+    for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u1', s.id);
+    expect(JSON.stringify(dexListPayload(ctx, 'u1', {}, 1))).toContain('Keeper');
+  });
+  it('omits it entirely when unranked', () => {
+    const text = JSON.stringify(dexListPayload(ctx, 'u1', {}, 1));
+    expect(text).toContain('0/42');
+    expect(text).not.toContain('rank');
+  });
 });
 
 describe('dexViewPayload', () => {
