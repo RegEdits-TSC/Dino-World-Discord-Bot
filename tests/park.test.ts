@@ -686,9 +686,10 @@ describe('facility level arrays are bounds-guarded', () => {
     const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all();
     expect(incubatorSlots(lots)).toBe(3);
   });
-  it('an absent facility still returns its documented fallback', () => {
-    expect(capHours([])).toBe(8);
-    expect(breedingSlots([])).toBe(0);
-    expect(incubatorSlots([])).toBe(1);
-  });
+  // No absent-facility case here: capHours([]) === 8, breedingSlots([]) === 0, and
+  // incubatorSlots([]) === 1 are already pinned by 'keeps the no-facility defaults'
+  // (this file), 'grants no breeding slots without one' (this file, gene lab describe),
+  // and tests/hatchery.test.ts's slot-limit tests, respectively — the level<=0 branch of
+  // levelValue is unchanged from the pre-fix code, so a fourth copy here would not
+  // discriminate this task's fix from the old implementation.
 });
