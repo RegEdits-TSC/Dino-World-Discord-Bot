@@ -3,9 +3,10 @@ export type LandmarkBand = 'a' | 'b' | 'c';
 export interface LandmarkDef { tier: number; name: string; cost: number; band: LandmarkBand }
 
 /**
- * The endgame cash sink. Six rungs totalling 315,000,000 — roughly 47 days of the
- * reference park's unspent surplus (4,297,440/day) and 73 days at the income-maximal
- * build, against a game whose entire other purchasable content totals 1,674,000.
+ * The endgame cash sink. Six rungs totalling 315,000,000 — roughly 73 days of the
+ * reference park's unspent surplus (4,297,440/day) and about 48 days at the
+ * income-maximal build, which drains the ladder faster because it earns more,
+ * against a game whose entire other purchasable content totals 1,674,000.
  * A single 5,000,000 item would be 1.16 days of surplus and would drain nothing.
  *
  * Purely cosmetic, and structurally so: the tier lives on users.landmark_tier, which

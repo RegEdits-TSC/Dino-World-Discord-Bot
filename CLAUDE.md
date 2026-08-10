@@ -189,14 +189,25 @@
   `FoodDef.fallback` unicode, never `emojiTag`/`foodEmoji` (custom tags render
   as literal text in autocomplete).
 - `migrateDb` (`src/core/db/index.ts`) brackets `migrate()` with
-  `foreign_keys = OFF`/`ON`. This is load-bearing, not cleanup: drizzle runs each
-  migration inside a transaction where `PRAGMA foreign_keys` is a no-op, so a
-  table-recreate migration (SQLite column drop) would otherwise fail
-  `DROP TABLE` against child rows on a **populated** DB (`createDb` sets FK on).
-  Consequence for tests: an empty-DB migration test or a raw-SQL replay
-  (`db.exec` per statement) passes even when the real migrator would fail — a
-  migration test must seed a parent **and** a child row and run the real
-  `migrateDb` (see the "production path" block in `tests/migration.test.ts`).
+  `foreign_keys = OFF`/`ON`, toggled OUTSIDE the migration's own transaction, at the
+  connection level, before `migrate()` even starts. This is load-bearing, not
+  cleanup: drizzle wraps every migration in a transaction, so a `PRAGMA foreign_keys`
+  statement embedded in the migration SQL itself is a no-op there — but a pragma set
+  before that transaction begins stays in effect for its whole duration, which is
+  why `migrateDb`'s outer bracket (and not a per-migration one) is what lets a
+  table-recreate migration (SQLite column drop) run `DROP TABLE` against child rows
+  on a **populated** DB (`createDb` sets FK on) without throwing.
+  What the "seed a parent **and** a child row, then run the real `migrateDb`" recipe
+  (the "production path" block in `tests/migration.test.ts`) actually proves is
+  narrower than it sounds: a well-formed recreate PASSES that test, bracket and all —
+  the recipe does not demonstrate that a recreate "would fail on production", because
+  it demonstrably doesn't. What it catches is (1) a regression that removes or
+  weakens the bracket, (2) a lesser raw-SQL replay or an empty-DB substitute standing
+  in for the real migrator, either of which gives a false green on exactly that
+  regression, and (3) a recreate that mishandles data — drops or resets a column —
+  even though FK enforcement passes clean. The actual gate against an UNNECESSARY
+  recreate, one drizzle-kit could have expressed as a plain `ALTER TABLE` instead, is
+  reading the emitted SQL by eye; the populated-row test cannot do that job for you.
 - Battles: `Ctx` carries `sleep(ms)` for the fight cinematic — real
   `setTimeout` in `src/index.ts`, instant stub in `tests/harness.ts` `makeCtx`
   and `scripts/test-live.ts`; every future Ctx construction site must provide
@@ -698,3 +709,66 @@
   1.0 → 0.75 fall; now it can also cost a rung on top — a paddock sitting at fit 1.10 in
   reliance on a since-retired kind silently drops to 1.05 or 1.00 the next time anything
   reads it, with no error and no record of what changed.
+- Landmarks (`src/data/landmarks.ts`) are the endgame cash sink, and deliberately live
+  on `users.landmarkTier` rather than shipping as a `DECOR` kind, even though a
+  cosmetic decor item would have reused an existing catalog. `recomputeRating`
+  (`src/modules/park/rating.ts`) sums `l.level + l.decor.length` as a flat length with
+  no filter or weight, so a decor-shaped cosmetic would be worth +8.75 rating per tile
+  (0.35 park weight × 1000 `RATING_SCALE` ÷ 40 `PARK_TARGET`) to a park below
+  saturation and exactly 0 to a maxed one — power for the mid-game, nothing for the
+  endgame, precisely backwards for a sink whose whole job is to matter most at the
+  endgame. A `users` column reads from nothing rating cares about (`rating.ts`,
+  `clock.ts`, `lotSlots`, `matchedKindCount` all ignore it), so staying powerless is
+  structural, not a rule someone has to remember to enforce.
+  The ladder (`buyLandmark`, `src/modules/park/landmarks.ts`) is a monotone integer
+  with no tier argument — the only legal purchase is always
+  `landmarkTierOf(ctx, userId) + 1` — which is what removes the refund path rather
+  than merely deferring it: with only one buyable rung at any moment, there is no
+  wrong one to click.
+- Legacy rank (`legacyPoints`/`legacyRank`, `src/modules/park/ranks.ts`) is DERIVED,
+  same philosophy as escrow locks and quest progress documented above, and must NEVER
+  be rebuilt on top of `user_stats`. Migration `0006_daily_loop.sql` backfilled only 6
+  of that table's 18 counters from existing history (`stages_first_cleared`,
+  `lots_built`, `trades_completed`, `breedings_started`, `breedings_claimed`,
+  `expeditions_claimed`); the other twelve — including `dinos_fed`, `eggs_hatched` and
+  `battles_fought` — start at 0 for every pre-0006 account and are unrecoverable. A
+  rank built on that table would under-rank exactly the oldest, most invested players,
+  the inversion the feature exists to prevent. It sums three sources that are each
+  already monotone and already complete for every account instead: species discovered
+  (`dexProgress`, max 42), achievement tiers claimed (`earnedTierCount`, max 48), and
+  battle stars (`battle_progress.stars`, max 90) — 180 points total, nothing spent,
+  nothing stored.
+- `capHours`, `breedingSlots` and `incubatorSlots` (`src/modules/park/service.ts`,
+  `src/modules/hatchery/service.ts`) each resolve a facility's level through the
+  shared `levelValue` helper, which clamps a level ABOVE its per-level array to the
+  array's top entry instead of indexing off the end into `undefined`. This is the safe
+  direction on purpose: neither `npm test` nor `npm run typecheck` can see the
+  alternative failure (`tsconfig` has `strict` but not `noUncheckedIndexedAccess`), and
+  the failure mode is silent rather than a crash — an unguarded `capHours` reading
+  `undefined` past its array's end turns `from + undefined` into `NaN`, and the
+  Collect button on `/park view` renders the literal text "Collect NaN". Any future
+  per-level facility array needs the same guard through `levelValue`, never a raw
+  index.
+- `PARK_TARGET` (`src/data/progression.ts`, 40) must never move, for any reason,
+  including to compensate for a new cash sink or a new content ceiling. It's the
+  denominator of the rating's park term, so raising it is a retroactive rating CUT for
+  every park already at or past today's cap — and since stored `parkRating` only
+  updates on a rating-changing action (see "When it actually updates" in
+  `docs/gameplay.md`), the cut lands on accounts that did nothing wrong. `TRADE_MIN_RATING`
+  (400, `src/data/trade.ts`) is checked against that same droppable stored value at
+  both `createTrade` and `acceptTrade` (`src/modules/trading/service.ts`), so a target
+  raise can silently revoke `/trade` for players already sitting near the gate and can
+  kill trades already pending in a recipient's inbox, not just future ones.
+  Also worth correcting here: an earlier assumption — that at least two decor pieces
+  were mandatory to reach a 10.0★ park — never actually held. `buildLot` blocks
+  duplicate FACILITIES only and explicitly exempts paddocks (building more of one
+  paddock kind IS the capacity progression), so `VC L5 + 9 paddocks L4` alone reaches
+  `parkRaw` 41 against `PARK_TARGET` 40 with zero decor ever placed. The park term has
+  always been saturable on lot levels alone; 38 was the ceiling of one particular
+  build, never of the game.
+- The landmark cell (`drawLandmark`, `src/core/render/draw.ts`) is drawn as one extra
+  grid cell AFTER the build slot, so every tile that existed before landmarks shipped
+  keeps the exact coordinates it already had — which is why adding it broke none of
+  `tests/render-draw.test.ts`'s pinned pixel samples. A missing or unloaded art band
+  degrades to a flat plinth fill rather than reaching `drawImage(null)`, which throws
+  and would cost the whole park image.

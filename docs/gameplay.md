@@ -82,7 +82,7 @@ four kinds of facility:
 | Carnivore Paddock | paddock | 2,000 | 4 |
 | Visitor Center | facility | 5,000 | 5 |
 | Food Court | facility | 8,000 | 3 |
-| Hatchery Lab | facility | 10,000 | 3 |
+| Hatchery Lab | facility | 10,000 | 5 |
 | Gene Lab | facility | 20,000 | 3 |
 
 Dinos can only be assigned to paddocks — never to facilities. Each paddock
@@ -125,6 +125,8 @@ one, so the real upgrades start at level 2:
 | 1 | 1 | 10,000 (build) |
 | 2 | 2 | 25,000 |
 | 3 | 3 | 150,000 |
+| 4 | 4 | 375,000 |
+| 5 | 5 | 2,250,000 |
 
 The **Gene Lab** grants breeding slots and nothing else — no income bonus. See
 Breeding and the Gene Lab below for what a slot is for:
@@ -179,8 +181,12 @@ kinds to reach the ceiling.
 
 Decor can only be placed on paddocks, not facilities. You can stack as many
 pieces on a paddock as you like — there's no per-paddock limit and no way to
-remove one once placed. Every piece of decor you own raises your park rating,
-because the rating's build-out term counts decor pieces alongside lot levels.
+remove one once placed. Every piece of decor you own raises your park rating's
+build-out term, alongside your lot levels — until that term saturates at 40
+(see Rating and leaderboards, below). Lot levels alone can reach that cap with
+no decor at all: nine level-4 paddocks and a level-5 Visitor Center already
+total 41, so a maxed-out build-out term is never proof that any decor was
+bought.
 
 ### The park map
 
@@ -189,6 +195,29 @@ a grid of tiles, one per lot, showing each lot's icon, name, level, and the
 dinos assigned to it. If the image ever fails to render, the dashboard still
 replies with the same information as plain text, so the map is never required
 to play.
+
+### Landmarks
+
+`/park landmark` shows your park's monument: a six-rung prestige ladder, bought
+with cash once you have nowhere else to put it. It is purely cosmetic — it buys
+no mechanical advantage of any kind. It doesn't touch income, comfort, escapes,
+habitat fit, or park rating; it exists to be looked at.
+
+| Tier | Landmark | Cost |
+| --- | --- | --- |
+| 1 | Stone Marker | 5,000,000 |
+| 2 | Fossil Plinth | 10,000,000 |
+| 3 | Bronze Sentinel | 20,000,000 |
+| 4 | Amber Obelisk | 40,000,000 |
+| 5 | Grand Rotunda | 80,000,000 |
+| 6 | Titan Monument | 160,000,000 |
+
+315,000,000 cash across all six rungs. Only the next rung is ever purchasable —
+you can't skip ahead, and once a rung is built there's no going back to buy a
+cheaper one instead. That also means there's no refund: since the only legal
+purchase is always the next one, there's nothing to mis-buy. Once you've built
+at least one rung, it appears as an extra tile on the `/park view` map,
+alongside your lots.
 
 ## 4. Income
 
@@ -241,7 +270,7 @@ Each rarity has its own fixed incubation time:
 | Mythic | 48 h |
 
 You can only incubate as many eggs at once as you have incubator slots — 1 by
-default, or up to 3 with a fully upgraded Hatchery Lab. There's no limit on
+default, or up to 5 with a fully upgraded Hatchery Lab. There's no limit on
 how many eggs you can simply hold in reserve; only simultaneous incubation is
 capped. A finished egg does not free its slot on its own — it keeps occupying
 that incubator slot until you actually hatch it, so a full bank of ready eggs
@@ -846,6 +875,29 @@ footer line shows your own rank and value instead. Server scope only ranks
 players who have used the bot in that server; global scope ranks every
 registered player anywhere. There's no tiebreak rule for players with equal
 values — their relative order isn't defined.
+
+### Legacy ranks
+
+Separate from park rating, your account earns a Legacy rank — a title that
+recognizes breadth, never wealth:
+
+| Rank | Title | Points |
+| --- | --- | --- |
+| 1 | Groundskeeper | 15 |
+| 2 | Keeper | 35 |
+| 3 | Curator | 65 |
+| 4 | Warden | 100 |
+| 5 | Conservator | 140 |
+| 6 | Director | 170 |
+
+Points are the sum of three things: species you've discovered (up to 42),
+achievement tiers you've claimed (up to 48), and stars earned across the
+battle campaign (up to 90) — 180 points in total. Nothing is spent or
+consumed to earn a rank, and nothing can ever be lost — it's simply
+recalculated from what you've already done, each time it's shown. Below 15
+points you haven't reached Groundskeeper yet and show no rank at all. Your
+Legacy rank appears on your `/park view` dashboard and in the footer of
+`/dex list`.
 
 ## 14. Notifications and alerts
 

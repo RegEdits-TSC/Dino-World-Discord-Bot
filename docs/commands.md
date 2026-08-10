@@ -16,8 +16,9 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/park view` | Your park dashboard, with a rendered map of your lots | Falls back to a text-only embed if the map cannot be rendered |
 | `/park rename` | Rename your park | Up to 60 characters |
 | `/park alerts` | Turn proactive park alerts on or off | DM-only warnings before a dino escapes and when your park's income hits its cap. On by default; also turned off by the 🔕 Mute button on an alert itself |
+| `/park landmark` | Your park's prestige monument — the six-rung cash-sink ladder | Shows the built and next rungs with a Build button. Purely cosmetic |
 | `/build` | Build on an empty lot | |
-| `/upgrade` | Upgrade a lot to the next level | Autocomplete: lot |
+| `/upgrade` | Upgrade a lot to the next level | Autocomplete: lot, and the suggestion quotes the price. Costs are also quoted in the insufficient-funds reply |
 | `/decorate` | Add decor to a paddock | Autocomplete: lot, item |
 | `/dino list` | List every dino you own, with nickname and trait line | Paginated, 10 per page |
 | `/dino assign` | Put a dino in a paddock so it starts earning | Autocomplete: dino, lot |
