@@ -22,10 +22,11 @@ describe('park map art', () => {
     expect(img.width / img.height).toBeGreaterThan(1);
   });
 
-  // Plates draw 1:1 at TILE_W×TILE_H (draw.ts). Committing them at exactly that size is what keeps a
-  // square generation from being silently squashed to 1.8:1 in the tile — the one plate defect that
-  // renders "successfully" and looks wrong.
-  it.each(['plate-paddock.webp', 'plate-facility.webp'])('%s decodes at the 270×150 tile size', async (f) => {
+  // Plates AND landmarks draw 1:1 at TILE_W×TILE_H (draw.ts's drawTile / drawLandmark, respectively).
+  // Committing any of them at exactly that size is what keeps a square (or otherwise mis-sized)
+  // generation from being silently squashed/stretched into the tile — a defect that renders
+  // "successfully" (drawImage never throws on a mismatched raster size) and just looks wrong.
+  it.each(['plate-paddock.webp', 'plate-facility.webp', 'landmark-a.webp', 'landmark-b.webp', 'landmark-c.webp'])('%s decodes at the 270×150 tile size', async (f) => {
     const img = await decodeRaster(readFileSync(resolve(PARK_DIR, f)));
     expect(img.width).toBe(270);
     expect(img.height).toBe(150);
