@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { buildParkSnapshot } from '../src/modules/park/snapshot.js';
@@ -53,5 +54,16 @@ describe('buildParkSnapshot', () => {
     expect(buildParkSnapshot(ctx, 'a').season).toBe('wet');       // day 0 (makeCtx default)
     ctx.setNow(60 * 24 * 3_600_000);                              // day 60
     expect(buildParkSnapshot(ctx, 'a').season).toBe('cold');
+  });
+  it('stamps the landmark tier, and omits it at zero', () => {
+    const snap = buildParkSnapshot(ctx, 'a');
+    expect(snap.landmarkTier).toBeUndefined();
+    ctx.db.update(schema.users).set({ landmarkTier: 3 }).where(eq(schema.users.discordId, 'a')).run();
+    expect(buildParkSnapshot(ctx, 'a').landmarkTier).toBe(3);
+  });
+  it('stays structured-cloneable with a landmark', () => {
+    ctx.db.update(schema.users).set({ landmarkTier: 6 }).where(eq(schema.users.discordId, 'a')).run();
+    const snap = buildParkSnapshot(ctx, 'a');
+    expect(structuredClone(snap)).toEqual(snap);
   });
 });
