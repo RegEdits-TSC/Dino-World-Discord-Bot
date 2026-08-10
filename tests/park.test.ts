@@ -176,6 +176,26 @@ describe('park module commands', () => {
   });
 });
 
+describe('/park subcommand dispatch', () => {
+  it('rejects an unrecognised subcommand instead of rendering the dashboard', async () => {
+    // Synthetic name: the harness skips builder lookup for a command name the module
+    // registry does not know, which is exactly the deployed-but-unimplemented case this
+    // guards — 'park' itself would reject 'sabotage' at fixture-build time since the real
+    // builder only advertises view/rename/alerts.
+    const i = fakeCommand({ name: 'zzz-test', sub: 'sabotage', user: 'u1' });
+    await parkModule.commands[0].execute(ctx, i.asChatInput());
+    const text = JSON.stringify(i.replies[0]);
+    expect(text).not.toContain('Cash');            // not the dashboard
+    expect(text.toLowerCase()).toContain('unknown');
+  });
+
+  it('still renders the dashboard for view', async () => {
+    const i = fakeCommand({ name: 'zzz-test', sub: 'view', user: 'u1' });
+    await parkModule.commands[0].execute(ctx, i.asChatInput());
+    expect(JSON.stringify(i.replies[0])).toContain('Cash');
+  });
+});
+
 describe('Collect button', () => {
   it('shows a plain numeric label with the coin as a real emoji, not text', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');

@@ -92,27 +92,34 @@ export const parkModule: ModuleManifest = {
             .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' }))),
       async execute(ctx, i) {
         const user = getOrCreateUser(ctx, i.user.id, i.user.displayName);
-        if (i.options.getSubcommand() === 'rename') {
-          const name = i.options.getString('name', true);
-          ctx.db.update(schema.users).set({ parkName: name })
-            .where(eq(schema.users.discordId, i.user.id)).run();
-          await i.reply({ content: `Park renamed to **${name}**.` });
-          return;
-        }
-        // Explicit branch, not an else-fallthrough: /park has no subcommand dispatch —
-        // `rename` is the only named case and everything else IS the view path below.
-        // A missing branch here renders the dashboard and reports success.
-        if (i.options.getSubcommand() === 'alerts') {
-          const on = i.options.getString('state', true) === 'on';
-          ctx.db.update(schema.users).set({ alertsEnabled: on })
-            .where(eq(schema.users.discordId, i.user.id)).run();
-          await i.reply({
-            content: on
-              ? '🔔 Park alerts are **on** — you will get a DM before a dino escapes and when your park hits its income cap.'
-              : '🔕 Park alerts are **off**. Egg, breeding, and expedition notifications are unaffected. Turn them back on with `/park alerts state:on`.',
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
+        // A real switch, not a chain of equality checks with the view path as the
+        // fallthrough: /park previously reported success for any subcommand nobody had
+        // implemented, because the last branch WAS the dashboard.
+        switch (i.options.getSubcommand()) {
+          case 'rename': {
+            const name = i.options.getString('name', true);
+            ctx.db.update(schema.users).set({ parkName: name })
+              .where(eq(schema.users.discordId, i.user.id)).run();
+            await i.reply({ content: `Park renamed to **${name}**.` });
+            return;
+          }
+          case 'alerts': {
+            const on = i.options.getString('state', true) === 'on';
+            ctx.db.update(schema.users).set({ alertsEnabled: on })
+              .where(eq(schema.users.discordId, i.user.id)).run();
+            await i.reply({
+              content: on
+                ? '🔔 Park alerts are **on** — you will get a DM before a dino escapes and when your park hits its income cap.'
+                : '🔕 Park alerts are **off**. Egg, breeding, and expedition notifications are unaffected. Turn them back on with `/park alerts state:on`.',
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
+          case 'view':
+            break;
+          default:
+            await i.reply({ content: 'Unknown /park subcommand.', flags: MessageFlags.Ephemeral });
+            return;
         }
         const targetUser = i.options.getUser('user');
         if (targetUser && targetUser.id !== i.user.id) {
