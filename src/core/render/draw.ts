@@ -5,6 +5,7 @@ import type { ParkSnapshot, SnapshotLot } from '../../modules/park/snapshot.js';
 import { lotIcon, tilePalette, dinoGlyph, RARITY_COLOR } from '../../data/render-icons.js';
 import { EMPTY_ART, type ParkArt } from './art.js';
 import type { Season } from '../world.js';
+import { landmarkBandFor, landmarkFor } from '../../data/landmarks.js';
 
 const COLS = 3;
 const TILE_W = 270, TILE_H = 150, GAP = 16, PAD = 20, HEADER_H = 64;
@@ -149,10 +150,33 @@ function drawBuildSlot(c: SKRSContext2D, x: number, y: number): void {
   c.fillText('+  /build', x + TILE_W / 2, y + TILE_H / 2 + 5); c.textAlign = 'left';
 }
 
+// The prestige monument. Drawn as one extra grid cell AFTER the build slot so every
+// existing tile keeps its coordinates — which is why this breaks none of the pinned pixel
+// samples. A null band (art missing, or absent entirely) degrades to a flat plinth plus
+// the tier's name; it must never reach drawImage, which throws on null and costs the whole
+// park image. The name is drawn in SANS only: iconValue's font never covers emoji, and an
+// emoji in this string would render as a tofu box.
+function drawLandmark(c: SKRSContext2D, x: number, y: number, img: Image | null, tier: number): void {
+  if (img) {
+    c.save();
+    rrect(c, x, y, TILE_W, TILE_H, 12); c.clip();
+    c.drawImage(img, x, y, TILE_W, TILE_H);
+    c.restore();
+  } else {
+    rrect(c, x, y, TILE_W, TILE_H, 12); c.fillStyle = '#4a4133'; c.fill();
+    c.lineWidth = 3; c.strokeStyle = '#c9a227'; rrect(c, x, y, TILE_W, TILE_H, 12); c.stroke();
+  }
+  const def = landmarkFor(tier);
+  c.fillStyle = '#f5e6b8';
+  c.font = `18px "${SANS}"`;
+  c.fillText(trunc(c, def ? def.name : 'Landmark', TILE_W - 28), x + 14, y + TILE_H - 16);
+}
+
 export function renderParkPng(snap: ParkSnapshot, art: ParkArt = EMPTY_ART): Buffer {
   ensureFonts();
   const hasBuild = snap.lots.length < snap.lotCap;
-  const cellCount = snap.lots.length + (hasBuild ? 1 : 0);
+  const band = landmarkBandFor(snap.landmarkTier ?? 0);
+  const cellCount = snap.lots.length + (hasBuild ? 1 : 0) + (band ? 1 : 0);
   const dims = gridDims(cellCount);
   const canvas = createCanvas(dims.width, dims.height);
   const c = canvas.getContext('2d');
@@ -177,6 +201,12 @@ export function renderParkPng(snap: ParkSnapshot, art: ParkArt = EMPTY_ART): Buf
   if (hasBuild) {
     const idx = snap.lots.length, col = idx % COLS, row = Math.floor(idx / COLS);
     drawBuildSlot(c, PAD + col * (TILE_W + GAP), HEADER_H + PAD + row * (TILE_H + GAP));
+  }
+  if (band) {
+    const idx = snap.lots.length + (hasBuild ? 1 : 0);
+    const col = idx % COLS, row = Math.floor(idx / COLS);
+    drawLandmark(c, PAD + col * (TILE_W + GAP), HEADER_H + PAD + row * (TILE_H + GAP),
+      art.landmarks[band], snap.landmarkTier ?? 0);
   }
   return canvas.toBuffer('image/png');
 }

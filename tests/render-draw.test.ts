@@ -204,4 +204,49 @@ describe('renderParkPng', () => {
     const noSeason = await sampler(renderParkPng(sample, seasonalArt));
     expect(noSeason(10, 240)).toEqual([0, 0, 255]);   // stubArt.ground, not any seasonal color above
   });
+
+  // The landmark is drawn as one extra grid cell AFTER the build slot, so every existing tile keeps
+  // its coordinates — that placement is why none of the seven pinned pixel samples above move.
+  describe('landmark cell', () => {
+    it('a snapshot with no landmark renders byte-identically to today', () => {
+      const before = renderParkPng(sample, EMPTY_ART);
+      expect(renderParkPng({ ...sample }, EMPTY_ART).equals(before)).toBe(true);
+      expect(sample.landmarkTier).toBeUndefined();
+    });
+
+    it('a landmark adds exactly one cell, growing the grid', async () => {
+      // sample has 2 lots and lotCap 5, so hasBuild is true: 3 cells, 1 row, 254 tall.
+      // A landmark makes 4 cells, 2 rows, 420 tall. Decode both PNGs and check the actual
+      // rendered dimensions, not just the pure gridDims arithmetic — that ties the assertion
+      // to renderParkPng's own cellCount computation instead of a formula that can't fail.
+      const plainPng = renderParkPng(sample, EMPTY_ART);
+      const markedPng = renderParkPng({ ...sample, landmarkTier: 1 }, EMPTY_ART);
+      expect(markedPng.equals(plainPng)).toBe(false);
+
+      const plainImg = new Image(); plainImg.src = plainPng; await plainImg.decode();
+      const markedImg = new Image(); markedImg.src = markedPng; await markedImg.decode();
+      expect(plainImg.height).toBe(gridDims(3).height);
+      expect(markedImg.height).toBe(gridDims(4).height);
+    });
+
+    it('draws the monument art when the band loaded, and the flat fill when it did not', async () => {
+      // Tile index 3 (lots.length=2 + hasBuild 1) -> col 0, row 1 -> x = PAD = 20,
+      // y = HEADER_H + PAD + (TILE_H + GAP) = 64 + 20 + 166 = 250. Sample a point inside it,
+      // clear of the drawn label near the tile's bottom edge.
+      const markedArt: ParkArt = { ...EMPTY_ART, landmarks: { a: svgStub('#00ffff', 270, 150), b: null, c: null } };
+      const at = await sampler(renderParkPng({ ...sample, landmarkTier: 1 }, markedArt));
+      expect(at(120, 320)).toEqual([0, 255, 255]);
+      const plainAt = await sampler(renderParkPng({ ...sample, landmarkTier: 1 }, EMPTY_ART));
+      expect(plainAt(120, 320)).not.toEqual([0, 255, 255]);
+    });
+
+    it('renders a tier whose art is missing without throwing', () => {
+      expect(() => renderParkPng({ ...sample, landmarkTier: 6 }, EMPTY_ART)).not.toThrow();
+    });
+
+    it('the existing ground sample is untouched by a landmark', async () => {
+      const at = await sampler(renderParkPng({ ...sample, landmarkTier: 3 }, stubArt));
+      expect(at(10, 240)).toEqual([0, 0, 255]);
+    });
+  });
 });
