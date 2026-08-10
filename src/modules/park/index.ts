@@ -7,10 +7,12 @@ import { feedAll } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { earnedTierCount } from '../daily/service.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
-import { dashboardPayload, withParkImage } from './embeds.js';
+import { dashboardPayload, withParkImage, landmarkPayload } from './embeds.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
 import { InsufficientFundsError } from '../../core/economy.js';
+import { buyLandmark, nextLandmark, landmarkTierOf, LandmarkMaxedError } from './landmarks.js';
+import { landmarkFor } from '../../data/landmarks.js';
 import { escapeAt, ESCAPE_WARN_MS } from '../../core/clock.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { FACILITIES } from '../../data/facilities.js';
@@ -89,7 +91,8 @@ export const parkModule: ModuleManifest = {
           .addStringOption((o) => o.setName('name').setDescription('New name').setRequired(true).setMaxLength(60)))
         .addSubcommand((s) => s.setName('alerts').setDescription('Turn proactive park alerts on or off')
           .addStringOption((o) => o.setName('state').setDescription('On or off').setRequired(true)
-            .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' }))),
+            .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' })))
+        .addSubcommand((s) => s.setName('landmark').setDescription('Your park landmark — the prestige ladder')),
       async execute(ctx, i) {
         const user = getOrCreateUser(ctx, i.user.id, i.user.displayName);
         // A real switch, not a chain of equality checks with the view path as the
@@ -113,6 +116,11 @@ export const parkModule: ModuleManifest = {
                 : '🔕 Park alerts are **off**. Egg, breeding, and expedition notifications are unaffected. Turn them back on with `/park alerts state:on`.',
               flags: MessageFlags.Ephemeral,
             });
+            return;
+          }
+          case 'landmark': {
+            const tier = landmarkTierOf(ctx, i.user.id);
+            await i.reply(landmarkPayload(user, landmarkFor(tier), nextLandmark(ctx, i.user.id)));
             return;
           }
           case 'view':
@@ -369,6 +377,26 @@ export const parkModule: ModuleManifest = {
           if (i.user.id !== uid) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
           settleEscapes(ctx, i.user.id);
           await i.update({ ...dinoListPayload(ctx, i.user.id, Number(pageStr)), attachments: [] });
+          return;
+        }
+        if (action === 'landmark') {
+          // customId is park:landmark:buy:<userId> — four parts, so the owner id sits
+          // at index 3, not the outer destructure's `uid` (which caught 'buy' there).
+          const [, , , landmarkUid] = parts;
+          if (i.user.id !== landmarkUid) { await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral }); return; }
+          try {
+            const def = buyLandmark(ctx, i.user.id);
+            await i.reply({ content: `🏛️ Built the **${def.name}**.` });
+          } catch (e) {
+            if (e instanceof LandmarkMaxedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+            else if (e instanceof InsufficientFundsError) {
+              const next = landmarkFor(landmarkTierOf(ctx, i.user.id) + 1);
+              await i.reply({
+                content: `Not enough cash — the ${next?.name ?? 'next landmark'} costs ${(next?.cost ?? 0).toLocaleString('en-US')}.`,
+                flags: MessageFlags.Ephemeral,
+              });
+            } else throw e;
+          }
         }
       },
     },

@@ -4,8 +4,9 @@ import { LANDMARKS, MAX_LANDMARK_TIER, landmarkFor, landmarkCostFor, landmarkBan
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
-import { makeCtx } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton } from './harness.js';
 import { buyLandmark, nextLandmark, LandmarkMaxedError } from '../src/modules/park/landmarks.js';
+import { parkModule } from '../src/modules/park/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => {
@@ -92,5 +93,56 @@ describe('buyLandmark', () => {
     ctx.db.update(schema.users).set({ landmarkTier: MAX_LANDMARK_TIER })
       .where(eq(schema.users.discordId, 'u1')).run();
     expect(nextLandmark(ctx, 'u1')).toBeNull();
+  });
+});
+
+describe('/park landmark', () => {
+  const run = async (user = 'u1') => {
+    const i = fakeCommand({ name: 'park', sub: 'landmark', user });
+    await parkModule.commands[0].execute(ctx, i.asChatInput());
+    return i;
+  };
+
+  it('shows the next rung with a grouped price and a buy button', async () => {
+    const i = await run();
+    const text = JSON.stringify(i.replies[0]);
+    expect(text).toContain('Stone Marker');
+    expect(text).toContain('5,000,000');       // grouped, never a raw 5000000
+    expect(text).toContain('park:landmark:buy:u1');
+  });
+
+  it('shows the current rung once one is built', async () => {
+    ctx.db.update(schema.users).set({ landmarkTier: 2 }).where(eq(schema.users.discordId, 'u1')).run();
+    const text = JSON.stringify((await run()).replies[0]);
+    expect(text).toContain('Fossil Plinth');    // current
+    expect(text).toContain('Bronze Sentinel');  // next
+  });
+
+  it('offers no button at the top of the ladder', async () => {
+    ctx.db.update(schema.users).set({ landmarkTier: MAX_LANDMARK_TIER }).where(eq(schema.users.discordId, 'u1')).run();
+    const i = await run();
+    expect(JSON.stringify(i.replies[0])).toContain('Titan Monument');
+    expect((i.replies[0] as { components?: unknown[] }).components ?? []).toHaveLength(0);
+  });
+
+  it('buys on click and reports the new rung', async () => {
+    ctx.db.update(schema.users).set({ cash: 5_000_000 }).where(eq(schema.users.discordId, 'u1')).run();
+    const i = fakeButton({ customId: 'park:landmark:buy:u1', user: 'u1' });
+    await parkModule.components.find((c) => c.prefix === 'park')!.execute(ctx, i.asInteraction() as never);
+    expect(JSON.stringify(i.replies[0])).toContain('Stone Marker');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.landmarkTier).toBe(1);
+  });
+
+  it('rejects a click from another player before charging anyone', async () => {
+    ctx.db.update(schema.users).set({ cash: 5_000_000 }).where(eq(schema.users.discordId, 'u1')).run();
+    const i = fakeButton({ customId: 'park:landmark:buy:u1', user: 'u2' });
+    await parkModule.components.find((c) => c.prefix === 'park')!.execute(ctx, i.asInteraction() as never);
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.landmarkTier).toBe(0);
+  });
+
+  it('reports insufficient cash with the price', async () => {
+    const i = fakeButton({ customId: 'park:landmark:buy:u1', user: 'u1' });
+    await parkModule.components.find((c) => c.prefix === 'park')!.execute(ctx, i.asInteraction() as never);
+    expect(JSON.stringify(i.replies[0])).toContain('5,000,000');
   });
 });
