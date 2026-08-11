@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { makeCtx } from './harness.js';
+import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { setMotto, setFeaturedDino, featuredFor, ShowcaseError, MAX_MOTTO } from '../src/modules/park/showcase.js';
+import { parkModule } from '../src/modules/park/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); });
@@ -101,5 +102,26 @@ describe('featuredFor', () => {
 
   it('is null when nothing is featured', () => {
     expect(featuredFor(ctx, row())).toBeNull();
+  });
+});
+
+describe('/park motto', () => {
+  const run = async (options?: Record<string, string>) => {
+    const i = fakeCommand({ name: 'park', sub: 'motto', user: 'u1', options });
+    await parkModule.commands[0].execute(ctx, i.asChatInput());
+    return i;
+  };
+
+  it('sets the motto and says so', async () => {
+    const i = await run({ text: 'Where the big ones live' });
+    expect(row().motto).toBe('Where the big ones live');
+    expect(replyText(i.replies[0])).toContain('Where the big ones live');
+  });
+
+  it('omitting the option clears it', async () => {
+    setMotto(ctx, 'u1', 'something');
+    const i = await run();
+    expect(row().motto).toBe('');
+    expect(replyText(i.replies[0]).toLowerCase()).toContain('cleared');
   });
 });

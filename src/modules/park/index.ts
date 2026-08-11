@@ -14,6 +14,7 @@ import { renderPark } from '../../core/render/client.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { buyLandmark, nextLandmark, landmarkTierOf, LandmarkMaxedError } from './landmarks.js';
 import { landmarkFor, MAX_LANDMARK_TIER } from '../../data/landmarks.js';
+import { setMotto, setFeaturedDino, ShowcaseError } from './showcase.js';
 import { escapeAt, ESCAPE_WARN_MS } from '../../core/clock.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { FACILITIES } from '../../data/facilities.js';
@@ -93,7 +94,9 @@ export const parkModule: ModuleManifest = {
         .addSubcommand((s) => s.setName('alerts').setDescription('Turn proactive park alerts on or off')
           .addStringOption((o) => o.setName('state').setDescription('On or off').setRequired(true)
             .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' })))
-        .addSubcommand((s) => s.setName('landmark').setDescription('Your park landmark — the prestige ladder')),
+        .addSubcommand((s) => s.setName('landmark').setDescription('Your park landmark — the prestige ladder'))
+        .addSubcommand((s) => s.setName('motto').setDescription('The line visitors see on your park card')
+          .addStringOption((o) => o.setName('text').setDescription('Up to 80 characters — leave blank to clear').setRequired(false).setMaxLength(80))),
       async execute(ctx, i) {
         const user = getOrCreateUser(ctx, i.user.id, i.user.displayName);
         // A real switch, not a chain of equality checks with the view path as the
@@ -123,6 +126,16 @@ export const parkModule: ModuleManifest = {
             // getOrCreateUser already returned the row with landmarkTier in hand:
             // landmarkTierOf and nextLandmark would each re-select the same row for one render.
             await i.reply(landmarkPayload(user, landmarkFor(user.landmarkTier), landmarkFor(user.landmarkTier + 1)));
+            return;
+          }
+          case 'motto': {
+            try {
+              const saved = setMotto(ctx, i.user.id, i.options.getString('text'));
+              await i.reply({ content: saved ? `📣 Motto set to **${saved}**.` : '📣 Motto cleared.' });
+            } catch (e) {
+              if (e instanceof ShowcaseError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+              else throw e;
+            }
             return;
           }
           case 'view':
