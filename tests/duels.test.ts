@@ -8,6 +8,7 @@ import { allSpecies } from '../src/data/species/index.js';
 import { outcomeFor } from '../src/data/battle/duel.js';
 import type { BattleResult } from '../src/data/battle/resolve.js';
 import { DUEL_PAIR_COOLDOWN_MS, DUEL_CHALLENGE_TTL_MS } from '../src/data/battle/constants.js';
+import { duelResultPayload, challengePayload, DUEL_PREFIX } from '../src/modules/duels/embeds.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
@@ -376,5 +377,60 @@ describe('duel pacing', () => {
     resolveDuel(ctx, 'a', 'b', 'ghost');
     expect(cooldownUntil(ctx, 'a', 'b')).toBe(DUEL_PAIR_COOLDOWN_MS);
     expect(cooldownUntil(ctx, 'b', 'a')).toBeNull();
+  });
+});
+
+describe('duel embeds', () => {
+  const strong = allSpecies().find((s) => s.rarity === 'legendary')!;
+  const weak = allSpecies().find((s) => s.rarity === 'common')!;
+
+  function outcome() {
+    getOrCreateUser(ctx, 'a', 'A');
+    getOrCreateUser(ctx, 'b', 'B');
+    addDino('a', strong.id, 3200);
+    addDino('b', weak.id, 0);
+    return resolveDuel(ctx, 'a', 'b', 'ghost');
+  }
+
+  it('names both players, both ratings and both squads', () => {
+    const payload = duelResultPayload(outcome());
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.description).toContain('A');
+    expect(embed.description).toContain('B');
+    expect(embed.fields!.map((f) => f.name)).toEqual(
+      expect.arrayContaining(['Opening clash', 'The climax']));
+    expect(JSON.stringify(embed)).toContain('1000');
+  });
+
+  // Elo is a plain integer — never divided the way parkRating is.
+  it('renders a rating as a whole number, not a star figure', () => {
+    const out = outcome();
+    const embed = duelResultPayload(out).embeds[0].toJSON();
+    expect(JSON.stringify(embed)).not.toContain('10.0');
+    expect(JSON.stringify(embed)).toContain(String(out.ratingAfter.challenger));
+  });
+
+  // Two art refs could resolve to the SAME basename whenever both leads share an
+  // archetype×diet, and attach() appends without deduping — one embed slot would
+  // then render the wrong picture. Exactly one ref, always.
+  it('never attaches more than one image', () => {
+    const payload = duelResultPayload(outcome());
+    expect((payload.files ?? []).length).toBeLessThanOrEqual(1);
+  });
+
+  it('carries no buttons on a result', () => {
+    expect(duelResultPayload(outcome()).components).toEqual([]);
+  });
+
+  it('mints Accept and Decline ids carrying the pair and the expiry', () => {
+    const payload = challengePayload('111', '222', 'A', 'B', 900_000);
+    const ids = payload.components[0].toJSON().components.map((c) => (c as { custom_id: string }).custom_id);
+    expect(ids).toEqual([`${DUEL_PREFIX}:accept:111:222:900000`, `${DUEL_PREFIX}:decline:111:222:900000`]);
+    for (const id of ids) expect(id.length).toBeLessThanOrEqual(100);
+  });
+
+  it('shows the challenged player when the challenge expires', () => {
+    const embed = challengePayload('111', '222', 'A', 'B', 900_000).embeds[0].toJSON();
+    expect(embed.description).toContain('<t:900:R>');
   });
 });
