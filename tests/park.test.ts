@@ -778,6 +778,48 @@ describe('/dino list full page stays within Discord embed limits', () => {
   });
 });
 
+describe('dashboard showcase', () => {
+  const fieldsOf = (p: { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }) =>
+    p.embeds[0].toJSON().fields!;
+
+  it('renders the motto under the world-event header, not instead of it', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 0, 0, { motto: 'Where the big ones live' });
+    const desc = p.embeds[0].toJSON().description!;
+    expect(desc).toContain('Where the big ones live');
+    // The description slot already carries eventHeaderLine; a plain setDescription would
+    // have replaced it, and no existing test reads the embed to notice.
+    expect(desc.split('\n')).toHaveLength(2);
+  });
+
+  it('omits the motto line entirely when there is none', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 0, 0, {});
+    expect(p.embeds[0].toJSON().description!.split('\n')).toHaveLength(1);
+  });
+
+  it('names the featured dino and attaches its archetype art as the thumbnail', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 0, 0, {
+      featured: { name: 'Trixie', archetype: 'tank', diet: 'herbivore' },
+    });
+    expect(fieldsOf(p).find((f) => f.name === '🦖 Featured')!.value).toBe('Trixie');
+    // assets/images/dinos/tank-herbivore.webp ships in the repo, so this exercises the
+    // real attach path — the URL without the file (or vice versa) is the broken-image bug.
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://tank-herbivore.webp');
+    expect(p.files).toHaveLength(1);
+  });
+
+  it('ships no files and no Featured field when nothing is featured', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 0, 0, {});
+    expect(fieldsOf(p).some((f) => f.name === '🦖 Featured')).toBe(false);
+    // Not [] — attach() on a null ref never creates the array at all, and two other test
+    // files pin exactly this distinction elsewhere in the suite.
+    expect(p.files).toBeUndefined();
+  });
+});
+
 describe('facility level arrays are bounds-guarded', () => {
   // A level above maxLevel is not reachable through upgradeLot, but it IS reachable on a
   // live database: nothing constrains lots.level, and a future maxLevel bump that forgets
