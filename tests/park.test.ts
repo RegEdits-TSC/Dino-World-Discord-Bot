@@ -8,7 +8,8 @@ import { renameDino } from '../src/modules/park/dinos.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
-import { dashboardPayload } from '../src/modules/park/embeds.js';
+import { dashboardPayload, PARK_HEADER_KEYS } from '../src/modules/park/embeds.js';
+import { eventHeaderLine } from '../src/modules/world/embeds.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
 import { FACILITIES } from '../src/data/facilities.js';
 import { DECOR } from '../src/data/decor.js';
@@ -786,16 +787,27 @@ describe('dashboard showcase', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
     const p = dashboardPayload(user, [], 0, 0, 0, { motto: 'Where the big ones live' });
     const desc = p.embeds[0].toJSON().description!;
-    expect(desc).toContain('Where the big ones live');
-    // The description slot already carries eventHeaderLine; a plain setDescription would
-    // have replaced it, and no existing test reads the embed to notice.
-    expect(desc.split('\n')).toHaveLength(2);
+    const lines = desc.split('\n');
+    // Fixed values used verbatim (no `now`), so opts.now defaults to 0 (dashboardPayload's
+    // own `?? 0`) — matches eventHeaderLine(0, PARK_HEADER_KEYS) exactly.
+    expect(lines).toHaveLength(2);
+    // Pins ORDER, not just presence: a regression that composes [motto, header] instead of
+    // [header, motto] would still be 2 lines containing the motto text, and would pass a
+    // toContain-only check undetected.
+    expect(lines[0]).toBe(eventHeaderLine(0, PARK_HEADER_KEYS));
+    expect(lines[1]).toContain('Where the big ones live');
   });
 
   it('omits the motto line entirely when there is none', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
     const p = dashboardPayload(user, [], 0, 0, 0, {});
-    expect(p.embeds[0].toJSON().description!.split('\n')).toHaveLength(1);
+    const lines = p.embeds[0].toJSON().description!.split('\n');
+    expect(lines).toHaveLength(1);
+    // Not just length 1: a regression that drops the header on the no-motto path
+    // (`.setDescription(opts.motto ? line : '')`) also yields `''.split('\n') === ['']`,
+    // a length-1 array — this line distinguishes "header correctly shown" from "header
+    // silently dropped, empty description."
+    expect(lines[0]).toBe(eventHeaderLine(0, PARK_HEADER_KEYS));
   });
 
   it('names the featured dino and attaches its archetype art as the thumbnail', () => {
