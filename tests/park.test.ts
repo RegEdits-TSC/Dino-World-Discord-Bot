@@ -630,6 +630,45 @@ describe('renameDino', () => {
     renameDino(ctx, 'u1', d.id, '   ');
     expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBeNull();
   });
+
+  it('defangs a masked link, keeping the text the player typed readable', () => {
+    // A nickname reaches PUBLIC battle embeds, whose description renders `[text](url)` as a
+    // clickable link with arbitrary visible text. `allowedMentions: { parse: [] }` kills
+    // pings client-wide; it does nothing about markdown.
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+
+    renameDino(ctx, 'u1', d.id, '[Free Nitro](https://x.tld)');
+    expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBe('[Free Nitro] (https://x.tld)');
+  });
+
+  it('leaves ordinary brackets and parentheses alone', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+
+    const plain = 'Rex [big] (fast) ( [';
+    renameDino(ctx, 'u1', d.id, plain);
+    expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBe(plain);
+  });
+
+  it('checks the length AFTER defanging, so what is stored is never over the cap', () => {
+    // 32 characters in, 33 out — defanging only ever lengthens, so a guard that ran first
+    // would no longer govern what actually reaches the column.
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+
+    expect(() => renameDino(ctx, 'u1', d.id, `${'x'.repeat(30)}](`)).toThrow(/32/);
+    expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBeNull();
+  });
 });
 
 describe('/dino rename subcommand', () => {

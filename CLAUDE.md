@@ -860,6 +860,31 @@
   neither carries an ownership check and neither should ever grow one; turning either
   into an ownership check would make Next park / Visit work only for the player whose
   park happens to already be on screen.
+  Both of those visiting surfaces render somebody else's park behind an interaction, and
+  BOTH acknowledge before they render — `park:tour` with `deferUpdate` + `editReply`
+  (a tour advances ONE message rather than accumulating one per hop; `deferReply` would
+  post a new one), `top:visit` with `deferReply` + `editReply` (the board it sits on must
+  survive the click). That ordering is not stylistic: `visitPayload` awaits `renderPark`,
+  whose own `RENDER_TIMEOUT_MS` (`src/core/render/client.ts`) is 3000 — Discord's ENTIRE
+  initial-response window — and renders serialize process-wide through one chain, so queue
+  wait stacks on top of the timeout. Rendering first cost the interaction to 10062 and
+  showed "This interaction failed" with no park, which is also the one case `visitPayload`'s
+  own `catch { png = undefined }` text-only degrade can never be delivered for. The
+  existence check stays AHEAD of the acknowledgement at all three surfaces (`park:tour`,
+  `top:visit`, `/park view user:`), because "That player has no park yet" is an EPHEMERAL
+  answer and either defer would have committed it to a public message.
+  Free text reaching a public embed is defanged, never rejected: `defangLinks`
+  (`src/core/text.ts`) splits the `](` sequence, because an embed DESCRIPTION renders
+  `[text](url)` as a masked link with arbitrary visible text — 80 characters of motto is
+  ample for `[Free Nitro](https://evil.tld)`. The client-wide `allowedMentions: { parse: [] }`
+  kills mention injection and does nothing about markdown. Two call sites, closed together
+  because a half-closed vector is worse than a documented open one: `setMotto`
+  (`src/modules/park/showcase.ts`) and `renameDino` (`src/modules/park/dinos.ts`, whose
+  nicknames reach public battle embeds). It runs AFTER the trim and BEFORE the length
+  check at both — defanging only ever lengthens a string, so a guard that ran first would
+  no longer govern what is actually stored, and a motto of exactly 80 characters ending
+  `](` is now rejected rather than stored at 81. The design spec explicitly said no
+  sanitisation should be added; that line is superseded (see its own note).
   Separately, `tests/help.test.ts` scrapes `/park`'s subcommand list straight from the
   REAL builder JSON and fails until `HELP_TOPICS.park.body` (`src/modules/help/index.ts`)
   mentions every one of them — this caught two implementers by surprise on the showcase

@@ -910,7 +910,10 @@ Legacy rank appears on your `/park view` dashboard and in the footer of
 park card under its name; leave the option blank to clear it. `/park feature
 [dino]` picks one of your dinos to display by name and art on that same
 card; leave it blank to clear the pick. Both are purely cosmetic — neither
-touches income, comfort, escapes, habitat fit, or park rating. If a featured
+touches income, comfort, escapes, habitat fit, or park rating. A motto — like a
+dino nickname — can't carry a hidden link: the `](` in Discord's
+`[text](url)` link syntax is split with a space when it's stored, so the
+address stays visible instead of hiding behind friendly-looking text. If a featured
 dino is later sold or traded away, its card simply stops showing a feature;
 nothing breaks and there's nothing to re-set — pick a new one whenever you
 like.

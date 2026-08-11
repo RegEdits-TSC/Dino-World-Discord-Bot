@@ -167,6 +167,16 @@ client-wide, which is the same shield `/park rename` and `/dino rename` rely
 on. No new sanitisation is required, and none should be added — a second
 mechanism would be a second thing to keep in sync.
 
+> **Superseded before merge.** That paragraph is right about mentions and wrong
+> about markdown: an embed *description* renders `[text](url)` as a masked link
+> with arbitrary visible text, which `allowedMentions` does nothing about, and 80
+> characters is ample for `[Free Nitro](https://evil.tld)`. The shipped code
+> defangs rather than rejects — `defangLinks` (`src/core/text.ts`) splits the
+> `](` sequence, leaving every character the player typed visible — and closes
+> the same pre-existing vector in `renameDino` at the same time, since nicknames
+> reach public battle embeds. One helper, two call sites, so it stays one
+> mechanism rather than two.
+
 ### Featured dino
 
 Set through a new `/park feature` subcommand carrying one **optional integer**

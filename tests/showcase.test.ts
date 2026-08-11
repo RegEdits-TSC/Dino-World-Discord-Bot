@@ -41,6 +41,30 @@ describe('setMotto', () => {
   it('accepts exactly the maximum length', () => {
     expect(setMotto(ctx, 'u1', 'x'.repeat(MAX_MOTTO))).toHaveLength(MAX_MOTTO);
   });
+
+  it('defangs a masked link, keeping the text the player typed readable', () => {
+    // A motto lands in a public embed DESCRIPTION, where `[text](url)` renders as a
+    // clickable link with arbitrary visible text — 80 characters is ample for a fake
+    // Nitro offer. `allowedMentions: { parse: [] }` kills pings, never markdown.
+    expect(setMotto(ctx, 'u1', '[Free Nitro](https://example.com)'))
+      .toBe('[Free Nitro] (https://example.com)');
+    expect(row().motto).toBe('[Free Nitro] (https://example.com)');
+  });
+
+  it('leaves ordinary brackets and parentheses alone', () => {
+    const plain = 'Rex [the biggest] one (really) — 100% ( [ good';
+    expect(setMotto(ctx, 'u1', plain)).toBe(plain);
+    expect(row().motto).toBe(plain);
+  });
+
+  it('checks the length AFTER defanging, so what is stored is never over the cap', () => {
+    // 80 characters in, 81 out — defanging only ever lengthens, so a guard that ran first
+    // would no longer govern what actually reaches the column.
+    const atCap = `${'x'.repeat(MAX_MOTTO - 2)}](`;
+    expect(atCap).toHaveLength(MAX_MOTTO);
+    expect(() => setMotto(ctx, 'u1', atCap)).toThrow(ShowcaseError);
+    expect(row().motto).toBe('');
+  });
 });
 
 describe('setFeaturedDino', () => {

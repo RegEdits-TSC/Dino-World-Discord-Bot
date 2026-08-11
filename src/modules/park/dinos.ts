@@ -6,6 +6,7 @@ import { DECOR } from '../../data/decor.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import type { Diet } from '../../data/types.js';
 import { comfortAt, escapeAt, enrichmentAt } from '../../core/clock.js';
+import { defangLinks } from '../../core/text.js';
 import { toClockDinos, type Lot } from './service.js';
 import { recomputeRating } from './rating.js';
 
@@ -68,7 +69,11 @@ export function renameDino(ctx: Ctx, userId: string, dinoId: number, nickname: s
   const dino = ctx.db.select().from(schema.dinos)
     .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
   if (!dino) throw new AssignError('You do not own that dino.');
-  const trimmed = nickname?.trim() ?? '';
+  // Defanged between the trim and the length check, the same way setMotto is: a nickname
+  // reaches public battle embeds, where `[text](url)` renders as a masked link. Defanging
+  // only lengthens, so running it before the guard is what keeps MAX_NICKNAME true of what
+  // is stored.
+  const trimmed = defangLinks(nickname?.trim() ?? '');
   if (trimmed.length > MAX_NICKNAME) throw new AssignError(`Nicknames are at most ${MAX_NICKNAME} characters.`);
   ctx.db.update(schema.dinos).set({ nickname: trimmed === '' ? null : trimmed })
     .where(eq(schema.dinos.id, dinoId)).run();

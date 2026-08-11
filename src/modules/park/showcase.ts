@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { getSpecies } from '../../data/species/index.js';
+import { defangLinks } from '../../core/text.js';
 import type { Species } from '../../data/types.js';
 
 /** Matches the builder's .setMaxLength(80) on /park motto. */
@@ -9,13 +10,16 @@ export const MAX_MOTTO = 80;
 
 export class ShowcaseError extends Error {}
 
-/** Trims, validates, stores. Blank or null clears. Returns what was stored. */
+/** Trims, defangs, validates, stores. Blank or null clears. Returns what was stored. */
 export function setMotto(ctx: Ctx, userId: string, motto: string | null): string {
-  const trimmed = motto?.trim() ?? '';
-  if (trimmed.length > MAX_MOTTO) throw new ShowcaseError(`Mottos are at most ${MAX_MOTTO} characters.`);
-  ctx.db.update(schema.users).set({ motto: trimmed })
+  // Defanged between the trim and the length check: a motto lands in a public embed
+  // description, where `[text](url)` renders as a masked link. Defanging only lengthens,
+  // so running it before the guard is what keeps MAX_MOTTO true of what is stored.
+  const text = defangLinks(motto?.trim() ?? '');
+  if (text.length > MAX_MOTTO) throw new ShowcaseError(`Mottos are at most ${MAX_MOTTO} characters.`);
+  ctx.db.update(schema.users).set({ motto: text })
     .where(eq(schema.users.discordId, userId)).run();
-  return trimmed;
+  return text;
 }
 
 /**
