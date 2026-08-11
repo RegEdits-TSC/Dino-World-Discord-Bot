@@ -1,10 +1,13 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { getSpecies } from '../../data/species/index.js';
-import { battleLevel } from '../../data/battle/stats.js';
+import { battleLevel, statsFor } from '../../data/battle/stats.js';
 import { escapeMoment } from '../../core/clock.js';
 import { toClockDinos } from '../park/service.js';
+import { resolveBattle, type BeatSummary, type Combatant } from '../../data/battle/resolve.js';
+import { outcomeFor, type DuelMode, type DuelResult } from '../../data/battle/duel.js';
+import { eloDelta } from '../../data/battle/elo.js';
 
 export class DuelError extends Error {}
 
@@ -82,4 +85,112 @@ export function setDuelSquad(ctx: Ctx, userId: string, dinoIds: number[]): DuelS
   ctx.db.update(schema.users).set({ duelSquad: dinoIds })
     .where(eq(schema.users.discordId, userId)).run();
   return duelSquad(ctx, userId);
+}
+
+/** Everything the surfaces need. `result` and `eloDelta` are the challenger's. */
+export interface DuelOutcome {
+  challengerId: string; defenderId: string; mode: DuelMode;
+  names: { challenger: string; defender: string };
+  result: DuelResult;
+  eloDelta: number;
+  ratingBefore: { challenger: number; defender: number };
+  ratingAfter: { challenger: number; defender: number };
+  squads: { challenger: DuelSquadMember[]; defender: DuelSquadMember[] };
+  survivors: { challenger: number; defender: number };
+  beats: [BeatSummary, BeatSummary];
+  rounds: number;
+  challengerWasSideZero: boolean;
+  /** Read from the defender's row here so the caller needs no second query. */
+  defenderAlertsEnabled: boolean;
+}
+
+// Dino row ids are globally unique and nobody can duel themselves, so one key
+// scheme is safe for both sides. finalHp is a flat record with no namespacing by
+// side — two combatants sharing a key would silently collapse into one entry.
+const keyOf = (m: DuelSquadMember) => `d${m.dinoId}`;
+
+function combatants(squad: DuelSquadMember[], side: 0 | 1): Combatant[] {
+  return squad.map((m) => {
+    const s = statsFor(m.speciesId, m.level, m.traits);   // traits on BOTH sides, unlike PvE
+    return {
+      key: keyOf(m), name: m.name, speciesId: m.speciesId,
+      archetype: m.archetype as Combatant['archetype'],
+      maxHp: s.hp, hp: s.hp, atk: s.atk, def: s.def, spd: s.spd, side,
+    };
+  });
+}
+
+/**
+ * Resolve one duel and commit it. Writes exactly two things — both ratings and one
+ * log row — in a single transaction that closes before any Discord call, so the
+ * router's "nothing was charged" error path stays honest (commit-before-present).
+ *
+ * No world event reaches a duel: eventMods is sampled by hand in runFight and its
+ * enemyHp term is meaningless in a symmetric match, where "the enemy" is whichever
+ * player the coin flip happened to seat second.
+ */
+export function resolveDuel(
+  ctx: Ctx, challengerId: string, defenderId: string, mode: DuelMode,
+): DuelOutcome {
+  const challenger = ctx.db.select().from(schema.users)
+    .where(eq(schema.users.discordId, challengerId)).get();
+  if (!challenger) throw new DuelError('You have no park yet.');
+  const defender = ctx.db.select().from(schema.users)
+    .where(eq(schema.users.discordId, defenderId)).get();
+  if (!defender) throw new DuelError('That player has no park yet.');
+
+  let mySquad: DuelSquadMember[];
+  try {
+    mySquad = duelSquad(ctx, challengerId);
+  } catch {
+    throw new DuelError('You have no battle-ready dinos — hatch or rescue one first.');
+  }
+  const theirSquad = duelSquad(ctx, defenderId);   // already phrased for the other player
+
+  // Side 0 wins every initiative tie (resolveBattle sorts spd desc, then side asc,
+  // then array index), and `side` is a field on each combatant rather than a
+  // consequence of argument order — so without this flip the challenger would get a
+  // free first strike in every mirror match.
+  const challengerWasSideZero = ctx.rng() < 0.5;
+  const mine = combatants(mySquad, challengerWasSideZero ? 0 : 1);
+  const theirs = combatants(theirSquad, challengerWasSideZero ? 1 : 0);
+  const battle = challengerWasSideZero
+    ? resolveBattle(mine, theirs, ctx.rng)
+    : resolveBattle(theirs, mine, ctx.rng);
+
+  const result = outcomeFor(battle, challengerWasSideZero);
+  const alive = (squad: DuelSquadMember[]) =>
+    squad.filter((m) => (battle.finalHp[keyOf(m)] ?? 0) > 0).length;
+
+  const score = result === 'win' ? 1 : result === 'draw' ? 0.5 : 0;
+  // ONE delta, negated for the defender. Rounding each side independently would not
+  // conserve points — see src/data/battle/elo.ts.
+  const delta = eloDelta(challenger.duelRating, defender.duelRating, score);
+  const ratingBefore = { challenger: challenger.duelRating, defender: defender.duelRating };
+  const ratingAfter = {
+    challenger: challenger.duelRating + delta,
+    defender: defender.duelRating - delta,
+  };
+  const now = ctx.now();
+
+  ctx.db.transaction(() => {
+    ctx.db.update(schema.users).set({ duelRating: ratingAfter.challenger })
+      .where(eq(schema.users.discordId, challengerId)).run();
+    ctx.db.update(schema.users).set({ duelRating: ratingAfter.defender })
+      .where(eq(schema.users.discordId, defenderId)).run();
+    ctx.db.insert(schema.duels).values({
+      challengerId, defenderId, mode, result, eloDelta: delta, createdAt: now,
+    }).run();
+  });
+
+  return {
+    challengerId, defenderId, mode,
+    names: { challenger: challenger.displayName || challengerId, defender: defender.displayName || defenderId },
+    result, eloDelta: delta, ratingBefore, ratingAfter,
+    squads: { challenger: mySquad, defender: theirSquad },
+    survivors: { challenger: alive(mySquad), defender: alive(theirSquad) },
+    beats: battle.beats, rounds: battle.rounds,
+    challengerWasSideZero,
+    defenderAlertsEnabled: defender.alertsEnabled,
+  };
 }

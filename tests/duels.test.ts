@@ -4,6 +4,10 @@ import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { duelSquad, setDuelSquad, DuelError } from '../src/modules/duels/service.js';
+import { allSpecies } from '../src/data/species/index.js';
+import { outcomeFor } from '../src/data/battle/duel.js';
+import { resolveDuel } from '../src/modules/duels/service.js';
+import type { BattleResult } from '../src/data/battle/resolve.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
@@ -125,5 +129,136 @@ describe('setDuelSquad', () => {
     const cleared = setDuelSquad(ctx, 'a', []);
     expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'a')).get()!.duelSquad).toEqual([]);
     expect(cleared.map((m) => m.dinoId)).toEqual([strong, weak]);
+  });
+});
+
+describe('outcomeFor', () => {
+  const base: BattleResult = {
+    won: false, rounds: 30, squadKos: 0, squadSurvivors: [],
+    beats: [{ title: 'Opening clash', lines: ['x'] }, { title: 'The climax', lines: ['y'] }],
+    finalHp: {},
+  };
+
+  it('reads a side-0 win as a challenger win when the challenger is side 0', () => {
+    expect(outcomeFor({ ...base, won: true, squadSurvivors: ['d1'] }, true)).toBe('win');
+  });
+
+  it('reads a side-0 win as a challenger LOSS when the defender is side 0', () => {
+    expect(outcomeFor({ ...base, won: true, squadSurvivors: ['d1'] }, false)).toBe('loss');
+  });
+
+  // The only correct draw inference. `rounds === MAX_ROUNDS` is not equivalent — a
+  // fight can be decided on the last round — and no squadKos test is equivalent either.
+  it('reads survivors on a non-win as a draw, whichever side the challenger is', () => {
+    expect(outcomeFor({ ...base, won: false, squadSurvivors: ['d1'] }, true)).toBe('draw');
+    expect(outcomeFor({ ...base, won: false, squadSurvivors: ['d1'] }, false)).toBe('draw');
+  });
+
+  it('reads a wiped side 0 as a win for the other side', () => {
+    expect(outcomeFor({ ...base, won: false, squadSurvivors: [] }, true)).toBe('loss');
+    expect(outcomeFor({ ...base, won: false, squadSurvivors: [] }, false)).toBe('win');
+  });
+});
+
+describe('resolveDuel', () => {
+  const strong = allSpecies().find((s) => s.rarity === 'legendary')!;
+  const weak = allSpecies().find((s) => s.rarity === 'common')!;
+
+  function pair(): void {
+    getOrCreateUser(ctx, 'a', 'A');
+    getOrCreateUser(ctx, 'b', 'B');
+  }
+
+  it('is zero-sum: the defender loses exactly what the challenger gains', () => {
+    pair();
+    addDino('a', strong.id, 3200);
+    addDino('b', weak.id, 0);
+    const out = resolveDuel(ctx, 'a', 'b', 'ghost');
+    expect(out.ratingAfter.challenger + out.ratingAfter.defender)
+      .toBe(out.ratingBefore.challenger + out.ratingBefore.defender);
+    expect(out.ratingAfter.challenger - out.ratingBefore.challenger).toBe(out.eloDelta);
+    expect(out.ratingAfter.defender - out.ratingBefore.defender).toBe(-out.eloDelta);
+  });
+
+  it('persists both ratings and exactly one log row', () => {
+    pair();
+    addDino('a', strong.id, 3200);
+    addDino('b', weak.id, 0);
+    const out = resolveDuel(ctx, 'a', 'b', 'ghost');
+    const rowA = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'a')).get()!;
+    const rowB = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'b')).get()!;
+    expect(rowA.duelRating).toBe(out.ratingAfter.challenger);
+    expect(rowB.duelRating).toBe(out.ratingAfter.defender);
+    const log = ctx.db.select().from(schema.duels).all();
+    expect(log).toHaveLength(1);
+    expect(log[0]).toMatchObject({
+      challengerId: 'a', defenderId: 'b', mode: 'ghost',
+      result: out.result, eloDelta: out.eloDelta,
+    });
+  });
+
+  it('a heavily outmatched defender loses', () => {
+    pair();
+    addDino('a', strong.id, 3200);
+    addDino('a', strong.id, 3200);
+    addDino('a', strong.id, 3200);
+    addDino('b', weak.id, 0);
+    expect(resolveDuel(ctx, 'a', 'b', 'ghost').result).toBe('win');
+  });
+
+  it('pays nothing but a record — no cash, shards, energy or XP moves', () => {
+    pair();
+    const mine = addDino('a', strong.id, 3200);
+    addDino('b', weak.id, 0);
+    const before = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'a')).get()!;
+    resolveDuel(ctx, 'a', 'b', 'ghost');
+    const after = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'a')).get()!;
+    expect(after.cash).toBe(before.cash);
+    expect(after.shards).toBe(before.shards);
+    expect(after.energy).toBe(before.energy);
+    expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, mine)).get()!.battleXp).toBe(3200);
+    expect(ctx.db.select().from(schema.battleProgress).all()).toEqual([]);
+  });
+
+  it('reports both squads and both survivor counts', () => {
+    pair();
+    addDino('a', strong.id, 3200);
+    addDino('b', weak.id, 0);
+    const out = resolveDuel(ctx, 'a', 'b', 'ghost');
+    expect(out.squads.challenger).toHaveLength(1);
+    expect(out.squads.defender).toHaveLength(1);
+    expect(out.survivors.challenger).toBeGreaterThanOrEqual(0);
+    expect(out.survivors.defender).toBeGreaterThanOrEqual(0);
+    expect(out.names).toEqual({ challenger: 'A', defender: 'B' });
+    expect(out.beats).toHaveLength(2);
+  });
+
+  it('refuses a defender with no park row', () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    addDino('a', strong.id, 0);
+    expect(() => resolveDuel(ctx, 'a', 'nobody', 'ghost')).toThrow(/no park yet/);
+  });
+
+  it('refuses when the challenger has no battle-ready dinos', () => {
+    pair();
+    addDino('b', weak.id, 0);
+    expect(() => resolveDuel(ctx, 'a', 'b', 'ghost')).toThrow(/battle-ready/);
+  });
+
+  // Side 0 gets a free first strike on every speed tie (resolveBattle sorts by
+  // spd desc, then side asc), so the coin flip is what stops a mirror match being
+  // decided by argument order. Both branches must be reachable from ctx.rng.
+  it('flips a coin for side 0 rather than always seating the challenger first', () => {
+    const seen = new Set<boolean>();
+    for (const first of [true, false]) {
+      const c = makeCtx({ rng: () => (first ? 0.1 : 0.9) });
+      getOrCreateUser(c, 'a', 'A'); getOrCreateUser(c, 'b', 'B');
+      for (const u of ['a', 'b']) {
+        c.db.insert(schema.dinos)
+          .values({ userId: u, speciesId: weak.id, hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+      }
+      seen.add(resolveDuel(c, 'a', 'b', 'ghost').challengerWasSideZero);
+    }
+    expect(seen).toEqual(new Set([true, false]));
   });
 });
