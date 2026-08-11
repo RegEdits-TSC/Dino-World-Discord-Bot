@@ -39,8 +39,12 @@ describe('elo', () => {
   it('conserves points across every pairing, including half-point cases', () => {
     for (let a = 600; a <= 1600; a += 37) {
       for (let b = 600; b <= 1600; b += 53) {
-        expect(eloDelta(a, b, 1)).toBe(-eloDelta(b, a, 0));
-        expect(eloDelta(a, b, 0.5)).toBe(-eloDelta(b, a, 0.5));
+        // Asserted as a sum rather than an exact negation: at equal ratings the
+        // half-point delta is 0, and `toBe` compares with Object.is, where +0 and
+        // -0 differ. Summing to zero is the same conservation claim without the
+        // JavaScript signed-zero trap.
+        expect(eloDelta(a, b, 1) + eloDelta(b, a, 0)).toBe(0);
+        expect(eloDelta(a, b, 0.5) + eloDelta(b, a, 0.5)).toBe(0);
       }
     }
   });
