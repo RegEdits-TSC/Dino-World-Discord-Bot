@@ -1,6 +1,8 @@
-import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import type { AttachmentBuilder } from 'discord.js';
+import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
+import { schema } from '../../core/db/index.js';
 import { getOrCreateUser } from '../park/service.js';
 import { topPlayers, playerRank, type Metric, type Scope } from './service.js';
 import { assetImage, attach } from '../../core/images.js';
@@ -83,13 +85,18 @@ export const leaderboardsModule: ModuleManifest = {
         // Unknown actions absorb rather than erroring — the dex/ach/alert discipline, so
         // a customId shape from an older deploy never shows "This interaction failed".
         if (action !== 'visit') { await i.deferUpdate(); return; }
+        // The existence check stays AHEAD of the defer: deferReply commits this interaction
+        // to a PUBLIC message, so answering the miss afterwards posted "That player has no
+        // park yet" to the whole channel. Both sibling surfaces (/park view user:,
+        // park:tour) answer that same condition ephemerally.
+        const target = ctx.db.select().from(schema.users)
+          .where(eq(schema.users.discordId, targetId)).get();
+        if (!target) { await i.reply({ content: 'That player has no park yet.', flags: MessageFlags.Ephemeral }); return; }
         // deferReply + editReply, never i.update: the leaderboard these buttons sit on
         // must survive the click. Rendering a park runs a worker render, so the defer is
         // also what keeps this inside Discord's 3-second window.
         await i.deferReply();
-        const payload = await visitPayload(ctx, targetId);
-        if (!payload) { await i.editReply({ content: 'That player has no park yet.' }); return; }
-        await i.editReply(payload);
+        await i.editReply((await visitPayload(ctx, targetId))!);
       },
     },
   ],

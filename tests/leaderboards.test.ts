@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { MessageFlags } from 'discord.js';
 import { eq } from 'drizzle-orm';
-import { makeCtx, fakeCommand, fakeButton } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { topPlayers, collectionScore, playerRank, collectionScores, starScores, legacyScores } from '../src/modules/leaderboards/service.js';
 import { leaderboardsModule } from '../src/modules/leaderboards/index.js';
@@ -392,6 +393,16 @@ describe('top:visit', () => {
     const i = await click('top:whatever:a');
     expect(i.deferOpts).toHaveLength(1);
     expect(i.replies).toHaveLength(0);
+  });
+
+  it('answers ephemerally for a target with no park, never publicly', async () => {
+    const i = await click('top:visit:ghost');
+    // The existence check runs ahead of the defer: deferReply commits the interaction to a
+    // PUBLIC message, so answering after it broadcast the miss to the channel. Both sibling
+    // surfaces (/park view user:, park:tour) answer this condition ephemerally.
+    expect(i.deferOpts).toHaveLength(0);
+    expect(replyText(i.replies[0])).toContain('no park yet');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
 
   it('creates no user row for the clicker', async () => {
