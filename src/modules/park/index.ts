@@ -419,11 +419,26 @@ export const parkModule: ModuleManifest = {
           // NO owner check on purpose: a park visit is public and read-only, and `uid`
           // here is the TARGET park, not an owner. Turning this into an ownership check
           // would make Next park work only for the player whose park is on screen.
+          //
+          // The existence check stays AHEAD of the acknowledgement so "no park yet" can
+          // still be an ephemeral reply — the /park view user: ordering exactly.
+          const exists = ctx.db.select().from(schema.users)
+            .where(eq(schema.users.discordId, uid)).get();
+          if (!exists) { await i.reply({ content: 'That player has no park yet.', flags: MessageFlags.Ephemeral }); return; }
+          // Acknowledge BEFORE rendering: visitPayload awaits renderPark, whose own
+          // RENDER_TIMEOUT_MS is already 3000 — Discord's entire initial-response window —
+          // and renders serialize process-wide, so queue wait stacks on top of it. Rendering
+          // first meant a slow render lost the interaction to 10062 and the user saw "This
+          // interaction failed" with no park, which is also the one case visitPayload's
+          // render-failure degrade could never be delivered for.
+          //
+          // deferUpdate + editReply, never deferReply: a tour advances ONE message rather
+          // than accumulating a new one per hop.
+          await i.deferUpdate();
           const payload = await visitPayload(ctx, uid);
-          if (!payload) { await i.reply({ content: 'That player has no park yet.', flags: MessageFlags.Ephemeral }); return; }
           // attachments: [] — the message being replaced carries the previous park's
           // uploads, and this payload brings its own.
-          await i.update({ ...payload, attachments: [] });
+          await i.editReply({ ...payload!, attachments: [] });
           return;
         }
         if (action === 'landmark') {

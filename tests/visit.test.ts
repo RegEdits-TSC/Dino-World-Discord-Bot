@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { MessageFlags } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { makeCtx, fakeButton } from './harness.js';
 import { schema } from '../src/core/db/index.js';
@@ -117,6 +118,17 @@ describe('park:tour', () => {
     expect(JSON.stringify(i.replies[0])).toContain('park:tour:a');   // wrapped
   });
 
+  it('acknowledges BEFORE rendering, and still lands the park', async () => {
+    player('a', 300); player('b', 200);
+    const i = await click('park:tour:b');
+    // Rendering first cost the interaction: renderPark's own RENDER_TIMEOUT_MS is 3000 —
+    // Discord's whole initial-response window — and renders serialize process-wide, so a
+    // slow one lost the i.update to 10062 and showed "This interaction failed" with no
+    // park. fakeButton records deferUpdate and deferReply alike into deferOpts.
+    expect(i.deferOpts).toHaveLength(1);
+    expect((i.replies[0] as { embeds?: unknown[] }).embeds).toHaveLength(1);
+  });
+
   it('creates no user row for the clicker', async () => {
     player('a', 300);
     await click('park:tour:a', 'stranger');
@@ -130,5 +142,9 @@ describe('park:tour', () => {
     player('a', 300);
     const i = await click('park:tour:ghost');
     expect(JSON.stringify(i.replies[0])).toContain('no park yet');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    // The existence check runs ahead of the acknowledgement precisely so this answer can
+    // stay ephemeral — deferUpdate first would have committed it to the public message.
+    expect(i.deferOpts).toHaveLength(0);
   });
 });
