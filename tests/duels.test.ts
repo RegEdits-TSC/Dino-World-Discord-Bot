@@ -393,13 +393,19 @@ describe('duel embeds', () => {
   }
 
   it('names both players, both ratings and both squads', () => {
-    const payload = duelResultPayload(outcome());
+    const out = outcome();
+    const payload = duelResultPayload(out);
     const embed = payload.embeds[0].toJSON();
     expect(embed.description).toContain('A');
     expect(embed.description).toContain('B');
     expect(embed.fields!.map((f) => f.name)).toEqual(
       expect.arrayContaining(['Opening clash', 'The climax']));
     expect(JSON.stringify(embed)).toContain('1000');
+    // Not just the field NAME — the challenger's field VALUE must actually spell
+    // out the real lead member, so a dropped "Lv." prefix or a broken join would fail.
+    const lead = out.squads.challenger[0];
+    const challengerField = embed.fields!.find((f) => f.name.startsWith(out.names.challenger))!;
+    expect(challengerField.value).toContain(`Lv.${lead.level} ${lead.name}`);
   });
 
   // Elo is a plain integer — never divided the way parkRating is.
@@ -416,6 +422,19 @@ describe('duel embeds', () => {
   it('never attaches more than one image', () => {
     const payload = duelResultPayload(outcome());
     expect((payload.files ?? []).length).toBeLessThanOrEqual(1);
+  });
+
+  // <= 1 above guards the collision hazard (two refs sharing one basename); this
+  // guards the opposite regression — an attach() that silently stopped firing would
+  // leave files undefined and pass every other assertion in this block.
+  it('attaches exactly one image, keyed on the winning lead archetype x diet', () => {
+    const out = outcome();
+    const payload = duelResultPayload(out);
+    const lead = out.result === 'loss' ? out.squads.defender[0] : out.squads.challenger[0];
+    const expected = `${lead.archetype}-${lead.diet}.webp`;
+    expect(payload.files?.length).toBe(1);
+    expect(payload.files![0].name).toBe(expected);
+    expect(payload.embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${expected}`);
   });
 
   it('carries no buttons on a result', () => {
