@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeCtx, fakeCommand } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
-import { topPlayers, collectionScore, playerRank } from '../src/modules/leaderboards/service.js';
+import { topPlayers, collectionScore, playerRank, collectionScores, starScores, legacyScores } from '../src/modules/leaderboards/service.js';
 import { leaderboardsModule } from '../src/modules/leaderboards/index.js';
 import { schema } from '../src/core/db/index.js';
+import { legacyPoints } from '../src/modules/park/ranks.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx();
@@ -101,5 +102,64 @@ describe('playerRank', () => {
     await leaderboardsModule.commands[0].execute(ctx, i.asChatInput());
     const embed = (i.replies[0] as { embeds: Array<{ toJSON(): { footer?: { text: string } } }> }).embeds[0].toJSON();
     expect(embed.footer).toBeUndefined();
+  });
+});
+
+describe('batched score builders', () => {
+  beforeEach(() => { ctx = makeCtx(); });   // discard the outer a/b/c seed
+
+  const user = (id: string) => getOrCreateUser(ctx, id, id.toUpperCase());
+  const dino = (id: string, speciesId: string) =>
+    ctx.db.insert(schema.dinos).values({ userId: id, speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+
+  it('collectionScores agrees with collectionScore for every user', () => {
+    user('a'); user('b');
+    dino('a', 'triceratops'); dino('a', 'triceratops'); dino('a', 'tyrannosaurus');
+    dino('b', 'triceratops');
+    const batched = collectionScores(ctx);
+    expect(batched.get('a')).toBe(collectionScore(ctx, 'a'));
+    expect(batched.get('b')).toBe(collectionScore(ctx, 'b'));
+    expect(batched.get('a')).toBe(1 + 16);   // distinct species only: common 1 + legendary 16
+  });
+
+  it('collectionScores omits a user with no dinos rather than scoring them 0', () => {
+    user('a');
+    // The caller supplies the 0 (scored() does `?? 0`); the builder reports only what it saw.
+    expect(collectionScores(ctx).has('a')).toBe(false);
+  });
+
+  it('starScores sums battle stars per user', () => {
+    user('a');
+    ctx.db.insert(schema.battleProgress).values({ userId: 'a', stageId: 's1', stars: 3 }).run();
+    ctx.db.insert(schema.battleProgress).values({ userId: 'a', stageId: 's2', stars: 2 }).run();
+    expect(starScores(ctx).get('a')).toBe(5);
+  });
+
+  it('legacyScores agrees with legacyPoints for the same user', () => {
+    user('a');
+    ctx.db.insert(schema.speciesSeen).values({ userId: 'a', speciesId: 'triceratops', firstAt: 0 }).run();
+    ctx.db.insert(schema.speciesSeen).values({ userId: 'a', speciesId: 'tyrannosaurus', firstAt: 0 }).run();
+    ctx.db.insert(schema.achievementClaims).values({ userId: 'a', trackId: 't', tier: 0, claimedAt: 0 }).run();
+    ctx.db.insert(schema.battleProgress).values({ userId: 'a', stageId: 's1', stars: 3 }).run();
+    expect(legacyScores(ctx).get('a')).toBe(legacyPoints(ctx, 'a'));
+    expect(legacyScores(ctx).get('a')).toBe(2 + 1 + 3);
+  });
+
+  // dexProgress intersects species_seen with the LIVE roster, so a retired id contributes
+  // nothing. A plain row count here would inflate both dex progress and legacy points, and
+  // the board would disagree with the park card that already shows the rank.
+  it('legacyScores ignores a species_seen row naming a species not in the roster', () => {
+    user('a');
+    ctx.db.insert(schema.speciesSeen).values({ userId: 'a', speciesId: 'triceratops', firstAt: 0 }).run();
+    ctx.db.insert(schema.speciesSeen).values({ userId: 'a', speciesId: 'retired-species', firstAt: 0 }).run();
+    expect(legacyScores(ctx).get('a')).toBe(1);
+    expect(legacyScores(ctx).get('a')).toBe(legacyPoints(ctx, 'a'));
+  });
+
+  it('scopes to the given ids, and reads nothing for an empty list', () => {
+    user('a'); user('b');
+    dino('a', 'triceratops'); dino('b', 'tyrannosaurus');
+    expect([...collectionScores(ctx, ['a']).keys()]).toEqual(['a']);
+    expect(collectionScores(ctx, []).size).toBe(0);
   });
 });
