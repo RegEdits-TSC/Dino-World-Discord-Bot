@@ -18,7 +18,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/park alerts` | Turn proactive park alerts on or off | DM-only warnings before a dino escapes and when your park's income hits its cap. On by default; also turned off by the 🔕 Mute button on an alert itself |
 | `/park landmark` | Your park's prestige monument — the six-rung cash-sink ladder | Shows the built and next rungs with a Build button. Purely cosmetic |
 | `/park motto` | The line visitors see on your park card | Up to 80 characters. Leave the option blank to clear it |
-| `/park feature` | Feature one of your dinos on your park card | Shows its name and art to anyone visiting. Leave the option blank to clear it. An escaped dino is still a valid choice |
+| `/park feature` | Feature one of your dinos on your park card | Autocomplete: dino. Shows its name and art to anyone visiting. Leave the option blank to clear it. An escaped dino is still a valid choice |
 | `/build` | Build on an empty lot | |
 | `/upgrade` | Upgrade a lot to the next level | Autocomplete: lot, and the suggestion quotes the price. Costs are also quoted in the insufficient-funds reply |
 | `/decorate` | Add decor to a paddock | Autocomplete: lot, item |

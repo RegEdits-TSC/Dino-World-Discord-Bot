@@ -21,7 +21,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '6. `/feed all` regularly — hungry dinos get uncomfortable and eventually escape.',
   ].join('\n') },
   park: { title: '🏞️ Park', body: [
-    '`/park view [user]` — dashboard, park map, Collect button.',
+    '`/park view [user]` — dashboard, park map, Collect button. Add `user` to visit someone else\'s park, read-only, with a Next park ▶ button to keep browsing.',
     '`/park rename name:<text>` — rename your park.',
     '`/park motto [text]` — the line visitors see on your park card (up to 80 characters; leave blank to clear).',
     '`/park feature [dino]` — pick one dino to display on your park card; leave blank to clear.',
@@ -67,7 +67,8 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Offers expire after a while; offered items are locked until resolved.',
   ].join('\n') },
   ranks: { title: '🏆 Ranks', art: { kind: 'banners', name: 'leaderboards' }, body: [
-    '`/top metric:<rating|cash|collection> [scope]` — server or global leaderboards.',
+    '`/top metric:<rating|cash|collection|legacy|stars> [scope]` — server or global leaderboards.',
+    'Up to five Visit buttons sit under the board — click one to jump straight into that player\'s park.',
     'Rating grows with dinos, lots, and comfort; it gates expeditions, shop tiers, and Mythics.',
   ].join('\n') },
   battles: { title: '⚔️ Battles', art: { kind: 'sites', name: 'coastal_dig-banner' }, body: [
