@@ -93,5 +93,12 @@ describe('visitPayload', () => {
     getOrCreateUser(ctx, 'a', 'A');   // rating 0 — has a row, not in the ring
     const p = (await visitPayload(ctx, 'a'))!;
     expect(p.components).toEqual([]);
+    // No featured dino here, so attach() never ran and dashboardPayload's `files` stayed
+    // undefined — the forwarding line must not turn that into an empty array. attach()
+    // deliberately never creates one (see the repo CLAUDE.md note on the three attachment
+    // defects an empty-array substitution shipped); tests/hatchery.test.ts and
+    // tests/notify-handlers.test.ts pin the same undefined-not-[] shape at their own
+    // art-free payloads.
+    expect(p.files).toBeUndefined();
   });
 });
