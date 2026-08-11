@@ -5,6 +5,7 @@ import { topPlayers, collectionScore, playerRank, collectionScores, starScores, 
 import { leaderboardsModule } from '../src/modules/leaderboards/index.js';
 import { schema } from '../src/core/db/index.js';
 import { legacyPoints } from '../src/modules/park/ranks.js';
+import type { Db } from '../src/core/db/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx();
@@ -161,5 +162,92 @@ describe('batched score builders', () => {
     dino('a', 'triceratops'); dino('b', 'tyrannosaurus');
     expect([...collectionScores(ctx, ['a']).keys()]).toEqual(['a']);
     expect(collectionScores(ctx, []).size).toBe(0);
+  });
+});
+
+// There is no query-counting precedent anywhere in this suite — this proxy is written
+// from scratch. It intercepts `select` only: every read in src/ goes through
+// ctx.db.select(), and inserts/updates are irrelevant to the N+1 this guards.
+function countingCtx(base: ReturnType<typeof makeCtx>) {
+  let queries = 0;
+  const db = new Proxy(base.db, {
+    get(target, prop, receiver) {
+      if (prop === 'select') {
+        return (...args: unknown[]) => {
+          queries += 1;
+          return (target.select as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  }) as Db;
+  return { ctx: { ...base, db }, queries: () => queries };
+}
+
+function boardOf(size: number) {
+  const base = makeCtx();
+  for (let n = 0; n < size; n++) {
+    getOrCreateUser(base, `p${n}`, `P${n}`);
+    base.db.insert(schema.dinos)
+      .values({ userId: `p${n}`, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+    base.db.insert(schema.speciesSeen)
+      .values({ userId: `p${n}`, speciesId: 'triceratops', firstAt: 0 }).run();
+    base.db.insert(schema.achievementClaims)
+      .values({ userId: `p${n}`, trackId: 't', tier: 0, claimedAt: 0 }).run();
+    base.db.insert(schema.battleProgress)
+      .values({ userId: `p${n}`, stageId: 's1', stars: 3 }).run();
+  }
+  return countingCtx(base);
+}
+
+describe('leaderboard query cost', () => {
+  // Driven through topPlayers, NOT the /top command: the command's footer branch calls
+  // playerRank, which runs scored() a second time, and that branch flips between the two
+  // fixture sizes (the caller is inside the top 10 at 3 players and outside it at 30) —
+  // so a command-level count would differ for a reason that is not the N+1.
+  const cost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars') => {
+    const board = boardOf(size);
+    topPlayers(board.ctx, metric, 'global', null);
+    return board.queries();
+  };
+
+  // Exact numbers, not just equality: a rewrite that reads every table twice would be
+  // equally wasteful at both sizes and would pass an equality-only assertion.
+  it.each([
+    ['cash', 1],          // the candidate scan alone
+    ['stars', 2],         // + battle_progress
+    ['collection', 2],    // + dinos
+    ['legacy', 4],        // + species_seen, achievement_claims, battle_progress
+  ] as const)('costs a fixed %s queries whatever the roster size', (metric, expected) => {
+    expect(cost(3, metric)).toBe(expected);
+    expect(cost(30, metric)).toBe(expected);
+  });
+});
+
+describe('new metrics', () => {
+  beforeEach(() => { ctx = makeCtx(); });
+
+  it('ranks by legacy desc', () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    ctx.db.insert(schema.battleProgress).values({ userId: 'a', stageId: 's1', stars: 3 }).run();
+    ctx.db.insert(schema.battleProgress).values({ userId: 'b', stageId: 's1', stars: 1 }).run();
+    const top = topPlayers(ctx, 'legacy', 'global', null);
+    expect(top.map((r) => r.userId)).toEqual(['a', 'b']);
+    expect(top[0].value).toBe(3);
+  });
+
+  it('ranks by stars desc and scores an unbattled player 0 rather than NaN', () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    ctx.db.insert(schema.battleProgress).values({ userId: 'a', stageId: 's1', stars: 2 }).run();
+    const top = topPlayers(ctx, 'stars', 'global', null);
+    expect(top.map((r) => [r.userId, r.value])).toEqual([['a', 2], ['b', 0]]);
+  });
+
+  it('server scope still excludes users outside the guild on a new metric', () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    ctx.db.insert(schema.userGuilds).values({ userId: 'a', guildId: 'g1', lastSeenAt: 0 }).run();
+    ctx.db.insert(schema.battleProgress).values({ userId: 'a', stageId: 's1', stars: 2 }).run();
+    ctx.db.insert(schema.battleProgress).values({ userId: 'b', stageId: 's1', stars: 3 }).run();
+    expect(topPlayers(ctx, 'stars', 'server', 'g1').map((r) => r.userId)).toEqual(['a']);
   });
 });

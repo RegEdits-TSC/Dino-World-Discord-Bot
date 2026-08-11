@@ -4,7 +4,7 @@ import type { Ctx } from '../../core/context.js';
 import { RARITY_WEIGHT } from '../../data/progression.js';
 import { allSpecies, getSpecies } from '../../data/species/index.js';
 
-export type Metric = 'rating' | 'cash' | 'collection';
+export type Metric = 'rating' | 'cash' | 'collection' | 'legacy' | 'stars';
 export type Scope = 'server' | 'global';
 
 export function collectionScore(ctx: Ctx, userId: string): number {
@@ -100,11 +100,14 @@ function scored(
   ctx: Ctx, metric: Metric, scope: Scope, guildId: string | null,
 ): Array<{ userId: string; displayName: string; value: number }> {
   // Candidate set: server scope = users seen in this guild (via user_guilds); global = all users.
+  // memberIds stays undefined for a global board, which is what tells the score builders
+  // below to read a whole table rather than an inArray-scoped slice.
   let users: Array<typeof schema.users.$inferSelect>;
+  let memberIds: string[] | undefined;
   if (scope === 'server') {
-    if (!guildId) { users = []; }
+    if (!guildId) { users = []; memberIds = []; }
     else {
-      const memberIds = ctx.db.select().from(schema.userGuilds)
+      memberIds = ctx.db.select().from(schema.userGuilds)
         .where(eq(schema.userGuilds.guildId, guildId)).all().map((g) => g.userId);
       users = memberIds.length
         ? ctx.db.select().from(schema.users).where(inArray(schema.users.discordId, memberIds)).all()
@@ -113,20 +116,23 @@ function scored(
   } else {
     users = ctx.db.select().from(schema.users).all();
   }
-  // Limitation: `collection` scores every candidate in JS (one query per user via
-  // collectionScore) rather than a denormalized column — fine at v1 scale. If the
-  // user base grows to thousands, denormalize a collectionScore column updated in
-  // recomputeRating instead of widening this loop.
-  // Limitation: `rating` reads the stored parkRating as-is; it does not settle each
-  // ranked user's escapes first (settling everyone on every leaderboard read would be
-  // expensive), so a board rating can lag an unsettled escape until that user next
-  // interacts. Acceptable for a leaderboard.
-  // Note: parkRating is stored ×100 (stars×100); the command layer (Task 7) divides
-  // by 100 for display.
+  // One read per source table, never one per candidate — see the builders above. This
+  // replaces the old `collectionScore(ctx, u.discordId)` call inside the map, which cost
+  // a query per player and was the documented v1-scale limitation here.
+  // Limitation kept as-is: `rating` reads the stored parkRating without settling each
+  // ranked user's escapes first (settling everyone on every read would be expensive), so
+  // a board rating can lag an unsettled escape until that user next interacts.
+  // Note: parkRating is stored ×100 (stars×100); formatValue in index.ts divides for display.
+  const byUser = metric === 'collection' ? collectionScores(ctx, memberIds)
+    : metric === 'legacy' ? legacyScores(ctx, memberIds)
+    : metric === 'stars' ? starScores(ctx, memberIds)
+    : null;
   const rows = users.map((u) => ({
     userId: u.discordId,
     displayName: u.displayName || u.discordId,
-    value: metric === 'cash' ? u.cash : metric === 'rating' ? u.parkRating : collectionScore(ctx, u.discordId),
+    value: metric === 'cash' ? u.cash
+      : metric === 'rating' ? u.parkRating
+      : byUser!.get(u.discordId) ?? 0,
   }));
   rows.sort((a, b) => b.value - a.value);
   return rows;
