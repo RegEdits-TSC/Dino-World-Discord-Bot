@@ -235,6 +235,16 @@ describe('the owner sees their own showcase', () => {
     expect(p.files!.map((f) => f.name)).toEqual(['tank-herbivore.webp']);
   });
 
+  it('carries no Next park button — that belongs to the visitor branch only', async () => {
+    // The spec lists both halves of this ("own /park view carries no Next park button, the
+    // other-player branch does") and only the second half was pinned. The two view branches
+    // have drifted once already. The rating makes u1 a real ring member, so a Next park
+    // button leaking into this branch would actually be minted rather than skipped.
+    ctx.db.update(schema.users).set({ parkRating: 300 }).where(eq(schema.users.discordId, 'u1')).run();
+    const p = await view();
+    expect(JSON.stringify(p)).not.toContain('park:tour');
+  });
+
   it('a featured dino sold since being set simply stops showing', async () => {
     const d = addDino();
     setFeaturedDino(ctx, 'u1', d.id);
