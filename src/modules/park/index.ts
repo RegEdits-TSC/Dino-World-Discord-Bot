@@ -96,7 +96,9 @@ export const parkModule: ModuleManifest = {
             .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' })))
         .addSubcommand((s) => s.setName('landmark').setDescription('Your park landmark — the prestige ladder'))
         .addSubcommand((s) => s.setName('motto').setDescription('The line visitors see on your park card')
-          .addStringOption((o) => o.setName('text').setDescription('Up to 80 characters — leave blank to clear').setRequired(false).setMaxLength(80))),
+          .addStringOption((o) => o.setName('text').setDescription('Up to 80 characters — leave blank to clear').setRequired(false).setMaxLength(80)))
+        .addSubcommand((s) => s.setName('feature').setDescription('Feature one dino on your park card')
+          .addIntegerOption((o) => o.setName('dino').setDescription('Dino — type to search; leave blank to clear').setRequired(false).setAutocomplete(true))),
       async execute(ctx, i) {
         const user = getOrCreateUser(ctx, i.user.id, i.user.displayName);
         // A real switch, not a chain of equality checks with the view path as the
@@ -132,6 +134,20 @@ export const parkModule: ModuleManifest = {
             try {
               const saved = setMotto(ctx, i.user.id, i.options.getString('text'));
               await i.reply({ content: saved ? `📣 Motto set to **${saved}**.` : '📣 Motto cleared.' });
+            } catch (e) {
+              if (e instanceof ShowcaseError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+              else throw e;
+            }
+            return;
+          }
+          case 'feature': {
+            try {
+              const species = setFeaturedDino(ctx, i.user.id, i.options.getInteger('dino'));
+              await i.reply({
+                content: species
+                  ? `🦖 Featured **${species.name}** on your park card.`
+                  : '🦖 Featured dino cleared.',
+              });
             } catch (e) {
               if (e instanceof ShowcaseError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
               else throw e;
@@ -187,6 +203,20 @@ export const parkModule: ModuleManifest = {
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
         await i.editReply(png ? withParkImage(base, png) : base);
+      },
+      async autocomplete(ctx, i) {
+        // /park's only autocompleting option, on `feature`. Provider contract: i.respond
+        // only, never getOrCreateUser (no row creation on a keystroke), read-only.
+        const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all();
+        if (!dinos.length) { await respondRanked(i, [emptyRow('No dinos — hatch an egg first', 0)]); return; }
+        const q = String(i.options.getFocused());
+        const now = ctx.now();
+        await respondRanked(i, dinos
+          .map((d) => ({ d, species: getSpecies(d.speciesId) }))
+          .filter(({ d, species }) => matches(q, d.id, species.name, species.rarity))
+          // Every owned dino is valid: featuring neither consumes nor moves one, so an
+          // escaped or unassigned dino is a fine target — the /dino rename reasoning.
+          .map(({ d, species }) => ({ value: d.id, label: dinoLabel(d, species, now), valid: true })));
       },
     },
     {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { makeCtx, fakeCommand, replyText } from './harness.js';
+import { makeCtx, fakeCommand, replyText, fakeAutocomplete } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { setMotto, setFeaturedDino, featuredFor, ShowcaseError, MAX_MOTTO } from '../src/modules/park/showcase.js';
@@ -123,5 +123,56 @@ describe('/park motto', () => {
     const i = await run();
     expect(row().motto).toBe('');
     expect(replyText(i.replies[0]).toLowerCase()).toContain('cleared');
+  });
+});
+
+describe('/park feature', () => {
+  const run = async (options?: Record<string, number>) => {
+    const i = fakeCommand({ name: 'park', sub: 'feature', user: 'u1', options });
+    await parkModule.commands[0].execute(ctx, i.asChatInput());
+    return i;
+  };
+
+  it('features an owned dino', async () => {
+    const d = addDino();
+    const i = await run({ dino: d.id });
+    expect(row().featuredDinoId).toBe(d.id);
+    expect(replyText(i.replies[0])).toContain('Triceratops');
+  });
+
+  it('omitting the option clears it', async () => {
+    const d = addDino();
+    setFeaturedDino(ctx, 'u1', d.id);
+    const i = await run();
+    expect(row().featuredDinoId).toBeNull();
+    expect(replyText(i.replies[0]).toLowerCase()).toContain('cleared');
+  });
+
+  it("refuses someone else's dino ephemerally and stores nothing", async () => {
+    getOrCreateUser(ctx, 'u2', 'Other');
+    const theirs = addDino('u2');
+    const i = await run({ dino: theirs.id });
+    expect(row().featuredDinoId).toBeNull();
+    expect(replyText(i.replies[0])).toContain('do not own');
+  });
+
+  it('suggests the caller\'s dinos and creates no user row for a stranger', async () => {
+    addDino();
+    const i = fakeAutocomplete({ name: 'park', sub: 'feature', user: 'nobody', focused: { name: 'dino', value: '' } });
+    await parkModule.commands[0].autocomplete!(ctx, i.asAutocomplete());
+    // A provider must never call getOrCreateUser: a row per keystroke is the bug the
+    // provider contract exists to prevent.
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'nobody')).get()).toBeUndefined();
+    expect(i.replies[0]).toEqual([{ name: 'No dinos — hatch an egg first', value: 0 }]);
+  });
+
+  it('offers an escaped dino as a valid target', async () => {
+    const d = addDino();
+    ctx.db.update(schema.dinos).set({ escapedAt: 1 }).where(eq(schema.dinos.id, d.id)).run();
+    const i = fakeAutocomplete({ name: 'park', sub: 'feature', user: 'u1', focused: { name: 'dino', value: '' } });
+    await parkModule.commands[0].autocomplete!(ctx, i.asAutocomplete());
+    // Featuring neither consumes nor moves a dino, so escape state is irrelevant here —
+    // the same reasoning /dino rename's provider records.
+    expect((i.replies[0] as Array<{ value: number }>).map((c) => c.value)).toEqual([d.id]);
   });
 });
