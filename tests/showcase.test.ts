@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { MessageFlags } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { makeCtx, fakeCommand, replyText, fakeAutocomplete } from './harness.js';
 import { schema } from '../src/core/db/index.js';
@@ -154,6 +155,7 @@ describe('/park feature', () => {
     const i = await run({ dino: theirs.id });
     expect(row().featuredDinoId).toBeNull();
     expect(replyText(i.replies[0])).toContain('do not own');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
 
   it('suggests the caller\'s dinos and creates no user row for a stranger', async () => {
