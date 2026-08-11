@@ -80,11 +80,16 @@ export function adminReset(ctx: Ctx, targetId: string): void {
     // DMing a player who explicitly opted out.
     // landmarkTier is progress (a prestige cosmetic the player paid for), not communication
     // consent, so it IS reset.
+    // motto and featuredDinoId are cosmetic defaults like parkName, so they reset too. The
+    // featured id matters more than it looks: featuredFor already resolves a dangling id to
+    // null, but SQLite reuses row ids after a delete, so a stale id surviving a reset can be
+    // re-hit by the account's next hatch and silently feature a dino nobody chose.
     ctx.db.update(schema.users).set({
       cash: 500, shards: 0, parkRating: 0, ratingHighWater: 0, parkName: 'New Park',
       shardsWindowStart: 0, shardsWindowEarned: 0, lastCollectAt: ctx.now(),
       energy: ENERGY_CAP, energyUpdatedAt: ctx.now(),
       questStreak: 0, questStreakBest: 0, lastQuestClaimAt: 0, landmarkTier: 0,
+      motto: '', featuredDinoId: null,
     }).where(eq(schema.users.discordId, targetId)).run();
     ctx.db.delete(schema.foodInventory).where(eq(schema.foodInventory.userId, targetId)).run();
     for (const [foodId, qty] of Object.entries(STARTER_FOOD)) {

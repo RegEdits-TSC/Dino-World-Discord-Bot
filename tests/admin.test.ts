@@ -7,6 +7,7 @@ import { getOrCreateUser, pendingIncome, buildLot } from '../src/modules/park/se
 import { startBreeding } from '../src/modules/genelab/service.js';
 import { requireOwner } from '../src/modules/admin/guard.js';
 import { adminGive, adminReset, adminFastForward, AdminError } from '../src/modules/admin/service.js';
+import { setMotto, setFeaturedDino } from '../src/modules/park/showcase.js';
 import { adminModule } from '../src/modules/admin/index.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
@@ -86,6 +87,21 @@ describe('adminReset', () => {
     ctx.db.update(schema.users).set({ landmarkTier: 4 }).where(eq(schema.users.discordId, 'u1')).run();
     adminReset(ctx, 'u1');
     expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.landmarkTier).toBe(0);
+  });
+  it('reset clears the park showcase', () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const d = ctx.db.insert(schema.dinos)
+      .values({ userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 })
+      .returning().get();
+    setMotto(ctx, 'u1', 'Where the big ones live');
+    setFeaturedDino(ctx, 'u1', d.id);
+    adminReset(ctx, 'u1');
+    const row = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+    expect(row.motto).toBe('');
+    // featuredFor would already resolve a stale id to null, but SQLite reuses ids after a
+    // delete (the table has no AUTOINCREMENT keyword), so a reset account's next hatch can
+    // land on the very id left behind and silently re-feature a dino nobody chose.
+    expect(row.featuredDinoId).toBeNull();
   });
 });
 

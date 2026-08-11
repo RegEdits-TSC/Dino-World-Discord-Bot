@@ -520,3 +520,42 @@ describe('0011 landmark tier via the real drizzle migrator (production path)', (
     }
   });
 });
+
+describe('0012 park showcase via the real drizzle migrator (production path)', () => {
+  it('adds motto and featured_dino_id and preserves existing rows', () => {
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig12-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    // The regex and the journal filter must widen together. Copy-pasting 0011's
+    // /^00(0[0-9]|10).*\.sql$/ here would omit 0011 from the scratch folder while every
+    // assertion below still passed — green for the wrong reason, against a 0010 baseline.
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^00(0[0-9]|1[01]).*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 11);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });   // apply 0000-0011 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, last_collect_at_ms, created_at_ms) VALUES ('u1', 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO dinos (user_id, species_id, hunger, last_fed_at_ms, hatched_at_ms)
+                    VALUES ('u1', 'triceratops', 100, 0, 0)`).run();
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+      const rows = sqlite.prepare(`SELECT discord_id, motto, featured_dino_id FROM users`).all();
+      expect(rows).toEqual([{ discord_id: 'u1', motto: '', featured_dino_id: null }]);
+      expect((sqlite.prepare(`SELECT COUNT(*) c FROM dinos`).get() as { c: number }).c).toBe(1);
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+      // No foreign key on featured_dino_id: an id naming no dino must be storable, because
+      // a featured dino can be sold at any time and nothing sweeps the column.
+      expect(() => sqlite.prepare(`UPDATE users SET featured_dino_id = 9999 WHERE discord_id = 'u1'`).run())
+        .not.toThrow();
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});

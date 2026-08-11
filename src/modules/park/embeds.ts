@@ -4,6 +4,8 @@ import { emojiTag } from '../../core/emojis.js';
 import { eventHeaderLine } from '../world/embeds.js';
 import type { LandmarkDef } from '../../data/landmarks.js';
 import type { LegacyTier } from './ranks.js';
+import { assetImage, attach } from '../../core/images.js';
+import type { Featured } from './showcase.js';
 
 const LOT_EMOJI: Record<string, string> = {
   carnivore_paddock: 'dw_lot_carnivore', herbivore_paddock: 'dw_lot_herbivore',
@@ -23,7 +25,7 @@ export function dashboardPayload(
   // every real call site (src/modules/park/index.ts) always passes ctx.now().
   // Missing defaults to a calm day, the same convention ChaptersView.now uses
   // in src/modules/battles/embeds.ts.
-  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number; legacyRank?: LegacyTier | null; now?: number } = {},
+  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number; legacyRank?: LegacyTier | null; motto?: string; featured?: Featured | null; now?: number } = {},
 ) {
   const extras: string[] = [];
   if (escapedCount > 0) extras.push(`${escapedCount} ${emojiTag('dw_alert')} escaped`);
@@ -33,7 +35,14 @@ export function dashboardPayload(
   const embed = new EmbedBuilder()
     .setTitle(`🏞️ ${user.parkName}`)
     .setColor(0x3ba55c)
-    .setDescription(eventHeaderLine(opts.now ?? 0, PARK_HEADER_KEYS))
+    // The world-event header owns this slot; the motto is appended BENEATH it rather
+    // than replacing it. A second .setDescription anywhere downstream would silently
+    // delete the header, and tests/world-module.test.ts checks anyModRelevant, not the
+    // embed, so nothing would notice.
+    .setDescription([
+      eventHeaderLine(opts.now ?? 0, PARK_HEADER_KEYS),
+      opts.motto ? `*“${opts.motto}”*` : '',
+    ].filter(Boolean).join('\n'))
     .addFields(
       { name: `${emojiTag('dw_cash')} Cash`, value: user.cash.toLocaleString(), inline: true },
       { name: `${emojiTag('dw_food')} Food`, value: opts.foodLine ?? 'none — /shop food', inline: true },
@@ -58,17 +67,37 @@ export function dashboardPayload(
   if (opts.capped) {
     embed.addFields({ name: '⛔ Income capped', value: 'Idle earnings hit the Visitor Center cap — collect now to restart them.' });
   }
+  if (opts.featured) {
+    embed.addFields({ name: '🦖 Featured', value: opts.featured.name, inline: true });
+  }
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId('park:collect').setEmoji(emojiTag('dw_cash')).setLabel(`Collect ${pending.toLocaleString()}`).setStyle(ButtonStyle.Success),
   );
-  return { embeds: [embed], components: [row] };
+  // Explicit type, not inferred: `files` must be optional so attach() can create it, and
+  // withParkImage's generic now reads it back.
+  const payload: {
+    embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[];
+  } = { embeds: [embed], components: [row] };
+  // The ternary guards on DOMAIN data (is anything featured), so it stays outside attach —
+  // "nothing featured" is not an asset miss. Same shape as shop's `best ? … : null`.
+  attach(embed, payload, 'thumbnail',
+    opts.featured ? assetImage('dinos', `${opts.featured.archetype}-${opts.featured.diet}`) : null);
+  return payload;
 }
 
 // Set a rendered PNG as the embed's image and attach it. Mutates the (freshly built)
 // embed in place and preserves components (e.g. the Collect button).
-export function withParkImage<T extends { embeds: EmbedBuilder[] }>(payload: T, png: Buffer): T & { files: AttachmentBuilder[] } {
+//
+// APPENDS to `files` rather than assigning. dashboardPayload now calls attach() for the
+// featured dino's thumbnail, and the old assignment would have silently dropped that
+// upload at both /park view call sites and at /help topic:park, leaving a dangling
+// attachment:// URL in the embed with no error and no failing test. park.png goes last,
+// so call order stays upload order.
+export function withParkImage<T extends { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] }>(
+  payload: T, png: Buffer,
+): T & { files: AttachmentBuilder[] } {
   payload.embeds[0].setImage('attachment://park.png');
-  return { ...payload, files: [new AttachmentBuilder(png, { name: 'park.png' })] };
+  return { ...payload, files: [...(payload.files ?? []), new AttachmentBuilder(png, { name: 'park.png' })] };
 }
 
 // No setEmoji here on purpose: rarityEmoji and friends return '' with no emoji map

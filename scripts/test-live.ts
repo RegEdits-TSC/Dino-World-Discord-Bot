@@ -12,6 +12,7 @@ import { RARITY } from '../src/data/rarity.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
+import { setMotto, setFeaturedDino } from '../src/modules/park/showcase.js';
 import { assignDino, decorateLot } from '../src/modules/park/dinos.js';
 import { alertSweepHandler, ALERT_TIMER } from '../src/modules/park/alert-sweep.js';
 import { incubateEgg } from '../src/modules/hatchery/service.js';
@@ -188,6 +189,12 @@ track(ctx, P1, firstQuestDef.stat, dailyRows[0].target);
 // human's eyes on it.
 ctx.db.update(schema.users).set({ landmarkTier: 3 }).where(eq(schema.users.discordId, P1)).run();
 
+// The showcase makes the existing '/park view' case carry TWO files on one embed: the
+// featured dino's archetype thumbnail and the rendered park PNG. That pair is exactly what
+// the withParkImage append fix exists for, and nothing but looking at it proves it works.
+setMotto(ctx, P1, 'Where the big ones live');
+setFeaturedDino(ctx, P1, dino.id);
+
 // Dex fixture: its own player, credited via recordSpeciesSeen — never via the raw
 // dino/egg inserts P1 gets above. species_seen is a distinct side-effect record
 // (src/core/species-seen.ts), not derived from ownership, so crediting it is the
@@ -304,9 +311,12 @@ const cases: Case[] = [
   { title: '/help topic:battles — chapter banner', run: () => slash('help', 'help', { name: 'help', user: P1, options: { topic: 'battles' } }) },
   { title: '/daily — hub, one quest complete', run: () => slash('daily', 'daily', { name: 'daily', user: P1 }) },
   { title: 'daily:claim — claim reply (ephemeral in production)', run: () => button('daily', `daily:claim:${P1}`, P1) },
-  { title: '/park view — dashboard + render: landmark tile bumps the canvas to 2 rows', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P1 }) },
+  { title: '/park view — showcase pair on one embed: featured-dino thumbnail + park map (landmark tile bumps the canvas to 2 rows)', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P1 }) },
   { title: '/park landmark — Bronze Sentinel built, Amber Obelisk next (grouped price)', run: () => slash('park', 'park', { name: 'park', sub: 'landmark', user: P1 }) },
   { title: '/park view — P5, Legacy rank Keeper at 35 of 42 species discovered', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P5 }) },
+  { title: '/top legacy — widened metric, Visit buttons on the board', run: () => slash('leaderboards', 'top', { name: 'top', user: P1, options: { metric: 'legacy', scope: 'global' } }) },
+  { title: 'top:visit — P2 opens P1\'s park via the board button: check motto + featured thumbnail present, no Collect, Next park present', run: () => button('leaderboards', `top:visit:${P1}`, P2) },
+  { title: '/park view user:P1 (as P2) — visiting via the command: check motto + featured thumbnail present, no Collect, Next park present', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P2, options: { user: P1 } }) },
   { title: '/eggs — list', run: () => slash('hatchery', 'eggs', { name: 'eggs', user: P1 }) },
   { title: '/hatch — pre-hatch embed', run: () => slash('hatchery', 'hatch', { name: 'hatch', user: P1, options: { egg: readyEgg.id } }) },
   { title: 'hatch:crack — reveal', run: () => button('hatchery', `hatch:crack:${readyEgg.id}`, P1) },

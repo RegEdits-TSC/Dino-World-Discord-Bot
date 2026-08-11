@@ -8,12 +8,15 @@ import { settleEscapes } from './escapes.js';
 import { earnedTierCount } from '../daily/service.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
 import { dashboardPayload, withParkImage, landmarkPayload } from './embeds.js';
+import { visitPayload } from './visit.js';
 import { legacyRank } from './ranks.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { buyLandmark, nextLandmark, landmarkTierOf, LandmarkMaxedError } from './landmarks.js';
 import { landmarkFor, MAX_LANDMARK_TIER } from '../../data/landmarks.js';
+import { setMotto, setFeaturedDino, featuredFor, ShowcaseError } from './showcase.js';
+import { defangLinks } from '../../core/text.js';
 import { escapeAt, ESCAPE_WARN_MS } from '../../core/clock.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { FACILITIES } from '../../data/facilities.js';
@@ -93,7 +96,11 @@ export const parkModule: ModuleManifest = {
         .addSubcommand((s) => s.setName('alerts').setDescription('Turn proactive park alerts on or off')
           .addStringOption((o) => o.setName('state').setDescription('On or off').setRequired(true)
             .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' })))
-        .addSubcommand((s) => s.setName('landmark').setDescription('Your park landmark — the prestige ladder')),
+        .addSubcommand((s) => s.setName('landmark').setDescription('Your park landmark — the prestige ladder'))
+        .addSubcommand((s) => s.setName('motto').setDescription('The line visitors see on your park card')
+          .addStringOption((o) => o.setName('text').setDescription('Up to 80 characters — leave blank to clear').setRequired(false).setMaxLength(80)))
+        .addSubcommand((s) => s.setName('feature').setDescription('Feature one dino on your park card')
+          .addIntegerOption((o) => o.setName('dino').setDescription('Dino — type to search; leave blank to clear').setRequired(false).setAutocomplete(true))),
       async execute(ctx, i) {
         const user = getOrCreateUser(ctx, i.user.id, i.user.displayName);
         // A real switch, not a chain of equality checks with the view path as the
@@ -101,7 +108,12 @@ export const parkModule: ModuleManifest = {
         // implemented, because the last branch WAS the dashboard.
         switch (i.options.getSubcommand()) {
           case 'rename': {
-            const name = i.options.getString('name', true);
+            // Defanged before it is stored, the same way setMotto/renameDino are: parkName
+            // reaches landmarkPayload's public embed DESCRIPTION (`/park landmark`), where
+            // `[text](url)` renders as a masked link. Storing the defanged value once is
+            // what keeps this reply and every later read (dashboard title, landmark
+            // description) in agreement — nothing downstream re-defangs.
+            const name = defangLinks(i.options.getString('name', true));
             ctx.db.update(schema.users).set({ parkName: name })
               .where(eq(schema.users.discordId, i.user.id)).run();
             await i.reply({ content: `Park renamed to **${name}**.` });
@@ -125,6 +137,30 @@ export const parkModule: ModuleManifest = {
             await i.reply(landmarkPayload(user, landmarkFor(user.landmarkTier), landmarkFor(user.landmarkTier + 1)));
             return;
           }
+          case 'motto': {
+            try {
+              const saved = setMotto(ctx, i.user.id, i.options.getString('text'));
+              await i.reply({ content: saved ? `📣 Motto set to **${saved}**.` : '📣 Motto cleared.' });
+            } catch (e) {
+              if (e instanceof ShowcaseError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+              else throw e;
+            }
+            return;
+          }
+          case 'feature': {
+            try {
+              const species = setFeaturedDino(ctx, i.user.id, i.options.getInteger('dino'));
+              await i.reply({
+                content: species
+                  ? `🦖 Featured **${species.name}** on your park card.`
+                  : '🦖 Featured dino cleared.',
+              });
+            } catch (e) {
+              if (e instanceof ShowcaseError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+              else throw e;
+            }
+            return;
+          }
           case 'view':
             break;
           default:
@@ -133,22 +169,12 @@ export const parkModule: ModuleManifest = {
         }
         const targetUser = i.options.getUser('user');
         if (targetUser && targetUser.id !== i.user.id) {
+          // The existence check stays ahead of the defer: "no park yet" is an ephemeral
+          // reply, and deferReply would commit this interaction to a public one.
           const targetRow = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, targetUser.id)).get();
           if (!targetRow) { await i.reply({ content: 'That player has no park yet.', flags: MessageFlags.Ephemeral }); return; }
           await i.deferReply();
-          settleEscapes(ctx, targetUser.id);
-          const fresh = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, targetUser.id)).get()!;
-          const tlots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, targetUser.id)).all();
-          const tdinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, targetUser.id)).all();
-          const tescaped = tdinos.filter((d) => d.escapedAt !== null).length;
-          const tinv = ctx.economy.getFoodInventory(targetUser.id);
-          const tfoodLine = (Object.entries(tinv) as Array<[FoodId, number]>)
-            .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
-          const payload = dashboardPayload(fresh, tlots, tdinos.length, 0, tescaped, { foodLine: tfoodLine, earnedTiers: earnedTierCount(ctx, targetUser.id), legacyRank: legacyRank(ctx, targetUser.id), now: ctx.now() });
-          const base = { embeds: payload.embeds };
-          let png: Buffer | undefined;
-          try { png = await renderPark(buildParkSnapshot(ctx, targetUser.id)); } catch { png = undefined; }
-          await i.editReply(png ? withParkImage(base, png) : base);   // read-only: no Collect button
+          await i.editReply((await visitPayload(ctx, targetUser.id))!);
           return;
         }
         await i.deferReply();
@@ -170,10 +196,24 @@ export const parkModule: ModuleManifest = {
         const inv = ctx.economy.getFoodInventory(i.user.id);
         const foodLine = (Object.entries(inv) as Array<[FoodId, number]>)
           .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
-        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine, earnedTiers: earnedTierCount(ctx, i.user.id), legacyRank: legacyRank(ctx, i.user.id), now: nowMs });
+        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine, earnedTiers: earnedTierCount(ctx, i.user.id), legacyRank: legacyRank(ctx, i.user.id), motto: user.motto, featured: featuredFor(ctx, user), now: nowMs });
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
         await i.editReply(png ? withParkImage(base, png) : base);
+      },
+      async autocomplete(ctx, i) {
+        // /park's only autocompleting option, on `feature`. Provider contract: i.respond
+        // only, never getOrCreateUser (no row creation on a keystroke), read-only.
+        const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, i.user.id)).all();
+        if (!dinos.length) { await respondRanked(i, [emptyRow('No dinos — hatch an egg first', 0)]); return; }
+        const q = String(i.options.getFocused());
+        const now = ctx.now();
+        await respondRanked(i, dinos
+          .map((d) => ({ d, species: getSpecies(d.speciesId) }))
+          .filter(({ d, species }) => matches(q, d.id, species.name, species.rarity))
+          // Every owned dino is valid: featuring neither consumes nor moves one, so an
+          // escaped or unassigned dino is a fine target — the /dino rename reasoning.
+          .map(({ d, species }) => ({ value: d.id, label: dinoLabel(d, species, now), valid: true })));
       },
     },
     {
@@ -269,7 +309,10 @@ export const parkModule: ModuleManifest = {
             const nickname = i.options.getString('nickname');
             renameDino(ctx, i.user.id, i.options.getInteger('dino', true), nickname);
             const cleared = !nickname || !nickname.trim();
-            await i.reply({ content: cleared ? '🦕 Nickname cleared.' : `🦕 Renamed to **${nickname!.trim()}**.` });
+            // renameDino defangs what it stores but returns void, so the echo re-defangs
+            // the trimmed input rather than trusting the raw nickname — this nickname
+            // reaches public battle embeds, where `[text](url)` renders as a masked link.
+            await i.reply({ content: cleared ? '🦕 Nickname cleared.' : `🦕 Renamed to **${defangLinks(nickname!.trim())}**.` });
           } else {
             unassignDino(ctx, i.user.id, i.options.getInteger('dino', true));
             await i.reply({ content: '🦕 Unassigned.' });
@@ -379,6 +422,32 @@ export const parkModule: ModuleManifest = {
           if (i.user.id !== uid) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
           settleEscapes(ctx, i.user.id);
           await i.update({ ...dinoListPayload(ctx, i.user.id, Number(pageStr)), attachments: [] });
+          return;
+        }
+        if (action === 'tour') {
+          // NO owner check on purpose: a park visit is public and read-only, and `uid`
+          // here is the TARGET park, not an owner. Turning this into an ownership check
+          // would make Next park work only for the player whose park is on screen.
+          //
+          // The existence check stays AHEAD of the acknowledgement so "no park yet" can
+          // still be an ephemeral reply — the /park view user: ordering exactly.
+          const exists = ctx.db.select().from(schema.users)
+            .where(eq(schema.users.discordId, uid)).get();
+          if (!exists) { await i.reply({ content: 'That player has no park yet.', flags: MessageFlags.Ephemeral }); return; }
+          // Acknowledge BEFORE rendering: visitPayload awaits renderPark, whose own
+          // RENDER_TIMEOUT_MS is already 3000 — Discord's entire initial-response window —
+          // and renders serialize process-wide, so queue wait stacks on top of it. Rendering
+          // first meant a slow render lost the interaction to 10062 and the user saw "This
+          // interaction failed" with no park, which is also the one case visitPayload's
+          // render-failure degrade could never be delivered for.
+          //
+          // deferUpdate + editReply, never deferReply: a tour advances ONE message rather
+          // than accumulating a new one per hop.
+          await i.deferUpdate();
+          const payload = await visitPayload(ctx, uid);
+          // attachments: [] — the message being replaced carries the previous park's
+          // uploads, and this payload brings its own.
+          await i.editReply({ ...payload!, attachments: [] });
           return;
         }
         if (action === 'landmark') {

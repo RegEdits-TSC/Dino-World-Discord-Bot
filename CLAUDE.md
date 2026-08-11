@@ -64,17 +64,28 @@
   `fightFrames` (`src/modules/battles/embeds.ts`) is the one exception: every ref
   it builds is dressed onto several embeds and the files are then split across two
   payloads by the F1/F4 contract — do not convert any of them, however many there
-  are. Separately, `withParkImage` (`src/modules/park/embeds.ts`) *assigns*
-  `files`, so it drops anything `attach` added to the payload it wraps. It has
-  three call sites, harmless today for two different reasons: both `/park view`
-  branches (own park, and the read-only other-user view) in
-  `src/modules/park/index.ts` wrap `dashboardPayload`'s output, and
-  `dashboardPayload` (`src/modules/park/embeds.ts`) never calls `attach()` at
-  all, so there is nothing to drop; `/help topic:park`
+  are. Separately, `withParkImage` (`src/modules/park/embeds.ts`) now
+  **appends** to `files` rather than assigning — `dashboardPayload`
+  (`src/modules/park/embeds.ts`) now calls `attach()` of its own (the
+  featured dino's thumbnail), and the old assigning version would have
+  silently dropped that upload at every call site that reached it. Of the
+  three call sites, `/park view` on your own park
+  (`src/modules/park/index.ts`) wraps `dashboardPayload`'s output directly,
+  so it's the plainest beneficiary: a featured dino's thumbnail and
+  `park.png` now both survive in the same reply. `/help topic:park`
   (`src/modules/help/index.ts`) wraps the shared help-topic payload, which
-  *does* call `attach()`, but only when `HELP_TOPICS[topic].art` is set, and
-  `HELP_TOPICS.park` declares no `art` — give that topic art and the banner
-  vanishes silently under `withParkImage`.
+  calls `attach()` only when `HELP_TOPICS[topic].art` is set, and
+  `HELP_TOPICS.park` declares no `art`, so append vs. assign is moot there
+  regardless. The live hazard sits at the third: the read-only other-player
+  view, built by `visitPayload` (`src/modules/park/visit.ts`), which does
+  NOT reuse `dashboardPayload`'s `components`/`files` wholesale — it builds
+  its own `components: []`, dropping `park:collect` (that button carries no
+  user id, so a viewer clicking it on someone else's park card would collect
+  the CLICKER's own income), while explicitly forwarding `dashboardPayload`'s
+  `files` (the featured dino's upload — dropping *that* would leave the
+  embed's `attachment://` URL dangling with no image behind it). The two
+  drops pull in opposite directions, and `visit.ts` is the one place in the
+  codebase that has to get both right at the same time.
 - Passive notifications carry a `NotifyPayload` (`src/core/notify.ts`):
   `string | { content?, embeds?, files?, components?, allowedMentions? }`.
   `Ctx.notify`'s third argument stays `message: string` on purpose — a string
@@ -818,3 +829,86 @@
   `tests/render-draw.test.ts`'s pinned pixel samples. A missing or unloaded art band
   degrades to a flat plinth fill rather than reaching `drawImage(null)`, which throws
   and would cost the whole park image.
+- `/top`'s `scored()` (`src/modules/leaderboards/service.ts`) costs a FIXED number of
+  `.select()` queries per metric, independent of roster size: 1 for cash/rating (the
+  candidate scan alone), 2 for stars (+ `battle_progress`), 2 for collection
+  (+ `dinos`), 4 for legacy (+ `species_seen`, `achievement_claims`,
+  `battle_progress` via `starScores`) — one more each for a server-scoped board, which
+  reads `user_guilds` first to resolve `memberIds`. Every one of those extra reads is
+  ONE query per source TABLE, grouped in JS, never one per candidate — the batch-per-
+  user rule `src/core/locks.ts` already established, widened to batch-per-board.
+  Deliberately not `GROUP BY`: nothing in `src/` has ever used `groupBy`/`count`/`sum`,
+  every read here is `.all()` plus a JS reduce, and SQL `SUM()` over an empty row set
+  returns NULL where `.reduce(…, 0)` returns 0 — silently turning a fresh account's
+  score into `NaN` instead of a clean zero. `legacyScores` is the board-wide twin of
+  `legacyPoints` (`src/modules/park/ranks.ts`) and the two must always agree for a
+  given user — a board that disagrees with the rank on that player's own park card is
+  worse than no board. Both intersect `species_seen` against the LIVE species roster
+  (a retired species id contributes nothing to either), but neither filters
+  `achievement_claims` the same way — that term is a plain row count with no roster
+  check, which is what keeps the two in agreement rather than one silently diverging.
+  `tests/leaderboards.test.ts` pins every one of those integers via a `select`-counting
+  `Proxy`, at two roster sizes (3 and 30) and both scopes (global and server) — a
+  rewrite that reads any table twice, or scopes the wrong one, fails a specific pinned
+  number, not just an equality check.
+- `/park` has an `autocomplete()` now — its first — serving `feature`'s `dino` option,
+  so `'park feature': ['dino']` lives in `tests/contract.test.ts`'s
+  `AUTOCOMPLETE_OPTIONS` manifest. `park:tour:<targetUserId>`
+  (`src/modules/park/index.ts`) and `top:visit:<targetUserId>`
+  (`src/modules/leaderboards/index.ts`) are the repo's first customIds whose id
+  segment is a TARGET rather than an owner — visiting is public and read-only, so
+  neither carries an ownership check and neither should ever grow one; turning either
+  into an ownership check would make Next park / Visit work only for the player whose
+  park happens to already be on screen.
+  Both of those visiting surfaces render somebody else's park behind an interaction, and
+  BOTH acknowledge before they render — `park:tour` with `deferUpdate` + `editReply`
+  (a tour advances ONE message rather than accumulating one per hop; `deferReply` would
+  post a new one), `top:visit` with `deferReply` + `editReply` (the board it sits on must
+  survive the click). That ordering is not stylistic: `visitPayload` awaits `renderPark`,
+  whose own `RENDER_TIMEOUT_MS` (`src/core/render/client.ts`) is 3000 — Discord's ENTIRE
+  initial-response window — and renders serialize process-wide through one chain, so queue
+  wait stacks on top of the timeout. Rendering first cost the interaction to 10062 and
+  showed "This interaction failed" with no park, which is also the one case `visitPayload`'s
+  own `catch { png = undefined }` text-only degrade can never be delivered for. The
+  existence check stays AHEAD of the acknowledgement at all three surfaces (`park:tour`,
+  `top:visit`, `/park view user:`), because "That player has no park yet" is an EPHEMERAL
+  answer and either defer would have committed it to a public message.
+  Player-typed free text that reaches a public embed DESCRIPTION or a bot-authored,
+  non-ephemeral message's CONTENT is defanged, never rejected outright: `defangLinks`
+  (`src/core/text.ts`) splits the `](` sequence, because both surfaces render
+  `[text](url)` as a masked link with arbitrary visible text — 80 characters of motto is
+  ample for `[Free Nitro](https://evil.tld)`. A TITLE does not render it — `dashboardPayload`'s
+  `.setTitle(user.parkName)` (`src/modules/park/embeds.ts`) was never exposed. The
+  client-wide `allowedMentions: { parse: [] }` kills mention injection and does nothing
+  about markdown. Three call sites now defang BEFORE storing, and every confirmation
+  echo agrees with what was stored — a half-closed vector (store defanged, echo raw) is
+  worse than a documented open one: `setMotto` (`src/modules/park/showcase.ts`) returns
+  what it wrote, so `/park motto`'s echo just reads that back; `renameDino`
+  (`src/modules/park/dinos.ts`, whose nicknames reach public battle embeds) defangs what
+  it stores but returns `void`, so `/dino rename`'s echo (`src/modules/park/index.ts`)
+  re-defangs the trimmed input itself rather than trusting the raw option — the fourth
+  `defangLinks` call, and the only one that isn't at a store site; `/park rename`
+  (`src/modules/park/index.ts`, pre-existing code that writes `parkName` directly rather
+  than through a service — left that way on purpose, not restructured into one) now
+  defangs once and reuses that single value for both the write and the reply. That last
+  one closes a real vector, not a theoretical one: `parkName` reaches `landmarkPayload`'s
+  public embed DESCRIPTION on `/park landmark` (`src/modules/park/embeds.ts`), which
+  replies non-ephemerally, so an un-defanged park name was a live masked link there. It
+  runs AFTER the trim and BEFORE the length check at every store site — defanging only
+  ever lengthens a string, so a guard that ran first would no longer govern what is
+  actually stored, and a motto or nickname landing exactly at its cap after `](` is
+  rejected rather than stored one character over. The design spec explicitly said no
+  sanitisation should be added; that line is superseded (see its own note).
+  One path stays open, by design rather than oversight: `/top`'s leaderboard embed
+  description (`src/modules/leaderboards/index.ts`) interpolates `r.displayName`, sourced
+  from `i.user.displayName` — Discord's own guild nickname / global display name, not
+  text a player types into any of our commands — for every OTHER player on the board, so
+  it is also cross-user. Closing it is out of scope here; `getOrCreateUser`
+  (`src/modules/park/service.ts`) is where that column is written, at every call site,
+  always from `i.user.displayName`.
+  Separately, `tests/help.test.ts` scrapes `/park`'s subcommand list straight from the
+  REAL builder JSON and fails until `HELP_TOPICS.park.body` (`src/modules/help/index.ts`)
+  mentions every one of them — this caught two implementers by surprise on the showcase
+  work (`/park motto`, `/park feature`) before each remembered to add a line. Adding a
+  new HELP_TOPICS **key** changes the `/help` builder's own choices and forces
+  `npm run deploy-commands`; adding a line to an EXISTING topic's body does not.

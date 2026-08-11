@@ -8,7 +8,8 @@ import { renameDino } from '../src/modules/park/dinos.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
-import { dashboardPayload } from '../src/modules/park/embeds.js';
+import { dashboardPayload, PARK_HEADER_KEYS } from '../src/modules/park/embeds.js';
+import { eventHeaderLine } from '../src/modules/world/embeds.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
 import { FACILITIES } from '../src/data/facilities.js';
 import { DECOR } from '../src/data/decor.js';
@@ -498,6 +499,25 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     expect(replyText(i.replies[0])).toContain('Raptor Ranch');
     expect(ctx.db.select().from(schema.users).all()[0].parkName).toBe('Raptor Ranch');
   });
+  it('/park rename defangs a masked link in both the stored name and the confirmation', async () => {
+    // parkName reaches landmarkPayload's public embed DESCRIPTION on /park landmark,
+    // where `[text](url)` renders as a masked link with arbitrary visible text.
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    const cmd = parkModule.commands.find((c) => c.data.name === 'park')!;
+    const i = fakeCommand({ name: 'park', sub: 'rename', user: 'u1', options: { name: '[Free Nitro](https://evil.tld)' } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toBe('Park renamed to **[Free Nitro] (https://evil.tld)**.');
+    expect(ctx.db.select().from(schema.users).all()[0].parkName).toBe('[Free Nitro] (https://evil.tld)');
+  });
+  it('/park rename leaves ordinary brackets and parentheses alone', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    const cmd = parkModule.commands.find((c) => c.data.name === 'park')!;
+    const plain = 'Rex Land [big] (fun) ( [';
+    const i = fakeCommand({ name: 'park', sub: 'rename', user: 'u1', options: { name: plain } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toBe(`Park renamed to **${plain}**.`);
+    expect(ctx.db.select().from(schema.users).all()[0].parkName).toBe(plain);
+  });
   it('/build maps LotLimitError and InsufficientFundsError to ephemeral replies', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
     ctx.db.update(schema.users).set({ cash: 10_000_000 }).run();
@@ -629,6 +649,45 @@ describe('renameDino', () => {
     renameDino(ctx, 'u1', d.id, '   ');
     expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBeNull();
   });
+
+  it('defangs a masked link, keeping the text the player typed readable', () => {
+    // A nickname reaches PUBLIC battle embeds, whose description renders `[text](url)` as a
+    // clickable link with arbitrary visible text. `allowedMentions: { parse: [] }` kills
+    // pings client-wide; it does nothing about markdown.
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+
+    renameDino(ctx, 'u1', d.id, '[Free Nitro](https://x.tld)');
+    expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBe('[Free Nitro] (https://x.tld)');
+  });
+
+  it('leaves ordinary brackets and parentheses alone', () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+
+    const plain = 'Rex [big] (fast) ( [';
+    renameDino(ctx, 'u1', d.id, plain);
+    expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBe(plain);
+  });
+
+  it('checks the length AFTER defanging, so what is stored is never over the cap', () => {
+    // 32 characters in, 33 out — defanging only ever lengthens, so a guard that ran first
+    // would no longer govern what actually reaches the column.
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+
+    expect(() => renameDino(ctx, 'u1', d.id, `${'x'.repeat(30)}](`)).toThrow(/32/);
+    expect(ctx.db.select().from(schema.dinos).all()[0].nickname).toBeNull();
+  });
 });
 
 describe('/dino rename subcommand', () => {
@@ -679,6 +738,34 @@ describe('/dino rename subcommand', () => {
     await cmd.execute(ctx, i.asChatInput());
     expect(replyText(i.replies[0])).toContain('32');
     expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+
+  it('defangs a masked link in the confirmation echo', async () => {
+    // The confirmation is a NON-EPHEMERAL, bot-authored message, so `[text](url)` in it
+    // renders as a real masked link — unlike a masked link typed by a player, which
+    // Discord does not render in user message content.
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const i = fakeCommand({ name: 'dino', sub: 'rename', user: 'u1', options: { dino: d.id, nickname: '[Free Nitro](https://evil.tld)' } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toBe('🦕 Renamed to **[Free Nitro] (https://evil.tld)**.');
+  });
+
+  it('echoes ordinary brackets and parentheses unchanged', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const plain = 'Rex [big] (fast) ( [';
+    const i = fakeCommand({ name: 'dino', sub: 'rename', user: 'u1', options: { dino: d.id, nickname: plain } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toBe(`🦕 Renamed to **${plain}**.`);
   });
 });
 
@@ -775,6 +862,59 @@ describe('/dino list full page stays within Discord embed limits', () => {
     expect(embed.description!.length).toBeLessThanOrEqual(4096);
     expect(totalEmbedText).toBeLessThanOrEqual(6000);
     expect(longestRow).toBeLessThan(300);
+  });
+});
+
+describe('dashboard showcase', () => {
+  const fieldsOf = (p: { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }) =>
+    p.embeds[0].toJSON().fields!;
+
+  it('renders the motto under the world-event header, not instead of it', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 0, 0, { motto: 'Where the big ones live' });
+    const desc = p.embeds[0].toJSON().description!;
+    const lines = desc.split('\n');
+    // Fixed values used verbatim (no `now`), so opts.now defaults to 0 (dashboardPayload's
+    // own `?? 0`) — matches eventHeaderLine(0, PARK_HEADER_KEYS) exactly.
+    expect(lines).toHaveLength(2);
+    // Pins ORDER, not just presence: a regression that composes [motto, header] instead of
+    // [header, motto] would still be 2 lines containing the motto text, and would pass a
+    // toContain-only check undetected.
+    expect(lines[0]).toBe(eventHeaderLine(0, PARK_HEADER_KEYS));
+    expect(lines[1]).toContain('Where the big ones live');
+  });
+
+  it('omits the motto line entirely when there is none', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 0, 0, {});
+    const lines = p.embeds[0].toJSON().description!.split('\n');
+    expect(lines).toHaveLength(1);
+    // Not just length 1: a regression that drops the header on the no-motto path
+    // (`.setDescription(opts.motto ? line : '')`) also yields `''.split('\n') === ['']`,
+    // a length-1 array — this line distinguishes "header correctly shown" from "header
+    // silently dropped, empty description."
+    expect(lines[0]).toBe(eventHeaderLine(0, PARK_HEADER_KEYS));
+  });
+
+  it('names the featured dino and attaches its archetype art as the thumbnail', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 0, 0, {
+      featured: { name: 'Trixie', archetype: 'tank', diet: 'herbivore' },
+    });
+    expect(fieldsOf(p).find((f) => f.name === '🦖 Featured')!.value).toBe('Trixie');
+    // assets/images/dinos/tank-herbivore.webp ships in the repo, so this exercises the
+    // real attach path — the URL without the file (or vice versa) is the broken-image bug.
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://tank-herbivore.webp');
+    expect(p.files).toHaveLength(1);
+  });
+
+  it('ships no files and no Featured field when nothing is featured', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, [], 0, 0, 0, {});
+    expect(fieldsOf(p).some((f) => f.name === '🦖 Featured')).toBe(false);
+    // Not [] — attach() on a null ref never creates the array at all, and two other test
+    // files pin exactly this distinction elsewhere in the suite.
+    expect(p.files).toBeUndefined();
   });
 });
 

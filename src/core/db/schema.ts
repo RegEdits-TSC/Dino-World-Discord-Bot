@@ -26,6 +26,16 @@ export const users = sqliteTable('users', {
   // structural rather than a filter someone has to remember. Monotone — only the next
   // tier is ever purchasable — which is also what removes the refund question.
   landmarkTier: integer('landmark_tier').notNull().default(0),
+  // The showcase a visitor sees on your park card. `motto` is free text; mention
+  // injection is already dead because src/index.ts sets allowedMentions: { parse: [] }
+  // client-wide, the same shield /park rename relies on — do not add a second
+  // sanitiser here, it would only be a second thing to keep in sync.
+  motto: text('motto').notNull().default(''),
+  // Deliberately NO foreign key to dinos.id: a featured dino can be sold, traded away
+  // or reset, and a dangling reference must resolve to "no feature" rather than error.
+  // Same reasoning as breedings.parentA/parentB. Resolution happens at read time in
+  // src/modules/park/showcase.ts; nothing sweeps this column.
+  featuredDinoId: integer('featured_dino_id'),
   lastCollectAt: integer('last_collect_at_ms').notNull(),
   createdAt: integer('created_at_ms').notNull(),
 }, (t) => [

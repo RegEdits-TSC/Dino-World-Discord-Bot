@@ -13,10 +13,12 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/park view` | Your park dashboard, with a rendered map of your lots | Falls back to a text-only embed if the map cannot be rendered |
+| `/park view` | Your park dashboard, with a rendered map of your lots | Falls back to a text-only embed if the map cannot be rendered. Add `user:` to visit another player's park, read-only, with a **Next park ▶** button to keep walking the ranked list |
 | `/park rename` | Rename your park | Up to 60 characters |
 | `/park alerts` | Turn proactive park alerts on or off | DM-only warnings before a dino escapes and when your park's income hits its cap. On by default; also turned off by the 🔕 Mute button on an alert itself |
 | `/park landmark` | Your park's prestige monument — the six-rung cash-sink ladder | Shows the built and next rungs with a Build button. Purely cosmetic |
+| `/park motto` | The line visitors see on your park card | Up to 80 characters. Leave the option blank to clear it |
+| `/park feature` | Feature one of your dinos on your park card | Autocomplete: dino. Shows its name and art to anyone visiting. Leave the option blank to clear it. An escaped dino is still a valid choice |
 | `/build` | Build on an empty lot | |
 | `/upgrade` | Upgrade a lot to the next level | Autocomplete: lot, and the suggestion quotes the price. Costs are also quoted in the insufficient-funds reply |
 | `/decorate` | Add decor to a paddock | Autocomplete: lot, item |
@@ -109,7 +111,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/top` | Leaderboards by rating, cash, or collection | Server or global scope |
+| `/top` | Leaderboards by rating, cash, collection, legacy standing, or battle stars | Server or global scope. Up to five **Visit** buttons open the ranked players' parks |
 | `/help` | How to play, across ten topics | Run with no topic for a first-ten-minutes walkthrough |
 
 ## ⚙️ Server settings and admin

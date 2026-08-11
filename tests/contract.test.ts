@@ -23,6 +23,7 @@ const AUTOCOMPLETE_OPTIONS: Record<string, string[]> = {
   'dino unassign': ['dino'],
   'dino rename': ['dino'],
   'decorate': ['lot', 'item'],
+  'park feature': ['dino'],
   'trade offer': ['give-dinos', 'give-eggs', 'give-food', 'want-dinos', 'want-eggs', 'want-food'],
   'trade accept': ['id'],
   'trade decline': ['id'],
