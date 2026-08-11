@@ -9,15 +9,14 @@ import { emojiTag } from '../../core/emojis.js';
 // Never call emojiTag at module scope — the app-emoji map loads after the
 // client is ready, so a module-level constant would freeze the unicode
 // fallback forever. Compute the label per call instead.
-//
-// Metric was widened (to add 'legacy' | 'stars') ahead of this command surface
-// gaining those choices — the `addChoices` list below still only offers the
-// original three, so this function can never actually be called with the new
-// values yet. The `as` narrowing is only here to keep this object-literal
-// lookup assignable to the wider union; a later change adds real labels for
-// the new metrics alongside their command choices.
 function metricLabel(metric: Metric): string {
-  return { rating: `${emojiTag('dw_star')} Rating`, cash: `${emojiTag('dw_cash')} Cash`, collection: '🦕 Collection' }[metric as 'rating' | 'cash' | 'collection'];
+  return {
+    rating: `${emojiTag('dw_star')} Rating`,
+    cash: `${emojiTag('dw_cash')} Cash`,
+    collection: '🦕 Collection',
+    legacy: '🏛️ Legacy',
+    stars: '⭐ Battle Stars',
+  }[metric];
 }
 function formatValue(metric: Metric, value: number): string {
   return metric === 'rating' ? (value / 100).toFixed(1) : value.toLocaleString();
@@ -28,7 +27,13 @@ export const leaderboardsModule: ModuleManifest = {
   commands: [
     { data: new SlashCommandBuilder().setName('top').setDescription('Leaderboards')
         .addStringOption((o) => o.setName('metric').setDescription('Rank by').setRequired(true)
-          .addChoices({ name: 'rating', value: 'rating' }, { name: 'cash', value: 'cash' }, { name: 'collection', value: 'collection' }))
+          .addChoices(
+            { name: 'rating', value: 'rating' },
+            { name: 'cash', value: 'cash' },
+            { name: 'collection', value: 'collection' },
+            { name: 'legacy', value: 'legacy' },
+            { name: 'stars', value: 'stars' },
+          ))
         .addStringOption((o) => o.setName('scope').setDescription('server or global')
           .addChoices({ name: 'server', value: 'server' }, { name: 'global', value: 'global' })),
       async execute(ctx, i) {

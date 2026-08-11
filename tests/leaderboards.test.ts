@@ -299,4 +299,35 @@ describe('new metrics', () => {
     ctx.db.insert(schema.battleProgress).values({ userId: 'b', stageId: 's1', stars: 3 }).run();
     expect(topPlayers(ctx, 'stars', 'server', 'g1').map((r) => r.userId)).toEqual(['a']);
   });
+
+  it('/top legacy renders a ranking with an integer value', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    ctx.db.insert(schema.battleProgress).values({ userId: 'a', stageId: 's1', stars: 3 }).run();
+    const i = fakeCommand({ name: 'top', user: 'a', options: { metric: 'legacy', scope: 'global' } });
+    await leaderboardsModule.commands[0].execute(ctx, i.asChatInput());
+    const embed = (i.replies[0] as { embeds: Array<{ toJSON(): { title?: string; description?: string } }> }).embeds[0].toJSON();
+    expect(embed.title).toContain('Legacy');
+    // Not '0.0' — only `rating` divides by 100, and a legacy score rendered on the
+    // rating path would read 0.0 for every player below 100 points.
+    expect(embed.description).toBe('**1.** A — 3');
+  });
+
+  it('/top stars renders battle stars', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    ctx.db.insert(schema.battleProgress).values({ userId: 'a', stageId: 's1', stars: 2 }).run();
+    const i = fakeCommand({ name: 'top', user: 'a', options: { metric: 'stars', scope: 'global' } });
+    await leaderboardsModule.commands[0].execute(ctx, i.asChatInput());
+    const embed = (i.replies[0] as { embeds: Array<{ toJSON(): { title?: string; description?: string } }> }).embeds[0].toJSON();
+    expect(embed.title).toContain('Battle Stars');
+    expect(embed.description).toBe('**1.** A — 2');
+  });
+
+  it('offers exactly the five metrics the service knows', () => {
+    const json = leaderboardsModule.commands[0].data.toJSON() as {
+      options?: Array<{ name: string; choices?: Array<{ value: string }> }>;
+    };
+    const metric = json.options!.find((o) => o.name === 'metric')!;
+    expect(metric.choices!.map((c) => c.value))
+      .toEqual(['rating', 'cash', 'collection', 'legacy', 'stars']);
+  });
 });
