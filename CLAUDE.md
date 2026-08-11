@@ -873,18 +873,39 @@
   existence check stays AHEAD of the acknowledgement at all three surfaces (`park:tour`,
   `top:visit`, `/park view user:`), because "That player has no park yet" is an EPHEMERAL
   answer and either defer would have committed it to a public message.
-  Free text reaching a public embed is defanged, never rejected: `defangLinks`
-  (`src/core/text.ts`) splits the `](` sequence, because an embed DESCRIPTION renders
+  Player-typed free text that reaches a public embed DESCRIPTION or a bot-authored,
+  non-ephemeral message's CONTENT is defanged, never rejected outright: `defangLinks`
+  (`src/core/text.ts`) splits the `](` sequence, because both surfaces render
   `[text](url)` as a masked link with arbitrary visible text — 80 characters of motto is
-  ample for `[Free Nitro](https://evil.tld)`. The client-wide `allowedMentions: { parse: [] }`
-  kills mention injection and does nothing about markdown. Two call sites, closed together
-  because a half-closed vector is worse than a documented open one: `setMotto`
-  (`src/modules/park/showcase.ts`) and `renameDino` (`src/modules/park/dinos.ts`, whose
-  nicknames reach public battle embeds). It runs AFTER the trim and BEFORE the length
-  check at both — defanging only ever lengthens a string, so a guard that ran first would
-  no longer govern what is actually stored, and a motto of exactly 80 characters ending
-  `](` is now rejected rather than stored at 81. The design spec explicitly said no
+  ample for `[Free Nitro](https://evil.tld)`. A TITLE does not render it — `dashboardPayload`'s
+  `.setTitle(user.parkName)` (`src/modules/park/embeds.ts`) was never exposed. The
+  client-wide `allowedMentions: { parse: [] }` kills mention injection and does nothing
+  about markdown. Three call sites now defang BEFORE storing, and every confirmation
+  echo agrees with what was stored — a half-closed vector (store defanged, echo raw) is
+  worse than a documented open one: `setMotto` (`src/modules/park/showcase.ts`) returns
+  what it wrote, so `/park motto`'s echo just reads that back; `renameDino`
+  (`src/modules/park/dinos.ts`, whose nicknames reach public battle embeds) defangs what
+  it stores but returns `void`, so `/dino rename`'s echo (`src/modules/park/index.ts`)
+  re-defangs the trimmed input itself rather than trusting the raw option — the fourth
+  `defangLinks` call, and the only one that isn't at a store site; `/park rename`
+  (`src/modules/park/index.ts`, pre-existing code that writes `parkName` directly rather
+  than through a service — left that way on purpose, not restructured into one) now
+  defangs once and reuses that single value for both the write and the reply. That last
+  one closes a real vector, not a theoretical one: `parkName` reaches `landmarkPayload`'s
+  public embed DESCRIPTION on `/park landmark` (`src/modules/park/embeds.ts`), which
+  replies non-ephemerally, so an un-defanged park name was a live masked link there. It
+  runs AFTER the trim and BEFORE the length check at every store site — defanging only
+  ever lengthens a string, so a guard that ran first would no longer govern what is
+  actually stored, and a motto or nickname landing exactly at its cap after `](` is
+  rejected rather than stored one character over. The design spec explicitly said no
   sanitisation should be added; that line is superseded (see its own note).
+  One path stays open, by design rather than oversight: `/top`'s leaderboard embed
+  description (`src/modules/leaderboards/index.ts`) interpolates `r.displayName`, sourced
+  from `i.user.displayName` — Discord's own guild nickname / global display name, not
+  text a player types into any of our commands — for every OTHER player on the board, so
+  it is also cross-user. Closing it is out of scope here; `getOrCreateUser`
+  (`src/modules/park/service.ts`) is where that column is written, at every call site,
+  always from `i.user.displayName`.
   Separately, `tests/help.test.ts` scrapes `/park`'s subcommand list straight from the
   REAL builder JSON and fails until `HELP_TOPICS.park.body` (`src/modules/help/index.ts`)
   mentions every one of them — this caught two implementers by surprise on the showcase

@@ -16,6 +16,7 @@ import { InsufficientFundsError } from '../../core/economy.js';
 import { buyLandmark, nextLandmark, landmarkTierOf, LandmarkMaxedError } from './landmarks.js';
 import { landmarkFor, MAX_LANDMARK_TIER } from '../../data/landmarks.js';
 import { setMotto, setFeaturedDino, featuredFor, ShowcaseError } from './showcase.js';
+import { defangLinks } from '../../core/text.js';
 import { escapeAt, ESCAPE_WARN_MS } from '../../core/clock.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { FACILITIES } from '../../data/facilities.js';
@@ -107,7 +108,12 @@ export const parkModule: ModuleManifest = {
         // implemented, because the last branch WAS the dashboard.
         switch (i.options.getSubcommand()) {
           case 'rename': {
-            const name = i.options.getString('name', true);
+            // Defanged before it is stored, the same way setMotto/renameDino are: parkName
+            // reaches landmarkPayload's public embed DESCRIPTION (`/park landmark`), where
+            // `[text](url)` renders as a masked link. Storing the defanged value once is
+            // what keeps this reply and every later read (dashboard title, landmark
+            // description) in agreement — nothing downstream re-defangs.
+            const name = defangLinks(i.options.getString('name', true));
             ctx.db.update(schema.users).set({ parkName: name })
               .where(eq(schema.users.discordId, i.user.id)).run();
             await i.reply({ content: `Park renamed to **${name}**.` });
@@ -303,7 +309,10 @@ export const parkModule: ModuleManifest = {
             const nickname = i.options.getString('nickname');
             renameDino(ctx, i.user.id, i.options.getInteger('dino', true), nickname);
             const cleared = !nickname || !nickname.trim();
-            await i.reply({ content: cleared ? '🦕 Nickname cleared.' : `🦕 Renamed to **${nickname!.trim()}**.` });
+            // renameDino defangs what it stores but returns void, so the echo re-defangs
+            // the trimmed input rather than trusting the raw nickname — this nickname
+            // reaches public battle embeds, where `[text](url)` renders as a masked link.
+            await i.reply({ content: cleared ? '🦕 Nickname cleared.' : `🦕 Renamed to **${defangLinks(nickname!.trim())}**.` });
           } else {
             unassignDino(ctx, i.user.id, i.options.getInteger('dino', true));
             await i.reply({ content: '🦕 Unassigned.' });

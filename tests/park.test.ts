@@ -499,6 +499,25 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     expect(replyText(i.replies[0])).toContain('Raptor Ranch');
     expect(ctx.db.select().from(schema.users).all()[0].parkName).toBe('Raptor Ranch');
   });
+  it('/park rename defangs a masked link in both the stored name and the confirmation', async () => {
+    // parkName reaches landmarkPayload's public embed DESCRIPTION on /park landmark,
+    // where `[text](url)` renders as a masked link with arbitrary visible text.
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    const cmd = parkModule.commands.find((c) => c.data.name === 'park')!;
+    const i = fakeCommand({ name: 'park', sub: 'rename', user: 'u1', options: { name: '[Free Nitro](https://evil.tld)' } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toBe('Park renamed to **[Free Nitro] (https://evil.tld)**.');
+    expect(ctx.db.select().from(schema.users).all()[0].parkName).toBe('[Free Nitro] (https://evil.tld)');
+  });
+  it('/park rename leaves ordinary brackets and parentheses alone', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    const cmd = parkModule.commands.find((c) => c.data.name === 'park')!;
+    const plain = 'Rex Land [big] (fun) ( [';
+    const i = fakeCommand({ name: 'park', sub: 'rename', user: 'u1', options: { name: plain } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toBe(`Park renamed to **${plain}**.`);
+    expect(ctx.db.select().from(schema.users).all()[0].parkName).toBe(plain);
+  });
   it('/build maps LotLimitError and InsufficientFundsError to ephemeral replies', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
     ctx.db.update(schema.users).set({ cash: 10_000_000 }).run();
@@ -719,6 +738,34 @@ describe('/dino rename subcommand', () => {
     await cmd.execute(ctx, i.asChatInput());
     expect(replyText(i.replies[0])).toContain('32');
     expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+
+  it('defangs a masked link in the confirmation echo', async () => {
+    // The confirmation is a NON-EPHEMERAL, bot-authored message, so `[text](url)` in it
+    // renders as a real masked link — unlike a masked link typed by a player, which
+    // Discord does not render in user message content.
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const i = fakeCommand({ name: 'dino', sub: 'rename', user: 'u1', options: { dino: d.id, nickname: '[Free Nitro](https://evil.tld)' } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toBe('🦕 Renamed to **[Free Nitro] (https://evil.tld)**.');
+  });
+
+  it('echoes ordinary brackets and parentheses unchanged', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const d = ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'dino')!;
+    const plain = 'Rex [big] (fast) ( [';
+    const i = fakeCommand({ name: 'dino', sub: 'rename', user: 'u1', options: { dino: d.id, nickname: plain } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toBe(`🦕 Renamed to **${plain}**.`);
   });
 });
 
