@@ -136,9 +136,16 @@ export function cooldownUntil(ctx: Ctx, challengerId: string, defenderId: string
 }
 
 /**
- * Has this exact challenge already been accepted? A live challenge stores nothing,
- * so its identity is the expiry instant baked into the button's customId: any live
- * duel for this pair inside that challenge's own lifetime IS this challenge.
+ * Has a live duel for this pair already resolved inside this challenge's lifetime?
+ *
+ * A live challenge stores nothing, so its only identity is the expiry instant baked
+ * into its button's customId. That makes this a TIME WINDOW rather than a true
+ * challenge id, and the consequence is deliberate and accepted: two overlapping
+ * challenges to the same defender inside one TTL cannot be told apart, so the effective
+ * rule is one live duel per ordered pair per DUEL_CHALLENGE_TTL_MS. The alternative —
+ * a per-challenge id stored on the duels row — would add a column and a migration to a
+ * feature whose design point is storing nothing per challenge. The failure direction is
+ * safe: this can only refuse a duel, never let one resolve twice and move Elo twice.
  */
 function challengeAlreadyResolved(
   ctx: Ctx, challengerId: string, defenderId: string, expiresAtMs: number,
@@ -167,6 +174,9 @@ function challengeAlreadyResolved(
  */
 export function resolveDuel(
   ctx: Ctx, challengerId: string, defenderId: string, mode: DuelMode,
+  // Omitting challengeExpiresAtMs on the live path silently disables the
+  // double-accept guard: there is no expiry to match a prior duel against. Every
+  // live call site must pass the value from the button's customId.
   challengeExpiresAtMs?: number,
 ): DuelOutcome {
   // Defence in depth: the command surfaces reject this, but a self-duel would
@@ -189,7 +199,9 @@ export function resolveDuel(
     }
   } else if (challengeExpiresAtMs !== undefined
       && challengeAlreadyResolved(ctx, challengerId, defenderId, challengeExpiresAtMs)) {
-    throw new DuelError('That challenge has already been accepted.');
+    throw new DuelError(
+      'You have already duelled this player live in the last few minutes — '
+      + 'post a fresh challenge in a moment.');
   }
 
   let mySquad: DuelSquadMember[];

@@ -351,6 +351,25 @@ describe('duel pacing', () => {
     expect(ctx.db.select().from(schema.duels).all()).toHaveLength(1);
   });
 
+  // Accepted design limitation (owner ruling): a live challenge stores nothing, so
+  // two overlapping challenges to one defender inside a single TTL share a window and
+  // cannot be told apart. The second accept is refused rather than resolving twice —
+  // the safe direction. Change this only by giving a challenge a real stored identity.
+  //
+  // The overlap only bites when the OLDER challenge is accepted late — after the newer
+  // one has already gone out — so its accept instant lands inside both windows: card 1
+  // posted at t=0 (expiresAt = TTL), card 2 posted at t=60_000 (expiresAt = TTL +
+  // 60_000). The defender is slow and only accepts card 1 at t=60_000, once card 2 is
+  // already live; that same instant is >= card 2's own (expiresAt - TTL), so accepting
+  // card 2 next collides with it.
+  it('refuses a second, genuinely different challenge inside the same window', () => {
+    pairWithDinos();
+    ctx.setNow(60_000);
+    resolveDuel(ctx, 'a', 'b', 'live', DUEL_CHALLENGE_TTL_MS);          // late accept of challenge 1
+    expect(() => resolveDuel(ctx, 'a', 'b', 'live', DUEL_CHALLENGE_TTL_MS + 60_000))
+      .toThrow(/already duelled this player/i);
+  });
+
   it('reports when a cooled-down pair frees up, and null when it is free now', () => {
     pairWithDinos();
     expect(cooldownUntil(ctx, 'a', 'b')).toBeNull();
