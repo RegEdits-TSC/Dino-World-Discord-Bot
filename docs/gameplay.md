@@ -867,14 +867,19 @@ falls.
 
 ### `/top`
 
-`/top` ranks players by one of three metrics — rating, cash, or collection —
-scoped to either your server or globally. Left unset, it defaults to your
-server when run inside a server and to global when run in a DM. It always
-shows the top 10 with no further pages; if you're not in that top 10, a
-footer line shows your own rank and value instead. Server scope only ranks
-players who have used the bot in that server; global scope ranks every
-registered player anywhere. There's no tiebreak rule for players with equal
-values — their relative order isn't defined.
+`/top` ranks players by one of five metrics — rating, cash, collection,
+legacy standing, or battle stars — scoped to either your server or globally.
+Left unset, scope defaults to your server when run inside a server and to
+global when run in a DM. It always shows the top 10 with no further pages;
+if you're not in that top 10, a footer line shows your own rank and value
+instead. Server scope only ranks players who have used the bot in that
+server; global scope ranks every registered player anywhere. There's no
+tiebreak rule for players with equal values — their relative order isn't
+defined.
+
+Up to five **Visit** buttons sit under the board, one per row shown, so you
+can jump straight from a ranking into that player's park — see Showcase and
+visiting parks, below.
 
 ### Legacy ranks
 
@@ -898,6 +903,30 @@ recalculated from what you've already done, each time it's shown. Below 15
 points you haven't reached Groundskeeper yet and show no rank at all. Your
 Legacy rank appears on your `/park view` dashboard and in the footer of
 `/dex list`.
+
+### Showcase and visiting parks
+
+`/park motto [text]` sets a short line — up to 80 characters — shown on your
+park card under its name; leave the option blank to clear it. `/park feature
+[dino]` picks one of your dinos to display by name and art on that same
+card; leave it blank to clear the pick. Both are purely cosmetic — neither
+touches income, comfort, escapes, habitat fit, or park rating. If a featured
+dino is later sold or traded away, its card simply stops showing a feature;
+nothing breaks and there's nothing to re-set — pick a new one whenever you
+like.
+
+Visiting another player's park is read-only: nothing you do there changes
+anything, and looking at someone else's park never creates a park for you.
+Reach one either through a **Visit** button on `/top` or with `/park view
+user:<player>`. From a visited park, a **Next park ▶** button walks you to
+the next park in descending rating order, wrapping back to the top once it
+reaches the end — parks with no rating at all (an account that hasn't done
+anything yet) are skipped, so the walk never lands on an empty lot.
+
+There is no way to hide a park from discovery. Parks have always been
+viewable by anyone who knows your @handle — visiting and the leaderboards
+above simply make parks easier to find, not more exposed than they already
+were.
 
 ## 14. Notifications and alerts
 

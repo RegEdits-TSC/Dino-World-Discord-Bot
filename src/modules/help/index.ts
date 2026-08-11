@@ -112,10 +112,9 @@ export const helpModule: ModuleManifest = {
           if (topic === 'park') {
             // The park topic illustrates itself with the reader's own map: a worker
             // render, so defer first and degrade to the text-only embed on any
-            // failure (including "this reader has no park row yet").
-            // withParkImage ASSIGNS files: [park.png], so it would drop anything
-            // attach() put on this payload. Safe only because HELP_TOPICS.park
-            // declares no `art` — give it art and the banner vanishes silently.
+            // failure (including "this reader has no park row yet"). HELP_TOPICS.park
+            // declares no `art`, so there is nothing for attach() to have put on this
+            // payload before withParkImage appends park.png to it.
             await i.deferReply();
             let png: Buffer | undefined;
             try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }

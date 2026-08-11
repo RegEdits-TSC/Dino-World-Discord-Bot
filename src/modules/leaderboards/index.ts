@@ -26,8 +26,8 @@ function formatValue(metric: Metric, value: number): string {
 // Up to five Visit buttons, one per top row — discovery starts from the board you are
 // already reading. Discord allows five buttons per action row and the board shows ten.
 // Unlike pageRow these carry NO viewer id: the message is public and the path is
-// read-only, so the id segment is the TARGET park, not an owner. Worst case is 31 of
-// Discord's 100 customId characters ('top:visit:' plus a 20-digit snowflake).
+// read-only, so the id segment is the TARGET park, not an owner. Worst case is 30 of
+// Discord's 100 customId characters ('top:visit:' — 10 — plus a 20-digit snowflake).
 // No setEmoji anywhere here — a tag that resolves to '' throws rather than degrading.
 function visitRow(rows: Array<{ userId: string }>) {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
