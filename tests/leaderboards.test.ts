@@ -184,7 +184,11 @@ function countingCtx(base: ReturnType<typeof makeCtx>) {
   return { ctx: { ...base, db }, queries: () => queries };
 }
 
-function boardOf(size: number) {
+// `guildId` seeds exactly ONE guild member (p0) regardless of roster size — that single
+// fixed membership count, against a varying total roster, is what proves a server-scoped
+// board's query cost tracks neither the guild's member count nor the roster's non-member
+// count (see the server-scope it.each below).
+function boardOf(size: number, guildId?: string) {
   const base = makeCtx();
   for (let n = 0; n < size; n++) {
     getOrCreateUser(base, `p${n}`, `P${n}`);
@@ -196,6 +200,9 @@ function boardOf(size: number) {
       .values({ userId: `p${n}`, trackId: 't', tier: 0, claimedAt: 0 }).run();
     base.db.insert(schema.battleProgress)
       .values({ userId: `p${n}`, stageId: 's1', stars: 3 }).run();
+  }
+  if (guildId) {
+    base.db.insert(schema.userGuilds).values({ userId: 'p0', guildId, lastSeenAt: 0 }).run();
   }
   return countingCtx(base);
 }
@@ -221,6 +228,48 @@ describe('leaderboard query cost', () => {
   ] as const)('costs a fixed %s queries whatever the roster size', (metric, expected) => {
     expect(cost(3, metric)).toBe(expected);
     expect(cost(30, metric)).toBe(expected);
+  });
+
+  // The server path costs exactly one query more than the global case above: scored()
+  // reads user_guilds to resolve memberIds before it can even build the users slice.
+  // Both fixture sizes seed the SAME single guild member (see boardOf) — what varies is
+  // only the roster's non-member count, which is what proves the extra user_guilds read,
+  // the users slice, and the metric's own source-table read(s) all stay flat whether 1 of
+  // 3 or 1 of 30 players is actually in the guild.
+  const serverCost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars') => {
+    const board = boardOf(size, 'g1');
+    topPlayers(board.ctx, metric, 'server', 'g1');
+    return board.queries();
+  };
+
+  it.each([
+    ['cash', 2],           // user_guilds + the candidate scan
+    ['stars', 3],          // + battle_progress
+    ['collection', 3],     // + dinos
+    ['legacy', 5],         // + species_seen, achievement_claims, battle_progress
+  ] as const)('costs a fixed %s queries for a server-scoped board whatever the roster size', (metric, expected) => {
+    expect(serverCost(3, metric)).toBe(expected);
+    expect(serverCost(30, metric)).toBe(expected);
+  });
+
+  // The "whatever the roster size" case above proves the count is flat, but it cannot by
+  // itself prove the metric's own read is actually memberIds-SCOPED: collectionScores /
+  // legacyScores / starScores cost exactly one `.select()` call whether that one member is
+  // read through an inArray predicate or the whole table is read unscoped — a single query
+  // either way. The one place the two genuinely diverge is an EMPTY membership: each
+  // builder short-circuits to zero queries when handed `[]` (e.g. collectionScores's
+  // `userIds.length ? … : []`), but a regression that passed `undefined` instead of
+  // `memberIds` would still scan the whole table even then. Scoping to a guild with no
+  // members at all is what actually exercises that branch.
+  it.each([
+    ['cash', 1],           // user_guilds only — no candidates, no further reads
+    ['stars', 1],
+    ['collection', 1],
+    ['legacy', 1],
+  ] as const)('costs no extra %s queries for a server-scoped board with zero guild members', (metric, expected) => {
+    const board = boardOf(3, 'g1');   // seeds p0 into g1 — 'g2' below has no members at all
+    expect(topPlayers(board.ctx, metric, 'server', 'g2')).toEqual([]);
+    expect(board.queries()).toBe(expected);
   });
 });
 
