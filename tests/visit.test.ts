@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { makeCtx } from './harness.js';
+import { makeCtx, fakeButton } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { setMotto, setFeaturedDino } from '../src/modules/park/showcase.js';
 import { tourRing, nextInRing, visitPayload } from '../src/modules/park/visit.js';
+import { parkModule } from '../src/modules/park/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
@@ -100,5 +101,34 @@ describe('visitPayload', () => {
     // tests/notify-handlers.test.ts pin the same undefined-not-[] shape at their own
     // art-free payloads.
     expect(p.files).toBeUndefined();
+  });
+});
+
+describe('park:tour', () => {
+  const click = async (customId: string, user = 'viewer') => {
+    const i = fakeButton({ customId, user });
+    await parkModule.components.find((c) => c.prefix === 'park')!.execute(ctx, i.asInteraction() as never);
+    return i;
+  };
+
+  it('renders the target park and advances the button', async () => {
+    player('a', 300); player('b', 200);
+    const i = await click('park:tour:b');
+    expect(JSON.stringify(i.replies[0])).toContain('park:tour:a');   // wrapped
+  });
+
+  it('creates no user row for the clicker', async () => {
+    player('a', 300);
+    await click('park:tour:a', 'stranger');
+    // A public button must never mint an account for a passer-by. The router's own
+    // touchPresence is the only writer on this path, and it updates existing rows only.
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'stranger')).get())
+      .toBeUndefined();
+  });
+
+  it('answers ephemerally for a target with no park', async () => {
+    player('a', 300);
+    const i = await click('park:tour:ghost');
+    expect(JSON.stringify(i.replies[0])).toContain('no park yet');
   });
 });

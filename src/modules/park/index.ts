@@ -8,6 +8,7 @@ import { settleEscapes } from './escapes.js';
 import { earnedTierCount } from '../daily/service.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
 import { dashboardPayload, withParkImage, landmarkPayload } from './embeds.js';
+import { visitPayload } from './visit.js';
 import { legacyRank } from './ranks.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
@@ -162,22 +163,12 @@ export const parkModule: ModuleManifest = {
         }
         const targetUser = i.options.getUser('user');
         if (targetUser && targetUser.id !== i.user.id) {
+          // The existence check stays ahead of the defer: "no park yet" is an ephemeral
+          // reply, and deferReply would commit this interaction to a public one.
           const targetRow = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, targetUser.id)).get();
           if (!targetRow) { await i.reply({ content: 'That player has no park yet.', flags: MessageFlags.Ephemeral }); return; }
           await i.deferReply();
-          settleEscapes(ctx, targetUser.id);
-          const fresh = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, targetUser.id)).get()!;
-          const tlots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, targetUser.id)).all();
-          const tdinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, targetUser.id)).all();
-          const tescaped = tdinos.filter((d) => d.escapedAt !== null).length;
-          const tinv = ctx.economy.getFoodInventory(targetUser.id);
-          const tfoodLine = (Object.entries(tinv) as Array<[FoodId, number]>)
-            .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
-          const payload = dashboardPayload(fresh, tlots, tdinos.length, 0, tescaped, { foodLine: tfoodLine, earnedTiers: earnedTierCount(ctx, targetUser.id), legacyRank: legacyRank(ctx, targetUser.id), now: ctx.now() });
-          const base = { embeds: payload.embeds };
-          let png: Buffer | undefined;
-          try { png = await renderPark(buildParkSnapshot(ctx, targetUser.id)); } catch { png = undefined; }
-          await i.editReply(png ? withParkImage(base, png) : base);   // read-only: no Collect button
+          await i.editReply((await visitPayload(ctx, targetUser.id))!);
           return;
         }
         await i.deferReply();
@@ -422,6 +413,17 @@ export const parkModule: ModuleManifest = {
           if (i.user.id !== uid) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
           settleEscapes(ctx, i.user.id);
           await i.update({ ...dinoListPayload(ctx, i.user.id, Number(pageStr)), attachments: [] });
+          return;
+        }
+        if (action === 'tour') {
+          // NO owner check on purpose: a park visit is public and read-only, and `uid`
+          // here is the TARGET park, not an owner. Turning this into an ownership check
+          // would make Next park work only for the player whose park is on screen.
+          const payload = await visitPayload(ctx, uid);
+          if (!payload) { await i.reply({ content: 'That player has no park yet.', flags: MessageFlags.Ephemeral }); return; }
+          // attachments: [] — the message being replaced carries the previous park's
+          // uploads, and this payload brings its own.
+          await i.update({ ...payload, attachments: [] });
           return;
         }
         if (action === 'landmark') {
