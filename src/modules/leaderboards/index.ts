@@ -1,10 +1,11 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import type { AttachmentBuilder } from 'discord.js';
 import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
 import { topPlayers, playerRank, type Metric, type Scope } from './service.js';
 import { assetImage, attach } from '../../core/images.js';
 import { emojiTag } from '../../core/emojis.js';
+import { visitPayload } from '../park/visit.js';
 
 // Never call emojiTag at module scope — the app-emoji map loads after the
 // client is ready, so a module-level constant would freeze the unicode
@@ -20,6 +21,20 @@ function metricLabel(metric: Metric): string {
 }
 function formatValue(metric: Metric, value: number): string {
   return metric === 'rating' ? (value / 100).toFixed(1) : value.toLocaleString();
+}
+
+// Up to five Visit buttons, one per top row — discovery starts from the board you are
+// already reading. Discord allows five buttons per action row and the board shows ten.
+// Unlike pageRow these carry NO viewer id: the message is public and the path is
+// read-only, so the id segment is the TARGET park, not an owner. Worst case is 31 of
+// Discord's 100 customId characters ('top:visit:' plus a 20-digit snowflake).
+// No setEmoji anywhere here — a tag that resolves to '' throws rather than degrading.
+function visitRow(rows: Array<{ userId: string }>) {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    ...rows.slice(0, 5).map((r, idx) =>
+      new ButtonBuilder().setCustomId(`top:visit:${r.userId}`)
+        .setLabel(`Visit #${idx + 1}`).setStyle(ButtonStyle.Secondary)),
+  );
 }
 
 export const leaderboardsModule: ModuleManifest = {
@@ -51,10 +66,31 @@ export const leaderboardsModule: ModuleManifest = {
           const mine = playerRank(ctx, metric, scope, i.guildId, i.user.id);
           if (mine) embed.setFooter({ text: `Your rank: #${mine.rank} — ${formatValue(metric, mine.value)}` });
         }
-        const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+        const payload: {
+          embeds: EmbedBuilder[];
+          components: ActionRowBuilder<ButtonBuilder>[];
+          files?: AttachmentBuilder[];
+        } = { embeds: [embed], components: rows.length ? [visitRow(rows)] : [] };
         attach(embed, payload, 'image', assetImage('banners', 'leaderboards'));
         await i.reply(payload);
       } },
   ],
-  components: [],
+  components: [
+    {
+      prefix: 'top',
+      async execute(ctx, i) {
+        const [, action, targetId] = i.customId.split(':');
+        // Unknown actions absorb rather than erroring — the dex/ach/alert discipline, so
+        // a customId shape from an older deploy never shows "This interaction failed".
+        if (action !== 'visit') { await i.deferUpdate(); return; }
+        // deferReply + editReply, never i.update: the leaderboard these buttons sit on
+        // must survive the click. Rendering a park runs a worker render, so the defer is
+        // also what keeps this inside Discord's 3-second window.
+        await i.deferReply();
+        const payload = await visitPayload(ctx, targetId);
+        if (!payload) { await i.editReply({ content: 'That player has no park yet.' }); return; }
+        await i.editReply(payload);
+      },
+    },
+  ],
 };

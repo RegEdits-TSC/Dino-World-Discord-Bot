@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeCtx, fakeCommand } from './harness.js';
+import { eq } from 'drizzle-orm';
+import { makeCtx, fakeCommand, fakeButton } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { topPlayers, collectionScore, playerRank, collectionScores, starScores, legacyScores } from '../src/modules/leaderboards/service.js';
 import { leaderboardsModule } from '../src/modules/leaderboards/index.js';
@@ -329,5 +330,75 @@ describe('new metrics', () => {
     const metric = json.options!.find((o) => o.name === 'metric')!;
     expect(metric.choices!.map((c) => c.value))
       .toEqual(['rating', 'cash', 'collection', 'legacy', 'stars']);
+  });
+});
+
+describe('/top visit buttons', () => {
+  beforeEach(() => { ctx = makeCtx(); });
+
+  const board = async (n: number) => {
+    for (let k = 0; k < n; k++) {
+      getOrCreateUser(ctx, `p${k}`, `P${k}`);
+      ctx.db.update(schema.users).set({ cash: 1_000 - k, parkRating: 100 })
+        .where(eq(schema.users.discordId, `p${k}`)).run();
+    }
+    const i = fakeCommand({ name: 'top', user: 'p0', options: { metric: 'cash', scope: 'global' } });
+    await leaderboardsModule.commands[0].execute(ctx, i.asChatInput());
+    return i;
+  };
+
+  it('mints one Visit button per row, capped at five', async () => {
+    const i = await board(8);
+    const ids = JSON.stringify(i.replies[0]).match(/top:visit:p\d+/g)!;
+    // Discord allows five buttons per action row; the board shows ten.
+    expect(ids).toEqual(['top:visit:p0', 'top:visit:p1', 'top:visit:p2', 'top:visit:p3', 'top:visit:p4']);
+  });
+
+  it('mints exactly as many buttons as there are rows when fewer than five', async () => {
+    const i = await board(2);
+    expect(JSON.stringify(i.replies[0]).match(/top:visit:p\d+/g)).toEqual(['top:visit:p0', 'top:visit:p1']);
+  });
+
+  it('always has at least the caller to visit, because /top creates their row', async () => {
+    const i = fakeCommand({ name: 'top', user: 'nobody', options: { metric: 'cash', scope: 'global' } });
+    await leaderboardsModule.commands[0].execute(ctx, i.asChatInput());
+    // `execute` opens with getOrCreateUser, so `rows` is never empty on a reachable path —
+    // the `rows.length ? [visitRow(rows)] : []` guard exists for the shape, not for a case
+    // a player can actually produce. Asserting the caller's own button is what pins that.
+    expect(JSON.stringify(i.replies[0])).toContain('top:visit:nobody');
+  });
+});
+
+describe('top:visit', () => {
+  beforeEach(() => { ctx = makeCtx(); });
+
+  const click = async (customId: string, user = 'viewer') => {
+    const i = fakeButton({ customId, user });
+    await leaderboardsModule.components.find((c) => c.prefix === 'top')!.execute(ctx, i.asInteraction() as never);
+    return i;
+  };
+
+  it('renders that park as a new message, leaving the board intact', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    ctx.db.update(schema.users).set({ parkRating: 300 }).where(eq(schema.users.discordId, 'a')).run();
+    const i = await click('top:visit:a');
+    // deferReply + editReply, never i.update: the leaderboard the button sits on must
+    // survive the click.
+    expect(i.deferOpts).toHaveLength(1);
+    expect((i.replies[0] as { embeds?: unknown[] }).embeds).toHaveLength(1);
+  });
+
+  it('absorbs an unknown action instead of erroring', async () => {
+    const i = await click('top:whatever:a');
+    expect(i.deferOpts).toHaveLength(1);
+    expect(i.replies).toHaveLength(0);
+  });
+
+  it('creates no user row for the clicker', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    ctx.db.update(schema.users).set({ parkRating: 300 }).where(eq(schema.users.discordId, 'a')).run();
+    await click('top:visit:a', 'stranger');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'stranger')).get())
+      .toBeUndefined();
   });
 });
