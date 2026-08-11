@@ -8,6 +8,7 @@ import { toClockDinos } from '../park/service.js';
 import { resolveBattle, type BeatSummary, type Combatant } from '../../data/battle/resolve.js';
 import { outcomeFor, type DuelMode, type DuelResult } from '../../data/battle/duel.js';
 import { eloDelta } from '../../data/battle/elo.js';
+import type { Archetype, Diet } from '../../data/types.js';
 
 export class DuelError extends Error {}
 
@@ -16,7 +17,7 @@ export const MAX_DUEL_SQUAD = 3;
 /** One combatant as the duel surfaces see it. `archetype`/`diet` are the art key. */
 export interface DuelSquadMember {
   dinoId: number; name: string; speciesId: string;
-  archetype: string; diet: string; level: number; traits: string[];
+  archetype: Archetype; diet: Diet; level: number; traits: string[];
 }
 
 type DinoRow = typeof schema.dinos.$inferSelect;
@@ -114,7 +115,7 @@ function combatants(squad: DuelSquadMember[], side: 0 | 1): Combatant[] {
     const s = statsFor(m.speciesId, m.level, m.traits);   // traits on BOTH sides, unlike PvE
     return {
       key: keyOf(m), name: m.name, speciesId: m.speciesId,
-      archetype: m.archetype as Combatant['archetype'],
+      archetype: m.archetype,
       maxHp: s.hp, hp: s.hp, atk: s.atk, def: s.def, spd: s.spd, side,
     };
   });
@@ -132,6 +133,11 @@ function combatants(squad: DuelSquadMember[], side: 0 | 1): Combatant[] {
 export function resolveDuel(
   ctx: Ctx, challengerId: string, defenderId: string, mode: DuelMode,
 ): DuelOutcome {
+  // Defence in depth: the command surfaces reject this, but a self-duel would
+  // collide both squads on one finalHp key scheme AND apply both rating updates
+  // to one row — the second write wins, so a loss would ADD rating.
+  if (challengerId === defenderId) throw new DuelError("You can't duel yourself.");
+
   const challenger = ctx.db.select().from(schema.users)
     .where(eq(schema.users.discordId, challengerId)).get();
   if (!challenger) throw new DuelError('You have no park yet.');
@@ -142,7 +148,11 @@ export function resolveDuel(
   let mySquad: DuelSquadMember[];
   try {
     mySquad = duelSquad(ctx, challengerId);
-  } catch {
+  } catch (e) {
+    // Only re-phrase the "no battle-ready dinos" case for the challenger's own
+    // point of view; anything else (a retired species id, a DB fault) must not be
+    // disguised as an empty roster.
+    if (!(e instanceof DuelError)) throw e;
     throw new DuelError('You have no battle-ready dinos — hatch or rescue one first.');
   }
   const theirSquad = duelSquad(ctx, defenderId);   // already phrased for the other player

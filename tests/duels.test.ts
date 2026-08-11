@@ -3,10 +3,9 @@ import { eq } from 'drizzle-orm';
 import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
-import { duelSquad, setDuelSquad, DuelError } from '../src/modules/duels/service.js';
+import { duelSquad, setDuelSquad, DuelError, resolveDuel } from '../src/modules/duels/service.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { outcomeFor } from '../src/data/battle/duel.js';
-import { resolveDuel } from '../src/modules/duels/service.js';
 import type { BattleResult } from '../src/data/battle/resolve.js';
 
 let ctx: ReturnType<typeof makeCtx>;
@@ -180,6 +179,23 @@ describe('resolveDuel', () => {
     expect(out.ratingAfter.defender - out.ratingBefore.defender).toBe(-out.eloDelta);
   });
 
+  it('conserves rating in the database across unequal starting ratings', () => {
+    for (const [ra, rb] of [[1000, 1000], [1240, 900], [903, 1477], [1500, 1501]]) {
+      const c = makeCtx();
+      getOrCreateUser(c, 'a', 'A'); getOrCreateUser(c, 'b', 'B');
+      for (const [u, sp] of [['a', strong.id], ['b', weak.id]] as const) {
+        c.db.insert(schema.dinos)
+          .values({ userId: u, speciesId: sp, hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+      }
+      c.db.update(schema.users).set({ duelRating: ra }).where(eq(schema.users.discordId, 'a')).run();
+      c.db.update(schema.users).set({ duelRating: rb }).where(eq(schema.users.discordId, 'b')).run();
+      resolveDuel(c, 'a', 'b', 'ghost');
+      const after = c.db.select().from(schema.users).all()
+        .reduce((sum, u) => sum + u.duelRating, 0);
+      expect(after, `ratings ${ra}/${rb}`).toBe(ra + rb);
+    }
+  });
+
   it('persists both ratings and exactly one log row', () => {
     pair();
     addDino('a', strong.id, 3200);
@@ -218,6 +234,7 @@ describe('resolveDuel', () => {
     expect(after.energy).toBe(before.energy);
     expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, mine)).get()!.battleXp).toBe(3200);
     expect(ctx.db.select().from(schema.battleProgress).all()).toEqual([]);
+    expect(ctx.db.select().from(schema.userStats).all()).toEqual([]);
   });
 
   it('reports both squads and both survivor counts', () => {
@@ -227,8 +244,11 @@ describe('resolveDuel', () => {
     const out = resolveDuel(ctx, 'a', 'b', 'ghost');
     expect(out.squads.challenger).toHaveLength(1);
     expect(out.squads.defender).toHaveLength(1);
-    expect(out.survivors.challenger).toBeGreaterThanOrEqual(0);
-    expect(out.survivors.defender).toBeGreaterThanOrEqual(0);
+    // Deterministic fixture (default ctx rng): a single max-level legendary against
+    // a single level-1 common wins outright with its lone combatant still standing
+    // and wipes the defender's lone combatant. Exact counts, not a vacuous >= 0.
+    expect(out.survivors.challenger).toBe(1);
+    expect(out.survivors.defender).toBe(0);
     expect(out.names).toEqual({ challenger: 'A', defender: 'B' });
     expect(out.beats).toHaveLength(2);
   });
@@ -242,7 +262,16 @@ describe('resolveDuel', () => {
   it('refuses when the challenger has no battle-ready dinos', () => {
     pair();
     addDino('b', weak.id, 0);
-    expect(() => resolveDuel(ctx, 'a', 'b', 'ghost')).toThrow(/battle-ready/);
+    // Tightened to the challenger-specific rephrasing so this can no longer pass
+    // against the defender's un-rephrased "That player has no battle-ready dinos."
+    expect(() => resolveDuel(ctx, 'a', 'b', 'ghost')).toThrow(/hatch or rescue/);
+  });
+
+  it('refuses a self-duel and writes no log row', () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    addDino('a', strong.id, 3200);
+    expect(() => resolveDuel(ctx, 'a', 'a', 'ghost')).toThrow(/duel yourself/);
+    expect(ctx.db.select().from(schema.duels).all()).toHaveLength(0);
   });
 
   // Side 0 gets a free first strike on every speed tie (resolveBattle sorts by
@@ -257,7 +286,13 @@ describe('resolveDuel', () => {
         c.db.insert(schema.dinos)
           .values({ userId: u, speciesId: weak.id, hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
       }
-      seen.add(resolveDuel(c, 'a', 'b', 'ghost').challengerWasSideZero);
+      const out = resolveDuel(c, 'a', 'b', 'ghost');
+      seen.add(out.challengerWasSideZero);
+      // Identical species and level on both sides, constant rng, so side 0 wins
+      // every initiative tie: this proves seating actually follows the flag, not
+      // just that the flag varies (an implementation that always seated the
+      // challenger side 0 would still produce {true, false} from the flag alone).
+      expect(out.result).toBe(out.challengerWasSideZero ? 'win' : 'loss');
     }
     expect(seen).toEqual(new Set([true, false]));
   });
