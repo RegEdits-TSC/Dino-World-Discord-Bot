@@ -178,3 +178,45 @@ describe('/park feature', () => {
     expect((i.replies[0] as Array<{ value: number }>).map((c) => c.value)).toEqual([d.id]);
   });
 });
+
+describe('the owner sees their own showcase', () => {
+  const view = async () => {
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await parkModule.commands[0].execute(ctx, i.asChatInput());
+    return i.replies[0] as {
+      embeds: Array<{ toJSON(): { description?: string; fields?: Array<{ name: string; value: string }>; thumbnail?: { url: string } } }>;
+      files?: Array<{ name: string }>;
+    };
+  };
+
+  it('renders the motto on your own park view, not just to visitors', async () => {
+    setMotto(ctx, 'u1', 'Where the big ones live');
+    const p = await view();
+    expect(p.embeds[0].toJSON().description).toContain('Where the big ones live');
+  });
+
+  it('renders the featured dino and its art on your own park view', async () => {
+    const d = addDino();
+    setFeaturedDino(ctx, 'u1', d.id);
+    const p = await view();
+    expect(p.embeds[0].toJSON().fields!.find((f) => f.name === '🦖 Featured')!.value)
+      .toBe('Triceratops');
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://tank-herbivore.webp');
+    // The park PNG cannot render under vitest: renderPark spawns a real worker thread that
+    // fails to resolve its module graph in-process, so `png` is undefined and withParkImage
+    // never runs. Offline, the meaningful property is that the featured dino's file IS
+    // attached and matches the embed's thumbnail URL. The two-files-on-one-embed pairing
+    // (thumbnail then park.png) is a live-gallery check — see the /park view case in
+    // scripts/test-live.ts.
+    expect(p.files!.map((f) => f.name)).toEqual(['tank-herbivore.webp']);
+  });
+
+  it('a featured dino sold since being set simply stops showing', async () => {
+    const d = addDino();
+    setFeaturedDino(ctx, 'u1', d.id);
+    ctx.db.delete(schema.dinos).where(eq(schema.dinos.id, d.id)).run();
+    const p = await view();
+    expect(p.embeds[0].toJSON().fields!.some((f) => f.name === '🦖 Featured')).toBe(false);
+    expect(p.embeds[0].toJSON().thumbnail).toBeUndefined();
+  });
+});

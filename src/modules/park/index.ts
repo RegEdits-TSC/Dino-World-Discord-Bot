@@ -15,7 +15,7 @@ import { renderPark } from '../../core/render/client.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { buyLandmark, nextLandmark, landmarkTierOf, LandmarkMaxedError } from './landmarks.js';
 import { landmarkFor, MAX_LANDMARK_TIER } from '../../data/landmarks.js';
-import { setMotto, setFeaturedDino, ShowcaseError } from './showcase.js';
+import { setMotto, setFeaturedDino, featuredFor, ShowcaseError } from './showcase.js';
 import { escapeAt, ESCAPE_WARN_MS } from '../../core/clock.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { FACILITIES } from '../../data/facilities.js';
@@ -190,7 +190,7 @@ export const parkModule: ModuleManifest = {
         const inv = ctx.economy.getFoodInventory(i.user.id);
         const foodLine = (Object.entries(inv) as Array<[FoodId, number]>)
           .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
-        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine, earnedTiers: earnedTierCount(ctx, i.user.id), legacyRank: legacyRank(ctx, i.user.id), now: nowMs });
+        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine, earnedTiers: earnedTierCount(ctx, i.user.id), legacyRank: legacyRank(ctx, i.user.id), motto: user.motto, featured: featuredFor(ctx, user), now: nowMs });
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
         await i.editReply(png ? withParkImage(base, png) : base);
