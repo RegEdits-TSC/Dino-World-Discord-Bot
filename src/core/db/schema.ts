@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, primaryKey, check, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
+import { DUEL_START_RATING } from '../../data/battle/constants.js';
 
 export const users = sqliteTable('users', {
   discordId: text('discord_id').primaryKey(),
@@ -36,6 +37,15 @@ export const users = sqliteTable('users', {
   // Same reasoning as breedings.parentA/parentB. Resolution happens at read time in
   // src/modules/park/showcase.ts; nothing sweeps this column.
   featuredDinoId: integer('featured_dino_id'),
+  // Elo, the ONE thing spec 3b stores that cannot be derived: it is order-dependent,
+  // so replaying the duels log cannot rebuild it. A plain integer, never ×100 like
+  // parkRating. Deliberately no CHECK constraint — see src/data/battle/elo.ts.
+  duelRating: integer('duel_rating').notNull().default(DUEL_START_RATING),
+  // The squad this player fields in duels, or [] to fall back to their top 3 by level.
+  // No foreign key, same reasoning as featuredDinoId above: a listed dino can be sold,
+  // traded away or reset, and a dangling id must resolve to "not in my squad" rather
+  // than error. duelSquad() filters at read time; nothing sweeps this column.
+  duelSquad: text('duel_squad', { mode: 'json' }).$type<number[]>().notNull().default([]),
   lastCollectAt: integer('last_collect_at_ms').notNull(),
   createdAt: integer('created_at_ms').notNull(),
 }, (t) => [
@@ -236,3 +246,20 @@ export const speciesSeen = sqliteTable('species_seen', {
   speciesId: text('species_id').notNull(),
   firstAt: integer('first_at_ms').notNull(),
 }, (t) => [primaryKey({ columns: [t.userId, t.speciesId] })]);
+
+// One row per resolved duel, inserted once and never updated. Everything else the
+// duel feature needs is derived from it at read time: the win/loss/draw record
+// (count rows on either side), the per-pair cooldown (max created_at_ms for an
+// ordered pair), and the double-accept guard for a live challenge. There is no
+// status column and nothing sweeps this table.
+//   result:   ALWAYS from the challenger's side, so no reader has to flip it.
+//   eloDelta: the challenger's signed change; the defender's is its exact negation.
+export const duels = sqliteTable('duels', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  challengerId: text('challenger_id').notNull().references(() => users.discordId),
+  defenderId: text('defender_id').notNull().references(() => users.discordId),
+  mode: text('mode', { enum: ['ghost', 'live'] }).notNull(),
+  result: text('result', { enum: ['win', 'loss', 'draw'] }).notNull(),
+  eloDelta: integer('elo_delta').notNull(),
+  createdAt: integer('created_at_ms').notNull(),
+});
