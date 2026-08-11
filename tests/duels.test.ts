@@ -3,10 +3,11 @@ import { eq } from 'drizzle-orm';
 import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
-import { duelSquad, setDuelSquad, DuelError, resolveDuel } from '../src/modules/duels/service.js';
+import { duelSquad, setDuelSquad, DuelError, resolveDuel, cooldownUntil } from '../src/modules/duels/service.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { outcomeFor } from '../src/data/battle/duel.js';
 import type { BattleResult } from '../src/data/battle/resolve.js';
+import { DUEL_PAIR_COOLDOWN_MS, DUEL_CHALLENGE_TTL_MS } from '../src/data/battle/constants.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
@@ -295,5 +296,66 @@ describe('resolveDuel', () => {
       expect(out.result).toBe(out.challengerWasSideZero ? 'win' : 'loss');
     }
     expect(seen).toEqual(new Set([true, false]));
+  });
+});
+
+describe('duel pacing', () => {
+  const weak = allSpecies().find((s) => s.rarity === 'common')!;
+  function pairWithDinos(): void {
+    getOrCreateUser(ctx, 'a', 'A');
+    getOrCreateUser(ctx, 'b', 'B');
+    addDino('a', weak.id, 0);
+    addDino('b', weak.id, 0);
+  }
+
+  it('refuses a second ghost duel against the same defender inside the window', () => {
+    pairWithDinos();
+    resolveDuel(ctx, 'a', 'b', 'ghost');
+    expect(() => resolveDuel(ctx, 'a', 'b', 'ghost')).toThrow(DuelError);
+  });
+
+  it('allows the ghost again once the window has passed', () => {
+    pairWithDinos();
+    resolveDuel(ctx, 'a', 'b', 'ghost');
+    ctx.setNow(DUEL_PAIR_COOLDOWN_MS + 1);
+    expect(() => resolveDuel(ctx, 'a', 'b', 'ghost')).not.toThrow();
+  });
+
+  // Directional: being ghosted does not stop you hitting back immediately.
+  it('lets the defender counter-attack straight away', () => {
+    pairWithDinos();
+    resolveDuel(ctx, 'a', 'b', 'ghost');
+    expect(() => resolveDuel(ctx, 'b', 'a', 'ghost')).not.toThrow();
+  });
+
+  it('counts a live duel against the pair cooldown too', () => {
+    pairWithDinos();
+    resolveDuel(ctx, 'a', 'b', 'live', DUEL_CHALLENGE_TTL_MS);
+    expect(() => resolveDuel(ctx, 'a', 'b', 'ghost')).toThrow(DuelError);
+  });
+
+  it('does not cool down the live path itself — the defender consented by clicking', () => {
+    pairWithDinos();
+    resolveDuel(ctx, 'a', 'b', 'live', DUEL_CHALLENGE_TTL_MS);
+    expect(() => resolveDuel(ctx, 'a', 'b', 'live', 2 * DUEL_CHALLENGE_TTL_MS)).not.toThrow();
+  });
+
+  // A double-clicked Accept: i.update removes the buttons, but Discord can deliver
+  // two clicks before that lands, and each would move Elo. The customId's expiry
+  // stamp is the idempotency key — no stored challenge row anywhere.
+  it('refuses a second accept of the SAME challenge', () => {
+    pairWithDinos();
+    const expiresAt = DUEL_CHALLENGE_TTL_MS;
+    resolveDuel(ctx, 'a', 'b', 'live', expiresAt);
+    expect(() => resolveDuel(ctx, 'a', 'b', 'live', expiresAt)).toThrow(/already/i);
+    expect(ctx.db.select().from(schema.duels).all()).toHaveLength(1);
+  });
+
+  it('reports when a cooled-down pair frees up, and null when it is free now', () => {
+    pairWithDinos();
+    expect(cooldownUntil(ctx, 'a', 'b')).toBeNull();
+    resolveDuel(ctx, 'a', 'b', 'ghost');
+    expect(cooldownUntil(ctx, 'a', 'b')).toBe(DUEL_PAIR_COOLDOWN_MS);
+    expect(cooldownUntil(ctx, 'b', 'a')).toBeNull();
   });
 });

@@ -8,6 +8,7 @@ import { toClockDinos } from '../park/service.js';
 import { resolveBattle, type BeatSummary, type Combatant } from '../../data/battle/resolve.js';
 import { outcomeFor, type DuelMode, type DuelResult } from '../../data/battle/duel.js';
 import { eloDelta } from '../../data/battle/elo.js';
+import { DUEL_PAIR_COOLDOWN_MS, DUEL_CHALLENGE_TTL_MS } from '../../data/battle/constants.js';
 import type { Archetype, Diet } from '../../data/types.js';
 
 export class DuelError extends Error {}
@@ -122,6 +123,40 @@ function combatants(squad: DuelSquadMember[], side: 0 | 1): Combatant[] {
 }
 
 /**
+ * When this ordered pair frees up, or null if it is free now. Derived: the newest
+ * log row for (challenger → defender) plus the window. Two unindexed table filters,
+ * filtered in SQL — the locksFor shape. Nothing sweeps, nothing is stored.
+ */
+export function cooldownUntil(ctx: Ctx, challengerId: string, defenderId: string): number | null {
+  const rows = ctx.db.select().from(schema.duels)
+    .where(and(eq(schema.duels.challengerId, challengerId), eq(schema.duels.defenderId, defenderId))).all();
+  if (!rows.length) return null;
+  const until = Math.max(...rows.map((r) => r.createdAt)) + DUEL_PAIR_COOLDOWN_MS;
+  return until > ctx.now() ? until : null;
+}
+
+/**
+ * Has this exact challenge already been accepted? A live challenge stores nothing,
+ * so its identity is the expiry instant baked into the button's customId: any live
+ * duel for this pair inside that challenge's own lifetime IS this challenge.
+ */
+function challengeAlreadyResolved(
+  ctx: Ctx, challengerId: string, defenderId: string, expiresAtMs: number,
+): boolean {
+  return ctx.db.select().from(schema.duels)
+    .where(and(
+      eq(schema.duels.challengerId, challengerId),
+      eq(schema.duels.defenderId, defenderId),
+      eq(schema.duels.mode, 'live'),
+    )).all()
+    // Inclusive lower bound: a challenge posted at t has expiresAtMs = t + TTL, so its
+    // own duel lands at exactly `expiresAtMs - TTL`. An exclusive `>` would miss the
+    // duel it is meant to detect — and at ctx.now() === 0, which is where the tests
+    // live, it misses every one of them.
+    .some((r) => r.createdAt >= expiresAtMs - DUEL_CHALLENGE_TTL_MS && r.createdAt <= expiresAtMs);
+}
+
+/**
  * Resolve one duel and commit it. Writes exactly two things — both ratings and one
  * log row — in a single transaction that closes before any Discord call, so the
  * router's "nothing was charged" error path stays honest (commit-before-present).
@@ -132,6 +167,7 @@ function combatants(squad: DuelSquadMember[], side: 0 | 1): Combatant[] {
  */
 export function resolveDuel(
   ctx: Ctx, challengerId: string, defenderId: string, mode: DuelMode,
+  challengeExpiresAtMs?: number,
 ): DuelOutcome {
   // Defence in depth: the command surfaces reject this, but a self-duel would
   // collide both squads on one finalHp key scheme AND apply both rating updates
@@ -144,6 +180,17 @@ export function resolveDuel(
   const defender = ctx.db.select().from(schema.users)
     .where(eq(schema.users.discordId, defenderId)).get();
   if (!defender) throw new DuelError('That player has no park yet.');
+
+  if (mode === 'ghost') {
+    const until = cooldownUntil(ctx, challengerId, defenderId);
+    if (until !== null) {
+      throw new DuelError(
+        `You duelled ${defender.displayName || defenderId} recently — you can again <t:${Math.floor(until / 1000)}:R>.`);
+    }
+  } else if (challengeExpiresAtMs !== undefined
+      && challengeAlreadyResolved(ctx, challengerId, defenderId, challengeExpiresAtMs)) {
+    throw new DuelError('That challenge has already been accepted.');
+  }
 
   let mySquad: DuelSquadMember[];
   try {
