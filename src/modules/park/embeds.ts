@@ -66,9 +66,17 @@ export function dashboardPayload(
 
 // Set a rendered PNG as the embed's image and attach it. Mutates the (freshly built)
 // embed in place and preserves components (e.g. the Collect button).
-export function withParkImage<T extends { embeds: EmbedBuilder[] }>(payload: T, png: Buffer): T & { files: AttachmentBuilder[] } {
+//
+// APPENDS to `files` rather than assigning. dashboardPayload now calls attach() for the
+// featured dino's thumbnail, and the old assignment would have silently dropped that
+// upload at both /park view call sites and at /help topic:park, leaving a dangling
+// attachment:// URL in the embed with no error and no failing test. park.png goes last,
+// so call order stays upload order.
+export function withParkImage<T extends { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] }>(
+  payload: T, png: Buffer,
+): T & { files: AttachmentBuilder[] } {
   payload.embeds[0].setImage('attachment://park.png');
-  return { ...payload, files: [new AttachmentBuilder(png, { name: 'park.png' })] };
+  return { ...payload, files: [...(payload.files ?? []), new AttachmentBuilder(png, { name: 'park.png' })] };
 }
 
 // No setEmoji here on purpose: rarityEmoji and friends return '' with no emoji map

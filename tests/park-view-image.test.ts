@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { AttachmentBuilder } from 'discord.js';
 import { makeCtx } from './harness.js';
 import { fakeCommand } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
@@ -16,6 +17,18 @@ describe('withParkImage', () => {
     expect(out.files).toHaveLength(1);
     expect(out.embeds[0].data.image?.url).toBe('attachment://park.png');
     expect(out.components).toBe(base.components);   // Collect button preserved
+  });
+
+  // Task 7 makes dashboardPayload call attach() for the featured dino's thumbnail.
+  // This function used to ASSIGN files, so that upload would have vanished on both
+  // /park view branches — no error, no failing test, just a dangling attachment:// URL.
+  it('keeps files the payload already carried, park.png last', () => {
+    const u = getOrCreateUser(ctx, 'a', 'A');
+    const base = dashboardPayload(u, [], 0, 0, 0);
+    const existing = new AttachmentBuilder(Buffer.from([9]), { name: 'tank-herbivore.webp' });
+    const out = withParkImage({ ...base, files: [existing] }, Buffer.from([1, 2, 3]));
+    // Call order is upload order — several tests across the suite pin files by name.
+    expect(out.files.map((f) => f.name)).toEqual(['tank-herbivore.webp', 'park.png']);
   });
 });
 
