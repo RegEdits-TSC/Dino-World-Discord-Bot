@@ -83,11 +83,17 @@ ctx.setNow(Date.now());   // real wall time so <t:...> timestamps render sensibl
 const P1 = 'live-p1', P2 = 'live-p2';
 getOrCreateUser(ctx, P1, 'LiveTester');
 getOrCreateUser(ctx, P2, 'Counterparty');
+// P2 owns no dinos otherwise (their only one sits in a pending trade offer), and a
+// duel opponent needs at least one battle-ready dino.
+ctx.db.insert(schema.dinos)
+  .values({ userId: P2, speciesId: 'triceratops', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now(), battleXp: 700 }).run();
 ctx.db.update(schema.users).set({ cash: 500_000, parkRating: TRADE_MIN_RATING, ratingHighWater: 1000, shards: 600 }).run();
 const herb = Object.keys(PADDOCKS).find((k) => PADDOCKS[k].diet === 'herbivore')!;
 const lot = buildLot(ctx, P1, herb);
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'triceratops', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
-const dino = ctx.db.select().from(schema.dinos).all()[0];
+// Filtered by owner, not a raw [0] index: P2's duel dino (seeded above) now sits
+// earlier in the table, so a bare positional index would grab the wrong player's row.
+const dino = ctx.db.select().from(schema.dinos).all().find((d) => d.userId === P1)!;
 assignDino(ctx, P1, dino.id, lot.id);
 ctx.db.insert(schema.dinos).values({ userId: P1, speciesId: 'velociraptor', hunger: 100, lastFedAt: ctx.now(), hatchedAt: ctx.now() }).run();
 const readyEgg = ctx.db.insert(schema.eggs).values({ userId: P1, rarity: 'rare', source: 'shop', obtainedAt: ctx.now() }).returning().get();
@@ -96,7 +102,8 @@ ctx.db.update(schema.eggs).set({ hatchesAt: ctx.now() - 1 }).run();   // force-r
 // Inserted AFTER the force-ready update above so this one stays un-incubated for
 // the /incubate case, which runs after hatch:crack frees the single incubator slot.
 const spareEgg = ctx.db.insert(schema.eggs).values({ userId: P1, rarity: 'epic', source: 'shop', obtainedAt: ctx.now() }).returning().get();
-const spareDino = ctx.db.select().from(schema.dinos).all()[1];
+// Same fix as `dino` above: P1's dinos only, so index 1 is still the velociraptor.
+const spareDino = ctx.db.select().from(schema.dinos).all().filter((d) => d.userId === P1)[1];
 // Gene Lab seed: build the facility, and a second Common/herbivore dino sharing
 // `dino` (triceratops)'s paddock to pair with it — same rarity, same diet, both
 // assigned, capacity 2 at level 1 so the pair fits without a second paddock. The
@@ -431,6 +438,11 @@ const cases: Case[] = [
     } },
   { title: '/splice — confirm re-roll', run: () => slash('genelab', 'splice', { name: 'splice', user: P1, options: { dino: spliceTarget.id, slot: 1 } }) },
   { title: '/battle fight — DEFEAT: lone Lv.1 squad vs the coastal boss', run: () => slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'coastal_dig_boss', dino1: weakDino.id } }) },
+  // Duels: free, so nothing here disturbs cash/energy/XP for later cases. The ghost
+  // case resolves a real fight; the challenge case posts the card without resolving
+  // anything, so the two do not trip the 6-hour pair cooldown on each other.
+  { title: '/duel ghost — resolved duel result', run: () => slash('duels', 'duel', { name: 'duel', sub: 'ghost', user: P1, options: { opponent: P2 } }) },
+  { title: '/duel challenge — challenge card with Accept/Decline', run: () => slash('duels', 'duel', { name: 'duel', sub: 'challenge', user: P1, options: { opponent: P2 } }) },
   // Run last so every stat this sweep can move (hatch, expedition claim, trade,
   // battles, breeding claim) has already been tracked by the real service calls
   // above — page 1 shows real, non-zero progress on several tracks rather than a
