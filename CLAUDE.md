@@ -676,7 +676,7 @@
   distinct decor kinds.
   `/dex view`'s `species` option and `/admin give`'s `dino-species` option both use
   `.setAutocomplete(true)` with free-text search rather than `addChoices(...allSpecies())`
-  — not a style choice. Discord's option choices cap at 25; 42 species is well past it, and
+  — not a style choice. Discord's option choices cap at 25; 52 species is well past it, and
   `addChoices` THROWS once called past that cap, at builder-construction time — i.e.
   module init, i.e. bot boot. Get this wrong and the bot never starts at all; it is a crash,
   never a degrade.
@@ -774,7 +774,7 @@
   rank built on that table would under-rank exactly the oldest, most invested players,
   the inversion the feature exists to prevent. It sums three sources that are each
   already monotone and already complete for every account instead: species discovered
-  (`dexProgress`, max 42), achievement tiers claimed (`earnedTierCount`, max 48), and
+  (`dexProgress`, max 52), achievement tiers claimed (`earnedTierCount`, max 48), and
   battle stars (`battle_progress.stars`, max 90) — 180 points total, nothing spent,
   nothing stored.
   **"Already complete for every account" is true of two of those three, and only

@@ -19,7 +19,7 @@ export function recordSpeciesSeen(ctx: Ctx, userId: string, speciesId: string): 
 
 /**
  * The player's whole seen set, in ONE query. Batch-per-user, never per-species: the
- * dex renders 42 rows and a per-id lookup would be the N+1 the escrow locks
+ * dex renders 52 rows and a per-id lookup would be the N+1 the escrow locks
  * (src/core/locks.ts) exist to forbid.
  */
 export function seenSpecies(ctx: Ctx, userId: string): Set<string> {
