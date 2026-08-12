@@ -102,6 +102,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '`/duel record [player]` — rating, win-loss-draw record and recent opponents.',
     'Rating starts at 1000 and is zero-sum: the winner takes exactly what the loser gives, so beating a much weaker player is worth almost nothing and losing to one costs a lot.',
     'You cannot ghost the same player twice within 6 hours — they can challenge you back immediately.',
+    'Accepting a challenge settles that pairing for 15 minutes — post a fresh challenge afterwards if you want another live duel with the same player.',
     '`/top metric:duels` ranks everyone by duel rating.',
   ].join('\n') },
 };

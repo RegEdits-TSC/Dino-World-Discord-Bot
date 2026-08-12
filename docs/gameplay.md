@@ -1442,4 +1442,5 @@ Duels are unlimited, with two rules. You cannot ghost the same player twice
 within 6 hours — that limit is directional, so someone who ghosted you can
 be ghosted back straight away. And accepting a challenge settles that
 pairing for a quarter of an hour: post a fresh challenge afterwards if you
-want another live duel with the same player.
+want another live duel with the same player. That limit is directional too
+— a challenge running the other way, from them to you, isn't affected.
