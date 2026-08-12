@@ -107,12 +107,21 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/dex list` | Browse every species | Optional filters: rarity, diet, archetype, page. Paginated |
 | `/dex view` | One species in detail | Autocomplete: species |
 
+## ⚔️ Duels
+
+| Command | What it does | Notes |
+| --- | --- | --- |
+| `/duel ghost` | Fight a snapshot of another player's squad | Free — no energy, no rewards. Once per opponent every 6 hours |
+| `/duel challenge` | Post a live duel challenge with Accept / Decline | Expires after 15 minutes; squads and ratings resolve when it is clicked |
+| `/duel squad` | Pick the dinos you field in duels | Up to 3. Run with no options to go back to your top three by level |
+| `/duel record` | Duel rating, win-loss-draw record and recent opponents | Add `player:` to read someone else's |
+
 ## 🏆 Progress
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/top` | Leaderboards by rating, cash, collection, legacy standing, or battle stars | Server or global scope. Up to five **Visit** buttons open the ranked players' parks |
-| `/help` | How to play, across ten topics | Run with no topic for a first-ten-minutes walkthrough |
+| `/top` | Leaderboards by rating, cash, collection, legacy standing, battle stars, or duel rating | Server or global scope. Up to five **Visit** buttons open the ranked players' parks |
+| `/help` | How to play, across **twelve** topics | Run with no topic for a first-ten-minutes walkthrough |
 
 ## ⚙️ Server settings and admin
 

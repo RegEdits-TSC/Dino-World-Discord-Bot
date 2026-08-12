@@ -30,8 +30,10 @@ bot is in.
   Discord
 - 🧬 **Breed and splice** — pair matching dinos in the Gene Lab for eggs with
   better trait odds than the wild, or gamble on a `/splice` re-roll
-- 🏆 **Climb leaderboards** — ranked by rating, cash, or collection, for your
-  server or globally
+- ⚔️ **Duel other players** — free exhibition fights, ghost or live, that move
+  nothing but a zero-sum duel rating
+- 🏆 **Climb leaderboards** — ranked by rating, cash, collection, legacy,
+  battle stars, or duel rating, for your server or globally
 - 📅 **Keep a daily streak** — roll a fresh quest board every day, claim
   milestone chests for consecutive claims, and work through twelve lifetime
   achievement tracks
@@ -118,7 +120,7 @@ other and every command fails.
 | [Contributing](CONTRIBUTING.md) | Setup, repository conventions, and how to send a change |
 
 In Discord, `/help` is the in-game version: run it with no topic for a
-first-ten-minutes walkthrough, or pass one of its ten topics for a focused guide.
+first-ten-minutes walkthrough, or pass one of its twelve topics for a focused guide.
 
 ## 🧪 Development
 
