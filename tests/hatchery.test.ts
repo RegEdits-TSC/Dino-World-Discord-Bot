@@ -140,7 +140,7 @@ describe('hatchery', () => {
     const out = hatchEgg(ctx, 'u1', egg.id);
     const dino = ctx.db.select().from(schema.dinos).all()[0];
     expect(dino.traits).toEqual(out.traits);
-    expect(out.traits).toEqual(['fleet', 'prodigy']);
+    expect(out.traits).toEqual(['glass_cannon', 'broody']);
   });
 
   it('uses the stored inheritance for a bred egg instead of rolling', () => {
@@ -161,7 +161,7 @@ describe('hatchery', () => {
     // BRED_SLOT_ODDS rolls zero traits 25% of the time and that outcome is
     // authoritative, so `source` is the discriminator, not `traits.length`.
     // Same rarity, seed and null speciesId as the wild-egg test above, whose
-    // pinned result is ['fleet', 'prodigy'] — so a re-roll here cannot come
+    // pinned result is ['glass_cannon', 'broody'] — so a re-roll here cannot come
     // back empty and this test cannot pass by accident.
     const ctx = makeCtx({ nowMs: 0, rng: mulberry32(10) });
     getOrCreateUser(ctx, 'u1', 'u1');

@@ -3,12 +3,12 @@ import {
   TRAITS, TRAIT_IDS, getTrait, traitDefs, modProduct,
   rollTraits, pickTrait, spliceTrait, WILD_SLOT_ODDS, BRED_SLOT_ODDS,
 } from '../src/data/traits.js';
-import type { TraitMods } from '../src/data/traits.js';
+import type { TraitMods, TraitDomain } from '../src/data/traits.js';
 import { mulberry32 } from './harness.js';
 
 describe('trait table', () => {
-  it('has 14 traits across 4 domains', () => {
-    expect(TRAIT_IDS).toHaveLength(14);
+  it('has 20 traits across 4 domains', () => {
+    expect(TRAIT_IDS).toHaveLength(20);
     expect(new Set(TRAIT_IDS.map((id) => TRAITS[id].domain)))
       .toEqual(new Set(['income', 'care', 'combat', 'meta']));
   });
@@ -65,6 +65,50 @@ describe('pickTrait', () => {
 
   it('returns null when every domain is excluded', () => {
     expect(pickTrait(mulberry32(1), new Set(['income', 'care', 'combat', 'meta']))).toBeNull();
+  });
+});
+
+describe('domain draw parity', () => {
+  const DOMAINS = ['income', 'care', 'combat', 'meta'] as const;
+  // 20,000 draws at ±1 percentage point. The bound has to discriminate the failure it
+  // exists to catch: one domain going 5/20 -> 4/20 or 6/20 moves that share by 5 points,
+  // so ±1 catches it with wide margin while sampling error at this N stays under a third
+  // of a point. A loose tolerance on a large N cannot tell 5/20 from 4/20; a tight one on
+  // a small N is merely flaky.
+  const DRAWS = 20_000;
+  const TOLERANCE = 0.01;
+
+  const shares = (exclude: Set<TraitDomain>, seed: number) => {
+    const rng = mulberry32(seed);
+    const counts = new Map<TraitDomain, number>(DOMAINS.map((d) => [d, 0] as [TraitDomain, number]));
+    for (let i = 0; i < DRAWS; i++) {
+      const picked = pickTrait(rng, exclude);
+      const domain = TRAITS[picked!].domain;
+      counts.set(domain, counts.get(domain)! + 1);
+    }
+    return counts;
+  };
+
+  it('holds the same number of traits in every domain', () => {
+    const sizes = DOMAINS.map((d) => TRAIT_IDS.filter((id) => TRAITS[id].domain === d).length);
+    expect(new Set(sizes).size, `domain sizes are ${sizes.join('/')}`).toBe(1);
+  });
+
+  it('draws every domain a quarter of the time with nothing excluded', () => {
+    const counts = shares(new Set<TraitDomain>(), 99);
+    for (const d of DOMAINS) {
+      const share = counts.get(d)! / DRAWS;
+      expect(Math.abs(share - 0.25), `${d} drew ${counts.get(d)} of ${DRAWS}`).toBeLessThanOrEqual(TOLERANCE);
+    }
+  });
+
+  it('draws every survivor a third of the time with one domain excluded', () => {
+    const counts = shares(new Set<TraitDomain>(['combat']), 101);
+    expect(counts.get('combat')).toBe(0);
+    for (const d of DOMAINS.filter((d) => d !== 'combat')) {
+      const share = counts.get(d)! / DRAWS;
+      expect(Math.abs(share - 1 / 3), `${d} drew ${counts.get(d)} of ${DRAWS}`).toBeLessThanOrEqual(TOLERANCE);
+    }
   });
 });
 
