@@ -7,7 +7,7 @@ import { getSpecies } from '../../data/species/index.js';
 import { getOrCreateUser } from '../park/service.js';
 import { recomputeRating } from '../park/rating.js';
 import { settleEscapes } from '../park/escapes.js';
-import { ENERGY_CAP } from '../../data/battle/constants.js';
+import { ENERGY_CAP, DUEL_START_RATING } from '../../data/battle/constants.js';
 import { recordSpeciesSeen } from '../../core/species-seen.js';
 
 export class AdminError extends Error {}
@@ -75,6 +75,13 @@ export function adminReset(ctx: Ctx, targetId: string): void {
     // surviving species_seen row would leave a "fresh" account with a partly complete
     // dex. Unlike alertsEnabled below, this is progress, not communication consent.
     ctx.db.delete(schema.speciesSeen).where(eq(schema.speciesSeen.userId, targetId)).run();
+    // Two-sided, like trades: a one-sided delete would leave the opponent's row naming
+    // a wiped account and holding a live pair cooldown against a park that no longer
+    // exists. The columns below matter as much as the rows: SQLite reuses row ids after
+    // a delete, so a surviving duel_squad could silently field dinos this account
+    // hatches next — the same argument the featuredDinoId comment makes.
+    ctx.db.delete(schema.duels)
+      .where(or(eq(schema.duels.challengerId, targetId), eq(schema.duels.defenderId, targetId))).run();
     // alertsEnabled is deliberately NOT reset. Every other column here is progress or a
     // cosmetic default; this one is communication consent. Restoring it would start
     // DMing a player who explicitly opted out.
@@ -90,6 +97,7 @@ export function adminReset(ctx: Ctx, targetId: string): void {
       energy: ENERGY_CAP, energyUpdatedAt: ctx.now(),
       questStreak: 0, questStreakBest: 0, lastQuestClaimAt: 0, landmarkTier: 0,
       motto: '', featuredDinoId: null,
+      duelRating: DUEL_START_RATING, duelSquad: [],
     }).where(eq(schema.users.discordId, targetId)).run();
     ctx.db.delete(schema.foodInventory).where(eq(schema.foodInventory.userId, targetId)).run();
     for (const [foodId, qty] of Object.entries(STARTER_FOOD)) {
@@ -139,6 +147,15 @@ export function adminFastForward(ctx: Ctx, targetId: string, hours: number): num
     }).where(eq(schema.expeditions.userId, targetId)).run();
     ctx.db.update(schema.timers).set({ firesAt: sql`${schema.timers.firesAt} - ${shift}` })
       .where(and(eq(schema.timers.userId, targetId), isNull(schema.timers.handledAt))).run();
+    // The duel log is history AND the only anchor of the pair cooldown, which is what
+    // separates it from species_seen.first_at_ms above: leaving it unshifted would make
+    // the one time-gated rule in the duel feature untestable by this tool. Shifting it
+    // moves the displayed timestamps in /duel record — accepted, exactly as this tool
+    // already moves lastFedAt. A duel row is two-sided, so shifting "this player's" rows
+    // also lapses the opponent's cooldown against them, which is correct: the cooldown
+    // is a property of the pair.
+    ctx.db.update(schema.duels).set({ createdAt: sql`${schema.duels.createdAt} - ${shift}` })
+      .where(or(eq(schema.duels.challengerId, targetId), eq(schema.duels.defenderId, targetId))).run();
   });
   return settleEscapes(ctx, targetId).length;
 }
