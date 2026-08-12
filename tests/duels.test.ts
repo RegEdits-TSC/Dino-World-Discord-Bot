@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
+import { MessageFlags } from 'discord.js';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
@@ -504,7 +505,20 @@ describe('/duel ghost', () => {
     await run('a', 'b');
     const i = await run('a', 'b');
     expect(replyText(i.replies[0])).toMatch(/recently/i);
-    expect((i.replies[0] as { flags?: number }).flags).toBeDefined();
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+
+  // The module's own getOrCreateUser is what makes a first-time caller work at all.
+  // Without it, resolveDuel's challenger lookup would answer "You have no park yet."
+  // to someone whose real problem is owning no dinos — and no other test would notice,
+  // because they all pre-seed the caller.
+  it('creates the caller\'s park row on first use', async () => {
+    getOrCreateUser(ctx, 'b', 'B');
+    addDino('b', weak.id, 0);
+    const i = await run('newcomer', 'b');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'newcomer')).get())
+      .toBeDefined();
+    expect(replyText(i.replies[0])).toMatch(/hatch or rescue/i);
   });
 });
 
