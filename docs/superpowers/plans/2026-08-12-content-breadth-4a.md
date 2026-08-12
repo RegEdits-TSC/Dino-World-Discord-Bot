@@ -44,7 +44,9 @@ Every task's requirements implicitly include all of these.
 
 ## Task 1: Roster registration integrity guard (G-2)
 
-A duplicated species `id` is deduped by `REGISTRY` (a `Map`) but **not** by `speciesByRarity`, which filters the raw `ALL` array. `rollSpeciesInRarity` can then return the shadowed object while `hatchEgg` stores only `species.id`, and every later read resolves that id back to the *other* object — a dino whose diet, biome, art and battle stats disagree with the species that was rolled. Nothing in the suite reads `ALL`.
+A duplicated species `id` is deduped by `REGISTRY` (a `Map`) but **not** by `speciesByRarity`, which filters the raw `ALL` array. `rollSpeciesInRarity` can then return the shadowed object while `hatchEgg` stores only `species.id`, and every later read resolves that id back to the *other* object — a dino whose diet, biome, art and battle stats disagree with the species that was rolled.
+
+The existing `'matches the per-tier distribution'` test reaches `ALL` indirectly through `speciesByRarity`, so it does catch a *bare* duplicate — but only while `EXPECTED`'s sum still agrees with the roster literal two tests above it. Those are two independently-maintained numbers, and this very plan edits both in Task 2. Verified: duplicate a species and both tests fail; duplicate it and adjust `EXPECTED` to match, and only the new guard fires.
 
 `ALL` is module-private, so the guard compares the sum of the per-tier pools (which read `ALL`) against `allSpecies()` (which reads the Map). That is exactly the split, with no source change.
 

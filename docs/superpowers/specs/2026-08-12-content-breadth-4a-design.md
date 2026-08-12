@@ -310,7 +310,13 @@ archetype multipliers, `dexEntry`, `collectionScore`, `assetImage`) resolves tha
 id back through `getSpecies` to the *other* object. A copy-pasted species file
 with an un-renamed id ships a dino whose diet, biome, art and battle stats
 disagree with the species that was actually rolled, with no error anywhere.
-Nothing in the suite reads `ALL` directly today.
+Nothing in the suite reads `ALL` directly today — `ALL` is module-private. It is
+reached *indirectly* by `'matches the per-tier distribution'` via
+`speciesByRarity`, which catches a bare duplicate, but only for as long as
+`EXPECTED`'s sum agrees with the roster-size literal in the test above it. Those
+are two independently-maintained numbers, and this spec moves both. G-2 is what
+ties them together: with a duplicate present and `EXPECTED` adjusted to match,
+the per-tier test goes green again and G-2 is the only assertion left standing.
 
 **G-3 · Biome × rarity span.** Every non-containment biome holds ≥1 species at
 common, uncommon, rare and epic. Turns this spec's thesis into a machine-checked
