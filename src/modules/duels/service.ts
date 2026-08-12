@@ -1,4 +1,4 @@
-import { and, eq, or } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { getSpecies } from '../../data/species/index.js';
@@ -276,5 +276,51 @@ export function resolveDuel(
     beats: battle.beats, rounds: battle.rounds,
     challengerWasSideZero,
     defenderAlertsEnabled: defender.alertsEnabled,
+  };
+}
+
+export interface DuelRecordEntry {
+  opponentId: string; opponentName: string; result: DuelResult;
+  eloDelta: number; at: number; mode: DuelMode;
+}
+export interface DuelRecord {
+  rating: number; wins: number; losses: number; draws: number; recent: DuelRecordEntry[];
+}
+
+const FLIP: Record<DuelResult, DuelResult> = { win: 'loss', loss: 'win', draw: 'draw' };
+
+/**
+ * Everything but the rating is derived by counting log rows. Two reads total —
+ * the log, then one batched lookup of the opponents' display names — never one
+ * query per row (the batch-per-board rule from src/modules/leaderboards/service.ts).
+ */
+export function duelRecord(ctx: Ctx, userId: string, limit = 5): DuelRecord {
+  const user = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get();
+  if (!user) throw new DuelError('That player has no park yet.');
+  const rows = ctx.db.select().from(schema.duels)
+    .where(or(eq(schema.duels.challengerId, userId), eq(schema.duels.defenderId, userId))).all();
+  // Stored result and delta are always the CHALLENGER's, so a row where this reader
+  // defended is flipped exactly once, here.
+  const mine = rows.map((r) => {
+    const asChallenger = r.challengerId === userId;
+    return {
+      opponentId: asChallenger ? r.defenderId : r.challengerId,
+      result: asChallenger ? r.result : FLIP[r.result],
+      eloDelta: asChallenger ? r.eloDelta : -r.eloDelta,
+      at: r.createdAt, mode: r.mode,
+    };
+  }).sort((a, b) => b.at - a.at);
+  const recentRaw = mine.slice(0, Math.max(0, limit));
+  const opponentIds = [...new Set(recentRaw.map((r) => r.opponentId))];
+  const names = new Map(opponentIds.length
+    ? ctx.db.select().from(schema.users).where(inArray(schema.users.discordId, opponentIds)).all()
+        .map((u) => [u.discordId, u.displayName || u.discordId])
+    : []);
+  return {
+    rating: user.duelRating,
+    wins: mine.filter((r) => r.result === 'win').length,
+    losses: mine.filter((r) => r.result === 'loss').length,
+    draws: mine.filter((r) => r.result === 'draw').length,
+    recent: recentRaw.map((r) => ({ ...r, opponentName: names.get(r.opponentId) ?? r.opponentId })),
   };
 }

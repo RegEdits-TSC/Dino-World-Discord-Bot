@@ -6,10 +6,10 @@ import { matches, respondRanked, emptyRow } from '../../core/autocomplete.js';
 import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
 import {
-  resolveDuel, requireDuellable, duelSquad, setDuelSquad, eligibleForDuel, DuelError,
+  resolveDuel, requireDuellable, duelSquad, setDuelSquad, eligibleForDuel, duelRecord, DuelError,
   type DuelSquadMember,
 } from './service.js';
-import { duelResultPayload, challengePayload, DUEL_PREFIX } from './embeds.js';
+import { duelResultPayload, challengePayload, recordPayload, DUEL_PREFIX } from './embeds.js';
 import { DUEL_CHALLENGE_TTL_MS } from '../../data/battle/constants.js';
 
 export const duelsModule: ModuleManifest = {
@@ -24,7 +24,9 @@ export const duelsModule: ModuleManifest = {
         .addSubcommand((s) => s.setName('squad').setDescription('Set the squad you field in duels — leave blank to clear')
           .addIntegerOption((o) => o.setName('dino1').setDescription('Squad slot 1').setAutocomplete(true))
           .addIntegerOption((o) => o.setName('dino2').setDescription('Squad slot 2').setAutocomplete(true))
-          .addIntegerOption((o) => o.setName('dino3').setDescription('Squad slot 3').setAutocomplete(true))),
+          .addIntegerOption((o) => o.setName('dino3').setDescription('Squad slot 3').setAutocomplete(true)))
+        .addSubcommand((s) => s.setName('record').setDescription('Duel rating, record and recent opponents')
+          .addUserOption((o) => o.setName('player').setDescription('Whose record — defaults to yours'))),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         const sub = i.options.getSubcommand();
@@ -40,6 +42,30 @@ export const duelsModule: ModuleManifest = {
                 : `⚔️ Duel squad cleared — duels now field your top three automatic picks: ${squad.map((m) => m.name).join(', ')}.`,
               flags: MessageFlags.Ephemeral,
             });
+          } catch (e) {
+            if (e instanceof DuelError) {
+              await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+              return;
+            }
+            throw e;
+          }
+          return;
+        }
+        if (sub === 'record') {
+          const who = i.options.getUser('player');
+          const targetId = who?.id ?? i.user.id;
+          try {
+            const record = duelRecord(ctx, targetId);
+            // The DB row's displayName, not the Discord option's — the same "resolve the
+            // shown name from our own stored copy" rule visitPayload follows for /park
+            // view user:. The fake-command harness only echoes the raw id as a User
+            // option's displayName, so trusting who.displayName would also show the
+            // caller's own snowflake instead of the name getOrCreateUser recorded.
+            const name = who
+              ? ctx.db.select().from(schema.users).where(eq(schema.users.discordId, targetId)).get()!.displayName
+                || targetId
+              : i.user.displayName;
+            await i.reply(recordPayload(name, record));
           } catch (e) {
             if (e instanceof DuelError) {
               await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });

@@ -1,6 +1,6 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type AttachmentBuilder } from 'discord.js';
 import { assetImage, attach } from '../../core/images.js';
-import type { DuelOutcome, DuelSquadMember } from './service.js';
+import type { DuelOutcome, DuelRecord, DuelSquadMember } from './service.js';
 
 // The component prefix AND the first segment of every customId this module mints.
 // Component routing is exact equality on that first segment, so both must come from
@@ -81,4 +81,26 @@ export function challengePayload(
       .setLabel('Decline').setStyle(ButtonStyle.Secondary),
   );
   return { embeds: [embed], components: [row] };
+}
+
+/**
+ * The derived record: rating plus a win/loss/draw count and the most recent
+ * duels, each already flipped to this reader's own perspective by duelRecord.
+ * A showcase surface — public, like /top — so a DuelError reject stays
+ * ephemeral at the command layer instead of reaching this payload at all.
+ */
+export function recordPayload(name: string, record: DuelRecord): DuelPayload {
+  const history = record.recent.length
+    ? record.recent.map((r) => {
+        const mark = r.result === 'win' ? '✅' : r.result === 'loss' ? '❌' : '➖';
+        const sign = r.eloDelta > 0 ? `+${r.eloDelta}` : String(r.eloDelta);
+        return `${mark} vs ${r.opponentName} — ${sign} (${r.mode})`;
+      }).join('\n')
+    : 'No duels yet.';
+  const embed = new EmbedBuilder().setColor(CHALLENGE)
+    .setTitle(`⚔️ ${name} — duel record`)
+    // Elo is a plain integer. Never divide it: only parkRating is stored ×100.
+    .setDescription(`**${record.rating}** rating\n${record.wins}W / ${record.losses}L / ${record.draws}D`)
+    .addFields({ name: 'Recent duels', value: history });
+  return { embeds: [embed], components: [] };
 }

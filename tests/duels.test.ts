@@ -5,7 +5,7 @@ import type { ButtonInteraction } from 'discord.js';
 import { makeCtx, fakeCommand, fakeButton, fakeAutocomplete, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
-import { duelSquad, setDuelSquad, DuelError, resolveDuel, cooldownUntil } from '../src/modules/duels/service.js';
+import { duelSquad, setDuelSquad, DuelError, resolveDuel, cooldownUntil, duelRecord } from '../src/modules/duels/service.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { outcomeFor } from '../src/data/battle/duel.js';
 import type { BattleResult } from '../src/data/battle/resolve.js';
@@ -707,6 +707,65 @@ describe('/duel squad', () => {
     await duelsModule.commands[0].autocomplete!(ctx, i.asAutocomplete());
     expect(i.replies[0]).toEqual([]);
     expect(ctx.db.select().from(schema.users).all()).toEqual([]);
+  });
+});
+
+describe('/duel record', () => {
+  const weak = allSpecies().find((s) => s.rarity === 'common')!;
+
+  function logRow(challengerId: string, defenderId: string, result: 'win' | 'loss' | 'draw', delta: number, at: number) {
+    ctx.db.insert(schema.duels)
+      .values({ challengerId, defenderId, mode: 'ghost', result, eloDelta: delta, createdAt: at }).run();
+  }
+
+  it('counts both sides of the log from the reader\'s perspective', () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    logRow('a', 'b', 'win', 16, 1);      // a won
+    logRow('b', 'a', 'win', 12, 2);      // a lost
+    logRow('b', 'a', 'draw', 0, 3);      // drew
+    logRow('b', 'a', 'loss', -9, 4);     // a won (challenger b lost)
+    const rec = duelRecord(ctx, 'a');
+    expect({ wins: rec.wins, losses: rec.losses, draws: rec.draws }).toEqual({ wins: 2, losses: 1, draws: 1 });
+  });
+
+  it('negates the stored delta when the reader was the defender', () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    logRow('b', 'a', 'win', 20, 1);
+    const rec = duelRecord(ctx, 'a');
+    expect(rec.recent[0].eloDelta).toBe(-20);
+    expect(rec.recent[0].result).toBe('loss');
+    expect(rec.recent[0].opponentName).toBe('B');
+  });
+
+  it('returns the newest duels first, capped at the limit', () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    for (let n = 1; n <= 8; n++) logRow('a', 'b', 'win', 1, n);
+    const rec = duelRecord(ctx, 'a', 5);
+    expect(rec.recent).toHaveLength(5);
+    expect(rec.recent.map((r) => r.at)).toEqual([8, 7, 6, 5, 4]);
+  });
+
+  it('reads a fresh account as 1000 and an empty history', () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    const rec = duelRecord(ctx, 'a');
+    expect(rec).toMatchObject({ rating: 1000, wins: 0, losses: 0, draws: 0 });
+    expect(rec.recent).toEqual([]);
+  });
+
+  it('renders another player\'s record when asked', async () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    addDino('b', weak.id, 0);
+    const i = fakeCommand({ name: 'duel', sub: 'record', user: 'a', options: { player: 'b' } });
+    await duelsModule.commands[0].execute(ctx, i.asChatInput());
+    const embed = (i.replies[0] as { embeds: Array<{ toJSON(): { title?: string } }> }).embeds[0].toJSON();
+    expect(embed.title).toContain('B');
+  });
+
+  it('refuses a player with no park row', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    const i = fakeCommand({ name: 'duel', sub: 'record', user: 'a', options: { player: 'stranger' } });
+    await duelsModule.commands[0].execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toMatch(/no park yet/i);
   });
 });
 
