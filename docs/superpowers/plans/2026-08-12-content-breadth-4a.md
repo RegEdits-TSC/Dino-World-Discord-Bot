@@ -736,7 +736,16 @@ The fixture itself (`allSpecies().slice(0, 35)`, `:245`) is safe under the appen
 
 - `src/modules/dex/index.ts:29` — "42 species exceeds Discord's 25-choice cap" → `52 species`. The claim stays true; only the number is stale.
 - `src/core/species-seen.ts:22` — "the dex renders 42 rows" → `52 rows`.
-- `src/modules/park/ranks.ts:26-28` — the ceiling comment "42 species + 48 achievement tiers + 90 battle stars = 180 today" → `52 … = 190 today`.
+- `src/modules/park/ranks.ts:26-28` — the ceiling comment. Its numbers go `42 … = 180` → `52 … = 190`, **and its final sentence must record the decision**. It currently reads "New content must move this, or the top rank silently drifts from 'nearly everything' to 'a fraction of it'." That instruction was deliberately not followed (spec §8), so left as-is the comment describes a hazard the code just walked into and reads as an outstanding bug. Replace that sentence with:
+
+```
+ * Director has slid from 94.4% of the ceiling to 89.5% because LEGACY_TIERS was
+ * deliberately NOT retuned: nothing persists an earned rank, so raising a threshold
+ * demotes live players on their next /park view and contradicts docs/gameplay.md's
+ * promise that nothing can ever be lost. Discharging this needs a monotone
+ * users.legacyRankBest, not a threshold edit. See the 4a spec, section 8.
+```
+
 - `src/modules/park/ranks.ts:14` — the threshold percentages. `LEGACY_TIERS` is unchanged, so against the new 190 ceiling they become `7.9 / 18.4 / 34.2 / 52.6 / 73.7 / 89.5%`.
 
 - [ ] **Step 7: Update the repo CLAUDE.md**
