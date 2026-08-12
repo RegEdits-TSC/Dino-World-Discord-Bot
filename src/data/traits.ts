@@ -31,7 +31,7 @@ export const TRAITS: Record<TraitId, TraitDef> = {
   prolific:    { id: 'prolific',    name: 'Prolific',    domain: 'income', polarity: 'positive', blurb: '+15% income',                 emoji: 'dw_trait_income', fallback: '💰', mods: { income: 1.15 } },
   runt:        { id: 'runt',        name: 'Runt',        domain: 'income', polarity: 'negative', blurb: '-10% income',                 emoji: 'dw_trait_income', fallback: '💰', mods: { income: 0.90 } },
   grazer:      { id: 'grazer',      name: 'Grazer',      domain: 'income', polarity: 'mixed',    blurb: '+20% income, +20% hunger drain', emoji: 'dw_trait_income', fallback: '💰', mods: { income: 1.20, drain: 1.20 } },
-  crowd_pleaser:{ id: 'crowd_pleaser',name: 'Crowd-Pleaser',domain: 'income', polarity: 'positive', blurb: '+25% income',                emoji: 'dw_trait_income', fallback: '💰', mods: { income: 1.25 } },
+  crowd_pleaser: { id: 'crowd_pleaser', name: 'Crowd-Pleaser', domain: 'income', polarity: 'positive', blurb: '+25% income',                 emoji: 'dw_trait_income', fallback: '💰', mods: { income: 1.25 } },
   docile:      { id: 'docile',      name: 'Docile',      domain: 'income', polarity: 'positive', blurb: '+10% income, -10% hunger drain', emoji: 'dw_trait_income', fallback: '💰', mods: { income: 1.10, drain: 0.90 } },
 
   hardy:       { id: 'hardy',       name: 'Hardy',       domain: 'care',   polarity: 'positive', blurb: '-25% hunger drain',           emoji: 'dw_trait_care',   fallback: '🌿', mods: { drain: 0.75 } },

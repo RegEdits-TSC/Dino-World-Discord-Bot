@@ -67,8 +67,9 @@ describe('legacyRank', () => {
   // Species alone caps at allSpecies().length (52) and achievement claims cap at
   // ACHIEVEMENTS' 48 tiers — together exactly 100, which reaches Warden but neither
   // Conservator (140) nor Director (170). The brief's original threshold test seeded
-  // points from species alone and skipped asserting on any threshold above 42 entirely,
-  // so three of the six tiers (Warden, Conservator, Director) were NEVER exercised.
+  // points from species alone and skipped asserting on any threshold above the
+  // then-42-species cap entirely, so three of the six tiers (Warden, Conservator,
+  // Director) were NEVER exercised.
   // Seeding across all three point sources (species, achievement claims, battle stars —
   // the same three legacyPoints reads) reaches all 190 possible points, so every
   // threshold is reachable and gets an exact assertion below.

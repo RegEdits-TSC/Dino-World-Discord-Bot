@@ -71,10 +71,15 @@ describe('pickTrait', () => {
 describe('domain draw parity', () => {
   const DOMAINS = ['income', 'care', 'combat', 'meta'] as const;
   // 20,000 draws at ±1 percentage point. The bound has to discriminate the failure it
-  // exists to catch: one domain going 5/20 -> 4/20 or 6/20 moves that share by 5 points,
-  // so ±1 catches it with wide margin while sampling error at this N stays under a third
-  // of a point. A loose tolerance on a large N cannot tell 5/20 from 4/20; a tight one on
-  // a small N is merely flaky.
+  // exists to catch — but "one domain going 5/20 -> 4/20 or 6/20 moves that share by 5
+  // points" is only exact for a REASSIGNMENT that holds the table at 20 traits; adding
+  // or removing a trait moves the denominator too. The real figures: adding one trait to
+  // a domain moves it 25% -> 28.57% (3.57 pp) and each other domain to 23.81% (1.19 pp);
+  // removing one moves it to 21.05% (3.95 pp) and the others to 26.32% (1.32 pp). The
+  // guard still fires in every case, but the true worst-case margin is the unchanged
+  // domains' 1.19 pp against this 1.00 pp bound, not the changed domain's much wider
+  // 3.57 pp. Sampling error at this N stays under a third of a point. A loose tolerance
+  // on a large N cannot tell 5/20 from 4/20; a tight one on a small N is merely flaky.
   const DRAWS = 20_000;
   const TOLERANCE = 0.01;
 

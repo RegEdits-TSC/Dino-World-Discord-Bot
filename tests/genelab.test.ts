@@ -389,7 +389,7 @@ describe('claimBreeding', () => {
 
   it('stores the inherited traits on the egg and on the claimed row', () => {
     // Constant 0.5: no upgrade (0.5 >= 0.10), one slot, and the inherit branch
-    // draws pool[1]. A mutation would draw TRAIT_IDS[7] = 'savage' instead.
+    // draws pool[1]. A mutation would draw TRAIT_IDS[10] = 'savage' instead.
     const ctx = makeCtx({ nowMs: 0, rng: () => 0.5 });
     const lot = park(ctx);
     const a = dino(ctx, { lotId: lot.id, traits: ['hardy'] });

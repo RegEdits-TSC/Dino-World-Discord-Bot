@@ -295,8 +295,9 @@ before you start hatching: 24 species are herbivores and 28 are carnivores.
 
 Since the species inside a hatched egg is a flat pick across its rarity's pool
 (see above), adding a species to a tier dilutes every other species in that
-tier's odds — the Uncommon tier grew from 8 to 9 species, so each existing
-Uncommon dropped from a 1-in-8 to a 1-in-9 chance per hatch.
+tier's odds — the Common tier grew from 8 to 13 species, so each existing
+Common's chance per hatch fell from 1-in-8 to 1-in-13, a 38.5% drop in that
+species' own share.
 
 | Species | Rarity | Diet |
 | --- | --- | --- |
@@ -308,6 +309,11 @@ Uncommon dropped from a 1-in-8 to a 1-in-9 chance per hatch.
 | Othnielia | Common | herbivore |
 | Microceratus | Common | herbivore |
 | Nasutoceratops | Common | herbivore |
+| Henodus | Common | herbivore |
+| Thescelosaurus | Common | herbivore |
+| Hesperornis | Common | carnivore |
+| Lesothosaurus | Common | herbivore |
+| Leaellynasaura | Common | herbivore |
 | Stegosaurus | Uncommon | herbivore |
 | Parasaurolophus | Uncommon | herbivore |
 | Dilophosaurus | Uncommon | carnivore |
@@ -317,6 +323,7 @@ Uncommon dropped from a 1-in-8 to a 1-in-9 chance per hatch.
 | Ouranosaurus | Uncommon | herbivore |
 | Archelon | Uncommon | carnivore |
 | Cryolophosaurus | Uncommon | carnivore |
+| Massospondylus | Uncommon | herbivore |
 | Velociraptor | Rare | carnivore |
 | Carnotaurus | Rare | carnivore |
 | Baryonyx | Rare | carnivore |
@@ -326,6 +333,7 @@ Uncommon dropped from a 1-in-8 to a 1-in-9 chance per hatch.
 | Elasmosaurus | Rare | carnivore |
 | Tylosaurus | Rare | carnivore |
 | Nanuqsaurus | Rare | carnivore |
+| Pteranodon | Rare | carnivore |
 | Brachiosaurus | Epic | herbivore |
 | Spinosaurus | Epic | carnivore |
 | Therizinosaurus | Epic | herbivore |
@@ -334,6 +342,9 @@ Uncommon dropped from a 1-in-8 to a 1-in-9 chance per hatch.
 | Ankylodocus | Epic | herbivore |
 | Scorpios rex | Epic | carnivore |
 | Stegoceratops | Epic | herbivore |
+| Deinosuchus | Epic | carnivore |
+| Sinosaurus | Epic | carnivore |
+| Pachyrhinosaurus | Epic | herbivore |
 | Tyrannosaurus | Legendary | carnivore |
 | Mosasaurus | Legendary | carnivore |
 | Quetzalcoatlus | Legendary | carnivore |
@@ -342,16 +353,6 @@ Uncommon dropped from a 1-in-8 to a 1-in-9 chance per hatch.
 | Indominus rex | Mythic | carnivore |
 | Indoraptor | Mythic | carnivore |
 | Ultimasaurus | Mythic | carnivore |
-| Henodus | Common | herbivore |
-| Thescelosaurus | Common | herbivore |
-| Hesperornis | Common | carnivore |
-| Lesothosaurus | Common | herbivore |
-| Leaellynasaura | Common | herbivore |
-| Massospondylus | Uncommon | herbivore |
-| Pteranodon | Rare | carnivore |
-| Deinosuchus | Epic | carnivore |
-| Sinosaurus | Epic | carnivore |
-| Pachyrhinosaurus | Epic | herbivore |
 
 ## 7. Care
 
@@ -1186,10 +1187,11 @@ locked — and the Gene Lab slot occupied — until you claim it:
 | Legendary | 40,000 | 36 h |
 
 Mythics can't be paired at all, so there's no Mythic row. If either parent
-carries the Fertile trait (-25% breeding time), the pairing gets the
-shorter of the two parents' times — Fertile on just one side is enough.
-Because the shorter time wins, a trait that *lengthened* breeding would do nothing
-unless both parents carried it — which is why none exists.
+carries a breeding-time trait — Fertile (-25%), Broody (-40%), or Matriarch
+(-30%) — the pairing gets the shorter of the two parents' times; any one of
+the three on just one side is enough. Because the shorter time wins, a trait
+that *lengthened* breeding would do nothing unless both parents carried it —
+which is why none exists.
 
 ### Cooldown
 
