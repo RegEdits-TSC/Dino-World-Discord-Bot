@@ -684,6 +684,24 @@ describe('/duel squad', () => {
     expect(values).not.toContain(escaped);
   });
 
+  // The same guarantee /battle fight's provider is tested for: a dino already chosen in
+  // another slot must not be offered again, or a player can field the same dino twice
+  // and setDuelSquad rejects the whole command at the end.
+  it('does not offer a dino already picked in another slot', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    const first = addDino('a', weak.id, 0);
+    const second = addDino('a', weak.id, 0);
+    const i = fakeAutocomplete({
+      name: 'duel', sub: 'squad', user: 'a',
+      focused: { name: 'dino2', value: '' },
+      options: { dino1: first },
+    });
+    await duelsModule.commands[0].autocomplete!(ctx, i.asAutocomplete());
+    const values = (i.replies[0] as Array<{ value: number }>).map((c) => c.value);
+    expect(values).toContain(second);
+    expect(values).not.toContain(first);
+  });
+
   it('responds with an empty list for a player who has no park row', async () => {
     const i = fakeAutocomplete({ name: 'duel', sub: 'squad', user: 'nobody', focused: { name: 'dino1', value: '' } });
     await duelsModule.commands[0].autocomplete!(ctx, i.asAutocomplete());
