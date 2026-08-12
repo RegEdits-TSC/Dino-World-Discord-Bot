@@ -19,6 +19,7 @@ function metricLabel(metric: Metric): string {
     collection: '🦕 Collection',
     legacy: '🏛️ Legacy',
     stars: '⭐ Battle Stars',
+    duels: '⚔️ Duel Rating',
   }[metric];
 }
 function formatValue(metric: Metric, value: number): string {
@@ -50,6 +51,7 @@ export const leaderboardsModule: ModuleManifest = {
             { name: 'collection', value: 'collection' },
             { name: 'legacy', value: 'legacy' },
             { name: 'stars', value: 'stars' },
+            { name: 'duels', value: 'duels' },
           ))
         .addStringOption((o) => o.setName('scope').setDescription('server or global')
           .addChoices({ name: 'server', value: 'server' }, { name: 'global', value: 'global' })),
