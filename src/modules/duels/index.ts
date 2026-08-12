@@ -6,7 +6,7 @@ import { matches, respondRanked, emptyRow } from '../../core/autocomplete.js';
 import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
 import {
-  resolveDuel, requireDuellable, duelSquad, setDuelSquad, eligibleForDuel, duelRecord, DuelError,
+  resolveDuel, requireDuellable, duelSquad, setDuelSquad, eligibleForDuel, duelRecord, notifyDefender, DuelError,
   type DuelSquadMember,
 } from './service.js';
 import { duelResultPayload, challengePayload, recordPayload, DUEL_PREFIX } from './embeds.js';
@@ -91,7 +91,12 @@ export const duelsModule: ModuleManifest = {
           settleEscapes(ctx, i.user.id);
           try {
             if (sub === 'ghost') {
-              await i.reply(duelResultPayload(resolveDuel(ctx, i.user.id, target.id, 'ghost')));
+              const outcome = resolveDuel(ctx, i.user.id, target.id, 'ghost');
+              await i.reply(duelResultPayload(outcome));
+              // After the reply: the duel is already committed, so a failed
+              // notification must not cost the player their result. ctx.notify never
+              // throws.
+              await notifyDefender(ctx, outcome, i.guildId);
               return;
             }
             // A challenge stores NOTHING: the squads and both ratings resolve when the

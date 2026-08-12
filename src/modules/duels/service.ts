@@ -279,6 +279,31 @@ export function resolveDuel(
   };
 }
 
+/**
+ * Tell the absent defender their park fought. Ghost duels only — a live duel's
+ * defender clicked Accept and is looking at the result.
+ *
+ * A plain string, deliberately: Ctx.notify's third parameter is typed `message:
+ * string`, and widening it to NotifyPayload is a three-site change (the Ctx
+ * interface plus two independent spellings in tests/harness.ts) that only
+ * `npm run typecheck` catches. One line of text is not worth it.
+ *
+ * originGuildId is the ATTACKER's guild — channel-first with the ping, DM fallback,
+ * the trading precedent. The defender's own guild is never consulted.
+ */
+export async function notifyDefender(
+  ctx: Ctx, outcome: DuelOutcome, originGuildId: string | null,
+): Promise<void> {
+  if (outcome.mode !== 'ghost' || !outcome.defenderAlertsEnabled) return;
+  const verb = outcome.result === 'win' ? 'and won'
+    : outcome.result === 'loss' ? 'and your squad held them off'
+    : 'and it ended in a draw';
+  await ctx.notify(outcome.defenderId, originGuildId,
+    `⚔️ ${outcome.names.challenger} duelled your park ${verb}. `
+    + `Your duel rating: ${outcome.ratingBefore.defender} → ${outcome.ratingAfter.defender}. `
+    + 'See `/duel record`.');
+}
+
 export interface DuelRecordEntry {
   opponentId: string; opponentName: string; result: DuelResult;
   eloDelta: number; at: number; mode: DuelMode;

@@ -776,3 +776,49 @@ describe('duels module registration', () => {
     expect(duelsModule.commands[0].data.name).toBe('duel');
   });
 });
+
+describe('duel notification', () => {
+  const strong = allSpecies().find((s) => s.rarity === 'legendary')!;
+  const weak = allSpecies().find((s) => s.rarity === 'common')!;
+  const ghost = async (user: string, opponent: string, guild: string | undefined = 'g1') => {
+    const i = fakeCommand({ name: 'duel', sub: 'ghost', user, guild, options: { opponent } });
+    await duelsModule.commands[0].execute(ctx, i.asChatInput());
+    return i;
+  };
+
+  it('tells the absent defender what happened, from the attacker\'s guild', async () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    addDino('a', strong.id, 3200); addDino('b', weak.id, 0);
+    await ghost('a', 'b');
+    expect(ctx.notifications).toHaveLength(1);
+    expect(ctx.notifications[0].userId).toBe('b');
+    expect(ctx.notifications[0].originGuildId).toBe('g1');
+    expect(ctx.notifications[0].message).toContain('A');
+    expect(typeof ctx.notifications[0].message).toBe('string');
+  });
+
+  it('names the rating move in the message', async () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    addDino('a', strong.id, 3200); addDino('b', weak.id, 0);
+    await ghost('a', 'b');
+    expect(ctx.notifications[0].message).toMatch(/1000/);
+  });
+
+  it('respects a defender who muted alerts', async () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    addDino('a', strong.id, 3200); addDino('b', weak.id, 0);
+    ctx.db.update(schema.users).set({ alertsEnabled: false }).where(eq(schema.users.discordId, 'b')).run();
+    await ghost('a', 'b');
+    expect(ctx.notifications).toEqual([]);
+  });
+
+  it('sends nothing for a live duel — the defender was there', async () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    addDino('a', weak.id, 0); addDino('b', weak.id, 0);
+    const i = fakeCommand({ name: 'duel', sub: 'challenge', user: 'a', guild: 'g1', options: { opponent: 'b' } });
+    await duelsModule.commands[0].execute(ctx, i.asChatInput());
+    const b = fakeButton({ customId: `duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, user: 'b', guild: 'g1' });
+    await duelsModule.components[0].execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
+    expect(ctx.notifications).toEqual([]);
+  });
+});

@@ -125,8 +125,8 @@ export const parkModule: ModuleManifest = {
               .where(eq(schema.users.discordId, i.user.id)).run();
             await i.reply({
               content: on
-                ? '🔔 Park alerts are **on** — you will get a DM before a dino escapes and when your park hits its income cap.'
-                : '🔕 Park alerts are **off**. Egg, breeding, and expedition notifications are unaffected. Turn them back on with `/park alerts state:on`.',
+                ? '🔔 Park alerts are **on** — you will get a DM before a dino escapes, when your park hits its income cap, and when another player duels your park.'
+                : '🔕 Park alerts are **off**. Duel results are muted too. Egg, breeding, and expedition notifications are unaffected. Turn them back on with `/park alerts state:on`.',
               flags: MessageFlags.Ephemeral,
             });
             return;
