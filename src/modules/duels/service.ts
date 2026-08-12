@@ -89,6 +89,14 @@ export function setDuelSquad(ctx: Ctx, userId: string, dinoIds: number[]): DuelS
   return duelSquad(ctx, userId);
 }
 
+/** The defender's row, or a DuelError naming why they cannot be duelled. */
+export function requireDuellable(ctx: Ctx, defenderId: string): typeof schema.users.$inferSelect {
+  const row = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, defenderId)).get();
+  if (!row) throw new DuelError('That player has no park yet.');
+  duelSquad(ctx, defenderId);   // throws if they have nothing battle-ready
+  return row;
+}
+
 /** Everything the surfaces need. `result` and `eloDelta` are the challenger's. */
 export interface DuelOutcome {
   challengerId: string; defenderId: string; mode: DuelMode;

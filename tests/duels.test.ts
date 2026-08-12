@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { MessageFlags } from 'discord.js';
-import { makeCtx, fakeCommand, replyText } from './harness.js';
+import type { ButtonInteraction } from 'discord.js';
+import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { duelSquad, setDuelSquad, DuelError, resolveDuel, cooldownUntil } from '../src/modules/duels/service.js';
@@ -519,6 +520,90 @@ describe('/duel ghost', () => {
     expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'newcomer')).get())
       .toBeDefined();
     expect(replyText(i.replies[0])).toMatch(/hatch or rescue/i);
+  });
+});
+
+describe('/duel challenge', () => {
+  const weak = allSpecies().find((s) => s.rarity === 'common')!;
+  const challenge = async (user: string, opponent: string) => {
+    const i = fakeCommand({ name: 'duel', sub: 'challenge', user, guild: 'g1', options: { opponent } });
+    await duelsModule.commands[0].execute(ctx, i.asChatInput());
+    return i;
+  };
+  const click = async (customId: string, user: string) => {
+    const b = fakeButton({ customId, user, guild: 'g1' });
+    await duelsModule.components[0].execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
+    return b;
+  };
+  function pairWithDinos(): void {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    addDino('a', weak.id, 0); addDino('b', weak.id, 0);
+  }
+
+  it('posts a public card whose buttons carry the pair and the expiry', async () => {
+    pairWithDinos();
+    const i = await challenge('a', 'b');
+    const payload = i.replies[0] as { components: Array<{ toJSON(): { components: Array<{ custom_id: string }> } }> };
+    const ids = payload.components[0].toJSON().components.map((c) => c.custom_id);
+    expect(ids[0]).toBe(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`);   // ctx.now() is 0
+    expect(ctx.db.select().from(schema.duels).all()).toEqual([]);      // nothing resolved yet
+  });
+
+  it('resolves the duel when the challenged player accepts, replacing the card', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    const b = await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    const embed = (b.replies[0] as { embeds: Array<{ toJSON(): { title?: string } }> }).embeds[0].toJSON();
+    expect(embed.title).toContain('⚔️');
+    const log = ctx.db.select().from(schema.duels).all();
+    expect(log).toHaveLength(1);
+    expect(log[0].mode).toBe('live');
+  });
+
+  it('refuses a clicker who is not the challenged player', async () => {
+    pairWithDinos();
+    getOrCreateUser(ctx, 'c', 'C');
+    await challenge('a', 'b');
+    const b = await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'c');
+    expect(replyText(b.replies[0])).toMatch(/not for you/i);
+    expect(ctx.db.select().from(schema.duels).all()).toEqual([]);
+  });
+
+  it('refuses the challenger clicking their own Accept', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    const b = await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'a');
+    expect(replyText(b.replies[0])).toMatch(/not for you/i);
+  });
+
+  it('refuses an expired challenge', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    ctx.setNow(DUEL_CHALLENGE_TTL_MS + 1);
+    const b = await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    expect(replyText(b.replies[0])).toMatch(/expired/i);
+    expect(ctx.db.select().from(schema.duels).all()).toEqual([]);
+  });
+
+  it('declines without resolving anything', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    const b = await click(`duel:decline:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    expect(JSON.stringify(b.replies[0])).toMatch(/declined/i);
+    expect(ctx.db.select().from(schema.duels).all()).toEqual([]);
+  });
+
+  it('absorbs an unknown duel action instead of erroring', async () => {
+    const b = await click('duel:nonsense:a:b:1', 'b');
+    expect(b.deferOpts).toHaveLength(1);
+    expect(b.replies).toEqual([]);
+  });
+
+  it('refuses challenging yourself or a bot', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    addDino('a', weak.id, 0);
+    const self = await challenge('a', 'a');
+    expect(replyText(self.replies[0])).toMatch(/yourself/i);
   });
 });
 
