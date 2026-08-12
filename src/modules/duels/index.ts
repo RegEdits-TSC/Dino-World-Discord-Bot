@@ -1,8 +1,14 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
+import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
+import { schema } from '../../core/db/index.js';
+import { matches, respondRanked, emptyRow } from '../../core/autocomplete.js';
 import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
-import { resolveDuel, requireDuellable, duelSquad, DuelError } from './service.js';
+import {
+  resolveDuel, requireDuellable, duelSquad, setDuelSquad, eligibleForDuel, DuelError,
+  type DuelSquadMember,
+} from './service.js';
 import { duelResultPayload, challengePayload, DUEL_PREFIX } from './embeds.js';
 import { DUEL_CHALLENGE_TTL_MS } from '../../data/battle/constants.js';
 
@@ -14,10 +20,35 @@ export const duelsModule: ModuleManifest = {
         .addSubcommand((s) => s.setName('ghost').setDescription("Duel a snapshot of another player's squad")
           .addUserOption((o) => o.setName('opponent').setDescription('Who to duel').setRequired(true)))
         .addSubcommand((s) => s.setName('challenge').setDescription('Challenge another player to a live duel')
-          .addUserOption((o) => o.setName('opponent').setDescription('Who to challenge').setRequired(true))),
+          .addUserOption((o) => o.setName('opponent').setDescription('Who to challenge').setRequired(true)))
+        .addSubcommand((s) => s.setName('squad').setDescription('Set the squad you field in duels — leave blank to clear')
+          .addIntegerOption((o) => o.setName('dino1').setDescription('Squad slot 1').setAutocomplete(true))
+          .addIntegerOption((o) => o.setName('dino2').setDescription('Squad slot 2').setAutocomplete(true))
+          .addIntegerOption((o) => o.setName('dino3').setDescription('Squad slot 3').setAutocomplete(true))),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         const sub = i.options.getSubcommand();
+        if (sub === 'squad') {
+          const ids = ['dino1', 'dino2', 'dino3']
+            .map((n) => i.options.getInteger(n))
+            .filter((v): v is number => v !== null);
+          try {
+            const squad = setDuelSquad(ctx, i.user.id, ids);
+            await i.reply({
+              content: ids.length
+                ? `⚔️ Duel squad set: ${squad.map((m) => `Lv.${m.level} ${m.name}`).join(', ')}.`
+                : `⚔️ Duel squad cleared — duels now field your top three automatic picks: ${squad.map((m) => m.name).join(', ')}.`,
+              flags: MessageFlags.Ephemeral,
+            });
+          } catch (e) {
+            if (e instanceof DuelError) {
+              await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+              return;
+            }
+            throw e;
+          }
+          return;
+        }
         if (sub === 'ghost' || sub === 'challenge') {
           const target = i.options.getUser('opponent', true);
           if (target.id === i.user.id) {
@@ -67,6 +98,27 @@ export const duelsModule: ModuleManifest = {
         // Never the /park dispatch trap: an unrecognised subcommand reports failure
         // rather than silently rendering something plausible.
         await i.reply({ content: 'Unknown /duel subcommand.', flags: MessageFlags.Ephemeral });
+      },
+      // Provider contract: respond() only, no reply/defer, no getOrCreateUser (no row
+      // creation on keystrokes), read-only. settleEscapes is NOT called here — it
+      // writes, and duelSquad evaluates escape read-only anyway.
+      async autocomplete(ctx, i) {
+        if (i.options.getSubcommand() !== 'squad') { await i.respond([]); return; }
+        const user = ctx.db.select().from(schema.users)
+          .where(eq(schema.users.discordId, i.user.id)).get();
+        if (!user) { await i.respond([]); return; }
+        const focused = i.options.getFocused(true);
+        const q = String(focused.value);
+        const others = ['dino1', 'dino2', 'dino3'].filter((n) => n !== focused.name);
+        const taken = new Set(others.map((n) => Number(i.options.get(n)?.value)).filter((v) => Number.isFinite(v)));
+        let squad: DuelSquadMember[] = [];
+        try { squad = eligibleForDuel(ctx, i.user.id); } catch { squad = []; }
+        if (!squad.length) { await respondRanked(i, [emptyRow('No battle-ready dinos — hatch or /rescue first', 0)]); return; }
+        // Unicode only — a custom emoji tag renders as literal text in autocomplete.
+        await respondRanked(i, squad
+          .filter((m) => !taken.has(m.dinoId))
+          .filter((m) => matches(q, m.dinoId, m.name, m.speciesId))
+          .map((m) => ({ value: m.dinoId, valid: true, label: `🦖 #${m.dinoId} Lv.${m.level} ${m.name} (${m.archetype})` })));
       },
     },
   ],

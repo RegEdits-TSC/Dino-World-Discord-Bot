@@ -89,6 +89,13 @@ export function setDuelSquad(ctx: Ctx, userId: string, dinoIds: number[]): DuelS
   return duelSquad(ctx, userId);
 }
 
+/** Every dino this player could field, newest-strongest first. Read-only. */
+export function eligibleForDuel(ctx: Ctx, userId: string): DuelSquadMember[] {
+  return [...eligibleDinos(ctx, userId)]
+    .sort((a, b) => b.battleXp - a.battleXp || a.id - b.id)
+    .map(toMember);
+}
+
 /** The defender's row, or a DuelError naming why they cannot be duelled. */
 export function requireDuellable(ctx: Ctx, defenderId: string): typeof schema.users.$inferSelect {
   const row = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, defenderId)).get();

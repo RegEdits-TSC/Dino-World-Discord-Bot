@@ -33,6 +33,7 @@ const AUTOCOMPLETE_OPTIONS: Record<string, string[]> = {
   'breed start': ['parent-a', 'parent-b'],
   'splice': ['dino'],
   'dex view': ['species'],
+  'duel squad': ['dino1', 'dino2', 'dino3'],
 };
 
 function collect(name: string, opts: OptJson[] | undefined, out: Map<string, boolean>): void {

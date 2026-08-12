@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { MessageFlags } from 'discord.js';
 import type { ButtonInteraction } from 'discord.js';
-import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, fakeAutocomplete, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { duelSquad, setDuelSquad, DuelError, resolveDuel, cooldownUntil } from '../src/modules/duels/service.js';
@@ -627,6 +627,68 @@ describe('/duel challenge', () => {
     addDino('a', weak.id, 0);
     const self = await challenge('a', 'a');
     expect(replyText(self.replies[0])).toMatch(/yourself/i);
+  });
+});
+
+describe('/duel squad', () => {
+  const weak = allSpecies().find((s) => s.rarity === 'common')!;
+  const setSquad = async (user: string, options: Record<string, number>) => {
+    const i = fakeCommand({ name: 'duel', sub: 'squad', user, options });
+    await duelsModule.commands[0].execute(ctx, i.asChatInput());
+    return i;
+  };
+
+  it('stores the chosen dinos and confirms ephemerally', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    const one = addDino('a', weak.id, 0);
+    const two = addDino('a', weak.id, 3200);
+    const i = await setSquad('a', { dino1: one, dino2: two });
+    expect((i.replies[0] as { flags?: number }).flags).toBeDefined();
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'a')).get()!.duelSquad)
+      .toEqual([one, two]);
+  });
+
+  it('clears back to auto when called with no dinos', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    const one = addDino('a', weak.id, 0);
+    await setSquad('a', { dino1: one });
+    const i = await setSquad('a', {});
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'a')).get()!.duelSquad).toEqual([]);
+    expect(replyText(i.replies[0])).toMatch(/top three|automatic/i);
+  });
+
+  it("refuses another player's dino", async () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    addDino('a', weak.id, 0);
+    const theirs = addDino('b', weak.id, 0);
+    const i = await setSquad('a', { dino1: theirs });
+    expect(replyText(i.replies[0])).toMatch(/battle-ready/i);
+  });
+
+  it('refuses the same dino twice', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    const one = addDino('a', weak.id, 0);
+    const i = await setSquad('a', { dino1: one, dino2: one });
+    expect(replyText(i.replies[0])).toMatch(/once per squad/i);
+  });
+
+  it('suggests only battle-ready dinos, and never creates a user row', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    const fit = addDino('a', weak.id, 0);
+    const escaped = addDino('a', weak.id, 0);
+    ctx.db.update(schema.dinos).set({ escapedAt: 1 }).where(eq(schema.dinos.id, escaped)).run();
+    const i = fakeAutocomplete({ name: 'duel', sub: 'squad', user: 'a', focused: { name: 'dino1', value: '' } });
+    await duelsModule.commands[0].autocomplete!(ctx, i.asAutocomplete());
+    const values = (i.replies[0] as Array<{ value: number }>).map((c) => c.value);
+    expect(values).toContain(fit);
+    expect(values).not.toContain(escaped);
+  });
+
+  it('responds with an empty list for a player who has no park row', async () => {
+    const i = fakeAutocomplete({ name: 'duel', sub: 'squad', user: 'nobody', focused: { name: 'dino1', value: '' } });
+    await duelsModule.commands[0].autocomplete!(ctx, i.asAutocomplete());
+    expect(i.replies[0]).toEqual([]);
+    expect(ctx.db.select().from(schema.users).all()).toEqual([]);
   });
 });
 
