@@ -560,6 +560,29 @@ describe('/duel challenge', () => {
     expect(log[0].mode).toBe('live');
   });
 
+  it('replaces the card in place, shedding its buttons and attachments', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    const b = await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    const payload = b.replies[0] as { components?: unknown[]; attachments?: unknown[] };
+    // i.update carrying attachments: [] is what sheds the challenge card's own
+    // attachment set; components: [] is what removes the live Accept/Decline buttons
+    // from what is now a result message.
+    expect(payload.attachments).toEqual([]);
+    expect(payload.components).toEqual([]);
+  });
+
+  // The only test that can tell an ARMED double-accept guard from a disarmed one at the
+  // handler level: drop the expiry argument in the handler and this goes green-to-red.
+  it('refuses a second click of the same Accept button', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    const second = await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    expect(replyText(second.replies[0])).toMatch(/already duelled/i);
+    expect(ctx.db.select().from(schema.duels).all()).toHaveLength(1);
+  });
+
   it('refuses a clicker who is not the challenged player', async () => {
     pairWithDinos();
     getOrCreateUser(ctx, 'c', 'C');

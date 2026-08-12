@@ -44,7 +44,11 @@ export const duelsModule: ModuleManifest = {
             // no dinos is told now rather than the ACCEPTING player being told later.
             try {
               duelSquad(ctx, i.user.id);
-            } catch {
+            } catch (e) {
+              // Mirrors resolveDuel: only the "no battle-ready dinos" case is re-phrased
+              // for the challenger's own point of view. Anything else — a retired species
+              // id, a DB fault — must not be disguised as an empty roster.
+              if (!(e instanceof DuelError)) throw e;
               throw new DuelError('You have no battle-ready dinos — hatch or rescue one first.');
             }
             const defender = requireDuellable(ctx, target.id);
