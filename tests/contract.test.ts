@@ -48,7 +48,7 @@ function collect(name: string, opts: OptJson[] | undefined, out: Map<string, boo
 describe('builder contract', () => {
   it('every builder serializes (Discord would accept the deploy body)', () => {
     const body = registry.commands().map((c) => c.data.toJSON());
-    expect(body).toHaveLength(26);
+    expect(body).toHaveLength(27);
     for (const b of body) expect(b.name).toMatch(/^[a-z-]+$/);
   });
 

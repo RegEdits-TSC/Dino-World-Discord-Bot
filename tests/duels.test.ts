@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { makeCtx } from './harness.js';
+import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { duelSquad, setDuelSquad, DuelError, resolveDuel, cooldownUntil } from '../src/modules/duels/service.js';
@@ -9,6 +9,7 @@ import { outcomeFor } from '../src/data/battle/duel.js';
 import type { BattleResult } from '../src/data/battle/resolve.js';
 import { DUEL_PAIR_COOLDOWN_MS, DUEL_CHALLENGE_TTL_MS } from '../src/data/battle/constants.js';
 import { duelResultPayload, challengePayload, DUEL_PREFIX } from '../src/modules/duels/embeds.js';
+import { duelsModule } from '../src/modules/duels/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
@@ -451,5 +452,66 @@ describe('duel embeds', () => {
   it('shows the challenged player when the challenge expires', () => {
     const embed = challengePayload('111', '222', 'A', 'B', 900_000).embeds[0].toJSON();
     expect(embed.description).toContain('<t:900:R>');
+  });
+});
+
+describe('/duel ghost', () => {
+  const strong = allSpecies().find((s) => s.rarity === 'legendary')!;
+  const weak = allSpecies().find((s) => s.rarity === 'common')!;
+  const run = async (user: string, opponent: string | { id: string; bot?: boolean }) => {
+    const i = fakeCommand({ name: 'duel', sub: 'ghost', user, guild: 'g1', options: { opponent } });
+    await duelsModule.commands[0].execute(ctx, i.asChatInput());
+    return i;
+  };
+
+  it('posts a public result and writes the log row', async () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    addDino('a', strong.id, 3200); addDino('b', weak.id, 0);
+    const i = await run('a', 'b');
+    const payload = i.replies[0] as { embeds: Array<{ toJSON(): { title?: string } }>; flags?: number };
+    expect(payload.embeds[0].toJSON().title).toContain('⚔️');
+    expect(payload.flags).toBeUndefined();          // public, not ephemeral
+    expect(ctx.db.select().from(schema.duels).all()).toHaveLength(1);
+  });
+
+  it('refuses duelling yourself', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    addDino('a', weak.id, 0);
+    const i = await run('a', 'a');
+    expect(replyText(i.replies[0])).toMatch(/yourself/i);
+    expect(ctx.db.select().from(schema.duels).all()).toEqual([]);
+  });
+
+  it('refuses duelling a bot', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    addDino('a', weak.id, 0);
+    const i = await run('a', { id: 'botto', bot: true });
+    expect(replyText(i.replies[0])).toMatch(/bot/i);
+  });
+
+  // Unlike /trade offer, a duel never mints a park for someone merely mentioned.
+  it('refuses a target with no park and creates no row for them', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    addDino('a', weak.id, 0);
+    const i = await run('a', 'stranger');
+    expect(replyText(i.replies[0])).toMatch(/no park yet/i);
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'stranger')).get()).toBeUndefined();
+  });
+
+  it('answers the cooldown ephemerally rather than throwing', async () => {
+    getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
+    addDino('a', weak.id, 0); addDino('b', weak.id, 0);
+    await run('a', 'b');
+    const i = await run('a', 'b');
+    expect(replyText(i.replies[0])).toMatch(/recently/i);
+    expect((i.replies[0] as { flags?: number }).flags).toBeDefined();
+  });
+});
+
+describe('duels module registration', () => {
+  it('registers under the name duels with the duel prefix', () => {
+    expect(duelsModule.name).toBe('duels');
+    expect(duelsModule.components[0].prefix).toBe('duel');
+    expect(duelsModule.commands[0].data.name).toBe('duel');
   });
 });
