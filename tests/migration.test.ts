@@ -559,3 +559,53 @@ describe('0012 park showcase via the real drizzle migrator (production path)', (
     }
   });
 });
+
+describe('0013 duels via the real drizzle migrator (production path)', () => {
+  it('adds duel_rating and duel_squad, creates duels, and preserves existing rows', () => {
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig13-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    // The regex and the journal filter must widen together. Copy-pasting 0012's
+    // /^00(0[0-9]|1[01]).*\.sql$/ here would omit 0012 from the scratch folder while
+    // every assertion below still passed — green for the wrong reason, against a
+    // 0011 baseline.
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^00(0[0-9]|1[0-2]).*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 12);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });   // apply 0000-0012 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, last_collect_at_ms, created_at_ms) VALUES ('u1', 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO users (discord_id, last_collect_at_ms, created_at_ms) VALUES ('u2', 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO dinos (user_id, species_id, hunger, last_fed_at_ms, hatched_at_ms)
+                    VALUES ('u1', 'triceratops', 100, 0, 0)`).run();
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+      // Existing rows pick up the defaults rather than NULL: every reader in src/
+      // treats duel_squad as an array and duel_rating as a number.
+      const rows = sqlite.prepare(`SELECT discord_id, duel_rating, duel_squad FROM users ORDER BY discord_id`).all();
+      expect(rows).toEqual([
+        { discord_id: 'u1', duel_rating: 1000, duel_squad: '[]' },
+        { discord_id: 'u2', duel_rating: 1000, duel_squad: '[]' },
+      ]);
+      expect((sqlite.prepare(`SELECT COUNT(*) c FROM dinos`).get() as { c: number }).c).toBe(1);
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+      // The log is real and two-sided.
+      sqlite.prepare(`INSERT INTO duels (challenger_id, defender_id, mode, result, elo_delta, created_at_ms)
+                      VALUES ('u1', 'u2', 'ghost', 'win', 16, 0)`).run();
+      expect((sqlite.prepare(`SELECT COUNT(*) c FROM duels`).get() as { c: number }).c).toBe(1);
+      // Both sides carry a real foreign key to users: a duel naming nobody is not a
+      // state the game can reach, unlike featured_dino_id, which deliberately has none.
+      expect(() => sqlite.prepare(`INSERT INTO duels (challenger_id, defender_id, mode, result, elo_delta, created_at_ms)
+                                   VALUES ('u1', 'nobody', 'ghost', 'win', 16, 0)`).run()).toThrow();
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});

@@ -220,7 +220,7 @@ Example `modules.json`:
 }
 ```
 
-Fourteen modules ship today:
+Sixteen modules ship today:
 
 - `park` — paddocks, upgrades, park rating, decorations.
 - `hatchery` — eggs, incubation, hatching, Mythic purchases.
@@ -229,13 +229,15 @@ Fourteen modules ship today:
 - `settings` — per-guild configuration (e.g. notification channel, world bulletin opt-in).
 - `care` — feeding dinos and rescuing escapees.
 - `trading` — player-to-player dino/egg/currency trades with escrow.
-- `leaderboards` — server and global rankings by rating, cash, and collection.
+- `leaderboards` — server and global rankings by rating, cash, collection, legacy, battle stars, and duel rating.
 - `admin` — owner-only tools: grant resources, inspect/reset a player, fast-forward a player's clock (QA).
 - `help` — in-game command reference and getting-started guide.
 - `battles` — the PvE campaign: fight chapter stages with a squad for cash, shards, and eggs.
 - `genelab` — pair or splice dinos for traits in the Gene Lab.
 - `daily` — daily quest board, streaks, chests, and lifetime achievements.
 - `world` — the daily world event and season, plus the opt-in world bulletin broadcast.
+- `dex` — the species compendium, with filters and per-species detail.
+- `duels` — free player-versus-player exhibition duels and the duel rating.
 
 Admin commands are gated to the OWNER_ID user and hidden from non-admins in the Discord UI. Set OWNER_ID in .env.
 
@@ -349,7 +351,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    ```bash
    npm run deploy-commands
    ```
-   Should report `25` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, leaderboards, admin, help, battles, genelab, daily, and world modules combined).
+   Should report `27` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, leaderboards, admin, help, battles, genelab, daily, world, dex, and duels modules combined).
 
 2. **Start the bot**:
    ```bash

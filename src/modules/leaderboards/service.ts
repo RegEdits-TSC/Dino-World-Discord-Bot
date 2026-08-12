@@ -4,7 +4,7 @@ import type { Ctx } from '../../core/context.js';
 import { RARITY_WEIGHT } from '../../data/progression.js';
 import { allSpecies, getSpecies } from '../../data/species/index.js';
 
-export type Metric = 'rating' | 'cash' | 'collection' | 'legacy' | 'stars';
+export type Metric = 'rating' | 'cash' | 'collection' | 'legacy' | 'stars' | 'duels';
 export type Scope = 'server' | 'global';
 
 export function collectionScore(ctx: Ctx, userId: string): number {
@@ -132,6 +132,7 @@ function scored(
     displayName: u.displayName || u.discordId,
     value: metric === 'cash' ? u.cash
       : metric === 'rating' ? u.parkRating
+      : metric === 'duels' ? u.duelRating
       : byUser!.get(u.discordId) ?? 0,
   }));
   rows.sort((a, b) => b.value - a.value);

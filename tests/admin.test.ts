@@ -12,13 +12,14 @@ import { adminModule } from '../src/modules/admin/index.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
 import { TRADE_MIN_RATING } from '../src/data/trade.js';
-import { ENERGY_CAP } from '../src/data/battle/constants.js';
+import { ENERGY_CAP, DUEL_START_RATING, DUEL_PAIR_COOLDOWN_MS } from '../src/data/battle/constants.js';
 import { settleEnergy } from '../src/data/battle/energy.js';
 import { track } from '../src/core/stats.js';
 import { dayKeyUTC, DAY_MS } from '../src/core/clock.js';
 import { QUESTS } from '../src/data/quests.js';
 import { rollDailyQuests, claimQuests } from '../src/modules/daily/service.js';
 import { recordSpeciesSeen, seenSpecies, firstSeenAt } from '../src/core/species-seen.js';
+import { cooldownUntil } from '../src/modules/duels/service.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });   // config.ownerId === 'owner'
@@ -404,4 +405,34 @@ it('fast-forward leaves first_at_ms alone', () => {
   const before = firstSeenAt(ctx, 'u1', 'triceratops');
   adminFastForward(ctx, 'u1', 48);
   expect(firstSeenAt(ctx, 'u1', 'triceratops')).toBe(before);
+});
+
+it('reset deletes duel rows on BOTH sides and restores the rating and squad', () => {
+  getOrCreateUser(ctx, 'u1', 'U1');
+  getOrCreateUser(ctx, 'u2', 'U2');
+  ctx.db.insert(schema.duels)
+    .values({ challengerId: 'u1', defenderId: 'u2', mode: 'ghost', result: 'win', eloDelta: 16, createdAt: 0 }).run();
+  ctx.db.insert(schema.duels)
+    .values({ challengerId: 'u2', defenderId: 'u1', mode: 'live', result: 'loss', eloDelta: -9, createdAt: 0 }).run();
+  ctx.db.update(schema.users).set({ duelRating: 1300, duelSquad: [7, 8] })
+    .where(eq(schema.users.discordId, 'u1')).run();
+
+  adminReset(ctx, 'u1');
+
+  expect(ctx.db.select().from(schema.duels).all()).toEqual([]);
+  const row = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+  expect(row.duelRating).toBe(DUEL_START_RATING);
+  expect(row.duelSquad).toEqual([]);
+});
+
+it('fast-forward shifts the duel log so a pair cooldown can lapse', () => {
+  getOrCreateUser(ctx, 'u1', 'U1');
+  getOrCreateUser(ctx, 'u2', 'U2');
+  ctx.setNow(10 * 3_600_000);
+  ctx.db.insert(schema.duels).values({
+    challengerId: 'u1', defenderId: 'u2', mode: 'ghost', result: 'win', eloDelta: 16, createdAt: ctx.now(),
+  }).run();
+  expect(cooldownUntil(ctx, 'u1', 'u2')).not.toBeNull();
+  adminFastForward(ctx, 'u1', DUEL_PAIR_COOLDOWN_MS / 3_600_000 + 1);
+  expect(cooldownUntil(ctx, 'u1', 'u2')).toBeNull();
 });

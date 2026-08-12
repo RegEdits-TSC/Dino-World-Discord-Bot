@@ -807,6 +807,7 @@ describe('/park alerts', () => {
     await cmd.execute(ctx, off.asChatInput());
     expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.alertsEnabled).toBe(false);
     expect(replyText(off.replies[0])).toContain('Park alerts are **off**');
+    expect(replyText(off.replies[0])).toContain('Duel results are muted too');
 
     const on = fakeCommand({ name: 'park', sub: 'alerts', user: 'u1', options: { state: 'on' } });
     await cmd.execute(ctx, on.asChatInput());

@@ -214,7 +214,7 @@ describe('leaderboard query cost', () => {
   // playerRank, which runs scored() a second time, and that branch flips between the two
   // fixture sizes (the caller is inside the top 10 at 3 players and outside it at 30) —
   // so a command-level count would differ for a reason that is not the N+1.
-  const cost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars') => {
+  const cost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars' | 'duels') => {
     const board = boardOf(size);
     topPlayers(board.ctx, metric, 'global', null);
     return board.queries();
@@ -224,6 +224,7 @@ describe('leaderboard query cost', () => {
   // equally wasteful at both sizes and would pass an equality-only assertion.
   it.each([
     ['cash', 1],          // the candidate scan alone
+    ['duels', 1],         // duel_rating rides on the users row — no extra read
     ['stars', 2],         // + battle_progress
     ['collection', 2],    // + dinos
     ['legacy', 4],        // + species_seen, achievement_claims, battle_progress
@@ -238,7 +239,7 @@ describe('leaderboard query cost', () => {
   // only the roster's non-member count, which is what proves the extra user_guilds read,
   // the users slice, and the metric's own source-table read(s) all stay flat whether 1 of
   // 3 or 1 of 30 players is actually in the guild.
-  const serverCost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars') => {
+  const serverCost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars' | 'duels') => {
     const board = boardOf(size, 'g1');
     topPlayers(board.ctx, metric, 'server', 'g1');
     return board.queries();
@@ -246,6 +247,7 @@ describe('leaderboard query cost', () => {
 
   it.each([
     ['cash', 2],           // user_guilds + the candidate scan
+    ['duels', 2],
     ['stars', 3],          // + battle_progress
     ['collection', 3],     // + dinos
     ['legacy', 5],         // + species_seen, achievement_claims, battle_progress
@@ -265,6 +267,7 @@ describe('leaderboard query cost', () => {
   // members at all is what actually exercises that branch.
   it.each([
     ['cash', 1],           // user_guilds only — no candidates, no further reads
+    ['duels', 1],
     ['stars', 1],
     ['collection', 1],
     ['legacy', 1],
@@ -324,13 +327,24 @@ describe('new metrics', () => {
     expect(embed.description).toBe('**1.** A — 2');
   });
 
-  it('offers exactly the five metrics the service knows', () => {
+  it('offers exactly the six metrics the service knows', () => {
     const json = leaderboardsModule.commands[0].data.toJSON() as {
       options?: Array<{ name: string; choices?: Array<{ value: string }> }>;
     };
     const metric = json.options!.find((o) => o.name === 'metric')!;
     expect(metric.choices!.map((c) => c.value))
-      .toEqual(['rating', 'cash', 'collection', 'legacy', 'stars']);
+      .toEqual(['rating', 'cash', 'collection', 'legacy', 'stars', 'duels']);
+  });
+
+  it('/top duels ranks by the stored Elo as a whole number', async () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    ctx.db.update(schema.users).set({ duelRating: 1180 }).where(eq(schema.users.discordId, 'a')).run();
+    const i = fakeCommand({ name: 'top', user: 'a', options: { metric: 'duels', scope: 'global' } });
+    await leaderboardsModule.commands[0].execute(ctx, i.asChatInput());
+    const embed = (i.replies[0] as { embeds: Array<{ toJSON(): { title?: string; description?: string } }> }).embeds[0].toJSON();
+    expect(embed.title).toContain('Duel');
+    // Never '11.8': only rating is stored ×100.
+    expect(embed.description).toContain('1,180');
   });
 });
 

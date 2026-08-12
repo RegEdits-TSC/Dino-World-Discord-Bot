@@ -25,7 +25,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '`/park rename name:<text>` — rename your park.',
     '`/park motto [text]` — the line visitors see on your park card (up to 80 characters; leave blank to clear).',
     '`/park feature [dino]` — pick one dino to display on your park card; leave blank to clear.',
-    '`/park alerts state:on|off` — DM warnings before a dino escapes and when income caps. On by default.',
+    '`/park alerts state:on|off` — DM warnings before a dino escapes, when income caps, and when another player duels your park. On by default.',
     '`/park landmark` — your park\'s prestige monument: a six-rung ladder from 5,000,000 to 160,000,000. Purely cosmetic, and the one place endgame cash has to go.',
     '`/build kind:<lot>` — build on an empty lot. Paddocks stack; one facility of each kind, so upgrade rather than rebuild.',
     '`/upgrade lot:<id>` — raise a lot one level.',
@@ -67,7 +67,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Offers expire after a while; offered items are locked until resolved.',
   ].join('\n') },
   ranks: { title: '🏆 Ranks', art: { kind: 'banners', name: 'leaderboards' }, body: [
-    '`/top metric:<rating|cash|collection|legacy|stars> [scope]` — server or global leaderboards.',
+    '`/top metric:<rating|cash|collection|legacy|stars|duels> [scope]` — server or global leaderboards.',
     'Up to five Visit buttons sit under the board — click one to jump straight into that player\'s park.',
     'Rating grows with dinos, lots, and comfort; it gates expeditions, shop tiers, and Mythics.',
   ].join('\n') },
@@ -93,6 +93,17 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Claiming on consecutive days builds a streak — milestones at 3, 7, 14 days, then every 30 days after, pay a bonus chest of cash, shards, or an egg.',
     'Breaking your streak resets it to 1. Chests only ever pay once, the first time a streak passes a new personal-best milestone.',
     '`/achievements` — lifetime progress across 12 tracks, each with 4 tiers (bronze/silver/gold/platinum) paying cash and shards as you cross them.',
+  ].join('\n') },
+  duel: { title: '⚔️ Duels', body: [
+    'Duels are free exhibition fights against another player. They cost no energy and pay no cash, shards or XP — the only thing at stake is your duel rating.',
+    '`/duel ghost opponent:<player>` — fight a snapshot of their squad right now. They do not need to be online; they are told afterwards.',
+    '`/duel challenge opponent:<player>` — post a live challenge they can Accept or Decline. It expires after 15 minutes.',
+    '`/duel squad [dino1] [dino2] [dino3]` — pick the dinos you field. Leave blank to go back to your top three by level.',
+    '`/duel record [player]` — rating, win-loss-draw record and recent opponents.',
+    'Rating starts at 1000 and is zero-sum: the winner takes exactly what the loser gives, so beating a much weaker player is worth almost nothing and losing to one costs a lot.',
+    'You cannot ghost the same player twice within 6 hours — they can challenge you back immediately.',
+    'Accepting a challenge settles that pairing for 15 minutes — post a fresh challenge afterwards if you want another live duel with the same player.',
+    '`/top metric:duels` ranks everyone by duel rating.',
   ].join('\n') },
 };
 

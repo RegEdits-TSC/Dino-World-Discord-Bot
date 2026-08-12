@@ -81,4 +81,13 @@ describe('/help', () => {
     expect(reply.embeds[0].toJSON().title).toBe(HELP_TOPICS.park.title);
     expect(ctx.db.select().from(schema.users).all()).toHaveLength(0);
   });
+  it('carries a duel topic naming every /duel subcommand', () => {
+    const body = HELP_TOPICS.duel?.body ?? '';
+    for (const sub of ['ghost', 'challenge', 'squad', 'record']) {
+      expect(body, `HELP_TOPICS.duel should mention /duel ${sub}`).toContain(`/duel ${sub}`);
+    }
+    // No art descriptor: an art-bearing topic must also be added to the hard-coded
+    // sorted list in the art test above, and 3b ships no new image files.
+    expect(HELP_TOPICS.duel?.art).toBeUndefined();
+  });
 });

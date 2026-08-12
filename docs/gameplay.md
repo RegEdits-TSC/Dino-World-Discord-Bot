@@ -867,8 +867,8 @@ falls.
 
 ### `/top`
 
-`/top` ranks players by one of five metrics — rating, cash, collection,
-legacy standing, or battle stars — scoped to either your server or globally.
+`/top` ranks players by one of six metrics — rating, cash, collection,
+legacy standing, battle stars, or duel rating — scoped to either your server or globally.
 Left unset, scope defaults to your server when run inside a server and to
 global when run in a DM. It always shows the top 10 with no further pages;
 if you're not in that top 10, a footer line shows your own rank and value
@@ -990,8 +990,11 @@ alerts.
 
 Alerts are on by default. Turn them off with `/park alerts state:off`
 (back on with `state:on`), or press 🔕 Mute on an alert itself — both flip
-the same per-player switch. It affects only these two alerts; the five
-notifications above keep firing regardless and have no mute of their own.
+the same per-player switch. That switch also covers one more message outside
+this pair: a ghost duel's result reaching its absent defender (see Duels,
+below), since that message was never requested by anything the reader did,
+the same reasoning that covers these two alerts. The five notifications
+above keep firing regardless and have no mute of their own.
 
 Alerts are DM-only (see Where it goes, below), so they also require you to
 have direct messages from server members enabled for the server the bot is
@@ -1390,3 +1393,54 @@ income, prices, or anything else in this guide.
 language, the current season and day, a countdown to when the event turns
 over (UTC midnight), and tomorrow's event — by name only, so you know
 what's coming without the game handing you its exact numbers early.
+
+## 19. Duels
+
+Duels are free exhibition fights between two players. They cost no energy,
+and they pay no cash, shards, food or battle XP — the only thing that moves
+is your duel rating and your record. That is deliberate: with nothing to
+farm, two accounts working together have nothing to gain from each other.
+
+### The two formats
+
+`/duel ghost opponent:<player>` fights a snapshot of their squad
+immediately. The other player does not have to be online; they are told
+afterwards unless they have turned park alerts off.
+
+`/duel challenge opponent:<player>` posts a card they can **Accept** or
+**Decline**. It expires after 15 minutes, and nothing is decided until the
+button is clicked — both squads and both ratings are read at that moment,
+so an old challenge fights the squad you have now, not the one you had when
+it was posted.
+
+### Which dinos fight
+
+By default, your top three by battle level, escaped dinos excluded. Set your
+own with `/duel squad dino1: … dino2: … dino3: …`, or clear it back to
+automatic by running `/duel squad` with no options. If a dino in your set
+squad is sold, traded away or escapes, it is simply skipped; you do not have
+to fix anything.
+
+Both sides field their squads by the same rule, so nobody gets to counter-pick.
+Traits apply on both sides, exactly as they do in campaign battles.
+
+### Rating
+
+Everyone starts at 1000. A duel is zero-sum: whatever the winner gains, the
+loser loses, and a draw moves both toward each other. Beating someone rated
+far below you is worth very little; losing to them costs a lot. There is no
+floor and no reset.
+
+`/duel record` shows your rating, your win-loss-draw record and your recent
+opponents. `/top metric:duels` ranks everyone. Ratings cluster tightly at
+1000 until people actually duel, and there is no tiebreak rule for equal
+values.
+
+### Pacing
+
+Duels are unlimited, with two rules. You cannot ghost the same player twice
+within 6 hours — that limit is directional, so someone who ghosted you can
+be ghosted back straight away. And accepting a challenge settles that
+pairing for a quarter of an hour: post a fresh challenge afterwards if you
+want another live duel with the same player. That limit is directional too
+— a challenge running the other way, from them to you, isn't affected.
