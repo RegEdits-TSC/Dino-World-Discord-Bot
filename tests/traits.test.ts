@@ -3,6 +3,7 @@ import {
   TRAITS, TRAIT_IDS, getTrait, traitDefs, modProduct,
   rollTraits, pickTrait, spliceTrait, WILD_SLOT_ODDS, BRED_SLOT_ODDS,
 } from '../src/data/traits.js';
+import type { TraitMods } from '../src/data/traits.js';
 import { mulberry32 } from './harness.js';
 
 describe('trait table', () => {
@@ -137,5 +138,39 @@ describe('spliceTrait', () => {
     }
     expect(polarities.has('positive')).toBe(true);
     expect(polarities.has('negative')).toBe(true);
+  });
+});
+
+describe('polarity', () => {
+  // Exhaustive over keyof TraitMods on purpose — a Partial would let a future mod key
+  // go unclassified, and every trait carrying only that key would pass vacuously. Five
+  // of the fourteen shipped traits carry only combat keys, so a map missing hp/atk/def/
+  // spd is red on arrival rather than merely incomplete.
+  const DIRECTION: Record<keyof TraitMods, 1 | -1> = {
+    income: 1, xp: 1, hp: 1, atk: 1, def: 1, spd: 1,
+    drain: -1, feed: -1, breedTime: -1,
+  };
+
+  it('agrees with the direction of every mod a trait carries', () => {
+    for (const id of TRAIT_IDS) {
+      const t = TRAITS[id];
+      const signs = (Object.keys(t.mods) as Array<keyof TraitMods>)
+        .map((k) => Math.sign((t.mods[k]! - 1) * DIRECTION[k]))
+        .filter((s) => s !== 0);
+      const good = signs.some((s) => s > 0);
+      const bad = signs.some((s) => s < 0);
+
+      if (t.polarity === 'positive') {
+        expect(good, `${id} is positive but carries no beneficial mod`).toBe(true);
+        expect(bad, `${id} is positive but carries an adverse mod`).toBe(false);
+      }
+      if (t.polarity === 'negative') {
+        expect(bad, `${id} is negative but carries no adverse mod`).toBe(true);
+        expect(good, `${id} is negative but carries a beneficial mod`).toBe(false);
+      }
+      if (t.polarity === 'mixed') {
+        expect(good && bad, `${id} is mixed without one beneficial and one adverse mod`).toBe(true);
+      }
+    }
   });
 });
