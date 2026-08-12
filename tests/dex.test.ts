@@ -16,21 +16,21 @@ describe('dexRows', () => {
   it('lists the whole roster in a stable order with seen marks', () => {
     recordSpeciesSeen(ctx, 'u1', 'triceratops');
     const rows = dexRows(ctx, 'u1', {});
-    expect(rows).toHaveLength(42);
+    expect(rows).toHaveLength(52);
     expect(rows.map((r) => r.species.id)).toEqual(allSpecies().map((s) => s.id));
     expect(rows.find((r) => r.species.id === 'triceratops')!.seen).toBe(true);
     expect(rows.find((r) => r.species.id === 'velociraptor')!.seen).toBe(false);
   });
   it('filters by rarity, diet and archetype, and combines them', () => {
     expect(dexRows(ctx, 'u1', { rarity: 'mythic' })).toHaveLength(3);
-    expect(dexRows(ctx, 'u1', { diet: 'herbivore' })).toHaveLength(18);
-    expect(dexRows(ctx, 'u1', { archetype: 'tank' })).toHaveLength(9);
-    // rare has 9 species, of which ankylosaurus is the sole herbivore — the other 8
+    expect(dexRows(ctx, 'u1', { diet: 'herbivore' })).toHaveLength(24);
+    expect(dexRows(ctx, 'u1', { archetype: 'tank' })).toHaveLength(12);
+    // rare has 10 species, of which ankylosaurus is the sole herbivore — the other 9
     // are carnivore (verified against src/data/species/*.ts). Unlike a mythic+carnivore
     // pair (all 3 mythic species are carnivore, so a dropped diet clause would still
     // pass), this pair has a real herbivore for a broken AND to leak through.
     const combo = dexRows(ctx, 'u1', { rarity: 'rare', diet: 'carnivore' });
-    expect(combo).toHaveLength(8);
+    expect(combo).toHaveLength(9);
     expect(combo.some((r) => r.species.id === 'ankylosaurus')).toBe(false);
     for (const r of combo) {
       expect(r.species.rarity).toBe('rare');
@@ -73,9 +73,9 @@ describe('dexEntry', () => {
 
 describe('dexProgress', () => {
   it('counts seen against the full roster', () => {
-    expect(dexProgress(ctx, 'u1')).toEqual({ seen: 0, total: 42 });
+    expect(dexProgress(ctx, 'u1')).toEqual({ seen: 0, total: 52 });
     recordSpeciesSeen(ctx, 'u1', 'triceratops');
-    expect(dexProgress(ctx, 'u1')).toEqual({ seen: 1, total: 42 });
+    expect(dexProgress(ctx, 'u1')).toEqual({ seen: 1, total: 52 });
   });
   it('ignores a seen species that is no longer in the roster', () => {
     recordSpeciesSeen(ctx, 'u1', 'retired_dino');
@@ -86,9 +86,9 @@ describe('dexProgress', () => {
 describe('dexListPayload', () => {
   it('pages the roster ten at a time and clamps an out-of-range page', () => {
     const first = dexListPayload(ctx, 'u1', {}, 1);
-    expect(JSON.stringify(first)).toContain('Page 1/5');
+    expect(JSON.stringify(first)).toContain('Page 1/6');
     const clamped = dexListPayload(ctx, 'u1', {}, 99);
-    expect(JSON.stringify(clamped)).toContain('Page 5/5');
+    expect(JSON.stringify(clamped)).toContain('Page 6/6');
   });
   it('drops the page row when a filter fits on one page', () => {
     const payload = dexListPayload(ctx, 'u1', { rarity: 'mythic' }, 1);
@@ -97,7 +97,7 @@ describe('dexListPayload', () => {
   it('shows progress and marks a seen species', () => {
     recordSpeciesSeen(ctx, 'u1', 'triceratops');
     const text = JSON.stringify(dexListPayload(ctx, 'u1', {}, 1));
-    expect(text).toContain('1/42');
+    expect(text).toContain('1/52');
     expect(text).toContain('Triceratops');
   });
   it('renders an empty filter result without throwing', () => {
@@ -111,12 +111,12 @@ describe('dexListPayload', () => {
     for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u1', s.id);
     const payload = dexListPayload(ctx, 'u1', {}, 1);
     const footer = payload.embeds[0].toJSON().footer!.text;
-    expect(footer).toBe('35/42 seen · Page 1/5 · Keeper');
+    expect(footer).toBe('35/52 seen · Page 1/6 · Keeper');
   });
   it('omits it entirely when unranked', () => {
     const payload = dexListPayload(ctx, 'u1', {}, 1);
     const footer = payload.embeds[0].toJSON().footer!.text;
-    expect(footer).toBe('0/42 seen · Page 1/5');
+    expect(footer).toBe('0/52 seen · Page 1/6');
   });
 });
 
@@ -141,7 +141,7 @@ describe('dex module', () => {
   it('/dex list replies with the first page', async () => {
     const i = fakeCommand({ name: 'dex', sub: 'list', user: 'u1' });
     await dexModule.commands[0].execute(ctx, i.asChatInput());
-    expect(JSON.stringify(i.replies[0])).toContain('Page 1/5');
+    expect(JSON.stringify(i.replies[0])).toContain('Page 1/6');
   });
   it('/dex list accepts filters', async () => {
     const i = fakeCommand({ name: 'dex', sub: 'list', user: 'u1', options: { rarity: 'mythic' } });
@@ -197,13 +197,13 @@ describe('/dex list paging carries its filters', () => {
   });
 
   it('clicking Next on a filtered list stays filtered', async () => {
-    // diet:herbivore is 18 of 42 species — two pages, so the row renders and page 2 is
-    // real. Unfiltered the same click used to answer 'Page 2/5' with no filter suffix.
+    // diet:herbivore is 24 of 52 species — three pages, so the row renders and page 2 is
+    // real. Unfiltered the same click used to answer 'Page 2/6' with no filter suffix.
     const first = dexListPayload(ctx, 'u1', { diet: 'herbivore' }, 1);
     const i = fakeButton({ customId: buttons(first)[1].custom_id, user: 'u1' });
     await dexModule.components[0].execute(ctx, i.asInteraction() as never);
     const embed = embedOf(i.replies[0]);
-    expect(embed.footer!.text).toContain('Page 2/2');
+    expect(embed.footer!.text).toContain('Page 2/3');
     expect(embed.title).toBe('📖 Dex — Herbivore');
     // ...and the rows really are the filtered ones: no carnivore leaked onto page 2.
     for (const row of dexRows(ctx, 'u1', { diet: 'carnivore' })) {
@@ -216,7 +216,7 @@ describe('/dex list paging carries its filters', () => {
     await dexModule.components[0].execute(ctx, i.asInteraction() as never);
     const embed = embedOf(i.replies[0]);
     expect(embed.title).toBe('📖 Dex');                    // no filter suffix
-    expect(embed.footer!.text).toContain('Page 2/5');      // the whole roster
+    expect(embed.footer!.text).toContain('Page 2/6');      // the whole roster
     expect(embed.description).not.toContain('No species match');
   });
 

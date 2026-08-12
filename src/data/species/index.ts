@@ -41,6 +41,16 @@ import { spinoraptor } from './spinoraptor.js';
 import { ultimasaurus } from './ultimasaurus.js';
 import { cryolophosaurus } from './cryolophosaurus.js';
 import { nanuqsaurus } from './nanuqsaurus.js';
+import { henodus } from './henodus.js';
+import { thescelosaurus } from './thescelosaurus.js';
+import { hesperornis } from './hesperornis.js';
+import { lesothosaurus } from './lesothosaurus.js';
+import { leaellynasaura } from './leaellynasaura.js';
+import { massospondylus } from './massospondylus.js';
+import { pteranodon } from './pteranodon.js';
+import { deinosuchus } from './deinosuchus.js';
+import { sinosaurus } from './sinosaurus.js';
+import { pachyrhinosaurus } from './pachyrhinosaurus.js';
 
 const ALL: Species[] = [
   triceratops, gallimimus, dryosaurus, compsognathus, struthiomimus, othnielia, microceratus, nasutoceratops,
@@ -53,6 +63,8 @@ const ALL: Species[] = [
   liopleurodon, spinoraptor,
   indominus, indoraptor, ultimasaurus,
   cryolophosaurus, nanuqsaurus,
+  henodus, thescelosaurus, hesperornis, lesothosaurus, leaellynasaura,
+  massospondylus, pteranodon, deinosuchus, sinosaurus, pachyrhinosaurus,
 ];
 const REGISTRY = new Map<string, Species>(ALL.map((s) => [s.id, s]));
 

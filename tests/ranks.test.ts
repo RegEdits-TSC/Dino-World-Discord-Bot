@@ -19,7 +19,7 @@ describe('legacy ceiling', () => {
     const tiers = ACHIEVEMENTS.reduce((s, t) => s + t.tiers.length, 0);
     const stars = CAMPAIGN.reduce((s, c) => s + c.stages.length * 3, 0);
     expect(legacyMaxPoints()).toBe(species + tiers + stars);
-    expect(legacyMaxPoints()).toBe(180);      // 42 + 48 + 90 on today's content
+    expect(legacyMaxPoints()).toBe(190);      // 52 + 48 + 90 on today's content
   });
   it('leaves the top tier reachable', () => {
     expect(LEGACY_TIERS[LEGACY_TIERS.length - 1].points).toBeLessThanOrEqual(legacyMaxPoints());
@@ -64,14 +64,14 @@ describe('legacyPoints', () => {
 });
 
 describe('legacyRank', () => {
-  // Species alone caps at allSpecies().length (42) and achievement claims cap at
-  // ACHIEVEMENTS' 48 tiers — together only 90, short of Warden (100), Conservator
-  // (140) and Director (170). The brief's original threshold test seeded points from
-  // species alone and skipped asserting on any threshold above 42 entirely, so three
-  // of the six tiers (Warden, Conservator, Director) were NEVER exercised. Seeding
-  // across all three point sources (species, achievement claims, battle stars — the
-  // same three legacyPoints reads) reaches all 180 possible points, so every threshold
-  // is reachable and gets an exact assertion below.
+  // Species alone caps at allSpecies().length (52) and achievement claims cap at
+  // ACHIEVEMENTS' 48 tiers — together exactly 100, which reaches Warden but neither
+  // Conservator (140) nor Director (170). The brief's original threshold test seeded
+  // points from species alone and skipped asserting on any threshold above 42 entirely,
+  // so three of the six tiers (Warden, Conservator, Director) were NEVER exercised.
+  // Seeding across all three point sources (species, achievement claims, battle stars —
+  // the same three legacyPoints reads) reaches all 190 possible points, so every
+  // threshold is reachable and gets an exact assertion below.
   const ALL_CLAIMS = ACHIEVEMENTS.flatMap((t) => t.tiers.map((_, tier) => ({ trackId: t.id, tier })));
 
   function seedPoints(c: ReturnType<typeof makeCtx>, n: number): void {
