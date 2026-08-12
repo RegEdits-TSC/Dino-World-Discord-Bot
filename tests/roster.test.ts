@@ -12,8 +12,12 @@ describe('roster', () => {
   });
   // REGISTRY is a Map, so a duplicated id is deduped for getSpecies and allSpecies but
   // NOT for speciesByRarity, which filters the raw ALL array. That split ships a dino
-  // whose rolled identity and resolved identity are different objects, with no error
-  // anywhere. ALL is module-private; summing the tiers reads it, allSpecies reads the Map.
+  // whose rolled identity and resolved identity are different objects, with no error.
+  // 'matches the per-tier distribution' above also reads ALL (via speciesByRarity), so
+  // it catches a bare duplicate too — but only while EXPECTED's sum still agrees with
+  // the roster literal below. Those are two independently-maintained numbers: adjust
+  // EXPECTED to match a duplicate and that test goes green again. This assertion is the
+  // one that ties them together, which is exactly what a roster-size change puts at risk.
   it('registers every species exactly once — the per-tier pools and the registry agree', () => {
     const tiers = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] as const;
     const pooled = tiers.reduce((n, r) => n + speciesByRarity(r).length, 0);
