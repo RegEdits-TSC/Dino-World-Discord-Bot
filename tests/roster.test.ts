@@ -10,6 +10,15 @@ describe('roster', () => {
     expect(all).toHaveLength(42);
     expect(new Set(all.map((s) => s.id)).size).toBe(42);
   });
+  // REGISTRY is a Map, so a duplicated id is deduped for getSpecies and allSpecies but
+  // NOT for speciesByRarity, which filters the raw ALL array. That split ships a dino
+  // whose rolled identity and resolved identity are different objects, with no error
+  // anywhere. ALL is module-private; summing the tiers reads it, allSpecies reads the Map.
+  it('registers every species exactly once — the per-tier pools and the registry agree', () => {
+    const tiers = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] as const;
+    const pooled = tiers.reduce((n, r) => n + speciesByRarity(r).length, 0);
+    expect(pooled).toBe(allSpecies().length);
+  });
   it('matches the per-tier distribution', () => {
     for (const [rarity, n] of Object.entries(EXPECTED))
       expect(speciesByRarity(rarity as keyof typeof EXPECTED)).toHaveLength(n);
