@@ -8,6 +8,7 @@ export const users = sqliteTable('users', {
   parkName: text('park_name').notNull().default("New Park"),
   parkRating: integer('park_rating').notNull().default(0),
   ratingHighWater: integer('rating_high_water').notNull().default(0),
+  legacyRankBest: integer('legacy_rank_best').notNull().default(0),
   cash: integer('cash').notNull().default(500),
   shards: integer('shards').notNull().default(0),
   shardsWindowStart: integer('shards_window_start_ms').notNull().default(0),
