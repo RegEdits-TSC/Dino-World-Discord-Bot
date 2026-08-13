@@ -45,13 +45,15 @@ describe('/battle autocomplete', () => {
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'u1');
     // Unlock everything the way a real endgame player does: rating high-water past the
-    // last gate, and a 1-star first clear on every stage. Chapter unlocks need only a
-    // 1-star boss clear, so this player still emits all 30 entries.
+    // last gate, and a full 3-star clear on every stage. A 1-star clear no longer suffices
+    // here: founders_park's chapterUnlocked branch sums stars across the WHOLE progress
+    // map and needs >=75, and 35 stages at 1 star each is only 35 — only a full clear
+    // (105 stars over 35 stages) clears that bar. This player still emits all 35 entries.
     ctx.db.update(schema.users).set({ ratingHighWater: 1000 }).where(eq(schema.users.discordId, 'u1')).run();
     for (const ch of CAMPAIGN) {
       for (const s of ch.stages) {
         ctx.db.insert(schema.battleProgress)
-          .values({ userId: 'u1', stageId: s.id, stars: 1, firstClearedAt: 1, attempts: 1 }).run();
+          .values({ userId: 'u1', stageId: s.id, stars: 3, firstClearedAt: 1, attempts: 1 }).run();
       }
     }
     const fake = fakeAutocomplete({ name: 'battle', sub: 'fight', user: 'u1', focused: { name: 'stage', value: '' } });

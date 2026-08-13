@@ -8,6 +8,7 @@ import { frozenCliffs } from './frozen_cliffs.js';
 import { volcanoCore } from './volcano_core.js';
 import { abyssalTrench } from './abyssal_trench.js';
 import { containmentSite } from './containment_site.js';
+import { foundersPark } from './founders_park.js';
 
 export interface BossDef {
   bossId: string;        // derives assets/images/battles/<bossId>-portrait.webp
@@ -32,10 +33,18 @@ export interface StageDef {
 }
 
 // id MUST equal an EXPEDITION_SITES key — this single invariant derives the
-// banner asset, the unlockRating co-gate, and the theme.
-export interface ChapterDef { id: string; name: string; tagline: string; stages: StageDef[] }
+// banner asset and the theme, and (for every chapter that does NOT set
+// starGate) the unlockRating co-gate as well.
+export interface ChapterDef {
+  id: string; name: string; tagline: string; stages: StageDef[];
+  // Absolute campaign-star total. When set, it REPLACES the site's unlockRating
+  // co-gate for this chapter — see chapterUnlocked. Deliberately absolute and
+  // never a fraction of the campaign total: a fraction would silently re-tighten
+  // on existing players every time a chapter ships.
+  starGate?: number;
+}
 
-export const CAMPAIGN: ChapterDef[] = [coastalDig, amberRidge, frozenCliffs, volcanoCore, abyssalTrench, containmentSite];
+export const CAMPAIGN: ChapterDef[] = [coastalDig, amberRidge, frozenCliffs, volcanoCore, abyssalTrench, containmentSite, foundersPark];
 
 export const STAGES = new Map<string, StageDef & { chapterId: string }>(
   CAMPAIGN.flatMap((ch) => ch.stages.map((st) => [st.id, { ...st, chapterId: ch.id }] as const)),
@@ -58,9 +67,21 @@ export function chapterUnlocked(chapterId: string, progress: ProgressMap, rating
   const idx = CAMPAIGN.findIndex((c) => c.id === chapterId);
   if (idx < 0) return false;
   if (idx === 0) return true;
+  const chapter = CAMPAIGN[idx];
   const prior = CAMPAIGN[idx - 1];
   const priorBoss = prior.stages[prior.stages.length - 1];
   if ((progress.get(priorBoss.id)?.firstClearedAt ?? null) === null) return false;
+  // Two gate kinds. A star gate is used where a rating gate would be gameable:
+  // recomputeRating's comfort term averages over ASSIGNED dinos only, so
+  // unassigning all but one well-kept dino sets that quarter to 1.0 at will.
+  // Stars cannot be shuffled — they are earned per stage and monotone.
+  // Summing the whole progress map is safe: a chapter's own stages are
+  // unreachable until it unlocks, so "all stars" and "stars before this
+  // chapter" are the same number at the moment this is evaluated.
+  if (chapter.starGate != null) {
+    const stars = [...progress.values()].reduce((sum, p) => sum + p.stars, 0);
+    return stars >= chapter.starGate;
+  }
   return siteUnlocked(EXPEDITION_SITES[chapterId].unlockRating, ratingHighWater);
 }
 

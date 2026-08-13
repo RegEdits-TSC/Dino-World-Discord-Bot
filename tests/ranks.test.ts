@@ -20,7 +20,7 @@ describe('legacy ceiling', () => {
     const tiers = ACHIEVEMENTS.reduce((s, t) => s + t.tiers.length, 0);
     const stars = CAMPAIGN.reduce((s, c) => s + c.stages.length * 3, 0);
     expect(legacyMaxPoints()).toBe(species + tiers + stars);
-    expect(legacyMaxPoints()).toBe(190);      // 52 + 48 + 90 on today's content
+    expect(legacyMaxPoints()).toBe(205);      // 52 + 48 + 105 on today's content
   });
   it('leaves the top tier reachable', () => {
     expect(LEGACY_TIERS[LEGACY_TIERS.length - 1].points).toBeLessThanOrEqual(legacyMaxPoints());

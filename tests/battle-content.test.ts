@@ -13,7 +13,7 @@ const NPC_LEVEL_SANITY_CAP = 12;
 
 describe('battle campaign content', () => {
   it('chapter ids are EXPEDITION_SITES keys in unlockRating order', () => {
-    expect(CAMPAIGN.map((c) => c.id)).toEqual(['coastal_dig', 'amber_ridge', 'frozen_cliffs', 'volcano_core', 'abyssal_trench', 'containment_site']);
+    expect(CAMPAIGN.map((c) => c.id)).toEqual(['coastal_dig', 'amber_ridge', 'frozen_cliffs', 'volcano_core', 'abyssal_trench', 'containment_site', 'founders_park']);
     for (const c of CAMPAIGN) expect(EXPEDITION_SITES[c.id]).toBeDefined();
     const ratings = CAMPAIGN.map((c) => EXPEDITION_SITES[c.id].unlockRating);
     for (let i = 1; i < ratings.length; i++) expect(ratings[i]).toBeGreaterThan(ratings[i - 1]);
@@ -32,8 +32,8 @@ describe('battle campaign content', () => {
         else expect(s.boss).toBeUndefined();
       });
     }
-    expect(seen.size).toBe(30);
-    expect(STAGES.size).toBe(30);
+    expect(seen.size).toBe(35);
+    expect(STAGES.size).toBe(35);
     for (const c of CAMPAIGN) for (const s of c.stages) expect(STAGES.get(s.id)?.chapterId).toBe(c.id);
   });
 
@@ -98,21 +98,29 @@ describe('battle campaign content', () => {
 
   it('total campaign first-clear shards stay far below the 500-shard mythic price', () => {
     const total = CAMPAIGN.flatMap((c) => c.stages).reduce((sum, s) => sum + s.firstClearShards, 0);
-    expect(total).toBe(177);         // pinned — retune deliberately, never by accident
-    expect(total).toBeLessThan(500); // margin today: 323
+    expect(total).toBe(222);         // pinned — retune deliberately, never by accident
+    expect(total).toBeLessThan(500); // margin today: 278
   });
 
-  it('boss eggs ramp rare -> epic -> legendary onward with pinned bossIds, no mythic', () => {
+  it('boss eggs ramp rare -> epic -> legendary onward with pinned bossIds; only the final chapter may pay mythic', () => {
     const bosses = CAMPAIGN.map((c) => c.stages[4].boss!);
-    expect(bosses.map((b) => b.eggRarity)).toEqual(['rare', 'epic', 'legendary', 'legendary', 'legendary', 'legendary']);
+    expect(bosses.map((b) => b.eggRarity)).toEqual(['rare', 'epic', 'legendary', 'legendary', 'legendary', 'legendary', 'mythic']);
     expect(bosses.map((b) => b.bossId)).toEqual([
-      'boss-coastal_dig', 'boss-amber_ridge', 'boss-frozen_cliffs', 'boss-volcano_core', 'boss-abyssal_trench', 'boss-containment_site',
+      'boss-coastal_dig', 'boss-amber_ridge', 'boss-frozen_cliffs', 'boss-volcano_core', 'boss-abyssal_trench', 'boss-containment_site', 'boss-founders_park',
     ]);
     expect(bosses.slice(0, 3).map((b) => b.eggSpeciesId)).toEqual([null, null, null]);
     expect(bosses[3].eggSpeciesId).toBe('tyrannosaurus');
     expect(bosses[4].eggSpeciesId).toBe('mosasaurus');
     expect(bosses[5].eggSpeciesId).toBe('spinoraptor');
-    for (const b of bosses) expect(b.eggRarity).not.toBe('mythic');
+    expect(bosses[6].eggSpeciesId).toBe('ultimasaurus');
+    // Mythic boss eggs are reserved for the campaign's final chapter. This used to be a
+    // blanket ban (volcano_core.ts recorded the reasoning: a mythic trophy would undercut
+    // the 500-shard purchase). Founder's Park reverses it deliberately — the egg is a
+    // one-shot behind a 75-star gate AND a cleared chapter 6, a far higher bar than 500
+    // shards, and it is the only reward class left that escalates over chapter 6's pinned
+    // legendary. Scoping rather than deleting is what stops chapter 8 quietly shipping a
+    // second one and turning the top reward into the default one.
+    for (const b of bosses.slice(0, -1)) expect(b.eggRarity).not.toBe('mythic');
   });
 
   it('boss is authored as the third enemy (enemies[2]) on every boss stage', () => {
@@ -178,6 +186,39 @@ describe('battle gating', () => {
 
   it('unknown chapter is never unlocked', () => {
     expect(chapterUnlocked('sky_temple', prog({}), 9_999)).toBe(false);
+  });
+
+  // Seeds `total` stars across chapters 1-6 ONLY — never founders_park's own stages, which
+  // are unreachable until it unlocks. `bossCleared` controls the other half of the gate.
+  const seedStars = (total: number, bossCleared: boolean): ProgressMap => {
+    const entries: Record<string, { stars: number; firstClearedAt: number | null }> = {};
+    let left = total;
+    if (bossCleared) {
+      entries.containment_site_boss = { stars: 3, firstClearedAt: 1_000 };
+      left -= 3;
+    }
+    for (const c of CAMPAIGN.slice(0, 6)) {
+      for (const s of c.stages) {
+        if (s.id === 'containment_site_boss' || left <= 0) continue;
+        const give = Math.min(3, left);
+        entries[s.id] = { stars: give, firstClearedAt: 1_000 };
+        left -= give;
+      }
+    }
+    expect(left, `could not seed ${total} stars across chapters 1-6`).toBe(0);
+    return prog(entries);
+  };
+
+  it('a star-gated chapter opens on campaign stars, not park rating', () => {
+    expect(chapterUnlocked('founders_park', seedStars(74, true), 1_000)).toBe(false);
+    expect(chapterUnlocked('founders_park', seedStars(75, true), 1_000)).toBe(true);
+    // The whole point of the split: rating is irrelevant to the chapter gate, so a
+    // battle-heavy player with a modest park still gets in.
+    expect(chapterUnlocked('founders_park', seedStars(75, true), 0)).toBe(true);
+  });
+
+  it('a star-gated chapter still requires the previous boss first-clear', () => {
+    expect(chapterUnlocked('founders_park', seedStars(75, false), 1_000)).toBe(false);
   });
 });
 
