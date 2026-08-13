@@ -7,7 +7,7 @@ import { recordSpeciesSeen } from '../src/core/species-seen.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { ACHIEVEMENTS } from '../src/data/achievements.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
-import { LEGACY_TIERS, legacyMaxPoints, legacyPoints, legacyRank, bumpLegacyBest } from '../src/modules/park/ranks.js';
+import { LEGACY_TIERS, legacyMaxPoints, legacyPoints, legacyRank, bumpLegacyBest, tierForPoints } from '../src/modules/park/ranks.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); });
@@ -150,19 +150,51 @@ describe('legacy rank persistence', () => {
     expect(legacyRank(ctx, 'u1')!.title).toBe('Keeper');
   });
 
-  it('bumpLegacyBest latches the live total and never lowers it', () => {
+  it('bumpLegacyBest latches the live total, returns it, and never lowers it', () => {
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'Reg');
     for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u1', s.id);
-    bumpLegacyBest(ctx, 'u1');
+    expect(bumpLegacyBest(ctx, 'u1')).toBe(35);
     const after = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
     expect(after.legacyRankBest).toBe(35);
 
-    // A later call with a LOWER live total must not move it down.
+    // A later call with a LOWER live total must not move it down, and must return the
+    // higher stored value rather than the smaller live one.
     ctx.db.delete(schema.speciesSeen).where(eq(schema.speciesSeen.userId, 'u1')).run();
     expect(legacyPoints(ctx, 'u1')).toBe(0);
-    bumpLegacyBest(ctx, 'u1');
+    expect(bumpLegacyBest(ctx, 'u1')).toBe(35);
     const later = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
     expect(later.legacyRankBest).toBe(35);
+  });
+
+  it('bumpLegacyBest returns 0 for an unknown user and writes nothing', () => {
+    const ctx = makeCtx();
+    expect(bumpLegacyBest(ctx, 'ghost')).toBe(0);
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'ghost')).get()).toBeUndefined();
+  });
+
+  // Pins the exact pattern the two call sites now use in place of a separate
+  // legacyRank(ctx, userId) call: resolving the tier from bumpLegacyBest's returned
+  // number must agree with what legacyRank would have computed for the same state, so
+  // the single-pass refactor cannot silently diverge from the two-read original.
+  it('tierForPoints(bumpLegacyBest(...)) agrees with a fresh legacyRank call', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u1', s.id);
+    const best = bumpLegacyBest(ctx, 'u1');
+    expect(tierForPoints(best)).toEqual(legacyRank(ctx, 'u1'));
+  });
+});
+
+describe('tierForPoints', () => {
+  it('is null below the first threshold', () => {
+    expect(tierForPoints(LEGACY_TIERS[0].points - 1)).toBeNull();
+  });
+  it('resolves the exact tier at each threshold', () => {
+    for (const tier of LEGACY_TIERS) expect(tierForPoints(tier.points)).toEqual(tier);
+  });
+  it('resolves the HIGHEST tier for a value between two thresholds', () => {
+    const warden = LEGACY_TIERS.find((t) => t.title === 'Warden')!;
+    expect(tierForPoints(warden.points + 20)).toEqual(warden);
   });
 });

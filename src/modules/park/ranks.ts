@@ -57,6 +57,19 @@ export function legacyPoints(ctx: Ctx, userId: string): number {
 }
 
 /**
+ * Resolve an already-known point total to the highest tier reached, or null below the
+ * first threshold. Pure — no DB access — so a caller that has already paid for a
+ * users-row read and a legacyPoints computation (bumpLegacyBest's callers, via its
+ * returned high-water number) can resolve a tier without doing either a second time.
+ * legacyRank below is the DB-reading counterpart for callers that have not.
+ */
+export function tierForPoints(points: number): LegacyTier | null {
+  let out: LegacyTier | null = null;
+  for (const tier of LEGACY_TIERS) if (points >= tier.points) out = tier;
+  return out;
+}
+
+/**
  * The highest tier reached, or null below the first threshold.
  *
  * Resolves against max(stored, computed), never the stored value alone. The column is a
@@ -64,29 +77,40 @@ export function legacyPoints(ctx: Ctx, userId: string): number {
  * it wins, so the rank is always at least what the player has actually earned. That is
  * what makes a missed bumpLegacyBest call harmless; the stored value only ever matters
  * when the computed value DROPS, which is the case it exists to cover.
+ *
+ * Does its own users-row read and its own legacyPoints computation, on purpose: this is
+ * what lets src/modules/park/visit.ts call it standalone, with exactly these two
+ * arguments, for a player who is NOT the caller (a bumpLegacyBest write there would
+ * mutate a row the viewer never touched — see that function's own comment). A caller
+ * that both owns the row AND has already called bumpLegacyBest this request should
+ * resolve the tier via tierForPoints(bestPoints) instead of calling back in here — doing
+ * so would repeat the same read and the same legacyPoints computation a second time.
  */
 export function legacyRank(ctx: Ctx, userId: string): LegacyTier | null {
   const user = ctx.db.select().from(schema.users)
     .where(eq(schema.users.discordId, userId)).get();
   const points = Math.max(user?.legacyRankBest ?? 0, legacyPoints(ctx, userId));
-  let out: LegacyTier | null = null;
-  for (const tier of LEGACY_TIERS) if (points >= tier.points) out = tier;
-  return out;
+  return tierForPoints(points);
 }
 
 /**
- * Latch the live total into the monotone high-water column.
+ * Latch the live total into the monotone high-water column, and return the resolved
+ * best (max(stored, computed)) so an owner-path caller can resolve a tier via
+ * tierForPoints from that number, rather than calling legacyRank right after and paying
+ * for the users-row read and the legacyPoints computation a second time.
  *
  * Deliberately NOT folded into legacyRank: src/modules/park/visit.ts calls that for
  * ANOTHER player's id, so a write there would mutate the row of a user who took no
  * action. Call this only on paths where the acting user owns the row.
  */
-export function bumpLegacyBest(ctx: Ctx, userId: string): void {
+export function bumpLegacyBest(ctx: Ctx, userId: string): number {
   const user = ctx.db.select().from(schema.users)
     .where(eq(schema.users.discordId, userId)).get();
-  if (!user) return;
+  if (!user) return 0;
   const best = Math.max(user.legacyRankBest, legacyPoints(ctx, userId));
-  if (best === user.legacyRankBest) return;
-  ctx.db.update(schema.users).set({ legacyRankBest: best })
-    .where(eq(schema.users.discordId, userId)).run();
+  if (best !== user.legacyRankBest) {
+    ctx.db.update(schema.users).set({ legacyRankBest: best })
+      .where(eq(schema.users.discordId, userId)).run();
+  }
+  return best;
 }
