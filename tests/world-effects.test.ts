@@ -412,7 +412,7 @@ describe('battles under world events', () => {
 
     it('enemy maxHp and hp both scale by x1.15 on a Blood Moon day, at a genuinely fractional pre-round value', () => {
       // Isolates the formula from combat noise: containment_site_boss (Asset
-      // 47, legendary/bruiser, effective level 12, hpMult 2.15, atkMult 1.2)
+      // 47, legendary/bruiser, effective level 12, hpMult 1.72, atkMult 1.2)
       // fielded 1v1 against a solo level-1 compsognathus. Asset 47's spd vastly
       // exceeds compsognathus's, so it acts first, and its atk (unaffected by
       // any event) is so far past compsognathus's 51 hp that even the WORST
@@ -422,8 +422,11 @@ describe('battles under world events', () => {
       // both fields fed by the same local (hazard #3), so reading hp back
       // through the public API is enough to pin maxHp too.
       //   base stats: statsFor('spinoraptor', 12).hp = floor(265*1.0*1.88) = 498
-      //   calm:       round(498 * 2.15)        = round(1070.7)   = 1071  (frac .7  -> not floor, floor would give 1070)
-      //   blood_moon: round(498 * 2.15 * 1.15) = round(1231.305) = 1231  (frac .305 -> not ceil,  ceil would give 1232)
+      //   calm:       round(498 * 1.72)        = round(856.56)   = 857  (frac .56  -> not floor, floor would give 856)
+      //   blood_moon: round(498 * 1.72 * 1.15) = round(985.044)  = 985  (frac .044 -> not ceil,  ceil would give 986)
+      //   hpMult dropped from 2.15 to 1.72 to keep this boss winnable under Blood Moon —
+      //   see tests/battle-balance.test.ts's event guard and the boss comment in
+      //   src/data/battle/chapters/containment_site.ts.
       const runOn = (nowMs: number) => {
         const ctx = makeCtx({ nowMs });
         getOrCreateUser(ctx, 'p', 'P');
@@ -441,8 +444,8 @@ describe('battles under world events', () => {
       expect(bloodMoon.result.rounds).toBe(1);
       expect(bloodMoon.result.finalHp.d1).toBe(0);
       // The boss's untouched final hp IS its scaled max hp.
-      expect(calm.result.finalHp.n0).toBe(1071);
-      expect(bloodMoon.result.finalHp.n0).toBe(1231);
+      expect(calm.result.finalHp.n0).toBe(857);
+      expect(bloodMoon.result.finalHp.n0).toBe(985);
     });
   });
 

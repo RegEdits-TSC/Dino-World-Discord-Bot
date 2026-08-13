@@ -5,6 +5,7 @@ import { LEVEL_CAP } from '../src/data/battle/constants.js';
 import { resolveBattle, type Combatant } from '../src/data/battle/resolve.js';
 import { getSpecies } from '../src/data/species/index.js';
 import { mulberry32 } from '../src/core/rolls.js';
+import { NEUTRAL_MODS, WORLD_EVENTS, type EventMods } from '../src/data/world-events.js';
 
 // The strongest squad a player can actually field: three level-capped legendary
 // bruisers. Mythics exist but cost 500 shards each against a 60/day sell cap, so
@@ -20,11 +21,12 @@ function squadOf(speciesId: string, traits: string[]): Combatant[] {
   });
 }
 
-function npcsOf(stage: StageDef): Combatant[] {
+function npcsOf(stage: StageDef, mods: EventMods = NEUTRAL_MODS): Combatant[] {
   return rosterFor(stage, 3).map((e, i) => {
     const sp = getSpecies(e.speciesId);
     const s = statsFor(e.speciesId, stage.npcLevel + (e.boss?.levelBonus ?? 0));
-    const hp = Math.round(s.hp * (e.boss?.hpMult ?? 1));
+    // Same order and rounding as src/modules/battles/service.ts:109.
+    const hp = Math.round(s.hp * (e.boss?.hpMult ?? 1) * mods.enemyHp);
     return {
       key: `n${i}`, name: `N${i}`, speciesId: e.speciesId, archetype: sp.archetype,
       maxHp: hp, hp, atk: Math.round(s.atk * (e.boss?.atkMult ?? 1)),
@@ -33,10 +35,10 @@ function npcsOf(stage: StageDef): Combatant[] {
   });
 }
 
-function winRate(stage: StageDef, traits: string[], runs = 400): number {
+function winRate(stage: StageDef, traits: string[], runs = 400, mods: EventMods = NEUTRAL_MODS): number {
   let won = 0;
   for (let seed = 0; seed < runs; seed++) {
-    if (resolveBattle(squadOf('tyrannosaurus', traits), npcsOf(stage), mulberry32(seed)).won) won++;
+    if (resolveBattle(squadOf('tyrannosaurus', traits), npcsOf(stage, mods), mulberry32(seed)).won) won++;
   }
   return won / runs;
 }
@@ -91,5 +93,26 @@ describe('boss difficulty bands', () => {
   it(`${FINALE.name} boss (the current finale) is not a guaranteed win for a traited legendary squad`, () => {
     const rate = winRate(FINALE.stages[4], ['savage']);
     expect(rate, `traited win rate ${rate}`).toBeLessThanOrEqual(0.99);
+  });
+});
+
+// Blood Moon is the only event that touches combat: enemyHp 1.15, applied to every
+// enemy including escorts (src/modules/battles/service.ts:109). It runs roughly one
+// day in eight, and before this guard existed nothing in the suite ever measured a
+// boss under an event — chapters 5 and 6 sat at 0.50 and 0.40 traited on those days,
+// far under the floor every other day asserts.
+//
+// Only the TRAITED floor is asserted here. Requiring >=0.40 untraited under the event
+// too is unsatisfiable without flattening the late campaign: the configurations that
+// reach it push neutral untraited rates out of monotone order. Blood Moon stays a real
+// difficulty spike — it also pays +50% battle XP and -1 energy — but a prepared squad
+// can always win.
+describe('boss difficulty under world events', () => {
+  const BLOOD_MOON = WORLD_EVENTS.find((e) => e.id === 'blood_moon')!;
+  const MODS: EventMods = { ...NEUTRAL_MODS, ...BLOOD_MOON.mods };
+
+  it.each(BOSS_STAGES)('$chapter boss stays winnable for a traited squad under Blood Moon', ({ stage }) => {
+    const rate = winRate(stage, ['savage'], 400, MODS);
+    expect(rate, `Blood Moon traited win rate ${rate}`).toBeGreaterThanOrEqual(0.85);
   });
 });

@@ -34,25 +34,27 @@ export const abyssalTrench: ChapterDef = {
       enemies: [{ speciesId: 'kronosaurus' }, { speciesId: 'liopleurodon' }, { speciesId: 'mosasaurus' }],
       rewards: { cash: 750, food: { foodId: 'fish', qty: 5 }, xp: 240 }, firstClearShards: 14,
       boss: {
-        // hpMult retuned from an original 2.8, then a first-draft floor of 1.2
-        // (tests/battle-balance.test.ts) that overcorrected: 1.2 left this boss's
-        // resolved HP (806) and untraited win rate (0.60) both weaker than Volcano
-        // Core's (1193 / 0.92), inverting the campaign's difficulty ladder against
-        // Containment Site. atkMult stays at its originally authored 1.25: boss
-        // multipliers never fall below 1.0, though archetype multipliers still apply
-        // on top, so this tank boss (1.35x hp, 1.4x def, 0.8x atk before hpMult/atkMult)
-        // can still resolve to a lower attack than a bruiser escort standing beside it.
-        // A full return to hpMult 2.8 was simulated and reproduced the original
-        // squad-wipe failure — traited win rate collapses well under the 0.85 floor,
-        // and untraited under the 0.40 floor, long before resolved HP reaches 1193.
-        // 1.3 is the measured ceiling that keeps both floors comfortably clear
-        // (3,000-seed check: traited 0.96, untraited 0.49) while raising resolved
-        // HP from 806 to 874 — real headroom, though short of full parity with
-        // Volcano Core's 1193, which this archetype cannot reach without breaking
-        // the win-rate floors. tests/battle-balance.test.ts's monotonic-ladder
-        // assertion is what actually enforces the escalation now.
+        // hpMult 0.78, down from 1.3, so this boss clears the traited floor under Blood
+        // Moon (enemyHp 1.15) as well as under neutral mods — see the event guard in
+        // tests/battle-balance.test.ts. Measured at 400 seeds, the count that test uses:
+        // Blood Moon traited 0.9225, neutral traited 1.0000, neutral untraited 0.9225.
+        // Confirm at 3,000 and 10,000 before changing this number.
+        //
+        // This is deliberately below 1.0, retiring the "boss multipliers never fall
+        // below 1.0" convention these files used to state. atkMult was the obvious way
+        // to preserve it and was measured and rejected: at 1.05 it clears the Blood Moon
+        // floor but lands neutral traited at 1.0000, which breaches the finale ceiling on
+        // Containment Site and breaks the monotone ladder. Cutting attack removes the
+        // threat outright; cutting HP keeps the boss hitting just as hard and shortens
+        // how long the squad is exposed to it. HP is the exposure knob, attack is the
+        // threat knob, and only exposure has usable range here. atkMult stays at 1.25.
+        //
+        // 0.9225 untraited sits between Volcano Core's 0.9300 and Containment Site's
+        // 0.8800, holding the campaign's monotonic ladder. Scale 0.65 also clears the
+        // event floor but lands at 0.8550, BELOW Containment Site, which inverts the
+        // ladder — the two late bosses must be tuned together, not independently.
         bossId: 'boss-abyssal_trench', title: 'The Trench Sovereign', speciesId: 'mosasaurus',
-        levelBonus: 1, hpMult: 1.3, atkMult: 1.25, eggRarity: 'legendary', eggSpeciesId: 'mosasaurus',
+        levelBonus: 1, hpMult: 0.78, atkMult: 1.25, eggRarity: 'legendary', eggSpeciesId: 'mosasaurus',
       },
     },
   ],
