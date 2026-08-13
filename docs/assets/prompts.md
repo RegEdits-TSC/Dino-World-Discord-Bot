@@ -369,6 +369,39 @@ same upscaled source, resized to 1024×1024 (not a squash).
 > with smooth gradients, polished game-asset look. No text, no characters, no UI
 > elements.
 
+## Founder's Park (`founders_park`)
+
+Generated at 1264×848 (3:2, `nano_banana_2`, routed by the service to
+`nano_banana_flash`), fitted to 1536×1024 for the banner via
+`node scripts/fit-art.mjs banner`; the thumb is a centered square crop of the
+same source, resized to 1024×1024 with `drawImage` (not a squash — no
+`fit-art.mjs` mode produces a site thumb, so this one is a hand pass, same
+recipe as the Abyssal Trench and Containment Site thumbs above).
+
+**Banner (1536×1024) and Thumb (1024×1024), same source:**
+
+> A ruined dinosaur park main entrance at golden hour, a cracked stone archway
+> standing over rusted turnstiles half-swallowed by creeping vines and tall
+> ferns, a toppled weathered wooden signboard lying face-up in long grass with
+> a completely blank peeling surface, buckled paving stones across an
+> abandoned visitor plaza, enormous dinosaur silhouettes moving in the warm
+> haze beyond the open gate, long amber light and drifting dust motes, warm
+> gold and deep green palette, a sense of a place reclaimed. Wide cinematic
+> establishing shot filling the entire canvas edge to edge with no
+> letterboxing. Glossy cartoon mobile-game art style, bold dark outlines,
+> vibrant saturated colors, strong glossy highlights, clean cel shading with
+> smooth gradients, polished game-asset look. CRITICAL: absolutely no writing
+> anywhere in the image — no letters, no words, no numbers, no carved
+> inscriptions, no painted signage, no symbols, no logos. Every sign, plaque
+> and surface is blank and wordless. No human characters, no UI elements.
+
+Note for future regeneration: the first attempt rendered a legible "WELCOME"
+across the toppled signboard despite the prompt already asking for a blank
+surface — the plain "blank peeling surface" phrase was not enough on its own.
+The explicit CRITICAL no-writing block (no letters/words/numbers/inscriptions/
+signage/symbols/logos, every sign and surface blank and wordless) is what
+fixed it; keep that block verbatim on any future regeneration of this scene.
+
 ---
 
 ## Embed banners
@@ -756,7 +789,7 @@ style block plus the expanded no-text clause used elsewhere in this section.
 
 ## Battle bosses
 
-Six boss portraits for the PvE campaign (`/battle`), used as `setThumbnail`
+Seven boss portraits for the PvE campaign (`/battle`), used as `setThumbnail`
 on frames F3/F4 of boss stages. Null-degrade everywhere: the campaign ships
 fully playable with zero battle art.
 
@@ -768,6 +801,7 @@ fully playable with zero battle art.
 | `assets/images/battles/boss-volcano_core-portrait.webp` | 1024×1024, transparent | The Tyrant King (Tyrannosaurus), Volcano Core boss frames |
 | `assets/images/battles/boss-abyssal_trench-portrait.webp` | 1024×1024, transparent | The Trench Sovereign (Mosasaurus), Abyssal Trench boss frames |
 | `assets/images/battles/boss-containment_site-portrait.webp` | 1024×1024, transparent | Asset 47 (Spinoraptor), Containment Site boss frames |
+| `assets/images/battles/boss-founders_park-portrait.webp` | 1024×1024, transparent | Ultimasaurus (The Last Asset), Founder's Park boss frames |
 
 **Hard no-glow rule:** no glow, rays, embers, sparkles, or light effects may
 extend beyond the dinosaur silhouette — off-silhouette glow survives
@@ -908,6 +942,43 @@ cover, and these two clauses are what fixed them:
 - **"no text, no numbers, no lettering"** — the first Spinoraptor rendered a
   legible "#042" on its neck tag, which both violates the no-text house rule
   and contradicts the boss's name, Asset 47.
+
+**boss-founders_park — Ultimasaurus, "The Last Asset":** generated as a
+standalone prompt (not an image-edit of the coastal reference), background
+removed, fitted to a **24px margin** — the same margin as the other six
+portraits (`assets/images/battles/`), and deliberately not `fit-art.mjs
+cutout`'s 31px (see the divergence table in Egg rarities above).
+
+> A fierce cartoon hybrid dinosaur boss portrait, head and shoulders in
+> three-quarter view, a massive armored apex predator with a broad heavy
+> skull, thick bony plating across the brow and cheeks, blunt horns ridging
+> the jawline, overlapping armor scutes running down the neck and shoulders,
+> deep slate-gray and burnished bronze banded hide with a wet glossy sheen,
+> old battle scarring across the plates, a small blank unmarked metal tag
+> clipped to the neck, snarling with cold engineered menace. CRITICAL
+> FRAMING: zoom out so the ENTIRE creature — the whole head, the full neck,
+> and both complete shoulders — sits well inside the frame, small in the
+> canvas, surrounded by a wide band of empty background on all four sides.
+> Nothing may touch, run off, or be cropped by any edge of the image,
+> especially the bottom and right edges. Plain flat light-gray studio
+> background, completely empty, no scenery, no ground shadow, no drawn
+> border, no frame, no panel edge, no letterboxing. No glow, rays, embers,
+> sparkles, or light effects extending beyond the creature silhouette.
+> Glossy cartoon mobile-game art style, bold dark outlines, vibrant
+> saturated colors, strong glossy highlights, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no numbers, no lettering, no
+> human characters, no UI elements.
+
+Note for future regeneration: the first attempt cropped the creature at both
+the bottom and right edges of the canvas — the existing prompt frame's
+generic "fills almost the entire square frame" language was not enough to
+stop it here, since this design (armor plating across broad shoulders) reads
+larger in frame than the reference poses. The CRITICAL FRAMING block above
+(zoom out, whole creature inside the frame, explicit "especially the bottom
+and right edges") is what fixed it. The shipped portrait's alpha bounding box
+still touches the bottom of its own source canvas before fitting — that is
+expected, matches the shipped `boss-containment_site-portrait.webp` (also cut
+flat at the bottom), and is not something to "fix" by re-cropping.
 
 ## Dino archetypes
 
