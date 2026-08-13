@@ -288,15 +288,16 @@ until you place it in one.
 
 ## 6. The roster
 
-Dino World has 42 species split across six rarities: 8 Common, 9 Uncommon, 9
-Rare, 8 Epic, 5 Legendary, and 3 Mythic. Diet determines which paddock a dino
-can live in without its comfort being halved, so it's worth knowing before you
-start hatching: 18 species are herbivores and 24 are carnivores.
+Dino World has 52 species split across six rarities: 13 Common, 10 Uncommon,
+10 Rare, 11 Epic, 5 Legendary, and 3 Mythic. Diet determines which paddock a
+dino can live in without its comfort being halved, so it's worth knowing
+before you start hatching: 24 species are herbivores and 28 are carnivores.
 
 Since the species inside a hatched egg is a flat pick across its rarity's pool
 (see above), adding a species to a tier dilutes every other species in that
-tier's odds — the Uncommon tier grew from 8 to 9 species, so each existing
-Uncommon dropped from a 1-in-8 to a 1-in-9 chance per hatch.
+tier's odds — the Common tier grew from 8 to 13 species, so each existing
+Common's chance per hatch fell from 1-in-8 to 1-in-13, a 38.5% drop in that
+species' own share.
 
 | Species | Rarity | Diet |
 | --- | --- | --- |
@@ -308,6 +309,11 @@ Uncommon dropped from a 1-in-8 to a 1-in-9 chance per hatch.
 | Othnielia | Common | herbivore |
 | Microceratus | Common | herbivore |
 | Nasutoceratops | Common | herbivore |
+| Henodus | Common | herbivore |
+| Thescelosaurus | Common | herbivore |
+| Hesperornis | Common | carnivore |
+| Lesothosaurus | Common | herbivore |
+| Leaellynasaura | Common | herbivore |
 | Stegosaurus | Uncommon | herbivore |
 | Parasaurolophus | Uncommon | herbivore |
 | Dilophosaurus | Uncommon | carnivore |
@@ -317,6 +323,7 @@ Uncommon dropped from a 1-in-8 to a 1-in-9 chance per hatch.
 | Ouranosaurus | Uncommon | herbivore |
 | Archelon | Uncommon | carnivore |
 | Cryolophosaurus | Uncommon | carnivore |
+| Massospondylus | Uncommon | herbivore |
 | Velociraptor | Rare | carnivore |
 | Carnotaurus | Rare | carnivore |
 | Baryonyx | Rare | carnivore |
@@ -326,6 +333,7 @@ Uncommon dropped from a 1-in-8 to a 1-in-9 chance per hatch.
 | Elasmosaurus | Rare | carnivore |
 | Tylosaurus | Rare | carnivore |
 | Nanuqsaurus | Rare | carnivore |
+| Pteranodon | Rare | carnivore |
 | Brachiosaurus | Epic | herbivore |
 | Spinosaurus | Epic | carnivore |
 | Therizinosaurus | Epic | herbivore |
@@ -334,6 +342,9 @@ Uncommon dropped from a 1-in-8 to a 1-in-9 chance per hatch.
 | Ankylodocus | Epic | herbivore |
 | Scorpios rex | Epic | carnivore |
 | Stegoceratops | Epic | herbivore |
+| Deinosuchus | Epic | carnivore |
+| Sinosaurus | Epic | carnivore |
+| Pachyrhinosaurus | Epic | herbivore |
 | Tyrannosaurus | Legendary | carnivore |
 | Mosasaurus | Legendary | carnivore |
 | Quetzalcoatlus | Legendary | carnivore |
@@ -895,9 +906,9 @@ recognizes breadth, never wealth:
 | 5 | Conservator | 140 |
 | 6 | Director | 170 |
 
-Points are the sum of three things: species you've discovered (up to 42),
+Points are the sum of three things: species you've discovered (up to 52),
 achievement tiers you've claimed (up to 48), and stars earned across the
-battle campaign (up to 90) — 180 points in total. Nothing is spent or
+battle campaign (up to 90) — 190 points in total. Nothing is spent or
 consumed to earn a rank, and nothing can ever be lost — it's simply
 recalculated from what you've already done, each time it's shown. Below 15
 points you haven't reached Groundskeeper yet and show no rank at all. Your
@@ -1050,7 +1061,7 @@ is a normal, common outcome, not a failed roll.
 
 ### The domain rule
 
-The 14 traits are grouped into four domains — income, care, combat, and
+The 20 traits are grouped into four domains — income, care, combat, and
 meta — and **a dino can never hold two traits from the same domain.** That
 rule is enforced everywhere a trait is picked: a fresh hatch, breeding
 inheritance, and a `/splice` re-roll all exclude every domain the dino's
@@ -1061,22 +1072,25 @@ them at a time.
 
 | Domain | Traits |
 | --- | --- |
-| Income | Prolific, Runt, Grazer |
-| Care | Hardy, Thrifty, Skittish, Gluttonous |
+| Income | Prolific, Runt, Grazer, Crowd-Pleaser, Docile |
+| Care | Hardy, Thrifty, Skittish, Gluttonous, Voracious |
 | Combat | Savage, Ironhide, Fleet, Glass Cannon, Frail |
-| Meta | Prodigy, Fertile |
+| Meta | Prodigy, Fertile, Broody, Matriarch, Dull |
 
-### The 14 traits
+### The 20 traits
 
 | Trait | Domain | Effect |
 | --- | --- | --- |
 | Prolific | Income | +15% income |
 | Runt | Income | -10% income |
 | Grazer | Income | +20% income, +20% hunger drain |
+| Crowd-Pleaser | Income | +25% income |
+| Docile | Income | +10% income, -10% hunger drain |
 | Hardy | Care | -25% hunger drain |
 | Thrifty | Care | -25% feed cost |
 | Skittish | Care | +20% hunger drain |
 | Gluttonous | Care | +25% feed cost |
+| Voracious | Care | -30% feed cost, +20% hunger drain |
 | Savage | Combat | +12% attack |
 | Ironhide | Combat | +12% defence |
 | Fleet | Combat | +12% speed |
@@ -1084,14 +1098,18 @@ them at a time.
 | Frail | Combat | -10% HP |
 | Prodigy | Meta | +20% battle XP |
 | Fertile | Meta | -25% breeding time |
+| Broody | Meta | -40% breeding time |
+| Matriarch | Meta | -30% breeding time, -10% income |
+| Dull | Meta | -15% battle XP |
 
 Every effect is a straight multiplier layered on top of the dino's base
 number — income, hunger drain rate, feed cost, the four battle stats,
 battle XP per fight, or breeding time. A dino holding two traits applies
-both multipliers. Eight of the fourteen are purely upside (Prolific, Hardy,
-Thrifty, Savage, Ironhide, Fleet, Prodigy, Fertile) and four are purely
-downside (Runt, Skittish, Gluttonous, Frail); the remaining two — Grazer and
-Glass Cannon — are double-edged, trading a real cost for a real gain. Not
+both multipliers. Eleven of the twenty are purely upside (Prolific, Hardy,
+Thrifty, Savage, Ironhide, Fleet, Prodigy, Fertile, Crowd-Pleaser, Docile,
+Broody) and five are purely downside (Runt, Skittish, Gluttonous, Frail,
+Dull); the remaining four — Grazer, Glass Cannon, Voracious, and Matriarch —
+are double-edged, trading a real cost for a real gain. Not
 every roll is an upgrade, which is what makes `/splice` (see below) an
 actual gamble rather than a guaranteed improvement.
 
@@ -1169,8 +1187,11 @@ locked — and the Gene Lab slot occupied — until you claim it:
 | Legendary | 40,000 | 36 h |
 
 Mythics can't be paired at all, so there's no Mythic row. If either parent
-carries the Fertile trait (-25% breeding time), the pairing gets the
-shorter of the two parents' times — Fertile on just one side is enough.
+carries a breeding-time trait — Fertile (-25%), Broody (-40%), or Matriarch
+(-30%) — the pairing gets the shorter of the two parents' times; any one of
+the three on just one side is enough. Because the shorter time wins, a trait
+that *lengthened* breeding would do nothing unless both parents carried it —
+which is why none exists.
 
 ### Cooldown
 

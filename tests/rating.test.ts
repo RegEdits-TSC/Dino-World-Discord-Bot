@@ -92,7 +92,7 @@ describe('recomputeRating', () => {
   });
   it('collection is clamped at the frozen target, so extra species never overflow it', () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
-    // 302 points of rarity weight now exist against a COLLECTION_TARGET of 190,
+    // 337 points of rarity weight now exist against a COLLECTION_TARGET of 190,
     // so a deep collection must saturate the term rather than exceeding it.
     for (const s of ['indominus', 'indoraptor', 'ultimasaurus', 'tyrannosaurus', 'mosasaurus',
       'quetzalcoatlus', 'liopleurodon', 'spinoraptor']) {

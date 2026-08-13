@@ -11,7 +11,7 @@ export interface LegacyTier { rank: number; title: string; points: number }
 
 /**
  * Earned standing, front-loaded so rank 1 arrives early and Director stays rare.
- * Thresholds are fractions of the 180-point ceiling: 8.3 / 19.4 / 36.1 / 55.6 / 77.8 / 94.4%.
+ * Thresholds are fractions of the 190-point ceiling: 7.9 / 18.4 / 34.2 / 52.6 / 73.7 / 89.5%.
  */
 export const LEGACY_TIERS: readonly LegacyTier[] = [
   { rank: 1, title: 'Groundskeeper', points: 15 },
@@ -23,9 +23,13 @@ export const LEGACY_TIERS: readonly LegacyTier[] = [
 ];
 
 /**
- * The ceiling, derived from the three content tables rather than written down: 42 species
- * + 48 achievement tiers + 90 battle stars = 180 today. New content must move this, or the
- * top rank silently drifts from "nearly everything" to "a fraction of it".
+ * The ceiling, derived from the three content tables rather than written down: 52 species
+ * + 48 achievement tiers + 90 battle stars = 190 today.
+ * Director has slid from 94.4% of the ceiling to 89.5% because LEGACY_TIERS was
+ * deliberately NOT retuned: nothing persists an earned rank, so raising a threshold
+ * demotes live players on their next /park view and contradicts docs/gameplay.md's
+ * promise that nothing can ever be lost. Discharging this needs a monotone
+ * users.legacyRankBest, not a threshold edit. See the 4a spec, section 8.
  */
 export function legacyMaxPoints(): number {
   return allSpecies().length

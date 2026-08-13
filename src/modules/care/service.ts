@@ -18,8 +18,8 @@ export class CareError extends Error {}
 
 // Feed cost in food units, after trait modifiers and the day's world event.
 // Floored at 1: a discount must never make feeding free. Forward-looking guard,
-// not currently exercised: the lowest pre-floor value reachable today is 2.8125
-// (common's feedCost 5 * thrifty's 0.75 * cold_snap's 0.75 — the one-trait-per-
+// not currently exercised: the lowest pre-floor value reachable today is 2.625
+// (common's feedCost 5 * voracious's 0.70 * cold_snap's 0.75 — the one-trait-per-
 // domain rule means no second care-domain trait discount can stack on top), so
 // the floor can't trigger yet. It exists so a future cheaper food tier or a
 // stronger discount can't make feeding free.

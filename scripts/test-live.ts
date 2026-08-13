@@ -236,7 +236,7 @@ assignDino(ctx, P4, enrichedDino.id, enrichedLot.id);
 // recordSpeciesSeen only, no dinos/eggs/battles/achievements, so legacyPoints
 // (src/modules/park/ranks.ts) equals exactly the discovery count with nothing else
 // added in. LEGACY_TIERS starts Groundskeeper at 15, Keeper at 35: crediting the
-// roster's first 35 (of 42) species lands exactly on Keeper (rank 2) rather than only
+// roster's first 35 (of 52) species lands exactly on Keeper (rank 2) rather than only
 // clearing Groundskeeper (rank 1) the way, say, 20 would — the dashboard's Legacy field
 // only renders once legacyRank returns non-null, so a threshold has to be cleared
 // deliberately, not merely approached.
@@ -320,7 +320,7 @@ const cases: Case[] = [
   { title: 'daily:claim — claim reply (ephemeral in production)', run: () => button('daily', `daily:claim:${P1}`, P1) },
   { title: '/park view — showcase pair on one embed: featured-dino thumbnail + park map (landmark tile bumps the canvas to 2 rows)', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P1 }) },
   { title: '/park landmark — Bronze Sentinel built, Amber Obelisk next (grouped price)', run: () => slash('park', 'park', { name: 'park', sub: 'landmark', user: P1 }) },
-  { title: '/park view — P5, Legacy rank Keeper at 35 of 42 species discovered', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P5 }) },
+  { title: '/park view — P5, Legacy rank Keeper at 35 of 52 species discovered', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P5 }) },
   { title: '/top legacy — widened metric, Visit buttons on the board', run: () => slash('leaderboards', 'top', { name: 'top', user: P1, options: { metric: 'legacy', scope: 'global' } }) },
   { title: 'top:visit — P2 opens P1\'s park via the board button: check motto + featured thumbnail present, no Collect, Next park present', run: () => button('leaderboards', `top:visit:${P1}`, P2) },
   { title: '/park view user:P1 (as P2) — visiting via the command: check motto + featured thumbnail present, no Collect, Next park present', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P2, options: { user: P1 } }) },

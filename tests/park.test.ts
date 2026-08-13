@@ -311,7 +311,7 @@ describe('dashboard legacy rank', () => {
 describe('/park view legacy rank wiring', () => {
   // allSpecies().slice(0, 15/35) seeds exactly the Groundskeeper/Keeper thresholds
   // (LEGACY_TIERS in src/modules/park/ranks.js) via species points alone — species alone
-  // caps at allSpecies().length (42, tests/ranks.test.ts), which is why these two tests
+  // caps at allSpecies().length (52, tests/ranks.test.ts), which is why these two tests
   // stay within Groundskeeper/Keeper rather than reaching for a higher tier. u1 and u2
   // land on DIFFERENT titles on purpose: a title mismatch fails louder than a
   // missing-vs-present field would if the wrong id were ever passed at a call site.

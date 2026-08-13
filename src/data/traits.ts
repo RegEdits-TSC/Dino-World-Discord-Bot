@@ -1,10 +1,10 @@
 export type TraitDomain = 'income' | 'care' | 'combat' | 'meta';
 
 export type TraitId =
-  | 'prolific' | 'runt' | 'grazer'
-  | 'hardy' | 'thrifty' | 'skittish' | 'gluttonous'
+  | 'prolific' | 'runt' | 'grazer' | 'crowd_pleaser' | 'docile'
+  | 'hardy' | 'thrifty' | 'skittish' | 'gluttonous' | 'voracious'
   | 'savage' | 'ironhide' | 'fleet' | 'glass_cannon' | 'frail'
-  | 'prodigy' | 'fertile';
+  | 'prodigy' | 'fertile' | 'broody' | 'matriarch' | 'dull';
 
 // Every field is a MULTIPLIER, default 1. `drain` scales the hunger drain RATE,
 // so >1 empties faster; src/core/clock.ts divides the 48h window by it.
@@ -31,11 +31,14 @@ export const TRAITS: Record<TraitId, TraitDef> = {
   prolific:    { id: 'prolific',    name: 'Prolific',    domain: 'income', polarity: 'positive', blurb: '+15% income',                 emoji: 'dw_trait_income', fallback: '💰', mods: { income: 1.15 } },
   runt:        { id: 'runt',        name: 'Runt',        domain: 'income', polarity: 'negative', blurb: '-10% income',                 emoji: 'dw_trait_income', fallback: '💰', mods: { income: 0.90 } },
   grazer:      { id: 'grazer',      name: 'Grazer',      domain: 'income', polarity: 'mixed',    blurb: '+20% income, +20% hunger drain', emoji: 'dw_trait_income', fallback: '💰', mods: { income: 1.20, drain: 1.20 } },
+  crowd_pleaser: { id: 'crowd_pleaser', name: 'Crowd-Pleaser', domain: 'income', polarity: 'positive', blurb: '+25% income',                 emoji: 'dw_trait_income', fallback: '💰', mods: { income: 1.25 } },
+  docile:      { id: 'docile',      name: 'Docile',      domain: 'income', polarity: 'positive', blurb: '+10% income, -10% hunger drain', emoji: 'dw_trait_income', fallback: '💰', mods: { income: 1.10, drain: 0.90 } },
 
   hardy:       { id: 'hardy',       name: 'Hardy',       domain: 'care',   polarity: 'positive', blurb: '-25% hunger drain',           emoji: 'dw_trait_care',   fallback: '🌿', mods: { drain: 0.75 } },
   thrifty:     { id: 'thrifty',     name: 'Thrifty',     domain: 'care',   polarity: 'positive', blurb: '-25% feed cost',              emoji: 'dw_trait_care',   fallback: '🌿', mods: { feed: 0.75 } },
   skittish:    { id: 'skittish',    name: 'Skittish',    domain: 'care',   polarity: 'negative', blurb: '+20% hunger drain',           emoji: 'dw_trait_care',   fallback: '🌿', mods: { drain: 1.20 } },
   gluttonous:  { id: 'gluttonous',  name: 'Gluttonous',  domain: 'care',   polarity: 'negative', blurb: '+25% feed cost',              emoji: 'dw_trait_care',   fallback: '🌿', mods: { feed: 1.25 } },
+  voracious:   { id: 'voracious',   name: 'Voracious',   domain: 'care',   polarity: 'mixed',    blurb: '-30% feed cost, +20% hunger drain', emoji: 'dw_trait_care',   fallback: '🌿', mods: { feed: 0.70, drain: 1.20 } },
 
   savage:      { id: 'savage',      name: 'Savage',      domain: 'combat', polarity: 'positive', blurb: '+12% attack',                 emoji: 'dw_trait_combat', fallback: '⚔️', mods: { atk: 1.12 } },
   ironhide:    { id: 'ironhide',    name: 'Ironhide',    domain: 'combat', polarity: 'positive', blurb: '+12% defence',                emoji: 'dw_trait_combat', fallback: '⚔️', mods: { def: 1.12 } },
@@ -45,6 +48,9 @@ export const TRAITS: Record<TraitId, TraitDef> = {
 
   prodigy:     { id: 'prodigy',     name: 'Prodigy',     domain: 'meta',   polarity: 'positive', blurb: '+20% battle XP',              emoji: 'dw_trait_meta',   fallback: '🧬', mods: { xp: 1.20 } },
   fertile:     { id: 'fertile',     name: 'Fertile',     domain: 'meta',   polarity: 'positive', blurb: '-25% breeding time',          emoji: 'dw_trait_meta',   fallback: '🧬', mods: { breedTime: 0.75 } },
+  broody:      { id: 'broody',      name: 'Broody',      domain: 'meta',   polarity: 'positive', blurb: '-40% breeding time',          emoji: 'dw_trait_meta',   fallback: '🧬', mods: { breedTime: 0.60 } },
+  matriarch:   { id: 'matriarch',   name: 'Matriarch',   domain: 'meta',   polarity: 'mixed',    blurb: '-30% breeding time, -10% income', emoji: 'dw_trait_meta',   fallback: '🧬', mods: { breedTime: 0.70, income: 0.90 } },
+  dull:        { id: 'dull',        name: 'Dull',        domain: 'meta',   polarity: 'negative', blurb: '-15% battle XP',              emoji: 'dw_trait_meta',   fallback: '🧬', mods: { xp: 0.85 } },
 };
 
 export const TRAIT_IDS = Object.keys(TRAITS) as TraitId[];

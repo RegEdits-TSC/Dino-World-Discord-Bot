@@ -46,6 +46,12 @@ describe('feed cost under world events', () => {
     expect(feedCostFor('common', ['thrifty'], 8 * DAY)).toBe(3);
   });
 
+  it('composes with the Voracious trait, the deepest discount reachable', () => {
+    // common feedCost 5, voracious 0.70, cold snap 0.75 => 2.625 -> round 3.
+    // Voracious is deeper than Thrifty's 0.75, so this is the true floor headroom.
+    expect(feedCostFor('common', ['voracious'], 8 * DAY)).toBe(3);
+  });
+
   it('applies the event multiplier before rounding, not after the floor', () => {
     // common feedCost 5 * heat wave 1.3 = 6.5 -> round 7. Rounding the trait
     // product first (5 -> 5) and multiplying the event factor in afterward

@@ -26,7 +26,7 @@ export const dexModule: ModuleManifest = {
         const sub = i.options.getSubcommand();
         if (sub === 'view') {
           const id = i.options.getString('species', true);
-          // 42 species exceeds Discord's 25-choice cap, so the value is a free-text
+          // 52 species exceeds Discord's 25-choice cap, so the value is a free-text
           // string even with autocomplete: an unknown id is a normal input, not a bug.
           if (!allSpecies().some((s) => s.id === id)) {
             await i.reply({ content: 'No such species.', flags: MessageFlags.Ephemeral });

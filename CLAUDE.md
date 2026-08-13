@@ -676,7 +676,7 @@
   distinct decor kinds.
   `/dex view`'s `species` option and `/admin give`'s `dino-species` option both use
   `.setAutocomplete(true)` with free-text search rather than `addChoices(...allSpecies())`
-  — not a style choice. Discord's option choices cap at 25; 42 species is well past it, and
+  — not a style choice. Discord's option choices cap at 25; 52 species is well past it, and
   `addChoices` THROWS once called past that cap, at builder-construction time — i.e.
   module init, i.e. bot boot. Get this wrong and the bot never starts at all; it is a crash,
   never a degrade.
@@ -774,8 +774,8 @@
   rank built on that table would under-rank exactly the oldest, most invested players,
   the inversion the feature exists to prevent. It sums three sources that are each
   already monotone and already complete for every account instead: species discovered
-  (`dexProgress`, max 42), achievement tiers claimed (`earnedTierCount`, max 48), and
-  battle stars (`battle_progress.stars`, max 90) — 180 points total, nothing spent,
+  (`dexProgress`, max 52), achievement tiers claimed (`earnedTierCount`, max 48), and
+  battle stars (`battle_progress.stars`, max 90) — 190 points total, nothing spent,
   nothing stored.
   **"Already complete for every account" is true of two of those three, and only
   transitively true of the achievement term** — say so rather than repeating the clean
@@ -787,7 +787,7 @@
   `stages_first_cleared`, `trades_completed`, `breedings_claimed`, `lots_built` — are
   covered; `breedings_started` is backfilled but has no track, which is why 6 backfilled
   counters cover only 5 tracks.) A pre-0006 account therefore cannot claim 28 of the 48
-  achievement points out of history it actually lived — **15.6% of the 180 ceiling
+  achievement points out of history it actually lived — **14.7% of the 190 ceiling
   inherits exactly the gap `user_stats` was rejected to avoid.** The code is still right:
   the shortfall is re-earnable by playing, where a rank built ON `user_stats` would have
   been permanently unrecoverable, and the dex and battle-star terms are complete in the
