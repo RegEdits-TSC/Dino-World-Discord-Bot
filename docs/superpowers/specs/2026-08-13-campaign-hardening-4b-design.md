@@ -116,18 +116,39 @@ Current values: Abyssal Trench boss `hpMult` 1.3 / `atkMult` 1.25; Containment
 Site boss `hpMult` 2.15 / `atkMult` 1.2. Both at `npcLevel` 11 with `levelBonus`
 1, i.e. effective level 12 — the sanity cap, which does not move.
 
-### The `hpMult ≥ 1.0` convention
+### The `hpMult ≥ 1.0` convention is retired, and `atkMult` is the wrong lever
 
 Both chapter files state in prose that *"boss multipliers never fall below 1.0"*.
 It is **not machine-checked** — nothing in `battle-content.test.ts` asserts it.
 Applying scale 0.60 to Abyssal Trench's 1.3 gives 0.78, which breaks it.
 
-**The tuning task must first attempt to satisfy the bands while holding
-`hpMult ≥ 1.0`**, moving `atkMult` instead, and record that attempt. Only if no
-such configuration exists may `hpMult` drop below 1.0 — and if it does, both
-chapter files' convention text must be updated in the same change rather than
-left contradicting the data beside it. The convention predates event-aware
-tuning; retiring it is a legitimate outcome, silently violating it is not.
+**Decision: retire the convention for `hpMult`, and keep `atkMult` where it is.**
+`atkMult` was the obvious way to preserve the convention, and it was measured
+before being rejected:
+
+| boss | `atkMult` | Blood Moon `savage` | neutral `savage` | neutral none |
+| --- | --- | --- | --- | --- |
+| Abyssal Trench | 1.05 | 0.8675 ✓ | **1.0000** | 0.8650 |
+| Containment Site | 1.05 | 0.8675 ✓ | **1.0000** | 0.8775 |
+
+It clears the Blood Moon floor and fails everything else. Containment Site is the
+finale, so its neutral traited rate of 1.0000 breaches the ≤ 0.99 ceiling; and the
+resulting untraited ladder — 0.9300 → 0.8650 → 0.8775 — is not monotone.
+
+The mechanical reason is worth writing down, because it is counter-intuitive and
+it will come up again in 4c. Blood Moon adds enemy HP, which lengthens fights, so
+the natural instinct is that cutting enemy *attack* is the matched fix. It is not:
+cutting attack removes the threat outright, and the squad simply stops dying —
+hence 1.0000. Cutting HP keeps the boss hitting exactly as hard while shortening
+how long the squad is exposed to it, which is why it lands inside the band
+instead of above it. **HP is the exposure knob; attack is the threat knob. Only
+the exposure knob has a usable range here.**
+
+Both chapter files' convention text must therefore be updated in the same change,
+recording that `hpMult` may fall below 1.0 when compensating for an event
+multiplier, and that `atkMult` was measured and rejected. Leaving prose that
+contradicts the data beside it is the failure this spec is otherwise trying to
+end.
 
 ### The tuning protocol
 
@@ -208,6 +229,25 @@ retune safe; performing one is not in this spec.
   tops out at 87 of 90 (the three late bosses cap at 2 stars without mythics), a
   pure clear-through banks about 60, and 90 is mythic-only — so 80 is above a
   clear-through and below the grind wall.
+
+  **The star gate applies to the CHAPTER only.** `chapterUnlocked` and
+  `siteUnlocked` are separate gates: the chapter gains the star condition, while
+  site 7 keeps a rating gate like every other site. That split is deliberate and
+  it is the tycoon-correct one — combat content sits behind combat achievement,
+  park content behind park achievement. A player who builds and never fights
+  still reaches the game's best expedition site; they are only kept out of the
+  battle chapter, which is content they were not playing anyway. Collapsing the
+  two gates into one would lock the endgame park economy behind a campaign grind,
+  which is the wrong game.
+
+- **Making chapter 7 meaningfully harder than chapter 6.** It cannot be, and 4c
+  should not spend effort trying. `npcLevel` is at the sanity cap, and the entire
+  legal band on `hpMult` is 9 fights out of 400 — the monotonicity assertion
+  explicitly permits a tie. Chapter 7 escalates on **theme and reward**: the
+  campaign's first mythic antagonist, the best shard payout, and site 7's economy
+  tier. In a park tycoon the endgame difficulty curve lives in the park — the
+  landmark cash sink, the rating ceiling — not in the battle ladder, and the
+  battle ladder has been telling us that for two chapters.
 - **Retuning `LEGACY_TIERS`** — §5.
 - **Softening Blood Moon's `enemyHp`** — changes a shipped event's identity and
   its documented effect line. The traited floor is the guarantee; the spike is
@@ -225,6 +265,10 @@ retune safe; performing one is not in this spec.
   §4 is the worked example.
 - **Never quote a seed count a figure was not measured at.** Two chapters already
   shipped comments that do.
+- **Never re-tune a boss on `atkMult` to compensate for an event.** §4 has the
+  measurement: it clears the event floor and lands the neutral traited rate at
+  1.0000, breaching the finale ceiling and breaking the ladder. HP is the
+  exposure knob, attack is the threat knob, and only exposure has range here.
 - **Never fold the `legacyRankBest` write into `legacyRank`.** `visit.ts` calls
   it for another player's id.
 - **Never let `legacyRank` return the stored value alone.** It must be
