@@ -45,15 +45,15 @@ function winRate(stage: StageDef, traits: string[], runs = 400, mods: EventMods 
 
 const BOSS_STAGES = CAMPAIGN.map((c) => ({ chapter: c.name, stage: c.stages[4] }));
 
-// The finale is CAMPAIGN's last chapter, derived rather than hardcoded by id — but the
-// guard below is now a LOWER-bound pin, not an upper-bound ceiling, so "automatically
+// The finale is CAMPAIGN's last chapter, derived rather than hardcoded by id — so the
+// guard below is a TWO-SIDED CHANGE DETECTOR, not a one-sided pin, and "automatically
 // follows the new finale" is a hazard here, not a benefit. When a seventh chapter ships,
-// this test retargets to it automatically and re-measures the strongest-loadout rate
-// against IT: a properly HARD new finale (which should win LESS often than today's) will
-// then fail this pin. That failure is not a defect in the new content — it means the
-// pin's threshold, or the target it derives, needs deliberate re-tuning or re-targeting
-// by whoever adds the chapter, not silent acceptance of the failure or a silent widen of
-// the bound to make it pass.
+// this test retargets to it automatically and re-measures the untraited rate against IT:
+// any real content change — a HARDER new finale or an EASIER one — moves that rate outside
+// the recorded constant's band and fails the detector. That failure is not a defect in the
+// new content — it means the recorded constant needs deliberate re-measurement and
+// re-approval by whoever adds the chapter, not silent acceptance of the failure or a
+// silent widen of the band to make it pass.
 const FINALE = CAMPAIGN[CAMPAIGN.length - 1];
 
 // Five traits share domain: 'combat' (src/data/traits.ts) — savage, ironhide, fleet,
@@ -133,31 +133,10 @@ describe('boss difficulty bands', () => {
     }
   });
 
-  // The upper bound applies ONLY to the current finale, not to every boss ever shipped.
-  // A maxed squad steamrolling early content it has badly outleveled is correct design —
-  // Coastal Dig sits 9 levels below a level-capped squad on purpose — so holding every
-  // past boss to a "must still be a real fight" ceiling would punish normal power
-  // growth, not catch a defect. This guard exists so a regression to the campaign's
-  // HARDEST fight, whichever chapter that currently is, gets caught rather than shipped
-  // silently.
+  // Containment Site's own hpMult trade-off reasoning (1.72 buys the Blood Moon floor
+  // below at the cost of a fleet squad clearing it outright on a normal day) now belongs
+  // with the chapter-6 detector below, not here.
   //
-  // This assertion used to hardcode `savage` and assert <=0.99, which passed only
-  // because savage is not the strongest of the four combat traits. Measured against
-  // Containment Site's shipped hpMult 1.72: savage 0.9725 (400 seeds) / 0.9827 (3,000),
-  // ironhide 0.9150 / 0.9140, glass_cannon 0.8925 / 0.8757, fleet 1.0000 / 0.9987 —
-  // fleet is the real ceiling, and it breaches 0.99.
-  //
-  // ACCEPTED trade-off, not a defect: the finale IS a guaranteed win for a fleet-traited
-  // squad under neutral mods (0.9987 at 3,000 seeds). The bands this file's floors
-  // require are unsatisfiable on hpMult alone — the Blood Moon savage floor below needs
-  // hpMult roughly <=1.74, while a neutral fleet ceiling of <=0.99 needs hpMult roughly
-  // >=2.1 (see the Abyssal Trench boss comment for the same shape of trade-off on the
-  // other late chapter). Containment Site's hpMult (1.72) buys the Blood Moon floor —
-  // savage stays at 0.8650 under Blood Moon at 400 seeds, asserted below — at the cost
-  // of a fleet squad clearing the finale outright on a normal day. That price is paid
-  // deliberately; this assertion no longer claims otherwise. It pins the measured
-  // strongest-loadout rate instead, so a future boss-tuning change that moves this
-  // number has to be re-measured and re-approved, not merged silently.
   // CHANGE DETECTOR, not a correctness bound. It fails on any movement in EITHER
   // direction, which is the point: a moved number must be re-measured and re-approved,
   // never merged silently. A one-sided bound could only ever catch half of that, and the
@@ -178,7 +157,8 @@ describe('boss difficulty bands', () => {
   // strongest is chapter-dependent — on Containment Site it was fleet (0.9987) with savage
   // at 0.9827, and it inverts here. That is exactly why a strongest-loadout pin is a weak
   // instrument. frail is excluded from COMBAT_TRAITS throughout because it is strictly
-  // worse than fielding no combat trait at all (measured 0.5775).
+  // worse than fielding no combat trait at all (measured 0.5775 on Containment Site,
+  // 0.3950 here).
   const DETECTOR_BAND = 0.01;
   const FINALE_UNTRAITED = 0.8330;      // founders_park_boss, untraited, 3,000 seeds
   const CONTAINMENT_UNTRAITED = 0.8750; // containment_site_boss, untraited, 3,000 seeds
@@ -198,7 +178,8 @@ describe('boss difficulty bands', () => {
   it('Containment Site boss (chapter 6) stays measured after the finale moved past it', () => {
     const stage = CAMPAIGN.find((c) => c.id === 'containment_site')!.stages[4];
     const rate = winRate(stage, [], 3000);
-    const msg = `CHANGE DETECTOR: chapter 6's untraited rate is ${rate}, recorded as ${CONTAINMENT_UNTRAITED}.`;
+    const msg = `CHANGE DETECTOR: chapter 6's untraited rate is ${rate}, recorded as ${CONTAINMENT_UNTRAITED}. `
+      + 'Re-measure at 3,000 seeds and update the recorded constant deliberately. Do not widen the band.';
     expect(rate, msg).toBeGreaterThanOrEqual(CONTAINMENT_UNTRAITED - DETECTOR_BAND);
     expect(rate, msg).toBeLessThanOrEqual(CONTAINMENT_UNTRAITED + DETECTOR_BAND);
   });
@@ -234,9 +215,23 @@ describe('boss difficulty under world events', () => {
 // A starGate is authored data that can be wrong in a way nothing else catches: too high and
 // the chapter is content nobody can ever open. The structural bound (3 stars x 5 stages x
 // chapters-before-it = 90 for chapter 7) is far too loose to be worth asserting, because the
-// campaign's real maximum is 87 — starsFor awards the third star only for squadKos === 0, and
-// three bosses never produce a flawless win against a level-capped legendary squad. Three
-// further stages 3-star only at sub-1% rates, putting the practical no-grind floor at 81.
+// campaign's real maximum is 87 at 3,000 seeds — starsFor awards the third star only for
+// squadKos === 0, and exactly three bosses (the ch.4/5/6 finales) never produce a flawless
+// win against a level-capped legendary squad, so 90 - 3 = 87. Of the rest, exactly three
+// further stages 3-star only at sub-1% rates — abyssal_trench stages 3 and 4 at 0.058%
+// each, containment_site stage 4 at 0.725% — putting the practical no-grind floor at
+// 87 - 3 = 84; nothing else is close to sub-1%, the next-lowest stages sit at 9.4%-15.4%.
+//
+// This test itself runs bestStars at 400 seeds, not 3,000, and that deliberately
+// UNDER-counts relative to the 87 above: abyssal_trench's two 0.058% stages have ~0.93
+// expected hits between them across the 1,600 runs (400 seeds x 4 traits) bestStars
+// performs per stage — close to a coin flip on whether the sample catches either at all —
+// and at 400 seeds it does not, so this test measures achievable as 85, not 87. achievable
+// is therefore knife-edge between 85 and 87: deterministic for a given code state (fixed
+// mulberry32 seeds), but any unrelated change to RNG consumption order, the seed range, or
+// COMBAT_TRAITS' iteration order can shift which stages catch the rare 3-star and move the
+// total. Harmless today — 85 still clears starGate 75 with 5 points of slack to spare
+// (achievable - MARGIN = 80 >= 75).
 // So this SIMULATES the ceiling instead of assuming it, and keeps a margin so that a future
 // boss retune costing one deterministic 3-star cannot silently strand the gate.
 describe('star gates are reachable', () => {
