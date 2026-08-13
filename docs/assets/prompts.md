@@ -1338,7 +1338,7 @@ the light studio rim must be peeled, and all border pixels must end transparent.
 
 ## Emoji icons
 
-The 52 application emojis in `assets/emojis/` are **not** generated — they are
+The 53 application emojis in `assets/emojis/` are **not** generated — they are
 hand-authored SVG rendered by `npm run build-emojis`. That set includes the six
 `dw_dino_<rarity>` chips and the six `dw_lot_*` icons the park renderer reads
 as SVG at draw time, plus the four `dw_trait_<domain>` icons (income, care,

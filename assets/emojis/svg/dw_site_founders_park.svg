@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="fpStone" x1="0" y1="6" x2="0" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c4bcac"/>
+      <stop offset="1" stop-color="#6f6960"/>
+    </linearGradient>
+    <linearGradient id="fpSky" x1="0" y1="16" x2="0" y2="50" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f0b458"/>
+      <stop offset="1" stop-color="#8c4a2f"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="32" height="34" fill="url(#fpSky)"/>
+  <polygon points="20,50 26,33 31,41 37,29 44,50" fill="#2f3a2c"/>
+  <rect x="8" y="12" width="10" height="44" rx="2" fill="url(#fpStone)"/>
+  <rect x="46" y="12" width="10" height="44" rx="2" fill="url(#fpStone)"/>
+  <rect x="6" y="5" width="52" height="11" rx="2" fill="url(#fpStone)"/>
+  <rect x="4" y="54" width="56" height="6" rx="2" fill="#3d4a37"/>
+</svg>
