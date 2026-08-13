@@ -33,20 +33,35 @@ export const containmentSite: ChapterDef = {
       enemies: [{ speciesId: 'scorpios_rex' }, { speciesId: 'stegoceratops' }, { speciesId: 'spinoraptor' }],
       rewards: { cash: 1_400, food: { foodId: 'prime_steak', qty: 5 }, xp: 370 }, firstClearShards: 16,
       boss: {
-        // hpMult retuned from an original 3.0, then a first-draft floor of 2.0
-        // (tests/battle-balance.test.ts) that left this boss weaker than Abyssal
-        // Trench's escalated boss, re-inverting the campaign's difficulty ladder.
-        // atkMult stays at its originally authored 1.2, same rationale as the
-        // Abyssal Trench boss: boss multipliers never fall below 1.0, though
-        // archetype multipliers still apply on top of that floor. This is the
-        // campaign's current finale (CAMPAIGN's last chapter), so its traited win
-        // rate also has an upper bound — see tests/battle-balance.test.ts. 2.15 is
-        // the measured value that keeps both win-rate floors clear while landing
-        // below Abyssal Trench's untraited rate, restoring the monotonic ladder
-        // (3,000-seed check: traited 0.90, untraited 0.44) — see that file's
-        // monotonic-ladder assertion.
+        // hpMult 1.72, down from 2.15, so this boss clears the traited floor under Blood
+        // Moon (enemyHp 1.15) as well as under neutral mods — see the event guard in
+        // tests/battle-balance.test.ts. Measured at 400 seeds, the count that test uses:
+        // Blood Moon traited (savage) 0.8650, neutral traited (savage) 0.9725, neutral
+        // untraited 0.8800.
+        //
+        // The previous comment here claimed a "3,000-seed check: traited 0.90, untraited
+        // 0.44". That was wrong: 0.44 is the 10,000-seed figure and the true 3,000-seed
+        // untraited rate was 0.4310. Quote the seed count a number was actually measured
+        // at, or the next author tunes against a figure that does not exist.
+        //
+        // This is the campaign's current finale (CAMPAIGN's last chapter). Its finale
+        // ceiling guard does NOT hold to a <=0.99 bound against savage — savage was never
+        // the strongest of the four combat traits, and this hpMult does not make the
+        // finale a real fight against the actual strongest loadout: a fleet-traited squad
+        // clears it outright, 1.0000 at 400 seeds and 0.9987 at 3,000. That is an
+        // ACCEPTED trade-off, not an oversight — see tests/battle-balance.test.ts's finale
+        // test for the full reasoning, and the Abyssal Trench boss comment for the same
+        // shape of trade-off on the other late chapter. atkMult stays at 1.2 — see the
+        // Abyssal Trench boss comment for why attack is the wrong lever for event
+        // compensation.
+        //
+        // 0.8800 untraited (400 seeds) / 0.8750 (3,000 seeds) stays below Abyssal
+        // Trench's 0.8825 / 0.9127, holding the monotonic ladder — checked at 3,000
+        // seeds specifically in tests/battle-balance.test.ts, with a 0.03 tolerance for
+        // sampling noise. The two late bosses must be tuned together: fixing either alone
+        // breaks the monotonicity assertion on the other.
         bossId: 'boss-containment_site', title: 'Asset 47', speciesId: 'spinoraptor',
-        levelBonus: 1, hpMult: 2.15, atkMult: 1.2, eggRarity: 'legendary', eggSpeciesId: 'spinoraptor',
+        levelBonus: 1, hpMult: 1.72, atkMult: 1.2, eggRarity: 'legendary', eggSpeciesId: 'spinoraptor',
       },
     },
   ],

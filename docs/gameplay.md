@@ -669,12 +669,14 @@ version of the chapter's strongest enemy species. The first four chapters'
 bosses share one benchmark: roughly two and a half times the HP and about a
 fifth more attack than a normal encounter of that species. The two newest
 bosses were tuned separately by simulation and don't match that convention —
-the Abyssal Trench boss carries 1.3× HP but hits harder, at 1.25× attack,
-while the Containment Site boss carries 2.15× HP at the usual 1.2× attack.
-A boss's own multipliers never drop below a normal encounter's, but each
-species' archetype multiplier still applies on top of that — so a
-tank-archetype boss (like the Abyssal Trench's Mosasaurus) can still resolve
-to a lower attack than a bruiser-archetype escort standing next to it.
+the Abyssal Trench boss carries less HP than a normal encounter, at 0.82×,
+but hits harder, at 1.25× attack, while the Containment Site boss carries
+1.72× HP at the usual 1.2× attack. A boss's own multipliers are no longer
+guaranteed to stay above a normal encounter's — Abyssal Trench's HP
+deliberately dips below it — but each species' archetype multiplier still
+applies on top of that, so a tank-archetype boss (like the Abyssal Trench's
+Mosasaurus) can still resolve to a lower attack than a bruiser-archetype
+escort standing next to it.
 Clearing a boss for the first time awards
 a one-time trophy egg (repeat clears pay no further egg):
 
@@ -910,10 +912,13 @@ Points are the sum of three things: species you've discovered (up to 52),
 achievement tiers you've claimed (up to 48), and stars earned across the
 battle campaign (up to 90) — 190 points in total. Nothing is spent or
 consumed to earn a rank, and nothing can ever be lost — it's simply
-recalculated from what you've already done, each time it's shown. Below 15
-points you haven't reached Groundskeeper yet and show no rank at all. Your
-Legacy rank appears on your `/park view` dashboard and in the footer of
-`/dex list`.
+recalculated from what you've already done, each time it's shown. The
+highest rank you've reached also sticks: the next time your `/park view`
+dashboard or `/dex list` shows your rank, it won't be lower than a rank you
+already earned, even if the way points are counted changes in a later
+update. Below 15 points you haven't reached Groundskeeper yet and show no
+rank at all. Your Legacy rank appears on your `/park view` dashboard and in
+the footer of `/dex list`.
 
 ### Showcase and visiting parks
 
@@ -1381,6 +1386,9 @@ every single day would stop feeling like an event.
 | Market Panic | Eggs cost 30% less; selling a dino pays 20% less cash |
 | Blood Moon | Every battle stage costs 1 less energy (minimum 1); battle XP ×1.5; enemies have 15% more HP |
 | Migration Season | Wild hatches roll far better trait odds (see Wild hatch odds, above); breeding takes 25% longer |
+
+Enemies are tougher on a Blood Moon, but never unwinnable: a squad with the
+right traits can still clear any boss in the campaign.
 
 Between them, events can move egg price, food price, sell cash, feed cost,
 park income, expedition time/fee/cash/egg-rarity odds, battle stage energy

@@ -34,25 +34,39 @@ export const abyssalTrench: ChapterDef = {
       enemies: [{ speciesId: 'kronosaurus' }, { speciesId: 'liopleurodon' }, { speciesId: 'mosasaurus' }],
       rewards: { cash: 750, food: { foodId: 'fish', qty: 5 }, xp: 240 }, firstClearShards: 14,
       boss: {
-        // hpMult retuned from an original 2.8, then a first-draft floor of 1.2
-        // (tests/battle-balance.test.ts) that overcorrected: 1.2 left this boss's
-        // resolved HP (806) and untraited win rate (0.60) both weaker than Volcano
-        // Core's (1193 / 0.92), inverting the campaign's difficulty ladder against
-        // Containment Site. atkMult stays at its originally authored 1.25: boss
-        // multipliers never fall below 1.0, though archetype multipliers still apply
-        // on top, so this tank boss (1.35x hp, 1.4x def, 0.8x atk before hpMult/atkMult)
-        // can still resolve to a lower attack than a bruiser escort standing beside it.
-        // A full return to hpMult 2.8 was simulated and reproduced the original
-        // squad-wipe failure — traited win rate collapses well under the 0.85 floor,
-        // and untraited under the 0.40 floor, long before resolved HP reaches 1193.
-        // 1.3 is the measured ceiling that keeps both floors comfortably clear
-        // (3,000-seed check: traited 0.96, untraited 0.49) while raising resolved
-        // HP from 806 to 874 — real headroom, though short of full parity with
-        // Volcano Core's 1193, which this archetype cannot reach without breaking
-        // the win-rate floors. tests/battle-balance.test.ts's monotonic-ladder
-        // assertion is what actually enforces the escalation now.
+        // hpMult 0.82, up from 0.78 (itself down from 1.3). 0.78 cleared every
+        // per-chapter assertion at the 400 seeds those assertions use — Blood Moon
+        // traited 0.9225, neutral traited 1.0000, neutral untraited 0.9225, correctly
+        // below Volcano Core's 400-seed 0.9300 — but that ordering was sampling luck,
+        // not margin: at 1,000/3,000/10,000 seeds untraited neutral read 0.9310 / 0.9377
+        // / 0.9405, rising PAST Volcano Core's own declining 0.9270 / 0.9173 / 0.9064.
+        // Chapter 5 was genuinely easier than chapter 4 once sampled past 400 seeds —
+        // the same inversion class this file's monotone-ladder guard exists to catch,
+        // invisible at the seed count it ran at.
+        //
+        // At 0.82, re-measured: neutral untraited is 0.8825 (400 seeds) / 0.9127 (3,000)
+        // — the latter correctly BETWEEN Volcano Core's 3,000-seed 0.9173 and
+        // Containment Site's 3,000-seed 0.8750, a real margin rather than a tolerated
+        // one. Blood Moon traited (savage) stays comfortably above the 0.85 floor: 0.8975
+        // at 400 seeds, 0.9203 at 3,000. tests/battle-balance.test.ts's monotone-ladder
+        // check now runs at 3,000 seeds specifically (with a 0.03 tolerance) for exactly
+        // this reason — confirm any future change to this number at 3,000 seeds, not 400.
+        //
+        // This is deliberately below 1.0, retiring the "boss multipliers never fall
+        // below 1.0" convention these files used to state. atkMult was the obvious way
+        // to preserve it and was measured and rejected: at 1.05 it clears the Blood Moon
+        // floor but lands neutral untraited at 0.8650 — below Containment Site's 0.8800
+        // — inverting the monotone ladder. Cutting attack removes the threat outright;
+        // cutting HP keeps the boss hitting just as hard and shortens how long the squad
+        // is exposed to it. HP is the exposure knob, attack is the threat knob, and only
+        // exposure has usable range here. atkMult stays at 1.25.
+        //
+        // The two late bosses must be tuned together, not independently — a change to
+        // either one moves where it lands relative to the other's own number, and both
+        // sides of that comparison need to be re-measured at 3,000 seeds before either
+        // hpMult moves again.
         bossId: 'boss-abyssal_trench', title: 'The Trench Sovereign', speciesId: 'mosasaurus',
-        levelBonus: 1, hpMult: 1.3, atkMult: 1.25, eggRarity: 'legendary', eggSpeciesId: 'mosasaurus',
+        levelBonus: 1, hpMult: 0.82, atkMult: 1.25, eggRarity: 'legendary', eggSpeciesId: 'mosasaurus',
       },
     },
   ],

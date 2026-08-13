@@ -9,7 +9,7 @@ import { earnedTierCount } from '../daily/service.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
 import { dashboardPayload, withParkImage, landmarkPayload } from './embeds.js';
 import { visitPayload } from './visit.js';
-import { legacyRank } from './ranks.js';
+import { bumpLegacyBest, tierForPoints } from './ranks.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
 import { InsufficientFundsError } from '../../core/economy.js';
@@ -196,7 +196,8 @@ export const parkModule: ModuleManifest = {
         const inv = ctx.economy.getFoodInventory(i.user.id);
         const foodLine = (Object.entries(inv) as Array<[FoodId, number]>)
           .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
-        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine, earnedTiers: earnedTierCount(ctx, i.user.id), legacyRank: legacyRank(ctx, i.user.id), motto: user.motto, featured: featuredFor(ctx, user), now: nowMs });
+        const legacyBest = bumpLegacyBest(ctx, i.user.id);
+        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine, earnedTiers: earnedTierCount(ctx, i.user.id), legacyRank: tierForPoints(legacyBest), motto: user.motto, featured: featuredFor(ctx, user), now: nowMs });
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
         await i.editReply(png ? withParkImage(base, png) : base);

@@ -64,9 +64,15 @@ export function starScores(ctx: Ctx, userIds?: string[]): Map<string, number> {
 }
 
 /**
- * The board-wide twin of legacyPoints (src/modules/park/ranks.ts). The two must agree
- * for any given user — a board that disagrees with the rank on the player's own park
- * card is worse than no board.
+ * The board-wide twin of legacyPoints (src/modules/park/ranks.ts) — deliberately, not of
+ * legacyRank's max(stored, computed) high-water. The two must agree for any given user —
+ * a board that disagrees with the rank on the player's own park card is worse than no
+ * board. Pairing with legacyRankBest instead would answer a different question than the
+ * board exists to answer: the board is "who is ahead right now," a live standing that can
+ * legitimately fall if a player's live total drops (see adminReset); legacyRankBest is
+ * "what have you ever earned," a monotone high-water mark that must never fall. Mixing
+ * the two would let a wiped or otherwise-dropped account keep outranking players who are
+ * currently ahead of it for real.
  */
 export function legacyScores(ctx: Ctx, userIds?: string[]): Map<string, number> {
   const seenRows = userIds === undefined

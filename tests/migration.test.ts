@@ -609,3 +609,36 @@ describe('0013 duels via the real drizzle migrator (production path)', () => {
     }
   });
 });
+
+describe('0014 legacy rank best via the real drizzle migrator (production path)', () => {
+  it('adds legacy_rank_best defaulting to 0 and preserves existing rows', () => {
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig14-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    // The regex and the journal filter must widen together.
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^00(0[0-9]|1[0-3]).*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 13);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });   // apply 0000-0013 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, last_collect_at_ms, created_at_ms) VALUES ('u1', 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO dinos (user_id, species_id, hunger, last_fed_at_ms, hatched_at_ms)
+                    VALUES ('u1', 'triceratops', 100, 0, 0)`).run();
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+      const rows = sqlite.prepare(`SELECT discord_id, legacy_rank_best FROM users`).all();
+      expect(rows).toEqual([{ discord_id: 'u1', legacy_rank_best: 0 }]);
+      expect((sqlite.prepare(`SELECT COUNT(*) c FROM dinos`).get() as { c: number }).c).toBe(1);
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});
