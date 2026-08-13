@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { CAMPAIGN, rosterFor, type StageDef } from '../src/data/battle/chapters/index.js';
 import { statsFor } from '../src/data/battle/stats.js';
 import { LEVEL_CAP } from '../src/data/battle/constants.js';
-import { resolveBattle, type Combatant } from '../src/data/battle/resolve.js';
+import { resolveBattle, starsFor, type Combatant } from '../src/data/battle/resolve.js';
 import { getSpecies } from '../src/data/species/index.js';
 import { mulberry32 } from '../src/core/rolls.js';
 import { NEUTRAL_MODS, WORLD_EVENTS, type EventMods } from '../src/data/world-events.js';
@@ -107,9 +107,21 @@ describe('boss difficulty bands', () => {
   // ordinary sampling drift (Volcano alone moves 0.9300 -> 0.9173 between 400 and 3,000
   // seeds, a 0.0127 swing) while still catching the 5.4-point inversion that motivated
   // this guard in the first place.
+  //
+  // Tolerance tightened 0.03 -> 0.01 with chapter 7. 0.03 would MISS a revert of Abyssal
+  // Trench's hpMult 0.82 -> 0.78, a +0.0203 inversion; 0.01 catches it with 2x margin and
+  // costs nothing, because the largest positive adjacent delta across shipped content at
+  // 3,000 seeds is exactly 0.0000 (measured: 1.0000, 1.0000, 1.0000, 0.9173, 0.9127,
+  // 0.8750, 0.8330).
+  //
+  // The seed count is pinned DOWN, not up, and this is the reason: at 10,000 seeds the
+  // Volcano Core -> Abyssal Trench pair INVERTS by +0.0100 on shipped content (Volcano
+  // 0.9064, Abyssal 0.9164). 4b's Abyssal fix holds at 3,000 and fails at 10,000. Raising
+  // the seed count is therefore a CONTENT decision — it would require re-tuning two live
+  // bosses together — not a free rigour upgrade. Do not raise it casually.
   it('untraited win rates are non-increasing across the campaign, at 3,000 seeds', () => {
     const LADDER_SEEDS = 3000;
-    const TOLERANCE = 0.03;
+    const TOLERANCE = 0.01;
     const rates = BOSS_STAGES.map(({ chapter, stage }) => ({ chapter, rate: winRate(stage, [], LADDER_SEEDS) }));
     for (let i = 1; i < rates.length; i++) {
       const prev = rates[i - 1];
@@ -146,9 +158,49 @@ describe('boss difficulty bands', () => {
   // deliberately; this assertion no longer claims otherwise. It pins the measured
   // strongest-loadout rate instead, so a future boss-tuning change that moves this
   // number has to be re-measured and re-approved, not merged silently.
-  it(`${FINALE.name} boss (the current finale): the strongest traited squad's win rate is pinned`, () => {
-    const rate = Math.max(...COMBAT_TRAITS.map((trait) => winRate(FINALE.stages[4], [trait])));
-    expect(rate, `strongest-loadout win rate ${rate}`).toBeGreaterThanOrEqual(0.995);
+  // CHANGE DETECTOR, not a correctness bound. It fails on any movement in EITHER
+  // direction, which is the point: a moved number must be re-measured and re-approved,
+  // never merged silently. A one-sided bound could only ever catch half of that, and the
+  // >=0.995 lower bound this replaces had the additional problem of reading as a demand
+  // that the finale be EASY — a genuinely harder future finale would fail it and the
+  // failure would look like the good content was the defect.
+  //
+  // It measures the UNTRAITED rate rather than the strongest loadout, and that choice is
+  // forced. Founder's Park measures 1.0000 on the strongest-of-four axis — the saturated
+  // maximum — so RECORDED + BAND is unreachable there by construction and the detector
+  // would silently degenerate into the same one-sided bound. The untraited rate is
+  // non-degenerate in both directions, and a +/-0.01 band is strictly tighter than the
+  // ladder's implied <= 0.8850, so this is not merely a restatement of the assertion
+  // above it either.
+  //
+  // Strongest-loadout figures for the record, measured at 400 seeds and NOT asserted on:
+  // savage 1.0000, glass_cannon 0.9975, ironhide 0.9200, fleet 0.8725. Which trait is
+  // strongest is chapter-dependent — on Containment Site it was fleet (0.9987) with savage
+  // at 0.9827, and it inverts here. That is exactly why a strongest-loadout pin is a weak
+  // instrument. frail is excluded from COMBAT_TRAITS throughout because it is strictly
+  // worse than fielding no combat trait at all (measured 0.5775).
+  const DETECTOR_BAND = 0.01;
+  const FINALE_UNTRAITED = 0.8330;      // founders_park_boss, untraited, 3,000 seeds
+  const CONTAINMENT_UNTRAITED = 0.8750; // containment_site_boss, untraited, 3,000 seeds
+
+  it(`${FINALE.name} boss (the current finale): untraited rate is pinned within ±${DETECTOR_BAND}`, () => {
+    const rate = winRate(FINALE.stages[4], [], 3000);
+    const msg = `CHANGE DETECTOR: the finale's untraited rate is ${rate}, recorded as ${FINALE_UNTRAITED}. `
+      + 'Re-measure at 3,000 seeds and update the recorded constant deliberately. Do not widen the band.';
+    expect(rate, msg).toBeGreaterThanOrEqual(FINALE_UNTRAITED - DETECTOR_BAND);
+    expect(rate, msg).toBeLessThanOrEqual(FINALE_UNTRAITED + DETECTOR_BAND);
+  });
+
+  // Pinned by id, NOT derived. The test above follows CAMPAIGN's last chapter, so the
+  // moment a chapter ships it stops measuring the previous one — chapter 6 would have
+  // become entirely unmeasured, with the suite green and the guard silently gone. Every
+  // future chapter needs the same treatment for its predecessor.
+  it('Containment Site boss (chapter 6) stays measured after the finale moved past it', () => {
+    const stage = CAMPAIGN.find((c) => c.id === 'containment_site')!.stages[4];
+    const rate = winRate(stage, [], 3000);
+    const msg = `CHANGE DETECTOR: chapter 6's untraited rate is ${rate}, recorded as ${CONTAINMENT_UNTRAITED}.`;
+    expect(rate, msg).toBeGreaterThanOrEqual(CONTAINMENT_UNTRAITED - DETECTOR_BAND);
+    expect(rate, msg).toBeLessThanOrEqual(CONTAINMENT_UNTRAITED + DETECTOR_BAND);
   });
 });
 
@@ -176,5 +228,47 @@ describe('boss difficulty under world events', () => {
   it.each(BOSS_STAGES)('$chapter boss stays winnable for a traited squad under the worst combat event', ({ stage }) => {
     const rate = winRate(stage, ['savage'], 400, MODS);
     expect(rate, `worst-case event traited win rate ${rate}`).toBeGreaterThanOrEqual(0.85);
+  });
+});
+
+// A starGate is authored data that can be wrong in a way nothing else catches: too high and
+// the chapter is content nobody can ever open. The structural bound (3 stars x 5 stages x
+// chapters-before-it = 90 for chapter 7) is far too loose to be worth asserting, because the
+// campaign's real maximum is 87 — starsFor awards the third star only for squadKos === 0, and
+// three bosses never produce a flawless win against a level-capped legendary squad. Three
+// further stages 3-star only at sub-1% rates, putting the practical no-grind floor at 81.
+// So this SIMULATES the ceiling instead of assuming it, and keeps a margin so that a future
+// boss retune costing one deterministic 3-star cannot silently strand the gate.
+describe('star gates are reachable', () => {
+  const MARGIN = 5;
+
+  // Best stars any legal loadout can take on this stage. Returns early on the first 3, so
+  // the deterministic majority of stages cost one seed rather than 1,600.
+  function bestStars(stage: StageDef, runs = 400): number {
+    let best = 0;
+    for (const trait of COMBAT_TRAITS) {
+      for (let seed = 0; seed < runs; seed++) {
+        const r = resolveBattle(squadOf('tyrannosaurus', [trait]), npcsOf(stage), mulberry32(seed));
+        if (r.won) best = Math.max(best, starsFor(r));
+        if (best === 3) return 3;
+      }
+    }
+    return best;
+  }
+
+  it('every starGate leaves at least MARGIN stars of headroom over what is achievable before it', () => {
+    const gated = CAMPAIGN.filter((c) => c.starGate != null);
+    expect(gated.length, 'no chapter sets starGate — delete this test or the field').toBeGreaterThan(0);
+    for (const chapter of gated) {
+      const idx = CAMPAIGN.findIndex((c) => c.id === chapter.id);
+      const achievable = CAMPAIGN.slice(0, idx)
+        .flatMap((c) => c.stages)
+        .reduce((sum, st) => sum + bestStars(st), 0);
+      expect(
+        chapter.starGate!,
+        `${chapter.id}: starGate ${chapter.starGate} against ${achievable} achievable in chapters 1-${idx} `
+          + `(need <= ${achievable - MARGIN} to keep ${MARGIN} stars of margin)`,
+      ).toBeLessThanOrEqual(achievable - MARGIN);
+    }
   });
 });
