@@ -348,6 +348,17 @@ const cases: Case[] = [
       ctx.db.update(schema.expeditions).set({ returnsAt: ctx.now() - 1 }).run();   // force the trench dig home
       return slash('expeditions', 'expedition', { name: 'expedition', sub: 'claim', user: P1 });
     } },
+  { title: "/expedition start — Founder's Park: new site thumb", run: () => {
+      // The claim case above cleared the trench dig, so a new one is legal.
+      // This is the deepest gate in the game (unlockRating 1000, the literal
+      // ceiling of the scale) and the seeded ratingHighWater 1000 is exactly on
+      // it — a seed of 999 would silently drop this case and the one below.
+      return slash('expeditions', 'expedition', { name: 'expedition', sub: 'start', user: P1, options: { site: 'founders_park' } });
+    } },
+  { title: "/expedition claim — Founder's Park: new site banner", run: () => {
+      ctx.db.update(schema.expeditions).set({ returnsAt: ctx.now() - 1 }).run();   // force the 48h dig home
+      return slash('expeditions', 'expedition', { name: 'expedition', sub: 'claim', user: P1 });
+    } },
   { title: '/feed all — care banner', run: () => slash('care', 'feed', { name: 'feed', sub: 'all', user: P1 }) },
   { title: '/dino list — roster', run: () => slash('park', 'dino', { name: 'dino', sub: 'list', user: P1 }) },
   { title: '/dino list — enriched paddock: clamped "100% comfort · enriched +5%" row', run: () => slash('park', 'dino', { name: 'dino', sub: 'list', user: P4 }) },
@@ -418,6 +429,36 @@ const cases: Case[] = [
       // Same seeded bridge as the case above — independent of whether that
       // fight won or lost.
       return slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'containment_site_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } });
+    } },
+  { title: "/battle fight — Founder's Park boss: chapter 7's mythic boss portrait", run: () => {
+      // Chapter 7 is the first STAR-gated chapter (starGate 75) rather than a
+      // rating-gated one, so ratingHighWater 1000 does nothing for it. Its gate
+      // reads two things: >=75 campaign stars, already satisfied by the global
+      // seed above (27 stages x 3 = 81), and the PREVIOUS chapter's boss
+      // first-clear — which is NOT globally seeded, because the case directly
+      // above fights it for real and may lose. Seeding it here removes that RNG
+      // dependency, the same reasoning the global seed block gives for
+      // pre-seeding the frozen/volcano/abyssal bosses.
+      //
+      // Deliberately seeded HERE and not in the global block: chapterUnlocked
+      // checks only the IMMEDIATELY prior chapter, never the whole chain, so a
+      // globally-seeded containment_site_boss would unlock chapter 7 outright
+      // and jump `frontier` to it — and /battle chapters, which runs much
+      // earlier, would then post the chapter-7 page instead of the chapter-1
+      // page the overview is meant to show.
+      //
+      // Delete-then-insert rather than a plain insert: if the Containment Site
+      // case above happened to WIN, runFight already wrote this row, and the
+      // (userId, stageId) unique constraint would reject a second one.
+      for (const stageId of ['containment_site_boss', 'founders_park_1', 'founders_park_2', 'founders_park_3', 'founders_park_4']) {
+        ctx.db.delete(schema.battleProgress)
+          .where(and(eq(schema.battleProgress.userId, P1), eq(schema.battleProgress.stageId, stageId))).run();
+        ctx.db.insert(schema.battleProgress).values({ userId: P1, stageId, stars: 3, firstClearedAt: ctx.now(), attempts: 1 }).run();
+      }
+      // This boss costs 3 and the two cases above drained the last top-up.
+      ctx.db.update(schema.users).set({ energy: ENERGY_CAP, energyUpdatedAt: ctx.now() })
+        .where(eq(schema.users.discordId, P1)).run();
+      return slash('battles', 'battle', { name: 'battle', sub: 'fight', user: P1, options: { stage: 'founders_park_boss', dino1: b1.id, dino2: b2.id, dino3: b3.id } });
     } },
   { title: 'park:collect — income embed (ephemeral in production)', run: () => button('park', 'park:collect', P1) },
   { title: '/rescue — recapture embed', run: () => slash('care', 'rescue', { name: 'rescue', user: P1, options: { dino: escapedDino.id } }) },
