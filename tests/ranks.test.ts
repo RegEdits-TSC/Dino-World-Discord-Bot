@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
@@ -6,7 +7,7 @@ import { recordSpeciesSeen } from '../src/core/species-seen.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { ACHIEVEMENTS } from '../src/data/achievements.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
-import { LEGACY_TIERS, legacyMaxPoints, legacyPoints, legacyRank } from '../src/modules/park/ranks.js';
+import { LEGACY_TIERS, legacyMaxPoints, legacyPoints, legacyRank, bumpLegacyBest } from '../src/modules/park/ranks.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'Reg'); });
@@ -125,5 +126,43 @@ describe('legacyRank', () => {
     const warden = LEGACY_TIERS.find((t) => t.title === 'Warden')!;
     seedPoints(between, warden.points + 20);
     expect(legacyRank(between, 'u1')).toEqual(warden);
+  });
+});
+
+describe('legacy rank persistence', () => {
+  it('returns the stored best when the live total has dropped', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    // Curator is 65 points. Store that as the earned best, with no live points at all.
+    ctx.db.update(schema.users).set({ legacyRankBest: 65 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    expect(legacyPoints(ctx, 'u1')).toBe(0);
+    expect(legacyRank(ctx, 'u1')!.title).toBe('Curator');
+  });
+
+  it('prefers the live total when it exceeds the stored best', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.db.update(schema.users).set({ legacyRankBest: 15 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u1', s.id);
+    // 35 live points beats a stored 15, so the live value wins.
+    expect(legacyRank(ctx, 'u1')!.title).toBe('Keeper');
+  });
+
+  it('bumpLegacyBest latches the live total and never lowers it', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u1', s.id);
+    bumpLegacyBest(ctx, 'u1');
+    const after = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+    expect(after.legacyRankBest).toBe(35);
+
+    // A later call with a LOWER live total must not move it down.
+    ctx.db.delete(schema.speciesSeen).where(eq(schema.speciesSeen.userId, 'u1')).run();
+    expect(legacyPoints(ctx, 'u1')).toBe(0);
+    bumpLegacyBest(ctx, 'u1');
+    const later = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+    expect(later.legacyRankBest).toBe(35);
   });
 });

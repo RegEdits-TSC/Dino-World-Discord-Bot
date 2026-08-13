@@ -5,7 +5,7 @@ import { paginate } from '../../core/paginate.js';
 import { attach, assetImage } from '../../core/images.js';
 import { rarityEmoji } from '../../core/emojis.js';
 import { fmtDuration, capitalize } from '../../core/autocomplete.js';
-import { legacyRank } from '../park/ranks.js';
+import { legacyRank, bumpLegacyBest } from '../park/ranks.js';
 import { DECOR } from '../../data/decor.js';
 import { dexRows, dexEntry, dexProgress, FILTER_NONE, type DexFilters } from './service.js';
 
@@ -48,6 +48,7 @@ export function dexListPayload(ctx: Ctx, userId: string, filters: DexFilters, pa
   const all = dexRows(ctx, userId, filters);
   const { items, page: p, pages } = paginate(all, page);
   const progress = dexProgress(ctx, userId);
+  bumpLegacyBest(ctx, userId);
   const rank = legacyRank(ctx, userId);
   const rankPart = rank ? ` · ${rank.title}` : '';
   const lines = items.length

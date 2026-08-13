@@ -56,10 +56,37 @@ export function legacyPoints(ctx: Ctx, userId: string): number {
   return dexProgress(ctx, userId).seen + earnedTierCount(ctx, userId) + stars;
 }
 
-/** The highest tier reached, or null below the first threshold. */
+/**
+ * The highest tier reached, or null below the first threshold.
+ *
+ * Resolves against max(stored, computed), never the stored value alone. The column is a
+ * SAFETY NET, not a source of truth: whenever the live total is higher — the normal case —
+ * it wins, so the rank is always at least what the player has actually earned. That is
+ * what makes a missed bumpLegacyBest call harmless; the stored value only ever matters
+ * when the computed value DROPS, which is the case it exists to cover.
+ */
 export function legacyRank(ctx: Ctx, userId: string): LegacyTier | null {
-  const points = legacyPoints(ctx, userId);
+  const user = ctx.db.select().from(schema.users)
+    .where(eq(schema.users.discordId, userId)).get();
+  const points = Math.max(user?.legacyRankBest ?? 0, legacyPoints(ctx, userId));
   let out: LegacyTier | null = null;
   for (const tier of LEGACY_TIERS) if (points >= tier.points) out = tier;
   return out;
+}
+
+/**
+ * Latch the live total into the monotone high-water column.
+ *
+ * Deliberately NOT folded into legacyRank: src/modules/park/visit.ts calls that for
+ * ANOTHER player's id, so a write there would mutate the row of a user who took no
+ * action. Call this only on paths where the acting user owns the row.
+ */
+export function bumpLegacyBest(ctx: Ctx, userId: string): void {
+  const user = ctx.db.select().from(schema.users)
+    .where(eq(schema.users.discordId, userId)).get();
+  if (!user) return;
+  const best = Math.max(user.legacyRankBest, legacyPoints(ctx, userId));
+  if (best === user.legacyRankBest) return;
+  ctx.db.update(schema.users).set({ legacyRankBest: best })
+    .where(eq(schema.users.discordId, userId)).run();
 }
