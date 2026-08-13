@@ -311,6 +311,19 @@
   so a `writeFileSync`/`rmSync` on a committed asset path can be observed (or
   deleted) by another file mid-run; `tests/battles-embeds.test.ts` mocks
   `assetImage` instead.
+  `tests/battle-balance.test.ts` asserts boss win rates under BOTH neutral mods and
+  Blood Moon (`enemyHp` 1.15, the only event that touches combat). Under an event only
+  the TRAITED floor (>=0.85) is asserted — requiring the untraited floor there too is
+  unsatisfiable without flattening the late campaign. Compensating a boss for an event
+  multiplier goes on `hpMult`, NEVER `atkMult`: on Containment Site (the finale),
+  `atkMult` 1.05 lands neutral traited at 1.0000, breaching the <=0.99 finale ceiling,
+  and on Abyssal Trench, `atkMult` 1.05 lands neutral untraited at 0.8650 — below
+  Containment Site's 0.8800 — inverting the monotone ladder. Cutting attack removes the
+  threat, while cutting HP keeps the boss hitting as hard and shortens exposure. HP is
+  the exposure knob, attack is the threat knob. The two late bosses must be re-tuned
+  TOGETHER — the monotonicity assertion couples them, so fixing one alone breaks the
+  other. This retired the old "boss multipliers never fall below 1.0" convention;
+  Abyssal Trench's `hpMult` is 0.78 deliberately.
 - `npm run build` does not typecheck tests: `build` is `tsc` against
   `tsconfig.json`, which only `include`s `src`, and `npm test` (vitest)
   transpiles without typechecking. The test-inclusive gate is
@@ -792,6 +805,12 @@
   the shortfall is re-earnable by playing, where a rank built ON `user_stats` would have
   been permanently unrecoverable, and the dex and battle-star terms are complete in the
   full sense. Do not "fix" this by re-deriving the rank from counters.
+  `legacyRank` resolves `max(stored legacyRankBest, computed legacyPoints)`, never the
+  stored value alone — the column is a safety net, so a missed write is harmless and
+  only matters when the computed value DROPS. The write lives in a separate
+  `bumpLegacyBest(ctx, userId)` and must NEVER be folded into `legacyRank`, because
+  `src/modules/park/visit.ts` calls that for another player's id and would otherwise
+  mutate the row of a user who took no action.
 - `capHours`, `breedingSlots`, `incubatorSlots` and `facilityBonusPct`
   (`src/modules/park/service.ts`, `src/modules/hatchery/service.ts`) each resolve a
   facility's level through the shared `levelValue` helper, which clamps a level ABOVE its

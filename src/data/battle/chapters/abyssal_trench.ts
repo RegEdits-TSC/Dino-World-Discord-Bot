@@ -43,11 +43,11 @@ export const abyssalTrench: ChapterDef = {
         // This is deliberately below 1.0, retiring the "boss multipliers never fall
         // below 1.0" convention these files used to state. atkMult was the obvious way
         // to preserve it and was measured and rejected: at 1.05 it clears the Blood Moon
-        // floor but lands neutral traited at 1.0000, which breaches the finale ceiling on
-        // Containment Site and breaks the monotone ladder. Cutting attack removes the
-        // threat outright; cutting HP keeps the boss hitting just as hard and shortens
-        // how long the squad is exposed to it. HP is the exposure knob, attack is the
-        // threat knob, and only exposure has usable range here. atkMult stays at 1.25.
+        // floor but lands neutral untraited at 0.8650 — below Containment Site's 0.8800
+        // — inverting the monotone ladder. Cutting attack removes the threat outright;
+        // cutting HP keeps the boss hitting just as hard and shortens how long the squad
+        // is exposed to it. HP is the exposure knob, attack is the threat knob, and only
+        // exposure has usable range here. atkMult stays at 1.25.
         //
         // 0.9225 untraited sits between Volcano Core's 0.9300 and Containment Site's
         // 0.8800, holding the campaign's monotonic ladder. Scale 0.65 also clears the
