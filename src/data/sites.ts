@@ -21,4 +21,6 @@ export const EXPEDITION_SITES: Record<string, SiteDef> = {
     eggOdds: [{ rarity: 'rare', weight: 25 }, { rarity: 'epic', weight: 45 }, { rarity: 'legendary', weight: 29 }, { rarity: 'mythic', weight: 1 }], bonusCash: [8_000, 20_000], bonusFood: [40, 90] },
   containment_site: { id: 'containment_site', name: 'Containment Site', unlockRating: 950, durationMs: 24 * H, cost: 100_000,
     eggOdds: [{ rarity: 'epic', weight: 35 }, { rarity: 'legendary', weight: 63 }, { rarity: 'mythic', weight: 2 }], bonusCash: [20_000, 50_000], bonusFood: [80, 180] },
+  founders_park: { id: 'founders_park', name: "Founder's Park", unlockRating: 1000, durationMs: 48 * H, cost: 300_000,
+    eggOdds: [{ rarity: 'epic', weight: 4 }, { rarity: 'legendary', weight: 90 }, { rarity: 'mythic', weight: 6 }], bonusCash: [50_000, 140_000], bonusFood: [200, 400] },
 };
