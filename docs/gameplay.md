@@ -505,7 +505,7 @@ skip and keeps going for the rest.
 
 ## 9. Expeditions
 
-Expeditions don't use any dinos — you send a dig crew to one of six sites,
+Expeditions don't use any dinos — you send a dig crew to one of seven sites,
 pay a cash fee up front, wait out the duration, and claim the results. Only
 one expedition can be out at a time.
 
@@ -517,6 +517,7 @@ one expedition can be out at a time.
 | Volcano Core | 8.0★ | 15,000 | 8 h | 3,000–9,000 | 20–50 |
 | Abyssal Trench | 8.8★ | 40,000 | 12 h | 8,000–20,000 | 40–90 |
 | Containment Site | 9.5★ | 100,000 | 24 h | 20,000–50,000 | 80–180 |
+| Founder's Park | 10.0★ | 300,000 | 48 h | 50,000–140,000 | 200–400 |
 
 The costs, durations, cash/food ranges above, and the egg odds further below
 are all calm-day numbers — Amber Storm, Fossil Rush, and other world events
@@ -551,9 +552,13 @@ The egg's rarity is rolled from odds set per site:
 | Volcano Core | — | — | 40% | 40% | 19.8% | 0.2% |
 | Abyssal Trench | — | — | 25% | 45% | 29% | 1% |
 | Containment Site | — | — | — | 35% | 63% | 2% |
+| Founder's Park | — | — | — | 4% | 90% | 6% |
 
-Volcano Core, Abyssal Trench, and Containment Site are the only sites that can
-ever drop a Legendary or Mythic egg.
+Volcano Core, Abyssal Trench, Containment Site, and Founder's Park are the
+only sites that can ever drop a Legendary or Mythic egg — four sites now,
+not three; Founder's Park's own odds lean Legendary far more heavily than any
+earlier site, with Mythic behind it at 6% rather than the slivers (0.2–2%)
+every prior site offered.
 There is no failure, risk, or partial-loss outcome — a returned expedition
 always pays its full loot — and there is no cancel or refund once you've
 sent a crew out.
@@ -562,8 +567,8 @@ sent a crew out.
 
 ### Chapters and unlocking
 
-The campaign is six chapters, each five stages long, with the fifth stage
-always the boss — 30 stages in total:
+The campaign is seven chapters, each five stages long, with the fifth stage
+always the boss — 35 stages in total:
 
 | # | Chapter |
 | --- | --- |
@@ -573,13 +578,23 @@ always the boss — 30 stages in total:
 | 4 | Volcano Core |
 | 5 | Abyssal Trench |
 | 6 | Containment Site |
+| 7 | Founder's Park |
 
 Within a chapter, stage 1 is always open, and every later stage unlocks once
 you've earned at least 1 star on the stage before it. Chapter 1 is always
-open too. Every later chapter needs **both** a recorded first clear of the
-previous chapter's boss **and** a best-ever park rating at or above that
-chapter's gate — the same thresholds as the identically named expedition
-sites: 0.0★, 3.0★, 5.0★, 8.0★, 8.8★, and 9.5★.
+open too. Every later chapter needs a recorded first clear of the previous
+chapter's boss, plus one more gate that depends on the chapter and comes in
+two different kinds. Chapters 2 through 6 gate on a best-ever park rating at
+or above that chapter's gate — the same thresholds as the identically named
+expedition sites: 3.0★, 5.0★, 8.0★, 8.8★, and 9.5★. The seventh and last
+chapter, Founder's Park, gates on something else entirely: **75 stars**
+earned anywhere across the whole campaign so far, not a rating at all — stars
+are earned per stage and can't be shuffled the way the comfort quarter of park
+rating can (see Rating and leaderboards, below), so the finale's own gate
+can't be gamed by briefly unassigning dinos to inflate it. Founder's Park's
+identically named expedition site still carries its own ordinary 10.0★
+rating gate, but that gate belongs to the expedition site, not to unlocking
+the chapter — the two are separate checks that happen to share a name.
 
 ### Energy
 
@@ -637,8 +652,8 @@ Cash, food, and battle XP for a stage all scale with the stars you earn:
 
 The first time you clear a stage, you also earn a one-time first-clear shard
 bonus that is **not** scaled by stars — a scrappy 1-star first win pays the
-same shards as a flawless 3-star one. Clearing every stage in all six
-chapters for the first time pays 177 first-clear shards in total across the
+same shards as a flawless 3-star one. Clearing every stage in all seven
+chapters for the first time pays 222 first-clear shards in total across the
 whole campaign.
 
 Battle XP for a win is split evenly across your squad (rounded down, with
@@ -667,16 +682,18 @@ payout.
 Each chapter's fifth stage pits you against that chapter's boss — a tougher
 version of the chapter's strongest enemy species. The first four chapters'
 bosses share one benchmark: roughly two and a half times the HP and about a
-fifth more attack than a normal encounter of that species. The two newest
-bosses were tuned separately by simulation and don't match that convention —
-the Abyssal Trench boss carries less HP than a normal encounter, at 0.82×,
-but hits harder, at 1.25× attack, while the Containment Site boss carries
-1.72× HP at the usual 1.2× attack. A boss's own multipliers are no longer
-guaranteed to stay above a normal encounter's — Abyssal Trench's HP
-deliberately dips below it — but each species' archetype multiplier still
-applies on top of that, so a tank-archetype boss (like the Abyssal Trench's
-Mosasaurus) can still resolve to a lower attack than a bruiser-archetype
-escort standing next to it.
+fifth more attack than a normal encounter of that species. The Abyssal
+Trench, Containment Site, and Founder's Park bosses were each tuned
+separately by simulation and don't match that convention — the Abyssal
+Trench boss carries less HP than a normal encounter, at 0.82×, but hits
+harder, at 1.25× attack; the Containment Site boss carries 1.72× HP at the
+usual 1.2× attack; and the Founder's Park boss cuts deepest of all, at 0.75×
+HP and 1.10× attack. A boss's own multipliers are no longer guaranteed to
+stay above a normal encounter's — Abyssal Trench and Founder's Park both
+deliberately dip below it, Founder's Park furthest — but each species'
+archetype multiplier still applies on top of that, so a tank-archetype boss
+(like the Abyssal Trench's Mosasaurus) can still resolve to a lower attack
+than a bruiser-archetype escort standing next to it.
 Clearing a boss for the first time awards
 a one-time trophy egg (repeat clears pay no further egg):
 
@@ -688,10 +705,17 @@ a one-time trophy egg (repeat clears pay no further egg):
 | The Tyrant King | Volcano Core | Legendary | pinned: Tyrannosaurus |
 | The Trench Sovereign | Abyssal Trench | Legendary | pinned: Mosasaurus |
 | Asset 47 | Containment Site | Legendary | pinned: Spinoraptor |
+| The Last Asset | Founder's Park | Mythic | pinned: Ultimasaurus |
 
-No boss ever drops a Mythic egg. Beating a chapter's boss for the first
-time is also, alongside the matching rating threshold, one half of what
-unlocks the next chapter.
+Every trophy egg through Containment Site is Legendary or below and trades
+like any other egg of its rarity. Founder's Park's is the one exception: it's
+the campaign's first — and only — Mythic trophy egg, and like every Mythic
+egg in the game it can never be traded (see Trading, below). It's still a
+one-time reward like every other boss egg — only your very first clear pays
+it, and repeat clears pay nothing further. Beating a chapter's boss for the
+first time also unlocks the next chapter, alongside that chapter's own second
+gate (see Chapters and unlocking, above) — a rating threshold for chapters 2
+through 6, or the 75-star total for the seventh.
 
 ## 11. Shop and selling
 
@@ -910,7 +934,7 @@ recognizes breadth, never wealth:
 
 Points are the sum of three things: species you've discovered (up to 52),
 achievement tiers you've claimed (up to 48), and stars earned across the
-battle campaign (up to 90) — 190 points in total. Nothing is spent or
+battle campaign (up to 105) — 205 points in total. Nothing is spent or
 consumed to earn a rank, and nothing can ever be lost — it's simply
 recalculated from what you've already done, each time it's shown. The
 highest rank you've reached also sticks: the next time your `/park view`

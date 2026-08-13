@@ -76,6 +76,10 @@ describe('achievement reachability', () => {
   // that way — Gold (10) and Platinum (15) against a maximum of 8 lots, worth
   // 7,500 cash and 25 shards nobody could ever collect.
   it('every top tier is actually attainable', () => {
+    // Explorer's platinum tier (30) used to equal STAGES.size exactly. At 35 stages it is
+    // 86% of the campaign, and that is deliberate: raising it would take a claimable tier
+    // away from any player sitting between 30 and 34 first-clears, the same demotion pattern
+    // LEGACY_TIERS is frozen to avoid. Explorer is a breadth track, not a completionist one.
     const ceilings: Record<string, number> = {
       stages_first_cleared: STAGES.size,
       lots_built: BASE_LOT_SLOTS_FALLBACK + LOT_SLOT_THRESHOLDS.length,

@@ -369,6 +369,39 @@ same upscaled source, resized to 1024×1024 (not a squash).
 > with smooth gradients, polished game-asset look. No text, no characters, no UI
 > elements.
 
+## Founder's Park (`founders_park`)
+
+Generated at 1264×848 (3:2, `nano_banana_2`, routed by the service to
+`nano_banana_flash`), fitted to 1536×1024 for the banner via
+`node scripts/fit-art.mjs banner`; the thumb is a centered square crop of the
+same source, resized to 1024×1024 with `drawImage` (not a squash — no
+`fit-art.mjs` mode produces a site thumb, so this one is a hand pass, same
+recipe as the Abyssal Trench and Containment Site thumbs above).
+
+**Banner (1536×1024) and Thumb (1024×1024), same source:**
+
+> A ruined dinosaur park main entrance at golden hour, a cracked stone archway
+> standing over rusted turnstiles half-swallowed by creeping vines and tall
+> ferns, a toppled weathered wooden signboard lying face-up in long grass with
+> a completely blank peeling surface, buckled paving stones across an
+> abandoned visitor plaza, enormous dinosaur silhouettes moving in the warm
+> haze beyond the open gate, long amber light and drifting dust motes, warm
+> gold and deep green palette, a sense of a place reclaimed. Wide cinematic
+> establishing shot filling the entire canvas edge to edge with no
+> letterboxing. Glossy cartoon mobile-game art style, bold dark outlines,
+> vibrant saturated colors, strong glossy highlights, clean cel shading with
+> smooth gradients, polished game-asset look. CRITICAL: absolutely no writing
+> anywhere in the image — no letters, no words, no numbers, no carved
+> inscriptions, no painted signage, no symbols, no logos. Every sign, plaque
+> and surface is blank and wordless. No human characters, no UI elements.
+
+Note for future regeneration: the first attempt rendered a legible "WELCOME"
+across the toppled signboard despite the prompt already asking for a blank
+surface — the plain "blank peeling surface" phrase was not enough on its own.
+The explicit CRITICAL no-writing block (no letters/words/numbers/inscriptions/
+signage/symbols/logos, every sign and surface blank and wordless) is what
+fixed it; keep that block verbatim on any future regeneration of this scene.
+
 ---
 
 ## Embed banners
@@ -756,7 +789,7 @@ style block plus the expanded no-text clause used elsewhere in this section.
 
 ## Battle bosses
 
-Six boss portraits for the PvE campaign (`/battle`), used as `setThumbnail`
+Seven boss portraits for the PvE campaign (`/battle`), used as `setThumbnail`
 on frames F3/F4 of boss stages. Null-degrade everywhere: the campaign ships
 fully playable with zero battle art.
 
@@ -768,6 +801,7 @@ fully playable with zero battle art.
 | `assets/images/battles/boss-volcano_core-portrait.webp` | 1024×1024, transparent | The Tyrant King (Tyrannosaurus), Volcano Core boss frames |
 | `assets/images/battles/boss-abyssal_trench-portrait.webp` | 1024×1024, transparent | The Trench Sovereign (Mosasaurus), Abyssal Trench boss frames |
 | `assets/images/battles/boss-containment_site-portrait.webp` | 1024×1024, transparent | Asset 47 (Spinoraptor), Containment Site boss frames |
+| `assets/images/battles/boss-founders_park-portrait.webp` | 1024×1024, transparent | Ultimasaurus (The Last Asset), Founder's Park boss frames |
 
 **Hard no-glow rule:** no glow, rays, embers, sparkles, or light effects may
 extend beyond the dinosaur silhouette — off-silhouette glow survives
@@ -785,7 +819,7 @@ with `remove_background` plus the one-off defringe + fit pass described in the E
 rarities section (not `scripts/fit-art.mjs`, which fits to 31px), with one
 difference: portraits fit and center on the **whole silhouette bbox** (there is
 no egg axis to bias toward), 24px margin on a 1024×1024 transparent canvas — the
-margin all six committed portraits measure at.
+margin all seven committed portraits measure at.
 
 **boss-coastal_dig — Old Riptooth (reference portrait):**
 
@@ -909,6 +943,43 @@ cover, and these two clauses are what fixed them:
   legible "#042" on its neck tag, which both violates the no-text house rule
   and contradicts the boss's name, Asset 47.
 
+**boss-founders_park — Ultimasaurus, "The Last Asset":** generated as a
+standalone prompt (not an image-edit of the coastal reference), background
+removed, fitted to a **24px margin** — the same margin as the other six
+portraits (`assets/images/battles/`), and deliberately not `fit-art.mjs
+cutout`'s 31px (see the divergence table in Egg rarities above).
+
+> A fierce cartoon hybrid dinosaur boss portrait, head and shoulders in
+> three-quarter view, a massive armored apex predator with a broad heavy
+> skull, thick bony plating across the brow and cheeks, blunt horns ridging
+> the jawline, overlapping armor scutes running down the neck and shoulders,
+> deep slate-gray and burnished bronze banded hide with a wet glossy sheen,
+> old battle scarring across the plates, a small blank unmarked metal tag
+> clipped to the neck, snarling with cold engineered menace. CRITICAL
+> FRAMING: zoom out so the ENTIRE creature — the whole head, the full neck,
+> and both complete shoulders — sits well inside the frame, small in the
+> canvas, surrounded by a wide band of empty background on all four sides.
+> Nothing may touch, run off, or be cropped by any edge of the image,
+> especially the bottom and right edges. Plain flat light-gray studio
+> background, completely empty, no scenery, no ground shadow, no drawn
+> border, no frame, no panel edge, no letterboxing. No glow, rays, embers,
+> sparkles, or light effects extending beyond the creature silhouette.
+> Glossy cartoon mobile-game art style, bold dark outlines, vibrant
+> saturated colors, strong glossy highlights, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no numbers, no lettering, no
+> human characters, no UI elements.
+
+Note for future regeneration: the first attempt cropped the creature at both
+the bottom and right edges of the canvas — the existing prompt frame's
+generic "fills almost the entire square frame" language was not enough to
+stop it here, since this design (armor plating across broad shoulders) reads
+larger in frame than the reference poses. The CRITICAL FRAMING block above
+(zoom out, whole creature inside the frame, explicit "especially the bottom
+and right edges") is what fixed it. The shipped portrait's alpha bounding box
+still touches the bottom of its own source canvas before fitting — that is
+expected, matches the shipped `boss-containment_site-portrait.webp` (also cut
+flat at the bottom), and is not something to "fix" by re-cropping.
+
 ## Dino archetypes
 
 Eight generic dinosaur portraits keyed on `archetype × diet`, used as
@@ -944,7 +1015,7 @@ per-species `silhouette` field was considered and declined, since it would
 have traded eight images for roughly twelve plus a migration across all 40
 species files, to fix fidelity for a handful of outliers like this one.
 
-**Style: deliberately simpler than the six boss portraits.** Same house
+**Style: deliberately simpler than the seven boss portraits.** Same house
 glossy-cartoon treatment and the same head-and-shoulders three-quarter framing,
 but flatter: clean archetype silhouettes, no scarring, no individuating damage,
 no character detail. These land in the same thumbnail slot as the boss portraits
@@ -956,7 +1027,7 @@ extend beyond the dinosaur silhouette — off-silhouette glow survives backgroun
 removal as floating islands or a light halo on transparency. Emissive detail is
 allowed only ON surfaces. Every prompt carries this rule verbatim.
 
-**Facing right:** all six committed boss portraits face right, snout pointing
+**Facing right:** all seven committed boss portraits face right, snout pointing
 right, and two boss generations came back mirrored and had to be flipped in
 post (Frozen Cliffs and Abyssal Trench — see Battle bosses). The prompt frame
 below states the direction up front — still check every generation against
@@ -1338,7 +1409,7 @@ the light studio rim must be peeled, and all border pixels must end transparent.
 
 ## Emoji icons
 
-The 52 application emojis in `assets/emojis/` are **not** generated — they are
+The 53 application emojis in `assets/emojis/` are **not** generated — they are
 hand-authored SVG rendered by `npm run build-emojis`. That set includes the six
 `dw_dino_<rarity>` chips and the six `dw_lot_*` icons the park renderer reads
 as SVG at draw time, plus the four `dw_trait_<domain>` icons (income, care,
@@ -1353,12 +1424,13 @@ bullets in the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.
 | `dw_streak.svg` | A two-tone stylized flame — a red-orange outer silhouette with a brighter yellow-orange inner flame layered on top | 🔥 |
 | `dw_chest.svg` | A wooden treasure chest: domed lid and body in a warm wood-brown gradient, gold trim bands across the seam and down the front, a small gold lock plate at the seam | 🎁 |
 
-**Endgame site markers** — used inline in expedition embed titles for the two endgame sites:
+**Endgame site markers** — used inline in expedition embed titles for the endgame sites:
 
 | File | Design intent | Unicode fallback |
 | --- | --- | --- |
 | `dw_site_abyssal_trench.svg` | A deep-sea submersible, side-on, floating on transparency: a rounded blue-to-navy gradient hull (stadium shape), a small conning tower on top, a pointed tail fin at the rear, one large pale-cyan porthole toward the front, and a small amber lamp at the nose with a short amber light cone reaching forward, dark navy (`#0b2233`) outlines throughout — a trench is negative space, so the site is represented by the vehicle you'd find exploring one, the same way Coastal Dig is represented by a shell rather than a hole in the sand | 🌊 |
 | `dw_site_containment_site.svg` | A short fence — four vertical slate posts crossed by two horizontal rails, no enclosing frame — with a yellow warning triangle mounted centered over it bearing a dark exclamation mark, dark slate (`#1b2530`) outlines throughout | 🧪 |
+| `dw_site_founders_park.svg` | A stone archway gate: two tapered stone pillars and a stone lintel (`#c4bcac`-to-`#6f6960` gradient) framing a warm gold-to-rust sunset sky (`#f0b458`-to-`#8c4a2f` gradient) in the opening, with a jagged dark-green overgrowth silhouette rising through the gap and a dark ground band underfoot — the ruined park's own entrance arch stands in for the site, the same way Coastal Dig is represented by a shell rather than a hole in the sand | 🏛️ |
 
 **World event bulletin** — nine event emoji, one per `WORLD_EVENTS` entry (`src/data/world-events.ts`), used inline on the `/world` hub and event headlines; all nine share the same circular-badge footprint (a stroked r=27 background circle) so the set reads as one bulletin:
 

@@ -44,7 +44,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '`/expedition start site:<site>` — pay cash, wait, get loot. Higher sites need higher rating.',
     '`/expedition status` — check the timer.',
     '`/expedition claim` — collect the egg + cash + food.',
-    'Sites: Coastal Dig (15m) → Amber Ridge (1h) → Frozen Cliffs (4h) → Volcano Core (8h) → Abyssal Trench (12h) → Containment Site (24h).',
+    'Sites: Coastal Dig (15m) → Amber Ridge (1h) → Frozen Cliffs (4h) → Volcano Core (8h) → Abyssal Trench (12h) → Containment Site (24h) → Founder\'s Park (48h).',
   ].join('\n') },
   shop: { title: '🏪 Shop', art: { kind: 'banners', name: 'shop_food_market' }, body: [
     '`/shop view` — today\'s eggs, food, decor, and the Daily Deal (the part that actually changes every day).',
@@ -72,12 +72,12 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Rating grows with dinos, lots, and comfort; it gates expeditions, shop tiers, and Mythics.',
   ].join('\n') },
   battles: { title: '⚔️ Battles', art: { kind: 'sites', name: 'coastal_dig-banner' }, body: [
-    '`/battle chapters` — the campaign map: 6 chapters themed to the expedition sites, 5 stages each, the 5th a boss.',
+    '`/battle chapters` — the campaign map: 7 chapters themed to the expedition sites, 5 stages each, the 5th a boss.',
     '`/battle fight stage:<stage> dino1:<id> [dino2] [dino3]` — send a squad of 1–3 dinos; the fight auto-resolves and plays back as a short cinematic (press Skip to jump to the result).',
     'Energy: every attempt costs ⚡ 1–3 by stage, win or lose. You hold up to 10 and regain 1 every 10 minutes.',
     'Squads: escaped dinos can\'t fight — rescue them first. Power comes from rarity, archetype (bruiser / tank / swift / support), and battle level: every fight pays battle XP, up to Lv.10.',
     'Stars: ★★★ win with no knockouts · ★★ win with ≤1 knockout or a fast finish · ★ any other win. Higher stars scale the cash/food payout; beating a stage for the first time also pays shards, once.',
-    'Bosses: clear a chapter\'s boss for the first time to earn a high-rarity egg and open the next chapter — its expedition site\'s rating gate applies too.',
+    'Bosses: clear a chapter\'s boss for the first time to earn a high-rarity egg and open the next chapter — the last chapter opens on campaign stars instead; every earlier one also needs its expedition site\'s rating gate.',
   ].join('\n') },
   genelab: { title: '🧬 Gene Lab', art: { kind: 'banners', name: 'gene_lab' }, body: [
     'A dino holds up to 2 traits — small permanent boosts (or drawbacks) to income, hunger drain, feed cost, battle stats, battle XP, or breeding time. Never two traits from the same domain on one dino.',

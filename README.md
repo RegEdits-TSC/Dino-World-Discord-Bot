@@ -22,7 +22,7 @@ bot is in.
   Mythic, each egg incubating on its own timer and hatching into illustrated art
 - 🗺️ **Run expeditions** — send a dig crew out to themed sites and claim what they
   bring back
-- ⚔️ **Fight a campaign** — six chapters of five stages, each ending in a boss,
+- ⚔️ **Fight a campaign** — seven chapters of five stages, each ending in a boss,
   played out as a cinematic with star ratings and first-clear rewards
 - 🍖 **Keep them fed** — six diet-typed foods, with herbivores and carnivores
   refusing each other's meals and hunger driving how much your park earns

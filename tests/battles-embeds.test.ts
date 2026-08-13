@@ -3,7 +3,7 @@ import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle } from 
 import { fightFrames, chaptersPayload, energyLine, type ChaptersView, type FramePayload } from '../src/modules/battles/embeds.js';
 import type { FightOutcome } from '../src/modules/battles/service.js';
 import type { BeatSummary } from '../src/data/battle/resolve.js';
-import { STAGES, type ProgressMap } from '../src/data/battle/chapters/index.js';
+import { CAMPAIGN, STAGES, type ProgressMap } from '../src/data/battle/chapters/index.js';
 import { ENERGY_REGEN_MS } from '../src/data/battle/constants.js';
 import { validateMessagePayload } from './lib/discord-limits.js';
 import { assetImage } from '../src/core/images.js';
@@ -291,5 +291,46 @@ describe('chaptersPayload', () => {
   it('energy line: countdown below cap, full at cap', () => {
     expect(energyLine(10, 0)).toBe('⚡ 10/10 · full');
     expect(energyLine(7, 600_000)).toBe(`⚡ 7/10 · +1 <t:${(600_000 + ENERGY_REGEN_MS) / 1000}:R>`);
+  });
+  it('a locked star-gated chapter names the star requirement and the player\'s own progress', () => {
+    const view: ChaptersView = {
+      progress: new Map([['coastal_dig_1', { stars: 2, firstClearedAt: 1 }]]),
+      ratingHighWater: 1_000, energy: 10, energyUpdatedAtMs: 0, now: 0,
+    };
+    const idx = CAMPAIGN.findIndex((c) => c.id === 'founders_park');
+    const desc = chaptersPayload('u1', idx, view).embeds![0].toJSON().description!;
+    expect(desc).toContain('2/75 campaign stars');
+    expect(desc).not.toContain('park rating');
+  });
+  it('a locked star-gated chapter still names the boss requirement when the star gate alone is already met', () => {
+    // The chapter CARD is reachable by pressing Next ▶ alone, which satisfies
+    // no gate — so a player can be farming stars elsewhere while repeatedly
+    // losing to the chapter 6 boss (a loss records stars: 0 and never stamps
+    // firstClearedAt). That leaves the star requirement met (87 >= 75) while
+    // chapterUnlocked still returns false on the unmet boss precondition, and
+    // the lock line must say so rather than reporting only the star count.
+    const entries: Array<[string, number]> = [];
+    for (const ch of CAMPAIGN.slice(0, 6)) {
+      for (const stage of ch.stages) {
+        if (stage.id === 'containment_site_boss') continue;   // never cleared
+        entries.push([stage.id, 3]);
+      }
+    }
+    const view: ChaptersView = {
+      progress: progressWith(entries), ratingHighWater: 1_000, energy: 10, energyUpdatedAtMs: 0, now: 0,
+    };
+    const idx = CAMPAIGN.findIndex((c) => c.id === 'founders_park');
+    const desc = chaptersPayload('u1', idx, view).embeds![0].toJSON().description!;
+    expect(desc).toContain('beat the previous chapter\'s boss');
+    expect(desc).toContain('87/75 campaign stars');
+  });
+  it('a locked rating-gated chapter still names park rating', () => {
+    const view: ChaptersView = {
+      progress: new Map(), ratingHighWater: 0, energy: 10, energyUpdatedAtMs: 0, now: 0,
+    };
+    const idx = CAMPAIGN.findIndex((c) => c.id === 'volcano_core');
+    const desc = chaptersPayload('u1', idx, view).embeds![0].toJSON().description!;
+    expect(desc).toContain('park rating');
+    expect(desc).not.toContain('campaign stars');
   });
 });

@@ -48,14 +48,22 @@ describe('gating helpers (re-exported from rating.ts)', () => {
     expect(mythicUnlocked(799)).toBe(false);
     expect(mythicUnlocked(800)).toBe(true);
   });
-  // The two newest sites (Abyssal Trench, Containment Site) are pinned in two
-  // unrelated files with nothing coupling them — progression.ts's own gating
-  // constants and sites.ts's own gating constants. The spec's intent is that a
-  // gate this deep carries a park-side reward too, so the last two lot-slot
-  // thresholds must equal those two sites' unlockRating, in campaign order.
-  // Both sides read the real exported constants (never a hardcoded 880/950),
-  // so this fails the moment either file's gate moves without the other.
-  it('the two newest lot-slot thresholds match their sites\' unlockRating', () => {
+  // Abyssal Trench (880) and Containment Site (950) are pinned in two unrelated
+  // files with nothing coupling them — progression.ts's gating constants and
+  // sites.ts's. The intent is that a gate that deep carries a park-side reward
+  // too, so those two lot-slot thresholds must equal those two sites'
+  // unlockRating, in campaign order. Both sides read the real exported constants
+  // (never a hardcoded 880/950), so this fails the moment either file moves
+  // without the other.
+  //
+  // The pairing deliberately STOPS there. Founder's Park (1000) is the newest
+  // site and has no lot-slot threshold behind it, because 1000 is a
+  // battle/expedition gate rather than a build gate: LOT_SLOT_THRESHOLDS already
+  // tops out at 10 slots, parkRaw already saturates PARK_TARGET at 41 with 10
+  // slots, and an 11th slot would be +8 dino capacity and more income at exactly
+  // the tier where income is largest. This test therefore names its two sites
+  // explicitly and must NOT be generalised to "the newest N sites".
+  it('the Abyssal Trench and Containment Site lot-slot thresholds match their sites\' unlockRating', () => {
     const newestGateSites = [EXPEDITION_SITES.abyssal_trench, EXPEDITION_SITES.containment_site];
     expect(LOT_SLOT_THRESHOLDS.slice(-newestGateSites.length))
       .toEqual(newestGateSites.map((s) => s.unlockRating));

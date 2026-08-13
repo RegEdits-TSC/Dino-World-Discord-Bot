@@ -24,6 +24,7 @@ describe('expeditions', () => {
   it('lists only unlocked sites by high-water', () => {
     expect(listSites(0).map((s) => s.id)).toEqual(['coastal_dig']);
     expect(listSites(950).length).toBe(6);
+    expect(listSites(1000).map((s) => s.id)).toContain('founders_park');
   });
   it('starts an expedition, charges cost, enqueues a return timer, blocks a second start', () => {
     const exp = startExpedition(ctx, 'u1', 'coastal_dig', 'g1');

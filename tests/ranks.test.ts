@@ -20,7 +20,7 @@ describe('legacy ceiling', () => {
     const tiers = ACHIEVEMENTS.reduce((s, t) => s + t.tiers.length, 0);
     const stars = CAMPAIGN.reduce((s, c) => s + c.stages.length * 3, 0);
     expect(legacyMaxPoints()).toBe(species + tiers + stars);
-    expect(legacyMaxPoints()).toBe(190);      // 52 + 48 + 90 on today's content
+    expect(legacyMaxPoints()).toBe(205);      // 52 + 48 + 105 on today's content
   });
   it('leaves the top tier reachable', () => {
     expect(LEGACY_TIERS[LEGACY_TIERS.length - 1].points).toBeLessThanOrEqual(legacyMaxPoints());
@@ -72,7 +72,7 @@ describe('legacyRank', () => {
   // then-42-species cap entirely, so three of the six tiers (Warden, Conservator,
   // Director) were NEVER exercised.
   // Seeding across all three point sources (species, achievement claims, battle stars —
-  // the same three legacyPoints reads) reaches all 190 possible points, so every
+  // the same three legacyPoints reads) reaches all 205 possible points, so every
   // threshold is reachable and gets an exact assertion below.
   const ALL_CLAIMS = ACHIEVEMENTS.flatMap((t) => t.tiers.map((_, tier) => ({ trackId: t.id, tier })));
 

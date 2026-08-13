@@ -166,8 +166,17 @@ export function chaptersPayload(userId: string, chapterIndex: number, view: Chap
     return `${marker} ${s.boss ? '👑 ' : ''}${s.name} (⚡${cost})`;
   }).join('\n');
   const header = eventHeaderLine(view.now ?? 0, BATTLE_CHAPTERS_HEADER_KEYS);
-  const tagline = unlocked ? ch.tagline
-    : `${ch.tagline}\n\n🔒 Locked — beat the previous chapter's boss and raise your park rating.`;
+  // Two gate kinds now (see chapterUnlocked), and both are real, independent
+  // requirements — this card is reachable by navigation alone (the Next ▶
+  // button satisfies no gate), so a player can easily be sitting on this
+  // locked screen with the previous chapter's boss still unbeaten. The copy
+  // must therefore name every requirement rather than assume any one of them
+  // is already satisfied. Reads ch.starGate directly; never keep a second
+  // copy of the number here.
+  const lockLine = ch.starGate != null
+    ? `🔒 Locked — beat the previous chapter's boss and earn ${[...view.progress.values()].reduce((sum, p) => sum + p.stars, 0)}/${ch.starGate} campaign stars.`
+    : '🔒 Locked — beat the previous chapter\'s boss and raise your park rating.';
+  const tagline = unlocked ? ch.tagline : `${ch.tagline}\n\n${lockLine}`;
   const embed = new EmbedBuilder().setColor(unlocked ? 0xd35400 : 0x95a5a6)
     .setTitle(`📖 Chapter ${idx + 1}/${CAMPAIGN.length} — ${ch.name}${unlocked ? '' : ' 🔒'}`)
     .setDescription(`${header}\n\n${tagline}`)

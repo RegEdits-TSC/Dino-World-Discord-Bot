@@ -16,13 +16,14 @@ describe('/expedition start site autocomplete', () => {
     await cmd().autocomplete!(ctx, i.asAutocomplete());
     const rows = i.replies[0] as Array<{ name: string; value: string }>;
     expect(rows.map((r) => r.value)).toEqual(['coastal_dig', 'amber_ridge', 'frozen_cliffs', 'volcano_core',
-      'abyssal_trench', 'containment_site']);
+      'abyssal_trench', 'containment_site', 'founders_park']);
     expect(rows[0].name).toBe('🧭 Coastal Dig — 200 cash, 15m');
     expect(rows[1].name).toBe('🧭 Amber Ridge — 1,000 cash, 1h');
     expect(rows[2].name).toBe('🧭 Frozen Cliffs — LOCKED, needs ★5.0');
     expect(rows[3].name).toBe('🧭 Volcano Core — LOCKED, needs ★8.0');
     expect(rows[4].name).toBe('🧭 Abyssal Trench — LOCKED, needs ★8.8');
     expect(rows[5].name).toBe('🧭 Containment Site — LOCKED, needs ★9.5');
+    expect(rows[6].name).toBe('🧭 Founder\'s Park — LOCKED, needs ★10.0');
   });
 
   it('missing user row = high-water 0, no row created', async () => {
@@ -31,7 +32,7 @@ describe('/expedition start site autocomplete', () => {
     await cmd().autocomplete!(ctx, i.asAutocomplete());
     const rows = i.replies[0] as Array<{ name: string }>;
     expect(rows[0].name).toBe('🧭 Coastal Dig — 200 cash, 15m');
-    expect(rows.filter((r) => r.name.includes('LOCKED'))).toHaveLength(5);
+    expect(rows.filter((r) => r.name.includes('LOCKED'))).toHaveLength(6);
     expect(ctx.db.select().from(schema.users).all()).toEqual([]);
   });
 

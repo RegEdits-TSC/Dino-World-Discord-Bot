@@ -227,11 +227,19 @@
   first Discord edit, so a crash or Skip mid-cinematic loses animation frames
   only, never state — never move a write into the frame loop. Chapter ids in
   `src/data/battle/chapters/` MUST equal `EXPEDITION_SITES` keys: that single
-  invariant derives the chapter banner asset (`sites/<chapterId>-banner`), the
-  `unlockRating` co-gate, and the theme. `tests/battle-content.test.ts` is the
+  invariant derives the chapter banner asset (`sites/<chapterId>-banner`) and the
+  theme unconditionally, and — for every chapter that does NOT set `starGate` —
+  the `unlockRating` co-gate too. `tests/battle-content.test.ts` is the
   machine gate for all campaign data — including that every `bossId` appears in
-  `docs/assets/prompts.md` — so future chapters ship as data-only PRs (new
-  chapter file + index import + WebPs + prompt rows) with zero engine changes.
+  `docs/assets/prompts.md` — so a chapter reusing the existing rating-gate kind
+  still ships as a data-only PR (new chapter file + index import + WebPs +
+  prompt rows) with zero engine changes. That promise is no longer
+  unconditional, though: chapter 7 (Founder's Park) needed a real engine change
+  — `ChapterDef.starGate` plus a branch in `chapterUnlocked`
+  (`src/data/battle/chapters/index.ts`) — because its own unlock condition is a
+  campaign-wide star total, not a rating threshold, and the id-derived
+  `unlockRating` co-gate had no way to express that. A future chapter that
+  needs a genuinely new gate kind will cost an engine change again.
   `rosterFor(stage, squadSize)` (`src/data/battle/chapters/index.ts`) is the
   single source of truth for which enemies are fielded and which entry is the
   boss — `runFight` and `fightFrames` both call it rather than re-deriving the
@@ -315,17 +323,17 @@
   Blood Moon (`enemyHp` 1.15, the only event that touches combat). Under an event only
   the TRAITED floor (>=0.85) is asserted — requiring the untraited floor there too is
   unsatisfiable without flattening the late campaign. Compensating a boss for an event
-  multiplier goes on `hpMult`, NEVER `atkMult`: on Containment Site (the finale),
+  multiplier goes on `hpMult`, NEVER `atkMult`: on Containment Site (the chapter-6 boss),
   `atkMult` 1.05 lands neutral traited at 1.0000, breaching the finale ceiling as it then
   stood (a hardcoded `<=0.99` assertion that has since been replaced — see below),
   and on Abyssal Trench, `atkMult` 1.05 lands neutral untraited at 0.8650 — below
   Containment Site's 0.8800 — inverting the monotone ladder. Cutting attack removes the
   threat, while cutting HP keeps the boss hitting as hard and shortens exposure. HP is
-  the exposure knob, attack is the threat knob. The two late bosses must be re-tuned
-  TOGETHER — the monotonicity assertion couples them, so fixing one alone breaks the
-  other. This retired the old "boss multipliers never fall below 1.0" convention;
+  the exposure knob, attack is the threat knob. Chapters 5, 6 and 7's bosses must be
+  re-tuned TOGETHER — the monotonicity assertion couples them, so fixing one alone breaks
+  another. This retired the old "boss multipliers never fall below 1.0" convention;
   Abyssal Trench's `hpMult` is 0.82 deliberately. The monotone ladder itself is now
-  checked at 3,000 seeds with a 0.03 tolerance, never the 400 seeds every other
+  checked at 3,000 seeds with a 0.01 tolerance, never the 400 seeds every other
   assertion in this file uses — at 400 seeds the ladder's own gaps between adjacent
   bosses are smaller than its sampling noise, so a real inversion can read as a clean
   pass. Tune a boss by measuring at 3,000 seeds, not 400.
@@ -495,6 +503,9 @@
   exceeded it was unwinnable, which is why both new bosses were tuned down on
   `hpMult` instead of pushed up on level — see those chapter files' own
   comments in `src/data/battle/chapters/` for the numbers and the reasoning.
+  Founder's Park's boss lands exactly on that cap too (`npcLevel` 11 +
+  `levelBonus` 1 = 12, zero headroom) — the same tuning tradeoff, one more
+  data point against ever raising it.
 - Living world: `worldEventFor(now)` / `eventMods(now)` (`src/core/world.ts`)
   are pure functions of a UTC timestamp — the day's event is DERIVED, never
   stored, same philosophy as escrow locks and quest progress above.
@@ -793,7 +804,7 @@
   the inversion the feature exists to prevent. It sums three sources that are each
   already monotone and already complete for every account instead: species discovered
   (`dexProgress`, max 52), achievement tiers claimed (`earnedTierCount`, max 48), and
-  battle stars (`battle_progress.stars`, max 90) — 190 points total, nothing spent,
+  battle stars (`battle_progress.stars`, max 105) — 205 points total, nothing spent,
   nothing stored.
   **"Already complete for every account" is true of two of those three, and only
   transitively true of the achievement term** — say so rather than repeating the clean
@@ -805,7 +816,7 @@
   `stages_first_cleared`, `trades_completed`, `breedings_claimed`, `lots_built` — are
   covered; `breedings_started` is backfilled but has no track, which is why 6 backfilled
   counters cover only 5 tracks.) A pre-0006 account therefore cannot claim 28 of the 48
-  achievement points out of history it actually lived — **14.7% of the 190 ceiling
+  achievement points out of history it actually lived — **13.7% of the 205 ceiling
   inherits exactly the gap `user_stats` was rejected to avoid.** The code is still right:
   the shortfall is re-earnable by playing, where a rank built ON `user_stats` would have
   been permanently unrecoverable, and the dex and battle-star terms are complete in the
