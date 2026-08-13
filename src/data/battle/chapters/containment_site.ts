@@ -44,7 +44,8 @@ export const containmentSite: ChapterDef = {
         // untraited rate was 0.4310. Quote the seed count a number was actually measured
         // at, or the next author tunes against a figure that does not exist.
         //
-        // This is the campaign's current finale (CAMPAIGN's last chapter). Its finale
+        // This is chapter 6. It was the campaign's finale until Founder's Park shipped;
+        // tests/battle-balance.test.ts now pins it by id so it stays measured. Its finale
         // ceiling guard does NOT hold to a <=0.99 bound against savage — savage was never
         // the strongest of the four combat traits, and this hpMult does not make the
         // finale a real fight against the actual strongest loadout: a fleet-traited squad
@@ -58,8 +59,8 @@ export const containmentSite: ChapterDef = {
         // 0.8800 untraited (400 seeds) / 0.8750 (3,000 seeds) stays below Abyssal
         // Trench's 0.8825 / 0.9127, holding the monotonic ladder — checked at 3,000
         // seeds specifically in tests/battle-balance.test.ts, with a 0.03 tolerance for
-        // sampling noise. The two late bosses must be tuned together: fixing either alone
-        // breaks the monotonicity assertion on the other.
+        // sampling noise. The three late bosses (chapters 5, 6 and 7) must be tuned
+        // together: fixing any one alone breaks the monotonicity assertion on the others.
         bossId: 'boss-containment_site', title: 'Asset 47', speciesId: 'spinoraptor',
         levelBonus: 1, hpMult: 1.72, atkMult: 1.2, eggRarity: 'legendary', eggSpeciesId: 'spinoraptor',
       },

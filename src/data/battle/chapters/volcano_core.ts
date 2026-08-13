@@ -1,8 +1,11 @@
 import type { ChapterDef } from './index.js';
 
 // Chapter 4 — Volcano Core (unlockRating 800). Epic and legendary theropods;
-// the finale pins a thematic legendary trophy egg (tyrannosaurus) — never
-// mythic, which would undercut the 500-shard mythic purchase.
+// the finale pins a thematic legendary trophy egg (tyrannosaurus).
+// Boss eggs stay below mythic through chapter 6, so a trophy egg never undercuts the
+// 500-shard mythic purchase. Chapter 7 (founders_park) is the deliberate exception and
+// the ONLY one — see its boss comment, and the scoped guard in
+// tests/battle-content.test.ts's boss-egg test.
 export const volcanoCore: ChapterDef = {
   id: 'volcano_core',
   name: 'Volcano Core',

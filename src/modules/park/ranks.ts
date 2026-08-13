@@ -11,7 +11,7 @@ export interface LegacyTier { rank: number; title: string; points: number }
 
 /**
  * Earned standing, front-loaded so rank 1 arrives early and Director stays rare.
- * Thresholds are fractions of the 190-point ceiling: 7.9 / 18.4 / 34.2 / 52.6 / 73.7 / 89.5%.
+ * Thresholds are fractions of the 205-point ceiling: 7.3 / 17.1 / 31.7 / 48.8 / 68.3 / 82.9%.
  */
 export const LEGACY_TIERS: readonly LegacyTier[] = [
   { rank: 1, title: 'Groundskeeper', points: 15 },
@@ -24,12 +24,18 @@ export const LEGACY_TIERS: readonly LegacyTier[] = [
 
 /**
  * The ceiling, derived from the three content tables rather than written down: 52 species
- * + 48 achievement tiers + 90 battle stars = 190 today.
- * Director has slid from 94.4% of the ceiling to 89.5% because LEGACY_TIERS was
+ * + 48 achievement tiers + 105 battle stars = 205 today.
+ * Director has slid from 94.4% of the ceiling to 82.9% because LEGACY_TIERS was
  * deliberately NOT retuned: nothing persists an earned rank, so raising a threshold
  * demotes live players on their next /park view and contradicts docs/gameplay.md's
- * promise that nothing can ever be lost. Discharging this needs a monotone
- * users.legacyRankBest, not a threshold edit. See the 4a spec, section 8.
+ * promise that nothing can ever be lost. See the 4a spec, section 8.
+ *
+ * legacyRankBest (shipped in 4b) does NOT discharge this. It stores POINTS, and legacyRank
+ * resolves tierForPoints(max(stored, computed)), so raising a threshold re-resolves against
+ * the new table and demotes a live Director anyway. The column protects against the computed
+ * total DROPPING, which is a different failure. The thresholds stay frozen; Director's share
+ * of the ceiling is expected to keep sliding as content ships, and that is the correct
+ * outcome, not a regression to fix.
  */
 export function legacyMaxPoints(): number {
   return allSpecies().length

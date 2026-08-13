@@ -1,9 +1,11 @@
 import type { ChapterDef } from './index.js';
 
 // Chapter 5 — Abyssal Trench (unlockRating 880). Marine reptiles, escalating from
-// the rare plesiosaurs on the shelf to the legendary hunters in the dark. The boss
-// is legendary-base on purpose: player power is capped at level 10 and one combat
-// trait, so a mythic-base boss is unwinnable rather than hard.
+// the rare plesiosaurs on the shelf to the legendary hunters in the dark.
+// The boss is legendary-base on purpose: at the multipliers available when this chapter
+// shipped, a mythic-base boss was unwinnable rather than hard. That is no longer true in
+// general — chapter 7 fields a mythic tank at hpMult 0.75 — but it remains true for THIS
+// boss's tuning, and the two files should not be read as contradicting each other.
 export const abyssalTrench: ChapterDef = {
   id: 'abyssal_trench',
   name: 'Abyssal Trench',
@@ -61,9 +63,10 @@ export const abyssalTrench: ChapterDef = {
         // is exposed to it. HP is the exposure knob, attack is the threat knob, and only
         // exposure has usable range here. atkMult stays at 1.25.
         //
-        // The two late bosses must be tuned together, not independently — a change to
-        // either one moves where it lands relative to the other's own number, and both
-        // sides of that comparison need to be re-measured at 3,000 seeds before either
+        // The three late bosses (chapters 5, 6 and 7) must be tuned together — the
+        // 3,000-seed monotone ladder couples all of them, not independently — a change to
+        // any one moves where it lands relative to the others' own numbers, and every
+        // side of that comparison needs to be re-measured at 3,000 seeds before any
         // hpMult moves again.
         bossId: 'boss-abyssal_trench', title: 'The Trench Sovereign', speciesId: 'mosasaurus',
         levelBonus: 1, hpMult: 0.82, atkMult: 1.25, eggRarity: 'legendary', eggSpeciesId: 'mosasaurus',

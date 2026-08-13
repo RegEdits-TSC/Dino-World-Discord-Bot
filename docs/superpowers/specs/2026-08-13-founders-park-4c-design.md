@@ -78,6 +78,14 @@ Three further stages 3-star only at sub-1% rates (`abyssal_trench_3` and `_4` at
 3-star would drop the margin to zero, and two would make the finale reachable only by grinding
 a 0.17% stage — with no test failing. 75 leaves six stars of margin instead of one.
 
+> **Correction (post-implementation):** 87/90 above is this design phase's own 3,000-seed
+> figure. The shipped reachability test (`tests/battle-balance.test.ts`) simulates at 400
+> seeds instead and computes achievable as **85**, not 87 — deliberately: two of the stages
+> this section calls sub-1% (`abyssal_trench_3`/`_4`) actually measure at 0.058% each, close
+> enough to a coin flip across the smaller sample (400 seeds x 4 traits) that it misses both.
+> 75 still clears comfortably either way. See that file's own comment for the exact figures;
+> treat 87 throughout this document as superseded by the shipped 85.
+
 75 also defuses a soft paywall. A mythic squad reaches 90/90 trivially (3,000/3,000 on every
 stage), so a gate pressed against the legendary ceiling is one that a 500-shard purchase
 quietly trivialises — the exact "*a boss that only a triple-mythic roster can beat is a

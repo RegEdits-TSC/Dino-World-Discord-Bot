@@ -819,7 +819,7 @@ with `remove_background` plus the one-off defringe + fit pass described in the E
 rarities section (not `scripts/fit-art.mjs`, which fits to 31px), with one
 difference: portraits fit and center on the **whole silhouette bbox** (there is
 no egg axis to bias toward), 24px margin on a 1024×1024 transparent canvas — the
-margin all six committed portraits measure at.
+margin all seven committed portraits measure at.
 
 **boss-coastal_dig — Old Riptooth (reference portrait):**
 
@@ -1015,7 +1015,7 @@ per-species `silhouette` field was considered and declined, since it would
 have traded eight images for roughly twelve plus a migration across all 40
 species files, to fix fidelity for a handful of outliers like this one.
 
-**Style: deliberately simpler than the six boss portraits.** Same house
+**Style: deliberately simpler than the seven boss portraits.** Same house
 glossy-cartoon treatment and the same head-and-shoulders three-quarter framing,
 but flatter: clean archetype silhouettes, no scarring, no individuating damage,
 no character detail. These land in the same thumbnail slot as the boss portraits
@@ -1027,7 +1027,7 @@ extend beyond the dinosaur silhouette — off-silhouette glow survives backgroun
 removal as floating islands or a light halo on transparency. Emissive detail is
 allowed only ON surfaces. Every prompt carries this rule verbatim.
 
-**Facing right:** all six committed boss portraits face right, snout pointing
+**Facing right:** all seven committed boss portraits face right, snout pointing
 right, and two boss generations came back mirrored and had to be flipped in
 post (Frozen Cliffs and Abyssal Trench — see Battle bosses). The prompt frame
 below states the direction up front — still check every generation against

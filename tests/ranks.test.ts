@@ -72,7 +72,7 @@ describe('legacyRank', () => {
   // then-42-species cap entirely, so three of the six tiers (Warden, Conservator,
   // Director) were NEVER exercised.
   // Seeding across all three point sources (species, achievement claims, battle stars —
-  // the same three legacyPoints reads) reaches all 190 possible points, so every
+  // the same three legacyPoints reads) reaches all 205 possible points, so every
   // threshold is reachable and gets an exact assertion below.
   const ALL_CLAIMS = ACHIEVEMENTS.flatMap((t) => t.tiers.map((_, tier) => ({ trackId: t.id, tier })));
 
