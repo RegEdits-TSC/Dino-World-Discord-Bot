@@ -77,6 +77,7 @@ describe('adminReset', () => {
     expect(u.shards).toBe(0);
     expect(u.parkRating).toBe(0);
     expect(u.ratingHighWater).toBe(0);
+    expect(u.legacyRankBest).toBe(0);
     expect(u.parkName).toBe('New Park');
     expect(ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, 'p')).all()).toHaveLength(0);
     expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'p')).all()).toHaveLength(0);
@@ -88,6 +89,17 @@ describe('adminReset', () => {
     ctx.db.update(schema.users).set({ landmarkTier: 4 }).where(eq(schema.users.discordId, 'u1')).run();
     adminReset(ctx, 'u1');
     expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.landmarkTier).toBe(0);
+  });
+  it('reset clears the legacy rank high-water, the one path that makes legacyPoints drop', () => {
+    // legacyRank resolves against max(stored, computed) so an earned rank is never lost
+    // (src/modules/park/ranks.ts) — but adminReset deletes species_seen, achievement_claims
+    // and battle_progress, so it's the one path in the codebase that makes the COMPUTED
+    // total drop. Without this, a wiped account would keep showing its pre-reset rank on
+    // /park view and /dex list forever.
+    getOrCreateUser(ctx, 'u1', 'U1');
+    ctx.db.update(schema.users).set({ legacyRankBest: 50 }).where(eq(schema.users.discordId, 'u1')).run();
+    adminReset(ctx, 'u1');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.legacyRankBest).toBe(0);
   });
   it('reset clears the park showcase', () => {
     getOrCreateUser(ctx, 'u1', 'Reg');

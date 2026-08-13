@@ -913,8 +913,9 @@ achievement tiers you've claimed (up to 48), and stars earned across the
 battle campaign (up to 90) — 190 points in total. Nothing is spent or
 consumed to earn a rank, and nothing can ever be lost — it's simply
 recalculated from what you've already done, each time it's shown. The
-highest rank you have ever reached is also recorded, so a rank you have
-earned stays yours even if the way points are counted changes in a later
+highest rank you've reached also sticks: the next time your `/park view`
+dashboard or `/dex list` shows your rank, it won't be lower than a rank you
+already earned, even if the way points are counted changes in a later
 update. Below 15 points you haven't reached Groundskeeper yet and show no
 rank at all. Your Legacy rank appears on your `/park view` dashboard and in
 the footer of `/dex list`.

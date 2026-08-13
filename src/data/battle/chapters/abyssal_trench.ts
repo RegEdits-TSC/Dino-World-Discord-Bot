@@ -34,11 +34,23 @@ export const abyssalTrench: ChapterDef = {
       enemies: [{ speciesId: 'kronosaurus' }, { speciesId: 'liopleurodon' }, { speciesId: 'mosasaurus' }],
       rewards: { cash: 750, food: { foodId: 'fish', qty: 5 }, xp: 240 }, firstClearShards: 14,
       boss: {
-        // hpMult 0.78, down from 1.3, so this boss clears the traited floor under Blood
-        // Moon (enemyHp 1.15) as well as under neutral mods — see the event guard in
-        // tests/battle-balance.test.ts. Measured at 400 seeds, the count that test uses:
-        // Blood Moon traited 0.9225, neutral traited 1.0000, neutral untraited 0.9225.
-        // Confirm at 3,000 and 10,000 before changing this number.
+        // hpMult 0.82, up from 0.78 (itself down from 1.3). 0.78 cleared every
+        // per-chapter assertion at the 400 seeds those assertions use — Blood Moon
+        // traited 0.9225, neutral traited 1.0000, neutral untraited 0.9225, correctly
+        // below Volcano Core's 400-seed 0.9300 — but that ordering was sampling luck,
+        // not margin: at 1,000/3,000/10,000 seeds untraited neutral read 0.9310 / 0.9377
+        // / 0.9405, rising PAST Volcano Core's own declining 0.9270 / 0.9173 / 0.9064.
+        // Chapter 5 was genuinely easier than chapter 4 once sampled past 400 seeds —
+        // the same inversion class this file's monotone-ladder guard exists to catch,
+        // invisible at the seed count it ran at.
+        //
+        // At 0.82, re-measured: neutral untraited is 0.8825 (400 seeds) / 0.9127 (3,000)
+        // — the latter correctly BETWEEN Volcano Core's 3,000-seed 0.9173 and
+        // Containment Site's 3,000-seed 0.8750, a real margin rather than a tolerated
+        // one. Blood Moon traited (savage) stays comfortably above the 0.85 floor: 0.8975
+        // at 400 seeds, 0.9203 at 3,000. tests/battle-balance.test.ts's monotone-ladder
+        // check now runs at 3,000 seeds specifically (with a 0.03 tolerance) for exactly
+        // this reason — confirm any future change to this number at 3,000 seeds, not 400.
         //
         // This is deliberately below 1.0, retiring the "boss multipliers never fall
         // below 1.0" convention these files used to state. atkMult was the obvious way
@@ -49,12 +61,12 @@ export const abyssalTrench: ChapterDef = {
         // is exposed to it. HP is the exposure knob, attack is the threat knob, and only
         // exposure has usable range here. atkMult stays at 1.25.
         //
-        // 0.9225 untraited sits between Volcano Core's 0.9300 and Containment Site's
-        // 0.8800, holding the campaign's monotonic ladder. Scale 0.65 also clears the
-        // event floor but lands at 0.8550, BELOW Containment Site, which inverts the
-        // ladder — the two late bosses must be tuned together, not independently.
+        // The two late bosses must be tuned together, not independently — a change to
+        // either one moves where it lands relative to the other's own number, and both
+        // sides of that comparison need to be re-measured at 3,000 seeds before either
+        // hpMult moves again.
         bossId: 'boss-abyssal_trench', title: 'The Trench Sovereign', speciesId: 'mosasaurus',
-        levelBonus: 1, hpMult: 0.78, atkMult: 1.25, eggRarity: 'legendary', eggSpeciesId: 'mosasaurus',
+        levelBonus: 1, hpMult: 0.82, atkMult: 1.25, eggRarity: 'legendary', eggSpeciesId: 'mosasaurus',
       },
     },
   ],

@@ -860,9 +860,15 @@
   every read here is `.all()` plus a JS reduce, and SQL `SUM()` over an empty row set
   returns NULL where `.reduce(…, 0)` returns 0 — silently turning a fresh account's
   score into `NaN` instead of a clean zero. `legacyScores` is the board-wide twin of
-  `legacyPoints` (`src/modules/park/ranks.ts`) and the two must always agree for a
-  given user — a board that disagrees with the rank on that player's own park card is
-  worse than no board. Both intersect `species_seen` against the LIVE species roster
+  `legacyPoints` (`src/modules/park/ranks.ts`) — deliberately, not of `legacyRank`'s
+  `max(stored, computed)` high-water (`legacyRankBest`) — and the two must always agree
+  for a given user — a board that disagrees with the rank on that player's own park card
+  is worse than no board. The pairing with `legacyPoints` and not `legacyRankBest` is also
+  deliberate: the board answers "who is ahead right now" (a live standing that can
+  legitimately fall — see `adminReset`), the park-card title answers "what have you ever
+  earned" (a monotone high-water mark that must never fall), and conflating the two would
+  let a wiped or otherwise-dropped account keep outranking players who are actually ahead
+  of it. Both intersect `species_seen` against the LIVE species roster
   (a retired species id contributes nothing to either), but neither filters
   `achievement_claims` the same way — that term is a plain row count with no roster
   check, which is what keeps the two in agreement rather than one silently diverging.

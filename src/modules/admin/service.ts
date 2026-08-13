@@ -98,6 +98,15 @@ export function adminReset(ctx: Ctx, targetId: string): void {
       questStreak: 0, questStreakBest: 0, lastQuestClaimAt: 0, landmarkTier: 0,
       motto: '', featuredDinoId: null,
       duelRating: DUEL_START_RATING, duelSquad: [],
+      // Same rule ratingHighWater already follows: this is the one path that makes the
+      // computed legacyPoints total DROP (species_seen, achievement_claims and
+      // battle_progress are all deleted above), and legacyRank resolves against
+      // max(stored, computed) specifically so a drop can never demote a rank a player
+      // actually earned (src/modules/park/ranks.ts). Leaving legacyRankBest un-reset here
+      // is the one case where that safety net fires against its own purpose: a wiped
+      // account would keep showing its pre-reset rank on /park view and /dex list forever
+      // while /top legacy correctly shows it at 0.
+      legacyRankBest: 0,
     }).where(eq(schema.users.discordId, targetId)).run();
     ctx.db.delete(schema.foodInventory).where(eq(schema.foodInventory.userId, targetId)).run();
     for (const [foodId, qty] of Object.entries(STARTER_FOOD)) {
