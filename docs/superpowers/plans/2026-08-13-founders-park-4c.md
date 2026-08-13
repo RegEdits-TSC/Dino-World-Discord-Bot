@@ -743,14 +743,6 @@ describe('star gates are reachable', () => {
 });
 ```
 
-> **Correction (post-implementation):** the code block above and the line below both quote
-> 87 as the achievable-stars figure — this plan's own 3,000-seed number. The test as shipped
-> computes it at 400 seeds instead and gets **85**, not 87: two sub-1% stages
-> (`abyssal_trench_3`/`_4`, 0.058% each) are close enough to a coin flip across that smaller
-> sample that it misses both. 75 still clears with margin either way; see
-> `tests/battle-balance.test.ts`'s own comment for the full reasoning. Treat 87 in this plan
-> as superseded by the shipped 85.
-
 - [ ] **Step 4: Run the balance tests**
 
 Run: `npx vitest run tests/battle-balance.test.ts`

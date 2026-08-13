@@ -557,8 +557,8 @@ The egg's rarity is rolled from odds set per site:
 Volcano Core, Abyssal Trench, Containment Site, and Founder's Park are the
 only sites that can ever drop a Legendary or Mythic egg — four sites now,
 not three; Founder's Park's own odds lean Legendary far more heavily than any
-earlier site, with Mythic behind it at a real 6% rather than the low single
-digits every prior site's Mythic sliver sat at.
+earlier site, with Mythic behind it at 6% rather than the slivers (0.2–2%)
+every prior site offered.
 There is no failure, risk, or partial-loss outcome — a returned expedition
 always pays its full loot — and there is no cancel or refund once you've
 sent a crew out.
@@ -589,7 +589,7 @@ or above that chapter's gate — the same thresholds as the identically named
 expedition sites: 3.0★, 5.0★, 8.0★, 8.8★, and 9.5★. The seventh and last
 chapter, Founder's Park, gates on something else entirely: **75 stars**
 earned anywhere across the whole campaign so far, not a rating at all — stars
-are earned per stage and can't be shuffled the way the comfort third of park
+are earned per stage and can't be shuffled the way the comfort quarter of park
 rating can (see Rating and leaderboards, below), so the finale's own gate
 can't be gamed by briefly unassigning dinos to inflate it. Founder's Park's
 identically named expedition site still carries its own ordinary 10.0★
@@ -682,16 +682,18 @@ payout.
 Each chapter's fifth stage pits you against that chapter's boss — a tougher
 version of the chapter's strongest enemy species. The first four chapters'
 bosses share one benchmark: roughly two and a half times the HP and about a
-fifth more attack than a normal encounter of that species. The two newest
-bosses were tuned separately by simulation and don't match that convention —
-the Abyssal Trench boss carries less HP than a normal encounter, at 0.82×,
-but hits harder, at 1.25× attack, while the Containment Site boss carries
-1.72× HP at the usual 1.2× attack. A boss's own multipliers are no longer
-guaranteed to stay above a normal encounter's — Abyssal Trench's HP
-deliberately dips below it — but each species' archetype multiplier still
-applies on top of that, so a tank-archetype boss (like the Abyssal Trench's
-Mosasaurus) can still resolve to a lower attack than a bruiser-archetype
-escort standing next to it.
+fifth more attack than a normal encounter of that species. The Abyssal
+Trench, Containment Site, and Founder's Park bosses were each tuned
+separately by simulation and don't match that convention — the Abyssal
+Trench boss carries less HP than a normal encounter, at 0.82×, but hits
+harder, at 1.25× attack; the Containment Site boss carries 1.72× HP at the
+usual 1.2× attack; and the Founder's Park boss cuts deepest of all, at 0.75×
+HP and 1.10× attack. A boss's own multipliers are no longer guaranteed to
+stay above a normal encounter's — Abyssal Trench and Founder's Park both
+deliberately dip below it, Founder's Park furthest — but each species'
+archetype multiplier still applies on top of that, so a tank-archetype boss
+(like the Abyssal Trench's Mosasaurus) can still resolve to a lower attack
+than a bruiser-archetype escort standing next to it.
 Clearing a boss for the first time awards
 a one-time trophy egg (repeat clears pay no further egg):
 

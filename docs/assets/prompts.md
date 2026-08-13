@@ -1424,12 +1424,13 @@ bullets in the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.
 | `dw_streak.svg` | A two-tone stylized flame — a red-orange outer silhouette with a brighter yellow-orange inner flame layered on top | 🔥 |
 | `dw_chest.svg` | A wooden treasure chest: domed lid and body in a warm wood-brown gradient, gold trim bands across the seam and down the front, a small gold lock plate at the seam | 🎁 |
 
-**Endgame site markers** — used inline in expedition embed titles for the two endgame sites:
+**Endgame site markers** — used inline in expedition embed titles for the endgame sites:
 
 | File | Design intent | Unicode fallback |
 | --- | --- | --- |
 | `dw_site_abyssal_trench.svg` | A deep-sea submersible, side-on, floating on transparency: a rounded blue-to-navy gradient hull (stadium shape), a small conning tower on top, a pointed tail fin at the rear, one large pale-cyan porthole toward the front, and a small amber lamp at the nose with a short amber light cone reaching forward, dark navy (`#0b2233`) outlines throughout — a trench is negative space, so the site is represented by the vehicle you'd find exploring one, the same way Coastal Dig is represented by a shell rather than a hole in the sand | 🌊 |
 | `dw_site_containment_site.svg` | A short fence — four vertical slate posts crossed by two horizontal rails, no enclosing frame — with a yellow warning triangle mounted centered over it bearing a dark exclamation mark, dark slate (`#1b2530`) outlines throughout | 🧪 |
+| `dw_site_founders_park.svg` | A stone archway gate: two tapered stone pillars and a stone lintel (`#c4bcac`-to-`#6f6960` gradient) framing a warm gold-to-rust sunset sky (`#f0b458`-to-`#8c4a2f` gradient) in the opening, with a jagged dark-green overgrowth silhouette rising through the gap and a dark ground band underfoot — the ruined park's own entrance arch stands in for the site, the same way Coastal Dig is represented by a shell rather than a hole in the sand | 🏛️ |
 
 **World event bulletin** — nine event emoji, one per `WORLD_EVENTS` entry (`src/data/world-events.ts`), used inline on the `/world` hub and event headlines; all nine share the same circular-badge footprint (a stroked r=27 background circle) so the set reads as one bulletin:
 

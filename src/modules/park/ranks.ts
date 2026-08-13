@@ -26,9 +26,10 @@ export const LEGACY_TIERS: readonly LegacyTier[] = [
  * The ceiling, derived from the three content tables rather than written down: 52 species
  * + 48 achievement tiers + 105 battle stars = 205 today.
  * Director has slid from 94.4% of the ceiling to 82.9% because LEGACY_TIERS was
- * deliberately NOT retuned: nothing persists an earned rank, so raising a threshold
- * demotes live players on their next /park view and contradicts docs/gameplay.md's
- * promise that nothing can ever be lost. See the 4a spec, section 8.
+ * deliberately NOT retuned: nothing persists an earned rank — only the point total
+ * behind it — so raising a threshold demotes live players on their next /park view
+ * and contradicts docs/gameplay.md's promise that nothing can ever be lost. See the
+ * 4a spec, section 8.
  *
  * legacyRankBest (shipped in 4b) does NOT discharge this. It stores POINTS, and legacyRank
  * resolves tierForPoints(max(stored, computed)), so raising a threshold re-resolves against
