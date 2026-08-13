@@ -669,7 +669,7 @@ version of the chapter's strongest enemy species. The first four chapters'
 bosses share one benchmark: roughly two and a half times the HP and about a
 fifth more attack than a normal encounter of that species. The two newest
 bosses were tuned separately by simulation and don't match that convention —
-the Abyssal Trench boss carries less HP than a normal encounter, at 0.78×,
+the Abyssal Trench boss carries less HP than a normal encounter, at 0.82×,
 but hits harder, at 1.25× attack, while the Containment Site boss carries
 1.72× HP at the usual 1.2× attack. A boss's own multipliers are no longer
 guaranteed to stay above a normal encounter's — Abyssal Trench's HP

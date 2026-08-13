@@ -316,14 +316,19 @@
   the TRAITED floor (>=0.85) is asserted — requiring the untraited floor there too is
   unsatisfiable without flattening the late campaign. Compensating a boss for an event
   multiplier goes on `hpMult`, NEVER `atkMult`: on Containment Site (the finale),
-  `atkMult` 1.05 lands neutral traited at 1.0000, breaching the <=0.99 finale ceiling,
+  `atkMult` 1.05 lands neutral traited at 1.0000, breaching the finale ceiling as it then
+  stood (a hardcoded `<=0.99` assertion that has since been replaced — see below),
   and on Abyssal Trench, `atkMult` 1.05 lands neutral untraited at 0.8650 — below
   Containment Site's 0.8800 — inverting the monotone ladder. Cutting attack removes the
   threat, while cutting HP keeps the boss hitting as hard and shortens exposure. HP is
   the exposure knob, attack is the threat knob. The two late bosses must be re-tuned
   TOGETHER — the monotonicity assertion couples them, so fixing one alone breaks the
   other. This retired the old "boss multipliers never fall below 1.0" convention;
-  Abyssal Trench's `hpMult` is 0.78 deliberately.
+  Abyssal Trench's `hpMult` is 0.82 deliberately. The monotone ladder itself is now
+  checked at 3,000 seeds with a 0.03 tolerance, never the 400 seeds every other
+  assertion in this file uses — at 400 seeds the ladder's own gaps between adjacent
+  bosses are smaller than its sampling noise, so a real inversion can read as a clean
+  pass. Tune a boss by measuring at 3,000 seeds, not 400.
 - `npm run build` does not typecheck tests: `build` is `tsc` against
   `tsconfig.json`, which only `include`s `src`, and `npm test` (vitest)
   transpiles without typechecking. The test-inclusive gate is

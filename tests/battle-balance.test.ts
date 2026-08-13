@@ -45,18 +45,28 @@ function winRate(stage: StageDef, traits: string[], runs = 400, mods: EventMods 
 
 const BOSS_STAGES = CAMPAIGN.map((c) => ({ chapter: c.name, stage: c.stages[4] }));
 
-// The finale is CAMPAIGN's last chapter, derived rather than hardcoded by id: when a
-// seventh chapter ships, the upper-bound guard below automatically follows the new
-// finale, and today's finale (Containment Site) is freed to become outclassed later,
-// the same way the four chapters before it already have.
+// The finale is CAMPAIGN's last chapter, derived rather than hardcoded by id — but the
+// guard below is now a LOWER-bound pin, not an upper-bound ceiling, so "automatically
+// follows the new finale" is a hazard here, not a benefit. When a seventh chapter ships,
+// this test retargets to it automatically and re-measures the strongest-loadout rate
+// against IT: a properly HARD new finale (which should win LESS often than today's) will
+// then fail this pin. That failure is not a defect in the new content — it means the
+// pin's threshold, or the target it derives, needs deliberate re-tuning or re-targeting
+// by whoever adds the chapter, not silent acceptance of the failure or a silent widen of
+// the bound to make it pass.
 const FINALE = CAMPAIGN[CAMPAIGN.length - 1];
 
-// The four mutually-exclusive combat traits (src/data/traits.ts, domain: 'combat') — a
-// dino carries exactly one, so "the strongest squad a player can field" means a
-// Math.max over these four loadouts, never one hardcoded trait. They are not equally
-// strong: measured against Containment Site's shipped hpMult 1.72 at 3,000 seeds,
-// fleet (0.9987) clears savage (0.9827), ironhide (0.9140) and glass_cannon (0.8757) by
-// a wide margin. A guard that only ever measured savage was blind to that.
+// Five traits share domain: 'combat' (src/data/traits.ts) — savage, ironhide, fleet,
+// glass_cannon, and frail — but a dino carries exactly one, and frail is strictly worse
+// than fielding no combat trait at all (-10% HP, no offsetting gain), so it can never be
+// part of the strongest loadout: measured the same way as the four below, frail lands at
+// 0.5775, far under all of them. COMBAT_TRAITS below is therefore the four
+// POSITIVE/mixed combat traits, deliberately excluding frail, and "the strongest squad a
+// player can field" means a Math.max over these four loadouts, never one hardcoded
+// trait. They are not equally strong: measured against Containment Site's shipped
+// hpMult 1.72 at 3,000 seeds, fleet (0.9987) clears savage (0.9827), ironhide (0.9140)
+// and glass_cannon (0.8757) by a wide margin. A guard that only ever measured savage was
+// blind to that.
 const COMBAT_TRAITS = ['savage', 'fleet', 'ironhide', 'glass_cannon'];
 
 describe('boss difficulty bands', () => {
