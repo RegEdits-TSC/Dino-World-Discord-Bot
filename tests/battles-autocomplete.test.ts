@@ -45,10 +45,13 @@ describe('/battle autocomplete', () => {
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'u1');
     // Unlock everything the way a real endgame player does: rating high-water past the
-    // last gate, and a full 3-star clear on every stage. A 1-star clear no longer suffices
-    // here: founders_park's chapterUnlocked branch sums stars across the WHOLE progress
-    // map and needs >=75, and 35 stages at 1 star each is only 35 — only a full clear
-    // (105 stars over 35 stages) clears that bar. This player still emits all 35 entries.
+    // last gate, and a full 3-star clear on every stage. founders_park's chapterUnlocked
+    // branch sums stars across the WHOLE progress map and needs >=75 — chapters 1-6 alone
+    // (30 stages) already supply 90 at 3 stars each, clearing the bar with none of
+    // founders_park's own stars counting (3-starring just 25 of those 30 would clear it
+    // too). This fixture 3-stars all 35 stages, founders_park included, because
+    // founders_park itself must be unlocked for its 5 stages to appear in the assertion
+    // below — its own stars are along for the ride, not load-bearing for its own gate.
     ctx.db.update(schema.users).set({ ratingHighWater: 1000 }).where(eq(schema.users.discordId, 'u1')).run();
     for (const ch of CAMPAIGN) {
       for (const s of ch.stages) {
@@ -64,6 +67,27 @@ describe('/battle autocomplete', () => {
     for (const s of last.stages) {
       expect(choices.map((c) => c.value), `${s.id} dropped by the 25-choice slice`).toContain(s.id);
     }
+  });
+  it('stage: a star-gated chapter still below its gate is skipped entirely, not shown locked', async () => {
+    // Below the 75-star gate (35 stages x 1 star = 35), founders_park stays locked.
+    // src/modules/battles/index.ts's autocomplete loop `continue`s straight past a
+    // locked CHAPTER — unlike a locked STAGE within an unlocked chapter, which still
+    // emits a 🔒-prefixed entry. This is the exact fixture that broke during Task 4:
+    // founders_park never surfaces any of its own stages here, not even tagged locked.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1');
+    for (const ch of CAMPAIGN) {
+      for (const s of ch.stages) {
+        ctx.db.insert(schema.battleProgress)
+          .values({ userId: 'u1', stageId: s.id, stars: 1, firstClearedAt: 1, attempts: 1 }).run();
+      }
+    }
+    const fake = fakeAutocomplete({ name: 'battle', sub: 'fight', user: 'u1', focused: { name: 'stage', value: '' } });
+    await battleCmd.autocomplete!(ctx, fake.asAutocomplete());
+    const choices = fake.replies[0] as Choice[];
+    const foundersParkName = CAMPAIGN.find((c) => c.id === 'founders_park')!.name;
+    expect(choices.some((c) => String(c.value).startsWith('founders_park_'))).toBe(false);
+    expect(choices.some((c) => c.name.includes(foundersParkName))).toBe(false);
   });
   it('dino: escaped dinos are excluded; labels are Lv.N Name (archetype)', async () => {
     const ctx = makeCtx();
