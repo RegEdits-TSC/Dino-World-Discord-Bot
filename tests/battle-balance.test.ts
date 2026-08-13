@@ -45,17 +45,6 @@ function winRate(stage: StageDef, traits: string[], runs = 400, mods: EventMods 
 
 const BOSS_STAGES = CAMPAIGN.map((c) => ({ chapter: c.name, stage: c.stages[4] }));
 
-// The finale is CAMPAIGN's last chapter, derived rather than hardcoded by id — so the
-// guard below is a TWO-SIDED CHANGE DETECTOR, not a one-sided pin, and "automatically
-// follows the new finale" is a hazard here, not a benefit. When a seventh chapter ships,
-// this test retargets to it automatically and re-measures the untraited rate against IT:
-// any real content change — a HARDER new finale or an EASIER one — moves that rate outside
-// the recorded constant's band and fails the detector. That failure is not a defect in the
-// new content — it means the recorded constant needs deliberate re-measurement and
-// re-approval by whoever adds the chapter, not silent acceptance of the failure or a
-// silent widen of the band to make it pass.
-const FINALE = CAMPAIGN[CAMPAIGN.length - 1];
-
 // Five traits share domain: 'combat' (src/data/traits.ts) — savage, ironhide, fleet,
 // glass_cannon, and frail — but a dino carries exactly one, and frail is strictly worse
 // than fielding no combat trait at all (-10% HP, no offsetting gain), so it can never be
@@ -133,9 +122,18 @@ describe('boss difficulty bands', () => {
     }
   });
 
-  // Containment Site's own hpMult trade-off reasoning (1.72 buys the Blood Moon floor
-  // below at the cost of a fleet squad clearing it outright on a normal day) now belongs
-  // with the chapter-6 detector below, not here.
+  // ONE detector table, keyed by chapter id, replaces the two hand-written tests this
+  // block used to hold: a FINALE test derived from `CAMPAIGN[CAMPAIGN.length - 1]`, plus
+  // a hand-added sibling that existed only to keep chapter 6 measured once FINALE moved
+  // past it. That shape does not survive an eighth chapter: FINALE would retarget again,
+  // Founder's Park would go back to unmeasured, and the detector would only object if
+  // chapter 8's untraited rate fell outside RECORDED +/- 0.01 — but the ladder test above
+  // already requires chapter 8 <= chapter 7's rate + 0.01, so a chapter 8 tuned merely
+  // slightly harder lands inside that band and passes silently. That is the exact
+  // coverage-drop chapter 6's hand-added sibling exists to close, reopened by
+  // construction on the very next chapter. A table plus the completeness assertion below
+  // closes it structurally instead of by convention: every chapter needs a row, and one
+  // that ships without a row fails loudly rather than shipping unmeasured.
   //
   // CHANGE DETECTOR, not a correctness bound. It fails on any movement in EITHER
   // direction, which is the point: a moved number must be re-measured and re-approved,
@@ -146,42 +144,53 @@ describe('boss difficulty bands', () => {
   //
   // It measures the UNTRAITED rate rather than the strongest loadout, and that choice is
   // forced. Founder's Park measures 1.0000 on the strongest-of-four axis — the saturated
-  // maximum — so RECORDED + BAND is unreachable there by construction and the detector
-  // would silently degenerate into the same one-sided bound. The untraited rate is
-  // non-degenerate in both directions, and a +/-0.01 band is strictly tighter than the
-  // ladder's implied <= 0.8850, so this is not merely a restatement of the assertion
-  // above it either.
+  // maximum — so RECORDED + BAND is unreachable there by construction and a
+  // strongest-loadout table would silently degenerate into a one-sided bound for that row.
   //
-  // Strongest-loadout figures for the record, measured at 400 seeds and NOT asserted on:
-  // savage 1.0000, glass_cannon 0.9975, ironhide 0.9200, fleet 0.8725. Which trait is
-  // strongest is chapter-dependent — on Containment Site it was fleet (0.9987) with savage
-  // at 0.9827, and it inverts here. That is exactly why a strongest-loadout pin is a weak
-  // instrument. frail is excluded from COMBAT_TRAITS throughout because it is strictly
-  // worse than fielding no combat trait at all (measured 0.5775 on Containment Site,
-  // 0.3950 here).
+  // The untraited rate is not immune to the same degeneracy, though, and pretending
+  // otherwise would just relocate the problem rather than fix it: Coastal Dig, Amber
+  // Ridge and Frozen Cliffs each measure exactly 1.0000 untraited too — the same
+  // saturated ceiling — so for those three rows RECORDED + BAND is equally unreachable
+  // and the detector is one-sided IN PRACTICE, able only to catch them getting harder,
+  // never easier. Say so plainly rather than implying every row is genuinely two-sided: a
+  // reader who assumes otherwise will misjudge what those three rows actually guard.
+  //
+  // Strongest-loadout figures for the record, measured on Founder's Park at 400 seeds and
+  // NOT asserted on: savage 1.0000, glass_cannon 0.9975, ironhide 0.9200, fleet 0.8725.
+  // Which trait is strongest is chapter-dependent — on Containment Site it was fleet
+  // (0.9987) with savage at 0.9827, and it inverts here. That is exactly why a
+  // strongest-loadout pin is a weak instrument. frail is excluded from COMBAT_TRAITS
+  // throughout because it is strictly worse than fielding no combat trait at all
+  // (measured 0.5775 on Containment Site, 0.3950 on Founder's Park).
   const DETECTOR_BAND = 0.01;
-  const FINALE_UNTRAITED = 0.8330;      // founders_park_boss, untraited, 3,000 seeds
-  const CONTAINMENT_UNTRAITED = 0.8750; // containment_site_boss, untraited, 3,000 seeds
+  // All untraited at 3,000 seeds. Re-measure before trusting this list on any retune.
+  const RECORDED_UNTRAITED: [string, number][] = [
+    ['coastal_dig', 1.0000],
+    ['amber_ridge', 1.0000],
+    ['frozen_cliffs', 1.0000],
+    ['volcano_core', 0.9173],
+    ['abyssal_trench', 0.9127],
+    ['containment_site', 0.8750],
+    ['founders_park', 0.8330],
+  ];
 
-  it(`${FINALE.name} boss (the current finale): untraited rate is pinned within ±${DETECTOR_BAND}`, () => {
-    const rate = winRate(FINALE.stages[4], [], 3000);
-    const msg = `CHANGE DETECTOR: the finale's untraited rate is ${rate}, recorded as ${FINALE_UNTRAITED}. `
+  it.each(RECORDED_UNTRAITED)(`%s boss: untraited rate is pinned within ±${DETECTOR_BAND}`, (chapterId, recorded) => {
+    const chapter = CAMPAIGN.find((c) => c.id === chapterId);
+    expect(chapter, `chapter id '${chapterId}' not found in CAMPAIGN — renamed or removed?`).toBeDefined();
+    const rate = winRate(chapter!.stages[4], [], 3000);
+    const msg = `CHANGE DETECTOR: ${chapterId}'s untraited rate is ${rate}, recorded as ${recorded}. `
       + 'Re-measure at 3,000 seeds and update the recorded constant deliberately. Do not widen the band.';
-    expect(rate, msg).toBeGreaterThanOrEqual(FINALE_UNTRAITED - DETECTOR_BAND);
-    expect(rate, msg).toBeLessThanOrEqual(FINALE_UNTRAITED + DETECTOR_BAND);
+    expect(rate, msg).toBeGreaterThanOrEqual(recorded - DETECTOR_BAND);
+    expect(rate, msg).toBeLessThanOrEqual(recorded + DETECTOR_BAND);
   });
 
-  // Pinned by id, NOT derived. The test above follows CAMPAIGN's last chapter, so the
-  // moment a chapter ships it stops measuring the previous one — chapter 6 would have
-  // become entirely unmeasured, with the suite green and the guard silently gone. Every
-  // future chapter needs the same treatment for its predecessor.
-  it('Containment Site boss (chapter 6) stays measured after the finale moved past it', () => {
-    const stage = CAMPAIGN.find((c) => c.id === 'containment_site')!.stages[4];
-    const rate = winRate(stage, [], 3000);
-    const msg = `CHANGE DETECTOR: chapter 6's untraited rate is ${rate}, recorded as ${CONTAINMENT_UNTRAITED}. `
-      + 'Re-measure at 3,000 seeds and update the recorded constant deliberately. Do not widen the band.';
-    expect(rate, msg).toBeGreaterThanOrEqual(CONTAINMENT_UNTRAITED - DETECTOR_BAND);
-    expect(rate, msg).toBeLessThanOrEqual(CONTAINMENT_UNTRAITED + DETECTOR_BAND);
+  // The structural point of the whole change: a chapter that ships with no row above is
+  // unmeasured, exactly like chapter 6 briefly was when FINALE moved past it — except now
+  // the suite fails loudly instead of staying green.
+  it('every campaign chapter has a recorded untraited-rate row', () => {
+    const recordedIds = new Set(RECORDED_UNTRAITED.map(([id]) => id));
+    const missing = CAMPAIGN.filter((c) => !recordedIds.has(c.id)).map((c) => c.id);
+    expect(missing, `chapter(s) shipped with no detector row, so they are unmeasured: ${missing.join(', ')}`).toEqual([]);
   });
 });
 
