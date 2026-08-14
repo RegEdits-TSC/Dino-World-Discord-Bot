@@ -1,5 +1,7 @@
 import { escapeAt, type ClockDino } from '../../core/clock.js';
-import { ESCAPE_TIERS, type EscapeTier } from './alert-record.js';
+import { SEASON_DAYS } from '../../core/world.js';
+import { ESCAPE_TIERS, SEASON_END_WARN_MS, type EscapeTier } from './alert-record.js';
+import type { SeasonView } from '../daily/season.js';
 
 export interface EscapeAlert { dinoId: number; name: string; escapeAt: number; tier: EscapeTier }
 
@@ -70,4 +72,27 @@ export function incomeCapAlertFor(
   const pending = accruedIncome(clockDinos, facilityBonusPct(lots), hours, lastCollectAt, now);
   if (pending <= 0) return null;
   return { capAt, pending, capHours: hours };
+}
+
+/**
+ * A nudge is owed iff the season ends within SEASON_END_WARN_MS and at least one unlocked
+ * rung is still unclaimed. Cash forfeits at rollover; this is the warning.
+ *
+ * `endsAt` is the TRUE season boundary — a fixed instant for the whole season — never
+ * `now + daysLeft * DAY`. That anchoring matters more than it looks: firedForMs is
+ * compared with a 2-hour tolerance (ALERT_INSTANT_EPSILON_MS), so a now-anchored value
+ * drifts with time of day and two sweeps three hours apart would each read as a NEW
+ * instant. At SWEEP_MS the result is a DM roughly every two hours for three days instead
+ * of exactly one per season.
+ */
+export interface SeasonEndAlert { endsAt: number; unclaimed: number }
+
+export function seasonEndAlertFor(
+  view: SeasonView | null, now: number,
+): SeasonEndAlert | null {
+  if (!view) return null;
+  const endsAt = (view.index + 1) * SEASON_DAYS * 86_400_000;
+  if (endsAt - now > SEASON_END_WARN_MS) return null;
+  const unclaimed = view.rungs.filter((r) => r.unlocked && !r.claimed).length;
+  return unclaimed > 0 ? { endsAt, unclaimed } : null;
 }

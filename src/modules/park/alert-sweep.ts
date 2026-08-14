@@ -5,9 +5,10 @@ import type { Ctx } from '../../core/context.js';
 import type { Timer } from '../../core/scheduler.js';
 import { type Sender, deliverNotification } from '../../core/notify.js';
 import { toClockDinos } from './service.js';
-import { escapeAlertsFor, incomeCapAlertFor } from './alert-detect.js';
+import { escapeAlertsFor, incomeCapAlertFor, seasonEndAlertFor } from './alert-detect.js';
 import { alreadySent, recordSent, recordEscapeSent, pruneAlertRecords } from './alert-record.js';
 import { alertPayload } from './alert-embeds.js';
+import { seasonView } from '../daily/season.js';
 
 export const ALERT_TIMER = 'alert_sweep';
 export const SWEEP_MS = 15 * 60_000;
@@ -71,14 +72,20 @@ export function alertSweepHandler(sender: Sender, ctx: Ctx) {
         const income = cap && !alreadySent(ctx, u.discordId, 'income_cap', 0, '', cap.capAt)
           ? cap : null;
 
-        if (escapes.length === 0 && !income) continue;
+        const seasonEnd = seasonEndAlertFor(seasonView(ctx, u.discordId), now);
+        // firedForMs is the season's END instant, not `now` — so however many sweeps run
+        // inside the window, exactly one DM goes out per season.
+        const season = seasonEnd && !alreadySent(ctx, u.discordId, 'season_end', 0, '', seasonEnd.endsAt)
+          ? seasonEnd : null;
+
+        if (escapes.length === 0 && !income && !season) continue;
 
         // A FRESH payload per user. deliverNotification forwards ONE object to two send
         // sites (channel then DM), so a shared object is the finalPayload() hazard from
         // fightFrames. Building inside the loop also keeps `attachments` absent.
-        const payload = alertPayload(u.discordId, escapes, income, now);
-        // alertPayload returns null only when escapes.length === 0 && !income — the
-        // `continue` above already excludes that case, so this is unreachable in
+        const payload = alertPayload(u.discordId, escapes, income, season, now);
+        // alertPayload returns null only when escapes.length === 0 && !income && !season —
+        // the `continue` above already excludes that case, so this is unreachable in
         // practice. Handled explicitly rather than with a non-null assertion so a future
         // change to either guard fails loudly instead of forwarding `null` into
         // deliverNotification, which requires a non-null NotifyPayload.
@@ -100,6 +107,7 @@ export function alertSweepHandler(sender: Sender, ctx: Ctx) {
         // throwing sender leaves the alert owed rather than silently consumed.
         for (const e of escapes) recordEscapeSent(ctx, u.discordId, e.dinoId, e.tier, e.escapeAt);
         if (income) recordSent(ctx, u.discordId, 'income_cap', 0, '', income.capAt);
+        if (season) recordSent(ctx, u.discordId, 'season_end', 0, '', season.endsAt);
 
         // Throttle only AFTER the send is fully recorded, never before the first send and
         // never for a skipped user (the `continue`s above never reach this line). This
