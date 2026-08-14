@@ -265,3 +265,33 @@ export const duels = sqliteTable('duels', {
   eloDelta: integer('elo_delta').notNull(),
   createdAt: integer('created_at_ms').notNull(),
 });
+
+// The season track (spec 4d). One row per (user, season) the player was active in —
+// deliberately NOT swept the way daily_quests sweeps other dayKeys, because badgeAt on a
+// PAST row is the permanent record of that season's capstone. Twelve rows per player per
+// year.
+//
+// `baselines` freezes EVERY StatId at roll time, not only the ones the ladder currently
+// reads: a source added in a later season would otherwise find no key, read the baseline
+// as 0, and credit that player's whole lifetime counter in one tick.
+//
+// Never derive points for a PAST season — user_stats keeps growing after a season ends,
+// so a delta against an old baseline climbs forever. A past row's meaning is badgeAt.
+export const seasonProgress = sqliteTable('season_progress', {
+  userId: text('user_id').notNull().references(() => users.discordId),
+  seasonIndex: integer('season_index').notNull(),
+  baselines: text('baselines', { mode: 'json' }).$type<Record<string, number>>().notNull().default({}),
+  headStart: integer('head_start').notNull().default(0),
+  badgeAt: integer('badge_at_ms'),
+  createdAt: integer('created_at_ms').notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.seasonIndex] })]);
+
+// Consumable rungs only. The badge is seasonProgress.badgeAt, not a row here, because it
+// is granted on crossing rather than claimed — keeping them apart is what stops an
+// unclaimed rung 8 from silently costing a permanent collectible.
+export const seasonClaims = sqliteTable('season_claims', {
+  userId: text('user_id').notNull().references(() => users.discordId),
+  seasonIndex: integer('season_index').notNull(),
+  rung: integer('rung').notNull(),
+  claimedAt: integer('claimed_at_ms').notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.seasonIndex, t.rung] })]);

@@ -106,6 +106,13 @@
       "when": 1786600000000,
       "tag": "0014_legacy_rank_best",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1786720147231,
+      "tag": "0015_season_track",
+      "breakpoints": true
     }
   ]
 }
