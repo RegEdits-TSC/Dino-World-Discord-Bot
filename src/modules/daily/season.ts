@@ -86,8 +86,13 @@ export interface SeasonView {
 /**
  * Deltas since this season's frozen baseline, per stat, clamped at 0.
  *
- * The clamp is not defensive noise: adminReset deletes user_stats rows, so a baseline row
- * surviving a step behind its counters yields current - baseline < 0.
+ * The invariant is real: adminReset deletes user_stats rows, so a baseline row surviving a
+ * step behind its counters yields current - baseline < 0. But this clamp is not what
+ * enforces it today — sourcePoints (src/data/seasons.ts) already clamps the same value per
+ * stat on the way in, and both current call sites (seasonPoints, seasonView) feed every
+ * value straight into sourcePoints. The clamp here is belt-and-braces for a future caller
+ * of deltas() that doesn't route through sourcePoints; a mutation test confirms removing it
+ * changes no behaviour against today's two call sites.
  */
 function deltas(ctx: Ctx, userId: string, baselines: Record<string, number>): Partial<Record<StatId, number>> {
   const stats = readStats(ctx, userId);
