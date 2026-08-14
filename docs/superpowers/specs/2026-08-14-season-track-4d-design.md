@@ -82,14 +82,22 @@ One row per `(userId, seasonIndex)`, unique on the pair.
 | `userId` | text FK → `users.discordId` | |
 | `seasonIndex` | integer | the absolute index from §2, never the display number |
 | `baselines` | text JSON | `Partial<Record<StatId, number>>` |
-| `headStart` | integer | §5, frozen at roll time, never recomputed |
+| `headStart` | integer | §7, frozen at roll time, never recomputed |
+| `badgeAt` | integer ms, nullable | stamped when points cross the capstone; §9 |
 | `createdAt` | integer ms | |
 
 JSON is the established idiom here (`users.duelSquad`, `lots.decor`, `dinos.traits`).
 
 Frozen lazily by `rollSeason` on the season's first touch, the same shape as
-`rollDailyQuests` (`src/modules/daily/service.ts:85-106`) including its
-delete-every-other-key sweep, so a player carries exactly one row.
+`rollDailyQuests` (`src/modules/daily/service.ts:85-106`) — but **without its
+delete-every-other-key sweep**. Rows are retained, one per season the player was active
+in, because `badgeAt` on a past row is the permanent record of that season's capstone
+(§9). Twelve rows per player per year; the sweep would destroy the collection it exists to
+record.
+
+**Never derive points for a past season.** Only the current season's row is read for
+points, because `user_stats` keeps growing after a season ends — a delta computed against
+an old baseline would climb forever. A past row's meaning is `badgeAt`, nothing else.
 
 **The map freezes all 18 `StatId`s, not only the ones the ladder currently reads.** A
 source added in a later season would otherwise find no key for its stat, read the
@@ -102,10 +110,9 @@ removes the failure mode permanently.
 `(userId, seasonIndex, rung, claimedAt)`, unique on the first three. Exactly
 `achievement_claims`.
 
-**Badges are derived from this table, not stored anywhere.** A badge for season N is "a
-claims row exists at the capstone rung for season N". No third table, no column on
-`users`, and the park card counts rows — the same derivation philosophy as escrow locks,
-quest progress and world events.
+**Rungs only.** The badge is deliberately *not* a row here — it is `season_progress.badgeAt`,
+because it is granted on crossing rather than claimed (§9). Keeping the two apart is what
+stops an unclaimed rung 8 from silently costing a permanent collectible.
 
 ### What is derived
 
@@ -118,8 +125,11 @@ clamp a surviving baseline against a wiped counter yields a negative delta.
 
 ### Reset and fast-forward
 
-`adminReset` deletes from **both** new tables — the standing "reset must delete from every
-table the feature reads" rule the Gene Lab `breedings` fix established.
+`adminReset` deletes from **both** new tables, **every season's rows, not just the current
+one** — the standing "reset must delete from every table the feature reads" rule the Gene
+Lab `breedings` fix established. That destroys the player's badge collection, which is the
+correct reading of a reset and worth stating out loud, since `badgeAt` is otherwise the one
+value in this feature that nothing else can ever clear.
 
 `adminFastForward` deliberately touches **neither**. `seasonIndex` derives from the UTC
 calendar, which fast-forward cannot move, exactly as it leaves `daily_quests.dayKey`
@@ -164,14 +174,14 @@ unbounded grind into early saturation instead of a treadmill.
 | Gene Lab | `breedings_claimed` | 5 each | 180 | breed slots + parent cooldown; moderate 1/day → 150 |
 | Care | `dinos_fed` | 1 per 3 | 120 | no gate at all — worst rate on purpose |
 | Sales | `dinos_sold` | 3 each | 100 | 1.13/day, far under the 60-shard/day cap |
-| Splicing | `splices_done` | 6 each | 90 | 15 splices = 225 shards, a net shard **sink** |
+| Splicing | `splices_done` | 15 each | 90 | 6 splices = 90 shards, under what the track returns |
 | Commerce | `trades_completed` ×15 + `shop_purchases` ×1 | — | 60 | 4 trades **or** 60 transactions |
 | Collections | `income_collections` | 1 each | 60 | participation floor, 60 clicks |
 
 **Available 1,335. Capstone 800** — 60% of available, and no single source reaches 31% of
 it. Breadth is forced; no individual source is mandatory.
 
-### Five choices inside that table worth recording
+### Six choices inside that table worth recording
 
 **`battles_fought`, not `battles_won`.** Both sit under the same energy ceiling, but
 `fought` never shuts out a player whose squad is under-geared for the chapter they are on.
@@ -187,6 +197,16 @@ frees the slot and starts the parents' cooldown, and `claimed ≤ started` alway
 to 4,561,920/day endgame — a 126× spread no single points-per-cash rate can calibrate for
 both ends. Any rate letting a mid-game park earn the cap in 30 days hands an endgame park
 the entire cap on day 1.
+
+**Splicing is priced so the source costs less than the track returns.** At 6 points per
+splice its cap would take 15 splices — 225 shards, against the 110 the whole track pays
+back. A source that is net-negative in the game's scarce currency is not a source for the
+players it is meant to serve: a shard-poor mid-game player would rationally skip it, which
+is exactly the population the 90 points exist for. At 15 points per splice the cap costs 6
+splices, 90 shards, under what the track returns. The high per-unit rate means a wealthy
+player saturates it in six clicks — acceptable, and contained the same way `dinos_fed` is,
+by a cap worth 11% of the capstone. The cap is unchanged, so the day-1 bankable pool in
+§10 does not move.
 
 **Commerce pairs `trades_completed` with `shop_purchases` rather than dropping trading.**
 `acceptTrade` requires a second player and only the recipient may accept, so trading
@@ -226,7 +246,10 @@ At 37.3/day the capstone lands on **day 21.4** — 8.6 days of slack in a 30-day
 | 5 | 475 | 12,000 cash + 25 shards | largest cash rung, just past the midpoint |
 | 6 | 600 | 12,000 cash + 40 prime steak | food over shards, to hold the shard line down |
 | 7 | 700 | 1 epic egg + 30 shards | matches `chestFor`'s 30-day epic cadence, does not stack a second one |
-| 8 | 800 | 9,000 cash + 40 shards + **badge** | capstone |
+| 8 | 800 | 9,000 cash + 40 shards | capstone rung |
+
+**The badge is not on this ladder.** Crossing 800 points grants it outright (§9); rung 8
+pays only its cash and shards, claimable and forfeitable like every other rung.
 
 Season totals: **60,000 cash** (1.32× a month of quests, inside the 1–1.5× target) and
 **110 shards** (24% of the quest shard line, 22% of one mythic — materially below the cash
@@ -300,8 +323,8 @@ button.
 
 ### The park card badge
 
-An inline `🎖️ Seasons` field after `🏛️ Legacy` in `dashboardPayload`: count of capstone
-claims plus the latest season's name.
+An inline `🎖️ Seasons` field after `🏛️ Legacy` in `dashboardPayload`: the count of
+`season_progress` rows with `badgeAt` set, plus the latest badged season's name.
 
 Layout consequence, measured: Achievements + Legacy + Featured currently form exactly one
 inline row of three, so a fourth inline field wraps Featured onto its own row. Accepted —
@@ -325,7 +348,9 @@ outranking players actually ahead of it.
 
 Batched, no N+1: one `user_stats` select scoped by `inArray(userId, memberIds)` returns
 every counter for the whole board (the per-stat filter is a JS predicate, not a second
-query), plus one baseline select scoped the same way. Costs: **3 global / 4 server /
+query), plus one `season_progress` select scoped the same way **and filtered to the current
+`seasonIndex`** — rows are retained per season now, so an unfiltered read would return a
+player's whole history and pick an arbitrary baseline. Costs: **3 global / 4 server /
 1 zero-member** — that last one only if the new builder keeps the
 `userIds.length ? … : []` short-circuit, which is the only assertion in the cost test that
 proves a builder is actually member-scoped rather than reading the whole table.
@@ -365,6 +390,32 @@ Uniform with both claim surfaces already shipped, and the deadline is the urgenc
 runs on. The hub shows days remaining and the nudge in §8 fires in the final window, so the
 forfeit is never a surprise.
 
+### The badge is granted, never claimed — and never forfeited
+
+Cash, shards, food and eggs are re-earnable next season, so a deadline on them is a fair
+deadline. **The badge is re-earnable by nothing, ever** — that season is gone. Forfeiting a
+unique unrepeatable collectible because a button went unpressed punches a permanent hole in
+a collection whose entire meaning is that a gap says *I did not play enough that season*. A
+gap that says *I forgot to click* corrupts the record instead of keeping it.
+
+So crossing the capstone stamps `season_progress.badgeAt` directly. The write lives in
+`dailyRouterHooks.postDispatch`, which already runs after every successful dispatch and
+already computes progress for the rung-unlocked hint — a write in a **write** context, so
+no read path becomes a write path and `visitPayload`/`/top` stay pure. The stamp is an
+idempotent update guarded on `badgeAt IS NULL`.
+
+Three consequences, all intended:
+
+- The crossing action and the stamp are the same interaction, because the action is what
+  moved the counter that crossed the threshold.
+- Autocomplete never reaches hooks and never moves a stat, and an errored dispatch rolled
+  its stat write back, so neither can strand a badge.
+- `EXEMPT_COMMANDS`/`EXEMPT_PREFIXES` suppress the hint **text** only. The badge stamp must
+  run for exempt commands too, or crossing the capstone while looking at `/season` itself
+  would silently not record it.
+
+The collectible is earned by playing; the consumables are earned by showing up to claim.
+
 Two alternatives were rejected. **Auto-granting on crossing** removes the deadline and the
 ritual, and needs a grant record to stay idempotent anyway, so it saves nothing. **A grace
 window into the next season** means two seasons are live at once, and every read, embed and
@@ -387,7 +438,11 @@ remaining counter already prevents.
 
 ### `tests/season-balance.test.ts` (new)
 
-- The moderate profile clears the capstone inside 30 days.
+- The moderate profile clears the capstone inside 30 days (day 21.4).
+- **A lab-less moderate profile still clears inside 30 days.** Strip the two Gene Lab
+  sources — 1,120 − 150 − 90 = 880 over 30 days, 29.3/day, capstone on **day 27.3**. This
+  is the assertion that converts §13's judgement call into a machine gate: any retune that
+  pushes a Gene-Lab-less player past day 30 fails here rather than in a player's inbox.
 - **The day-1 bankable pool stays below rung 5.** Feeds 120 + sales 100 + splices 90 +
   commerce 60 + collections 60 = **430**, 54% of the capstone, below the 475 rung. That
   number is the real guard on the ungated sources, and it is the first thing that breaks
@@ -397,7 +452,13 @@ remaining counter already prevents.
 
 - Baseline freeze: all 18 stats present in a fresh row; a stat added later still has one.
 - Delta clamps at 0 against a wiped `user_stats` (the `adminReset` interaction).
-- Rollover by injected clock: forfeiture, one row per user, the other-key sweep.
+- Rollover by injected clock: consumable rungs forfeit, past rows are **retained**, a new
+  season rolls a fresh baseline rather than reusing the old one.
+- **A badge survives an unclaimed rung 8** — cross the capstone, never claim, roll the
+  season, assert `badgeAt` is still stamped and the cash/shards were forfeited. This is the
+  §9 decision's only real gate.
+- The badge stamp is idempotent, fires for exempt commands, and never fires from a read
+  path (`visitPayload` and `topPlayers` leave `badgeAt` untouched).
 - Claim idempotency, and a stale `seasonIndex` in the customId rejected.
 - Head start: complete-signal terms only, first-season-ever, never recomputed.
 - Badge on **both** surfaces — own park and other-player — following the doubled pattern
@@ -453,9 +514,19 @@ the fix is a per-source daily sub-cap.
 **270 points sit behind a 20,000-cash Gene Lab** (breeding 180 + splicing 90). A lab-less
 player has 1,065 available against an 800 capstone — still clearable, but headroom
 (`(available − capstone) / capstone`) drops from **66.9% to 33.1%**, and they must near-max
-four of the remaining seven sources. Splicing has a
-second gate: 15 splices costs 225 shards, more than the 110 the whole track pays back, so a
-shard-poor player will rationally skip it.
+four of the remaining seven sources. A lab-less **moderate** player clears on **day 27.3**,
+with 2.7 days of slack instead of 8.6. Tight, and deliberate.
+
+Lowering the capstone to 750 was considered and rejected: it buys the lab-less player 1.7
+days, costs every other player 1.3, and changes no category's outcome, since both clear
+either way. The lab itself is 20,000 cash against 36,036/day of mid-game income — 0.55
+days. Its real cost is a **lot slot**, and a player choosing another paddock over a lab is
+making an income trade the season track has no business relitigating.
+
+What *was* wrong next to it is fixed rather than papered over: splicing's original 6
+points/splice made its cap cost 225 shards to earn 90 points, against 110 returned by the
+whole track — see §5. The gate that keeps this honest is the lab-less clear assertion in
+§10, not this paragraph.
 
 **There is no QA path to advance a season on the live bot.** `adminFastForward` cannot move
 the UTC calendar, and `season_progress` is the first stored season state in the repo.
