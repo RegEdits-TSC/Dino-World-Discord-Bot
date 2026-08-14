@@ -1459,8 +1459,9 @@ whichever one your account first has a row for — starts with a head start
 added to your points before you've done anything that season: the number of
 species you've discovered, plus your battle stars, plus your best-ever park
 rating divided by 25, capped at 200 in total. A brand new account computes to
-roughly zero; a long-time player can walk in already past the third rung.
-It's paid once, frozen at that moment, and never recalculated — a veteran's
+roughly zero; a long-time player can walk in already past the second rung,
+just short of the third. It's paid once, frozen at that moment, and never
+recalculated — a veteran's
 head start doesn't grow as later seasons pass, and it isn't paid again.
 
 ### Pacing
