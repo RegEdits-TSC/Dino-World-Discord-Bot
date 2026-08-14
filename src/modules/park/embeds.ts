@@ -6,6 +6,7 @@ import type { LandmarkDef } from '../../data/landmarks.js';
 import type { LegacyTier } from './ranks.js';
 import { assetImage, attach } from '../../core/images.js';
 import type { Featured } from './showcase.js';
+import { SEASON_EPOCH } from '../../core/world.js';
 
 const LOT_EMOJI: Record<string, string> = {
   carnivore_paddock: 'dw_lot_carnivore', herbivore_paddock: 'dw_lot_herbivore',
@@ -25,7 +26,7 @@ export function dashboardPayload(
   // every real call site (src/modules/park/index.ts) always passes ctx.now().
   // Missing defaults to a calm day, the same convention ChaptersView.now uses
   // in src/modules/battles/embeds.ts.
-  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number; legacyRank?: LegacyTier | null; motto?: string; featured?: Featured | null; now?: number } = {},
+  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number; legacyRank?: LegacyTier | null; motto?: string; featured?: Featured | null; now?: number; seasonBadges?: { count: number; latest: number | null } } = {},
 ) {
   const extras: string[] = [];
   if (escapedCount > 0) extras.push(`${escapedCount} ${emojiTag('dw_alert')} escaped`);
@@ -61,6 +62,17 @@ export function dashboardPayload(
     embed.addFields({
       name: '🏛️ Legacy',
       value: `${opts.legacyRank.title} (rank ${opts.legacyRank.rank})`,
+      inline: true,
+    });
+  }
+  // Inline, after Legacy. Achievements + Legacy + Featured were exactly one inline row of
+  // three, so this fourth wraps Featured onto its own row — accepted, since the
+  // income-capped case already breaks that row with a full-width field.
+  if (opts.seasonBadges && opts.seasonBadges.count > 0) {
+    const { count, latest } = opts.seasonBadges;
+    embed.addFields({
+      name: '🎖️ Seasons',
+      value: `${count} badge${count === 1 ? '' : 's'}${latest === null ? '' : ` · latest Season ${latest - SEASON_EPOCH + 1}`}`,
       inline: true,
     });
   }

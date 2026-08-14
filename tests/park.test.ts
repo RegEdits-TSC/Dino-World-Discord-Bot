@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { MessageFlags } from 'discord.js';
-import { makeCtx, fakeCommand, replyText } from './harness.js';
+import { makeCtx, fakeCommand, replyText, testRegistry } from './harness.js';
 import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, upgradeCostFor, BASE_LOT_SLOTS, breedingSlots } from '../src/modules/park/service.js';
 import { incubatorSlots } from '../src/modules/hatchery/service.js';
 import { renameDino } from '../src/modules/park/dinos.js';
@@ -9,6 +9,7 @@ import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
 import { dashboardPayload, PARK_HEADER_KEYS } from '../src/modules/park/embeds.js';
+import { visitPayload } from '../src/modules/park/visit.js';
 import { eventHeaderLine } from '../src/modules/world/embeds.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
 import { FACILITIES } from '../src/data/facilities.js';
@@ -16,6 +17,7 @@ import { DECOR } from '../src/data/decor.js';
 import { lotSlots } from '../src/data/progression.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { recordSpeciesSeen } from '../src/core/species-seen.js';
+import { rollSeason } from '../src/modules/daily/season.js';
 
 const H = 3_600_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -959,4 +961,59 @@ describe('facility level arrays are bounds-guarded', () => {
   // and tests/hatchery.test.ts's slot-limit tests, respectively — the level<=0 branch of
   // levelValue is unchanged from the pre-fix code, so a fourth copy here would not
   // discriminate this task's fix from the old implementation.
+});
+
+describe('season badge on the park card', () => {
+  it('shows the count and the latest season number', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const json = dashboardPayload(user, [], 0, 0, 0, {
+      seasonBadges: { count: 2, latest: 690 },
+    }).embeds[0].toJSON();
+    const field = json.fields!.find((f) => f.name === '🎖️ Seasons')!;
+    expect(field.value).toContain('2');
+    expect(field.value).toContain('Season 2');   // 690 - SEASON_EPOCH + 1
+    expect(field.inline).toBe(true);
+  });
+
+  it('is omitted at zero badges', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const json = dashboardPayload(user, [], 0, 0, 0, {
+      seasonBadges: { count: 0, latest: null },
+    }).embeds[0].toJSON();
+    expect(json.fields!.map((f) => f.name)).not.toContain('🎖️ Seasons');
+  });
+
+  it('is omitted when the opt is unset', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const json = dashboardPayload(user, [], 0, 0, 0, {}).embeds[0].toJSON();
+    expect(json.fields!.map((f) => f.name)).not.toContain('🎖️ Seasons');
+  });
+});
+
+describe('season badge wiring', () => {
+  it('/park view shows the viewer’s own badges', async () => {
+    ctx.setNow(689 * 30 * 86_400_000);
+    getOrCreateUser(ctx, 'u1', 'U1');
+    rollSeason(ctx, 'u1');
+    ctx.db.update(schema.seasonProgress).set({ badgeAt: ctx.now() })
+      .where(eq(schema.seasonProgress.userId, 'u1')).run();
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await testRegistry.findCommand('park')!.execute(ctx, i.asChatInput());
+    expect(JSON.stringify(i.replies[0])).toContain('🎖️ Seasons');
+  });
+
+  it('a visited park shows the TARGET’s badges, not the viewer’s', async () => {
+    ctx.setNow(689 * 30 * 86_400_000);
+    getOrCreateUser(ctx, 'u1', 'U1');
+    getOrCreateUser(ctx, 'u2', 'U2');
+    rollSeason(ctx, 'u2');
+    ctx.db.update(schema.seasonProgress).set({ badgeAt: ctx.now() })
+      .where(eq(schema.seasonProgress.userId, 'u2')).run();
+    const payload = (await visitPayload(ctx, 'u2'))!;
+    const json = payload.embeds[0].toJSON();
+    expect(json.fields!.map((f) => f.name)).toContain('🎖️ Seasons');
+    // And rendering another player's card must not have stamped anything for them.
+    expect(ctx.db.select().from(schema.seasonProgress)
+      .where(eq(schema.seasonProgress.userId, 'u1')).all()).toHaveLength(0);
+  });
 });

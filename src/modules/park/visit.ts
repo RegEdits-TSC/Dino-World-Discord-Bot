@@ -5,6 +5,7 @@ import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { settleEscapes } from './escapes.js';
 import { earnedTierCount } from '../daily/service.js';
+import { seasonBadges } from '../daily/season.js';
 import { legacyRank } from './ranks.js';
 import { featuredFor } from './showcase.js';
 import { dashboardPayload, withParkImage } from './embeds.js';
@@ -80,6 +81,7 @@ export async function visitPayload(ctx: Ctx, targetUserId: string): Promise<Visi
     motto: user.motto,
     featured: featuredFor(ctx, user),
     now: ctx.now(),
+    seasonBadges: seasonBadges(ctx, targetUserId),
   });
   const payload: VisitPayload = { embeds: built.embeds, components: [] };
   if (built.files) payload.files = built.files;
