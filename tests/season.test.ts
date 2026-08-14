@@ -4,8 +4,9 @@ import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { track, STATS } from '../src/core/stats.js';
-import { rollSeason, headStartFor } from '../src/modules/daily/season.js';
+import { rollSeason, headStartFor, seasonPoints, seasonView } from '../src/modules/daily/season.js';
 import { SEASON_DAYS } from '../src/core/world.js';
+import { SEASON_CAPSTONE } from '../src/data/seasons.js';
 
 const DAY = 86_400_000;
 export const S1 = 689 * SEASON_DAYS * DAY;   // season 1, day 1
@@ -134,5 +135,91 @@ describe('headStartFor', () => {
     ctx.setNow(S2);
     rollSeason(ctx, 'p');
     expect(rows().find((r) => r.seasonIndex === 690)!.headStart).toBe(0);
+  });
+});
+
+describe('seasonPoints', () => {
+  it('is zero before the season is rolled', () => {
+    expect(seasonPoints(ctx, 'p')).toBe(0);
+  });
+
+  it('counts only the delta since the baseline', () => {
+    track(ctx, 'p', 'expeditions_claimed', 4);   // pre-season history
+    rollSeason(ctx, 'p');
+    expect(seasonPoints(ctx, 'p')).toBe(0);
+    track(ctx, 'p', 'expeditions_claimed', 3);   // 3 x 5 = 15
+    expect(seasonPoints(ctx, 'p')).toBe(15);
+  });
+
+  it('adds the frozen head start to the live delta', () => {
+    // battleProgress.stars is capped 0-3 per row by stars_range — spread the
+    // headline total across synthetic stage rows via the shared helper above.
+    seedStars(10);
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 2);   // 10
+    expect(seasonPoints(ctx, 'p')).toBe(20);
+  });
+
+  it('clamps each source at its cap, so one grind cannot carry a player', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'dinos_fed', 100_000);
+    expect(seasonPoints(ctx, 'p')).toBe(120);
+  });
+
+  // adminReset deletes user_stats but the baseline row may survive a step behind, which
+  // would make current - baseline negative.
+  it('clamps a negative delta at zero rather than subtracting', () => {
+    track(ctx, 'p', 'dinos_fed', 300);
+    rollSeason(ctx, 'p');
+    ctx.db.delete(schema.userStats).where(eq(schema.userStats.userId, 'p')).run();
+    expect(seasonPoints(ctx, 'p')).toBe(0);
+  });
+
+  it('never derives points for a past season', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 10);
+    expect(seasonPoints(ctx, 'p')).toBe(50);
+    ctx.setNow(S2);
+    rollSeason(ctx, 'p');
+    // The counter kept its value, but the new season's baseline absorbed it.
+    expect(seasonPoints(ctx, 'p')).toBe(0);
+  });
+});
+
+describe('seasonView', () => {
+  it('is null before the season is rolled', () => {
+    expect(seasonView(ctx, 'p')).toBeNull();
+  });
+
+  it('reports the season’s identity and remaining days', () => {
+    rollSeason(ctx, 'p');
+    const v = seasonView(ctx, 'p')!;
+    expect(v.index).toBe(689);
+    expect(v.number).toBe(1);
+    expect(v.dayOfSeason).toBe(1);
+    expect(v.daysLeft).toBe(30);
+    ctx.setNow(S1 + 29 * DAY);
+    expect(seasonView(ctx, 'p')!.daysLeft).toBe(1);
+  });
+
+  it('breaks points down per source, in ladder order', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'battles_fought', 8);        // 2
+    track(ctx, 'p', 'expeditions_claimed', 1);   // 5
+    const v = seasonView(ctx, 'p')!;
+    expect(v.breakdown.map((b) => b.source.id).slice(0, 2)).toEqual(['campaign', 'expeditions']);
+    expect(v.breakdown.find((b) => b.source.id === 'campaign')!.points).toBe(2);
+    expect(v.breakdown.find((b) => b.source.id === 'expeditions')!.points).toBe(5);
+    expect(v.points).toBe(7);
+  });
+
+  it('marks rungs unlocked at or above their threshold', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 10);  // 50 — exactly rung 1
+    const v = seasonView(ctx, 'p')!;
+    expect(v.rungs[0].unlocked).toBe(true);
+    expect(v.rungs[0].claimed).toBe(false);
+    expect(v.rungs[1].unlocked).toBe(false);
+    expect(v.rungs.map((r) => r.idx)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
   });
 });

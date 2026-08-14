@@ -1,9 +1,12 @@
 import { and, eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
-import { seasonIndexFor } from '../../core/world.js';
+import { seasonIndexFor, seasonFor, seasonDay, SEASON_DAYS, SEASON_EPOCH, type Season } from '../../core/world.js';
 import { readStats, STATS, type StatId } from '../../core/stats.js';
-import { HEAD_START_CAP } from '../../data/seasons.js';
+import {
+  HEAD_START_CAP, SEASON_SOURCES, SEASON_RUNGS, sourcePoints,
+  type SeasonSource, type SeasonRung,
+} from '../../data/seasons.js';
 import { dexProgress } from '../dex/service.js';
 
 export function currentRow(ctx: Ctx, userId: string) {
@@ -68,4 +71,65 @@ export function rollSeason(ctx: Ctx, userId: string): void {
     headStart: isFirstEver ? headStartFor(ctx, userId) : 0,
     createdAt: now,
   }).onConflictDoNothing().run();
+}
+
+export interface SeasonBreakdown { source: SeasonSource; points: number }
+export interface SeasonRungView { idx: number; rung: SeasonRung; unlocked: boolean; claimed: boolean }
+export interface SeasonView {
+  index: number; number: number; season: Season;
+  dayOfSeason: number; daysLeft: number;
+  headStart: number; points: number;
+  breakdown: SeasonBreakdown[]; rungs: SeasonRungView[];
+  badgeAt: number | null;
+}
+
+/**
+ * Deltas since this season's frozen baseline, per stat, clamped at 0.
+ *
+ * The clamp is not defensive noise: adminReset deletes user_stats rows, so a baseline row
+ * surviving a step behind its counters yields current - baseline < 0.
+ */
+function deltas(ctx: Ctx, userId: string, baselines: Record<string, number>): Partial<Record<StatId, number>> {
+  const stats = readStats(ctx, userId);
+  const out: Partial<Record<StatId, number>> = {};
+  for (const stat of Object.keys(STATS) as StatId[]) {
+    out[stat] = Math.max(0, (stats[stat] ?? 0) - (baselines[stat] ?? 0));
+  }
+  return out;
+}
+
+/** Batches with ONE readStats call — never a query per source. */
+export function seasonPoints(ctx: Ctx, userId: string): number {
+  const row = currentRow(ctx, userId);
+  if (!row) return 0;
+  const d = deltas(ctx, userId, row.baselines);
+  return row.headStart + SEASON_SOURCES.reduce((s, src) => s + sourcePoints(src, d), 0);
+}
+
+export function seasonView(ctx: Ctx, userId: string): SeasonView | null {
+  const row = currentRow(ctx, userId);
+  if (!row) return null;
+  const now = ctx.now();
+  const d = deltas(ctx, userId, row.baselines);
+  const breakdown = SEASON_SOURCES.map((source) => ({ source, points: sourcePoints(source, d) }));
+  const points = row.headStart + breakdown.reduce((s, b) => s + b.points, 0);
+  const claimed = new Set(ctx.db.select().from(schema.seasonClaims)
+    .where(and(
+      eq(schema.seasonClaims.userId, userId),
+      eq(schema.seasonClaims.seasonIndex, row.seasonIndex),
+    )).all().map((c) => c.rung));
+  return {
+    index: row.seasonIndex,
+    number: row.seasonIndex - SEASON_EPOCH + 1,
+    season: seasonFor(now),
+    dayOfSeason: seasonDay(now),
+    daysLeft: SEASON_DAYS - seasonDay(now) + 1,
+    headStart: row.headStart,
+    points,
+    breakdown,
+    rungs: SEASON_RUNGS.map((rung, idx) => ({
+      idx, rung, unlocked: points >= rung.points, claimed: claimed.has(idx),
+    })),
+    badgeAt: row.badgeAt,
+  };
 }
