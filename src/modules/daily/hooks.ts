@@ -3,13 +3,13 @@ import type { RouterHooks } from '../../core/router.js';
 import { eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import { rollDailyQuests, questProgress } from './service.js';
-import { rollSeason, stampSeasonBadge } from './season.js';
+import { rollSeason, stampSeasonBadge, seasonView } from './season.js';
 
-const EXEMPT_COMMANDS = new Set(['daily', 'achievements']);
-// `alert` is exempt for the same reason daily/ach are: an alert is a DM, where an
+const EXEMPT_COMMANDS = new Set(['daily', 'achievements', 'season']);
+// `alert` is exempt for the same reason daily/ach/season are: an alert is a DM, where an
 // "ephemeral" followUp is just a second visible message — and a quest-complete hint
 // immediately after clicking Mute is absurd.
-const EXEMPT_PREFIXES = new Set(['daily', 'ach', 'alert']);
+const EXEMPT_PREFIXES = new Set(['daily', 'ach', 'alert', 'season']);
 
 // Router-level hooks that wire the daily quest board into every command and button
 // dispatch. Both preDispatch and postDispatch are called from routeInteraction inside
@@ -41,10 +41,21 @@ export const dailyRouterHooks: RouterHooks = {
     if (!i.deferred && !i.replied) return;
     const crossed = questProgress(ctx, i.user.id)
       .filter((v) => v.complete && v.row.claimedAt === null && v.row.notifiedAt === null);
-    if (!crossed.length) return;
-    // One combined followUp for every quest that crossed this action, not one per
-    // quest — a single action (e.g. a battle win) can complete two quests at once.
-    await i.followUp({ content: '🎯 Quest complete — **/daily** to claim!', flags: MessageFlags.Ephemeral });
+    // The season rung hint needs no notifiedAt bookkeeping of its own: seasonView's
+    // `claimed` flag (derived from season_claims, read live) already suppresses it
+    // permanently once the rung is claimed — an unlocked rung stays unlocked forever,
+    // but "unlocked && !claimed" goes false the moment claimSeason runs. Only the
+    // HIGHEST unlocked-unclaimed rung is worth mentioning; the player claims every
+    // pending rung in one action anyway (claimSeason pays them all at once).
+    const view = seasonView(ctx, i.user.id);
+    const rungReady = view ? view.rungs.some((r) => r.unlocked && !r.claimed) : false;
+    if (!crossed.length && !rungReady) return;
+    // One combined followUp for everything that crossed this action — a single action
+    // (e.g. a battle win) can complete two quests, or a quest AND a season rung, at once.
+    const lines: string[] = [];
+    if (crossed.length) lines.push('🎯 Quest complete — **/daily** to claim!');
+    if (rungReady) lines.push('🎖️ Season reward ready — **/season** to claim!');
+    await i.followUp({ content: lines.join('\n'), flags: MessageFlags.Ephemeral });
     // Stamped ONLY after the followUp above succeeds: an errored send must leave
     // the hint owed for the next command, never silently consumed.
     for (const v of crossed) {
