@@ -528,6 +528,11 @@ it('wipes every season row and claim, including past seasons, and leaves other u
       .values({ userId: uid, seasonIndex: 688, baselines: {}, headStart: 0, badgeAt: 1, createdAt: 0 }).run();
     ctx.db.insert(schema.seasonProgress)
       .values({ userId: uid, seasonIndex: 689, baselines: {}, headStart: 0, createdAt: 0 }).run();
+    // A past-season claim, matching the badged past-season progress row above, so the
+    // claims delete is proven unscoped by season the same way the progress delete is —
+    // not just proven for whichever season happens to be current.
+    ctx.db.insert(schema.seasonClaims)
+      .values({ userId: uid, seasonIndex: 688, rung: 0, claimedAt: 0 }).run();
     ctx.db.insert(schema.seasonClaims)
       .values({ userId: uid, seasonIndex: 689, rung: 0, claimedAt: 0 }).run();
   }
@@ -538,6 +543,8 @@ it('wipes every season row and claim, including past seasons, and leaves other u
     .where(eq(schema.seasonClaims.userId, 'p')).all()).toHaveLength(0);
   expect(ctx.db.select().from(schema.seasonProgress)
     .where(eq(schema.seasonProgress.userId, 'other')).all()).toHaveLength(2);
+  expect(ctx.db.select().from(schema.seasonClaims)
+    .where(eq(schema.seasonClaims.userId, 'other')).all()).toHaveLength(2);
 });
 
 it('adminFastForward leaves season rows untouched — it cannot move the UTC calendar', () => {
