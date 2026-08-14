@@ -113,6 +113,13 @@
       "when": 1786720147231,
       "tag": "0015_season_track",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1786729898533,
+      "tag": "0016_season_hint_high_water",
+      "breakpoints": true
     }
   ]
 }

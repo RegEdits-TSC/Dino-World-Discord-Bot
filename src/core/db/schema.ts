@@ -283,6 +283,10 @@ export const seasonProgress = sqliteTable('season_progress', {
   baselines: text('baselines', { mode: 'json' }).$type<Record<string, number>>().notNull().default({}),
   headStart: integer('head_start').notNull().default(0),
   badgeAt: integer('badge_at_ms'),
+  // High-water mark for the "season reward ready" hint (src/modules/daily/hooks.ts):
+  // the highest rung idx already announced. -1 is the sentinel for "nothing announced
+  // yet" — rung indices are 0-based, so it can never collide with a real rung.
+  hintedRung: integer('hinted_rung').notNull().default(-1),
   createdAt: integer('created_at_ms').notNull(),
 }, (t) => [primaryKey({ columns: [t.userId, t.seasonIndex] })]);
 

@@ -3,7 +3,7 @@ import type { RouterHooks } from '../../core/router.js';
 import { eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import { rollDailyQuests, questProgress } from './service.js';
-import { rollSeason, stampSeasonBadge, seasonView } from './season.js';
+import { rollSeason, stampSeasonBadge, seasonView, stampSeasonHint } from './season.js';
 
 const EXEMPT_COMMANDS = new Set(['daily', 'achievements', 'season']);
 // `alert` is exempt for the same reason daily/ach/season are: an alert is a DM, where an
@@ -41,14 +41,22 @@ export const dailyRouterHooks: RouterHooks = {
     if (!i.deferred && !i.replied) return;
     const crossed = questProgress(ctx, i.user.id)
       .filter((v) => v.complete && v.row.claimedAt === null && v.row.notifiedAt === null);
-    // The season rung hint needs no notifiedAt bookkeeping of its own: seasonView's
-    // `claimed` flag (derived from season_claims, read live) already suppresses it
-    // permanently once the rung is claimed — an unlocked rung stays unlocked forever,
-    // but "unlocked && !claimed" goes false the moment claimSeason runs. Only the
-    // HIGHEST unlocked-unclaimed rung is worth mentioning; the player claims every
-    // pending rung in one action anyway (claimSeason pays them all at once).
+    // The season rung hint is one-shot via a stored high-water mark (seasonProgress.
+    // hintedRung), the same stamp-after-send discipline as the quest side's notifiedAt —
+    // NOT a bare "unlocked && !claimed" existence check. A rung can sit unlocked-and-
+    // unclaimed for up to 30 days, and an existence check would re-fire that hint on
+    // nearly every dispatch for the whole window; hintedRung remembers the highest rung
+    // idx already announced, so only a NEWLY unlocked rung (topReady climbing past it)
+    // is worth mentioning again. Claiming a rung never lowers hintedRung — claimSeason
+    // doesn't touch this column — so a claim silently retires the hint for that rung
+    // without re-arming it; only a further rung unlocking climbs topReady again. A new
+    // season's row starts fresh at -1 (the schema default), so the hint re-arms itself
+    // once a season rolls over.
     const view = seasonView(ctx, i.user.id);
-    const rungReady = view ? view.rungs.some((r) => r.unlocked && !r.claimed) : false;
+    const topReady = view
+      ? view.rungs.reduce((top, r) => (r.unlocked && !r.claimed && r.idx > top ? r.idx : top), -1)
+      : -1;
+    const rungReady = view !== null && topReady > view.hintedRung;
     if (!crossed.length && !rungReady) return;
     // One combined followUp for everything that crossed this action — a single action
     // (e.g. a battle win) can complete two quests, or a quest AND a season rung, at once.
@@ -57,7 +65,9 @@ export const dailyRouterHooks: RouterHooks = {
     if (rungReady) lines.push('🎖️ Season reward ready — **/season** to claim!');
     await i.followUp({ content: lines.join('\n'), flags: MessageFlags.Ephemeral });
     // Stamped ONLY after the followUp above succeeds: an errored send must leave
-    // the hint owed for the next command, never silently consumed.
+    // the hint owed for the next command, never silently consumed. Same discipline as
+    // the quest notifiedAt loop right below.
+    if (rungReady) stampSeasonHint(ctx, i.user.id, view!.index, topReady);
     for (const v of crossed) {
       ctx.db.update(schema.dailyQuests).set({ notifiedAt: ctx.now() })
         .where(eq(schema.dailyQuests.id, v.row.id)).run();

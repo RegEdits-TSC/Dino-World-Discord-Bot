@@ -1,0 +1,1 @@
+ALTER TABLE `season_progress` ADD `hinted_rung` integer DEFAULT -1 NOT NULL;

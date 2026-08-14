@@ -82,6 +82,11 @@ export interface SeasonView {
   headStart: number; points: number;
   breakdown: SeasonBreakdown[]; rungs: SeasonRungView[];
   badgeAt: number | null;
+  // High-water mark for the rung-unlocked hint (src/modules/daily/hooks.ts): the
+  // highest rung idx already announced, -1 meaning none yet. Exposed here (rather than
+  // making hooks.ts re-query currentRow itself) for the same reason badgeAt is —
+  // one row read serves every consumer of this view.
+  hintedRung: number;
 }
 
 /**
@@ -137,7 +142,27 @@ export function seasonView(ctx: Ctx, userId: string): SeasonView | null {
       idx, rung, unlocked: points >= rung.points, claimed: claimed.has(idx),
     })),
     badgeAt: row.badgeAt,
+    hintedRung: row.hintedRung,
   };
+}
+
+/**
+ * Stamp the high-water mark for the rung-unlocked hint after a successful send —
+ * mirrors the quest side's notifiedAt-after-send discipline in
+ * dailyRouterHooks.postDispatch: an errored followUp must leave the hint owed, so this
+ * is called only once the send has actually succeeded, never before.
+ *
+ * `topReady` must be monotonically increasing per caller — hooks.ts derives it as the
+ * highest unlocked-and-unclaimed rung idx, so a later call (a further rung unlocking)
+ * always passes a larger value, and a claim never lowers it (claiming doesn't touch
+ * this column at all, only seasonView's live `claimed` read does).
+ */
+export function stampSeasonHint(ctx: Ctx, userId: string, seasonIndex: number, topReady: number): void {
+  ctx.db.update(schema.seasonProgress).set({ hintedRung: topReady })
+    .where(and(
+      eq(schema.seasonProgress.userId, userId),
+      eq(schema.seasonProgress.seasonIndex, seasonIndex),
+    )).run();
 }
 
 export interface SeasonClaimResult {

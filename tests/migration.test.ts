@@ -680,3 +680,39 @@ describe('0015 season track via the real drizzle migrator (production path)', ()
     }
   });
 });
+
+describe('0016 season hint high water via the real drizzle migrator (production path)', () => {
+  it('adds hinted_rung defaulting to -1 and preserves an existing season_progress row', () => {
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig16-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    // The regex and the journal filter must widen together.
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^00(0[0-9]|1[0-5]).*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 15);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });   // apply 0000-0015 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, last_collect_at_ms, created_at_ms) VALUES ('u1', 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO dinos (user_id, species_id, hunger, last_fed_at_ms, hatched_at_ms)
+                    VALUES ('u1', 'triceratops', 100, 0, 0)`).run();
+    // Existing pre-0016 row: no hinted_rung column yet at insert time.
+    sqlite.prepare(`INSERT INTO season_progress (user_id, season_index, baselines, head_start, created_at_ms)
+                    VALUES ('u1', 689, '{}', 0, 0)`).run();
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+      expect(sqlite.prepare(`SELECT hinted_rung FROM season_progress WHERE user_id = 'u1'`).all())
+        .toEqual([{ hinted_rung: -1 }]);
+      expect((sqlite.prepare(`SELECT COUNT(*) c FROM dinos`).get() as { c: number }).c).toBe(1);
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});
