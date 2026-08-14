@@ -100,6 +100,11 @@ describe('season content gate', () => {
     expect(sourcePoints(commerce, { shop_purchases: 10 })).toBe(10);
     expect(sourcePoints(commerce, { trades_completed: 1, shop_purchases: 10 })).toBe(25);
     expect(sourcePoints(commerce, { trades_completed: 99 })).toBe(commerce.cap);
+    // Each stat's own contribution is under the cap; only their SUM crosses it. This is
+    // the case that separates sum-then-clamp from clamping each term inside the loop.
+    expect(sourcePoints(commerce, { trades_completed: 3 })).toBe(45);
+    expect(sourcePoints(commerce, { shop_purchases: 30 })).toBe(30);
+    expect(sourcePoints(commerce, { trades_completed: 3, shop_purchases: 30 })).toBe(60);
   });
 
   it('treats a negative delta as zero rather than subtracting', () => {

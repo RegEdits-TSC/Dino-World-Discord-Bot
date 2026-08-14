@@ -17,7 +17,7 @@ export interface SeasonSource {
 }
 
 /**
- * Nine sources, 1,335 available against an 800 capstone. No source reaches 31% of the
+ * Nine sources, 1,335 available against an 800 capstone. No source reaches 32% of the
  * capstone, so breadth is forced without any single source being mandatory.
  *
  * Deliberately excluded: stages_first_cleared / lots_built / lots_upgraded (finite
