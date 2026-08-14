@@ -1401,10 +1401,15 @@ your progress, a ladder of eight reward rungs, and — past the top rung — a
 permanent collectible badge.
 
 Seasons are numbered, not named, and the number never resets or moves
-backwards. The first season the bot ever ran is Season 1, and every 30 days
-ticks the count up by one, forever, independent of which of the three
-cosmetic flavours (Wet, Dry, Cold) happens to be showing that month — two
-seasons that share a flavour can be years apart.
+backwards. Every 30 days ticks the count up by one, forever, independent of
+which of the three cosmetic flavours (Wet, Dry, Cold) happens to be showing
+that month — two seasons that share a flavour can be years apart.
+
+**The season already running when the bot launched is Season 0, not Season
+1.** It's a deliberately short launch season — shorter than a full 30 days
+— so don't be surprised if you see a Season 0 badge on an early player's
+park card, or if the capstone feels tight during it. Season 1, and every
+season after it, is a full 30 days for everyone.
 
 ### Where points come from
 

@@ -7,7 +7,7 @@ import { seasonPayload, seasonClaimPayload } from '../src/modules/daily/season-e
 import { SEASON_DAYS } from '../src/core/world.js';
 
 const DAY = 86_400_000;
-const S1 = 689 * SEASON_DAYS * DAY;
+const S1 = 690 * SEASON_DAYS * DAY;   // season 1, day 1 (SEASON_EPOCH is 690)
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); ctx.setNow(S1); getOrCreateUser(ctx, 'p', 'P'); });
@@ -17,7 +17,7 @@ describe('seasonPayload', () => {
     rollSeason(ctx, 'p');
     const json = seasonPayload(seasonView(ctx, 'p')!, 'p').embeds[0].toJSON();
     expect(json.title).toContain('Season 1');
-    expect(json.title).not.toContain('689');
+    expect(json.title).not.toContain('690');
   });
 
   it('carries the season index in the claim button\'s customId', () => {
@@ -25,7 +25,7 @@ describe('seasonPayload', () => {
     const row = seasonPayload(seasonView(ctx, 'p')!, 'p').components![0].toJSON() as {
       components: Array<{ custom_id: string }>;
     };
-    expect(row.components[0].custom_id).toBe('season:claim:p:689');
+    expect(row.components[0].custom_id).toBe('season:claim:p:690');
   });
 
   it('shows the per-source breakdown and the days remaining', () => {

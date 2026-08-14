@@ -8,7 +8,7 @@ import { rollSeason } from '../src/modules/daily/season.js';
 import { SEASON_DAYS } from '../src/core/world.js';
 
 const DAY = 86_400_000;
-const S1 = 689 * SEASON_DAYS * DAY;
+const S1 = 690 * SEASON_DAYS * DAY;   // season 1, day 1 (SEASON_EPOCH is 690)
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); ctx.setNow(S1); getOrCreateUser(ctx, 'p', 'P'); });
@@ -34,7 +34,7 @@ describe('/season', () => {
 describe('season:claim', () => {
   it('refuses a click from someone who is not the owner', async () => {
     rollSeason(ctx, 'p');
-    const i = await click('season:claim:p:689', 'intruder');
+    const i = await click('season:claim:p:690', 'intruder');
     expect(replyText(i.replies[0])).toContain('Not your season');
     expect(ctx.db.select().from(schema.seasonClaims).all()).toHaveLength(0);
   });
@@ -43,7 +43,7 @@ describe('season:claim', () => {
   it('refuses a stale season index', async () => {
     rollSeason(ctx, 'p');
     track(ctx, 'p', 'expeditions_claimed', 10);
-    const i = await click('season:claim:p:688', 'p');
+    const i = await click('season:claim:p:689', 'p');
     expect(replyText(i.replies[0])).toContain('season has ended');
     expect(ctx.db.select().from(schema.seasonClaims).all()).toHaveLength(0);
   });
@@ -62,20 +62,20 @@ describe('season:claim', () => {
     track(ctx, 'p', 'expeditions_claimed', 10);   // 50 = rung 1
     const before = ctx.db.select().from(schema.users)
       .where(eq(schema.users.discordId, 'p')).get()!.cash;
-    await click('season:claim:p:689', 'p');
+    await click('season:claim:p:690', 'p');
     expect(ctx.db.select().from(schema.users)
       .where(eq(schema.users.discordId, 'p')).get()!.cash).toBe(before + 3_000);
   });
 
   it('says so when nothing is claimable', async () => {
     rollSeason(ctx, 'p');
-    const i = await click('season:claim:p:689', 'p');
+    const i = await click('season:claim:p:690', 'p');
     expect(replyText(i.replies[0])).toContain('Nothing to claim');
   });
 
   it('absorbs an unknown action rather than erroring', async () => {
     rollSeason(ctx, 'p');
-    const i = await click('season:bogus:p:689', 'p');
+    const i = await click('season:bogus:p:690', 'p');
     expect(i.replies).toHaveLength(0);
   });
 });

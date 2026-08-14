@@ -76,12 +76,22 @@ export function seasonIndexFor(now: number): number {
   return Math.floor(dayIndex(now) / SEASON_DAYS);
 }
 
-// dayIndex counts from the Unix epoch, so the live cycle is already ~season 689.
-// This constant is the index live on ship day (2026-08-14, dayIndex 20,679) and is a
-// WRITTEN LITERAL: deriving it at runtime, or moving it later, renumbers every badge
-// already earned. If this ships after 2026-09-04 (dayIndex 20,700) it must be
-// recomputed, not copied.
-export const SEASON_EPOCH = 689;
+// dayIndex counts from the Unix epoch, so the live cycle is already in the high
+// hundreds. SEASON_EPOCH is the absolute index of Season 1 and is a WRITTEN LITERAL:
+// deriving it at runtime, or moving it later, renumbers every badge already earned.
+//
+// 690 is the index of the season beginning 2026-09-04 (dayIndex 20,700) — deliberately
+// the NEXT boundary after ship day, not the one already in flight (689) at ship time.
+// That makes the in-flight season number as Season 0, a short launch season, and
+// Season 1 a full 30 days for every player. Two reasons this beats epoching at 689:
+//   1. At 689, Season 1 would be a stub of at most 21 days, and the measured
+//      Gene-Lab-less profile needs 28 days to clear the capstone — a slice of players
+//      could provably never earn the first badge. Season 0 makes the short season
+//      visibly a launch season instead of a broken Season 1.
+//   2. 689 goes stale the moment the calendar crosses 2026-09-04, and nothing detects
+//      that afterwards — a stale epoch would silently renumber every badge already
+//      earned. 690 is correct from now on, regardless of the actual ship date.
+export const SEASON_EPOCH = 690;
 
 /**
  * Display number only — never a storage key. Non-positive before the epoch.

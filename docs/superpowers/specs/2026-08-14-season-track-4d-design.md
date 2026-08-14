@@ -57,11 +57,18 @@ Season 1 with a different number.
 hundreds. Two consequences, both accepted:
 
 1. `SEASON_EPOCH` must be **computed once and written down as a literal**, at
-   implementation time, from the real ship date. It is not derived at runtime from
-   anything — a constant that moved would renumber every badge already earned. As of
-   2026-08-14 the value is **689** (`dayIndex` 20,679, season day 10). The next boundary
-   falls at `dayIndex` 20,700 — 2026-09-04 — so if this ships after that date the constant
-   must be recomputed, not copied from this line.
+   implementation time. It is not derived at runtime from anything — a constant that
+   moved would renumber every badge already earned. **Post-implementation release
+   decision:** rather than epoching at the index in flight on ship day (689, as of
+   2026-08-14 — `dayIndex` 20,679, season day 10), the shipped value is **690**, the
+   index of the NEXT boundary (2026-09-04, `dayIndex` 20,700). That makes the season
+   already in flight at ship time number as **Season 0** — a deliberately short launch
+   season — with Season 1 a full 30 days for every player. This was chosen over 689 for
+   two reasons: at 689, Season 1 would be a stub of at most 21 days against a measured
+   28-day Gene-Lab-less clear time, so a slice of players could provably never earn the
+   first badge; and 689 goes stale the moment the calendar crosses 2026-09-04 with
+   nothing able to detect it, silently renumbering every badge already earned. 690 needs
+   no recompute regardless of actual ship date.
 2. `makeCtx` defaults `nowMs` to 0 (`tests/harness.ts`), which is absolute index 0 and
    therefore a **non-positive display number**. The season embed tests must pin a real
    timestamp rather than day 0. Every other test in the suite keeps day 0, exactly as the

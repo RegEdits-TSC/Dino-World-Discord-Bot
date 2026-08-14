@@ -11,7 +11,7 @@ import { ModuleRegistry } from '../src/core/modules.js';
 import type { ComponentDef } from '../src/core/modules.js';
 
 const DAY = 86_400_000;
-const S1 = 689 * SEASON_DAYS * DAY;
+const S1 = 690 * SEASON_DAYS * DAY;   // season 1, day 1 (SEASON_EPOCH is 690)
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); ctx.setNow(S1); getOrCreateUser(ctx, 'p', 'P'); });
@@ -106,7 +106,7 @@ describe('season rung hint', () => {
   it('a new season re-arms the hint', async () => {
     rollSeason(ctx, 'p');
     track(ctx, 'p', 'expeditions_claimed', 10);   // 50 = rung 1
-    await dispatch('world');                        // hints for season 689, stamps hintedRung = 0
+    await dispatch('world');                        // hints for season 690, stamps hintedRung = 0
     ctx.setNow(S1 + SEASON_DAYS * DAY);             // roll into the next season
     rollSeason(ctx, 'p');                           // fresh row: hintedRung defaults to -1
     track(ctx, 'p', 'expeditions_claimed', 10);   // 50 = rung 1 again, this season

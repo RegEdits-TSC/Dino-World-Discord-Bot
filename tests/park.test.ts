@@ -967,11 +967,11 @@ describe('season badge on the park card', () => {
   it('shows the count and the latest season number', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
     const json = dashboardPayload(user, [], 0, 0, 0, {
-      seasonBadges: { count: 2, latest: 690 },
+      seasonBadges: { count: 2, latest: 691 },
     }).embeds[0].toJSON();
     const field = json.fields!.find((f) => f.name === '🎖️ Seasons')!;
     expect(field.value).toContain('2');
-    expect(field.value).toContain('Season 2');   // 690 - SEASON_EPOCH + 1
+    expect(field.value).toContain('Season 2');   // 691 - SEASON_EPOCH + 1
     expect(field.inline).toBe(true);
   });
 
@@ -992,7 +992,7 @@ describe('season badge on the park card', () => {
 
 describe('season badge wiring', () => {
   it('/park view shows the viewer’s own badges', async () => {
-    ctx.setNow(689 * 30 * 86_400_000);
+    ctx.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690
     getOrCreateUser(ctx, 'u1', 'U1');
     rollSeason(ctx, 'u1');
     ctx.db.update(schema.seasonProgress).set({ badgeAt: ctx.now() })
@@ -1003,7 +1003,7 @@ describe('season badge wiring', () => {
   });
 
   it('a visited park shows the TARGET’s badges, not the viewer’s', async () => {
-    ctx.setNow(689 * 30 * 86_400_000);
+    ctx.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690
     getOrCreateUser(ctx, 'u1', 'U1');
     getOrCreateUser(ctx, 'u2', 'U2');
     rollSeason(ctx, 'u2');

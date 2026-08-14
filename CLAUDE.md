@@ -971,12 +971,19 @@
   comment in `src/core/world.ts` now says it plainly: the cycle is no longer purely
   cosmetic, but **a season still carries NO modifiers of any kind**, so every
   season×event stacking question stays exactly as dead as it always was — a reward
-  rung is not a multiplier. `SEASON_EPOCH` (`src/core/world.ts`, currently **689**) is a
-  WRITTEN LITERAL, never derived at runtime: `seasonNumberFor` computes the DISPLAY
-  number as `seasonIndex - SEASON_EPOCH + 1`, so moving this constant retroactively
-  renumbers every badge a player has already earned. It must be recomputed by hand (not
-  copied forward) if this ships after 2026-09-04 (`dayIndex` 20,700) — the comment above
-  it names that boundary for exactly this reason.
+  rung is not a multiplier. `SEASON_EPOCH` (`src/core/world.ts`, **690**) is a WRITTEN
+  LITERAL, never derived at runtime: `seasonNumberFor`/`seasonNumberOf` compute the
+  DISPLAY number as `seasonIndex - SEASON_EPOCH + 1`, so moving this constant
+  retroactively renumbers every badge a player has already earned. 690 is a deliberate
+  release decision, not the index in flight at ship time (689): it's the index of the
+  season beginning 2026-09-04, one boundary AFTER ship day, so the season already
+  running at ship time numbers as **Season 0** — a short launch season — and Season 1
+  is a full 30 days for every player. The alternative (epoching at 689) was rejected for
+  two reasons: Season 1 would then be a stub of at most 21 days against a measured
+  28-day Gene-Lab-less clear time, so some players could provably never earn the first
+  badge; and 689 goes stale the moment the calendar crosses 2026-09-04 with nothing able
+  to detect it, silently renumbering every badge already earned. 690 needs no recompute
+  regardless of actual ship date.
   Two migrations, not one: **0015** (`season_progress` + `season_claims`, both tables,
   no column drop) and **0016** (`season_progress.hinted_rung`, added in a later task for
   one-shot hint suppression — see below). Both apply on the same boot.

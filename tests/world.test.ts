@@ -168,17 +168,19 @@ describe('seasons', () => {
 
 describe('season identity', () => {
   // Season 1 day 1 — the canonical timestamp for every season-aware test in the suite.
-  const S1 = 689 * SEASON_DAYS * DAY;
+  // SEASON_EPOCH (690) is the index of the season beginning 2026-09-04, one past the
+  // season in flight at ship time — that in-flight season numbers as Season 0.
+  const S1 = 690 * SEASON_DAYS * DAY;
 
   it('derives an absolute index that matches seasonFor\'s own modulo', () => {
     expect(seasonIndexFor(0)).toBe(0);
-    expect(seasonIndexFor(S1)).toBe(689);
-    expect(seasonIndexFor(S1 + 29 * DAY)).toBe(689);
-    expect(seasonIndexFor(S1 + 30 * DAY)).toBe(690);
+    expect(seasonIndexFor(S1)).toBe(690);
+    expect(seasonIndexFor(S1 + 29 * DAY)).toBe(690);
+    expect(seasonIndexFor(S1 + 30 * DAY)).toBe(691);
   });
 
   it('numbers the shipped epoch as season 1', () => {
-    expect(SEASON_EPOCH).toBe(689);
+    expect(SEASON_EPOCH).toBe(690);
     expect(seasonNumberFor(S1)).toBe(1);
     expect(seasonNumberFor(S1 + 30 * DAY)).toBe(2);
     expect(seasonDay(S1)).toBe(1);
@@ -187,6 +189,6 @@ describe('season identity', () => {
   // Not a curiosity: makeCtx defaults nowMs to 0, so every test that does NOT pin a
   // timestamp sits here. Season-facing embeds must pin S1 instead.
   it('numbers day 0 non-positively, which is why embed tests pin a real timestamp', () => {
-    expect(seasonNumberFor(0)).toBe(-688);
+    expect(seasonNumberFor(0)).toBe(-689);
   });
 });

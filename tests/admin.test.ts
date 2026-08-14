@@ -520,21 +520,21 @@ it('fast-forward shifts the duel log so a pair cooldown can lapse', () => {
 });
 
 it('wipes every season row and claim, including past seasons, and leaves other users alone', () => {
-  ctx.setNow(689 * 30 * 86_400_000);
+  ctx.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690
   getOrCreateUser(ctx, 'p', 'P');
   getOrCreateUser(ctx, 'other', 'O');
   for (const uid of ['p', 'other']) {
     ctx.db.insert(schema.seasonProgress)
-      .values({ userId: uid, seasonIndex: 688, baselines: {}, headStart: 0, badgeAt: 1, createdAt: 0 }).run();
+      .values({ userId: uid, seasonIndex: 689, baselines: {}, headStart: 0, badgeAt: 1, createdAt: 0 }).run();
     ctx.db.insert(schema.seasonProgress)
-      .values({ userId: uid, seasonIndex: 689, baselines: {}, headStart: 0, createdAt: 0 }).run();
+      .values({ userId: uid, seasonIndex: 690, baselines: {}, headStart: 0, createdAt: 0 }).run();
     // A past-season claim, matching the badged past-season progress row above, so the
     // claims delete is proven unscoped by season the same way the progress delete is —
     // not just proven for whichever season happens to be current.
     ctx.db.insert(schema.seasonClaims)
-      .values({ userId: uid, seasonIndex: 688, rung: 0, claimedAt: 0 }).run();
-    ctx.db.insert(schema.seasonClaims)
       .values({ userId: uid, seasonIndex: 689, rung: 0, claimedAt: 0 }).run();
+    ctx.db.insert(schema.seasonClaims)
+      .values({ userId: uid, seasonIndex: 690, rung: 0, claimedAt: 0 }).run();
   }
   adminReset(ctx, 'p');
   expect(ctx.db.select().from(schema.seasonProgress)
@@ -548,7 +548,7 @@ it('wipes every season row and claim, including past seasons, and leaves other u
 });
 
 it('adminFastForward leaves season rows untouched — it cannot move the UTC calendar', () => {
-  ctx.setNow(689 * 30 * 86_400_000);
+  ctx.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690
   getOrCreateUser(ctx, 'p', 'P');
   rollSeason(ctx, 'p');
   const before = ctx.db.select().from(schema.seasonProgress)

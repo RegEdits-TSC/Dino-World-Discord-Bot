@@ -8,7 +8,7 @@ import { rollSeason, headStartFor, seasonPoints, seasonView, claimSeason } from 
 import { SEASON_DAYS } from '../src/core/world.js';
 
 const DAY = 86_400_000;
-export const S1 = 689 * SEASON_DAYS * DAY;   // season 1, day 1
+export const S1 = 690 * SEASON_DAYS * DAY;   // season 1, day 1 (SEASON_EPOCH is 690)
 const S2 = S1 + 30 * DAY;
 
 let ctx: ReturnType<typeof makeCtx>;
@@ -35,7 +35,7 @@ describe('rollSeason', () => {
   it('freezes a row for the current season on first touch', () => {
     rollSeason(ctx, 'p');
     expect(rows()).toHaveLength(1);
-    expect(rows()[0].seasonIndex).toBe(689);
+    expect(rows()[0].seasonIndex).toBe(690);
     expect(rows()[0].createdAt).toBe(S1);
     expect(rows()[0].badgeAt).toBeNull();
   });
@@ -79,8 +79,8 @@ describe('rollSeason', () => {
     track(ctx, 'p', 'dinos_fed', 100);
     rollSeason(ctx, 'p');
     expect(rows()).toHaveLength(2);
-    const old = rows().find((r) => r.seasonIndex === 689)!;
-    const fresh = rows().find((r) => r.seasonIndex === 690)!;
+    const old = rows().find((r) => r.seasonIndex === 690)!;
+    const fresh = rows().find((r) => r.seasonIndex === 691)!;
     expect(old.badgeAt).toBe(S1 + DAY);
     // The new season starts from the counter as it stands now, not from zero.
     expect(fresh.baselines.dinos_fed).toBe(100);
@@ -124,7 +124,7 @@ describe('headStartFor', () => {
     ctx.setNow(S2);
     seedStars(12);
     rollSeason(ctx, 'p');
-    expect(rows()[0].seasonIndex).toBe(690);
+    expect(rows()[0].seasonIndex).toBe(691);
     expect(rows()[0].headStart).toBe(12);
   });
 
@@ -133,7 +133,7 @@ describe('headStartFor', () => {
     rollSeason(ctx, 'p');
     ctx.setNow(S2);
     rollSeason(ctx, 'p');
-    expect(rows().find((r) => r.seasonIndex === 690)!.headStart).toBe(0);
+    expect(rows().find((r) => r.seasonIndex === 691)!.headStart).toBe(0);
   });
 });
 
@@ -193,7 +193,7 @@ describe('seasonView', () => {
   it('reports the season’s identity and remaining days', () => {
     rollSeason(ctx, 'p');
     const v = seasonView(ctx, 'p')!;
-    expect(v.index).toBe(689);
+    expect(v.index).toBe(690);
     expect(v.number).toBe(1);
     expect(v.dayOfSeason).toBe(1);
     expect(v.daysLeft).toBe(30);
@@ -312,7 +312,7 @@ describe('claimSeason', () => {
 
 import { stampSeasonBadge, seasonBadges } from '../src/modules/daily/season.js';
 
-const badgeAt = (index = 689) => ctx.db.select().from(schema.seasonProgress)
+const badgeAt = (index = 690) => ctx.db.select().from(schema.seasonProgress)
   .where(and(eq(schema.seasonProgress.userId, 'p'), eq(schema.seasonProgress.seasonIndex, index)))
   .get()!.badgeAt;
 
@@ -357,7 +357,7 @@ describe('stampSeasonBadge', () => {
     rollSeason(ctx, 'p');
     expect(claimSeason(ctx, 'p').claimed).toEqual([]);   // consumables forfeited
     expect(cash()).toBe(before);
-    expect(badgeAt(689)).not.toBeNull();                 // badge kept
+    expect(badgeAt(690)).not.toBeNull();                 // badge kept
     expect(seasonBadges(ctx, 'p').count).toBe(1);
   });
 });
@@ -368,14 +368,14 @@ describe('seasonBadges', () => {
     rollSeason(ctx, 'p');
     ctx.db.update(schema.seasonProgress).set({ badgeAt: S1 })
       .where(and(eq(schema.seasonProgress.userId, 'p'),
-                 eq(schema.seasonProgress.seasonIndex, 689))).run();
+                 eq(schema.seasonProgress.seasonIndex, 690))).run();
     ctx.setNow(S2);
     rollSeason(ctx, 'p');
-    expect(seasonBadges(ctx, 'p')).toEqual({ count: 1, latest: 689 });
+    expect(seasonBadges(ctx, 'p')).toEqual({ count: 1, latest: 690 });
     ctx.db.update(schema.seasonProgress).set({ badgeAt: S2 })
       .where(and(eq(schema.seasonProgress.userId, 'p'),
-                 eq(schema.seasonProgress.seasonIndex, 690))).run();
-    expect(seasonBadges(ctx, 'p')).toEqual({ count: 2, latest: 690 });
+                 eq(schema.seasonProgress.seasonIndex, 691))).run();
+    expect(seasonBadges(ctx, 'p')).toEqual({ count: 2, latest: 691 });
   });
 
   it('is a pure read — it never stamps', () => {

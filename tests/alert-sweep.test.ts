@@ -219,7 +219,7 @@ describe('alert sweep', () => {
 
 describe('season-ending nudge', () => {
   const DAY = 86_400_000;
-  const S1 = 689 * 30 * DAY;
+  const S1 = 690 * 30 * DAY;   // season 1, day 1 (SEASON_EPOCH is 690)
 
   // A park with a lot and no dinos: clears the sweep's lots guard, trips neither of the
   // two existing detectors, so the only alert that can fire here is the season one.

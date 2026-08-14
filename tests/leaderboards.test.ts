@@ -343,7 +343,7 @@ describe('new metrics', () => {
 
   it('ranks live season points, agreeing with the /season hub', () => {
     const base = makeCtx();
-    base.setNow(689 * 30 * 86_400_000);
+    base.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690
     for (const id of ['a', 'b']) getOrCreateUser(base, id, id.toUpperCase());
     rollSeason(base, 'a'); rollSeason(base, 'b');
     track(base, 'a', 'expeditions_claimed', 10);   // 50
@@ -363,13 +363,13 @@ describe('new metrics', () => {
   // with it by coincidence of insertion order.
   it('scores off the current season only, never a past row on the same player', () => {
     const base = makeCtx();
-    base.setNow(689 * 30 * 86_400_000);
+    base.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690
     getOrCreateUser(base, 'a', 'A');
     rollSeason(base, 'a');
     track(base, 'a', 'expeditions_claimed', 10);   // 50 points this season
     // A stale row from the previous season, inserted after the live one.
     base.db.insert(schema.seasonProgress).values({
-      userId: 'a', seasonIndex: 688, baselines: {}, headStart: 999, createdAt: 0,
+      userId: 'a', seasonIndex: 689, baselines: {}, headStart: 999, createdAt: 0,
     }).run();
     const rows = topPlayers(base, 'season', 'global', null);
     expect(rows.map((r) => [r.userId, r.value])).toEqual([['a', 50]]);
@@ -386,7 +386,7 @@ describe('new metrics', () => {
   // cap, so the assertion covers the clamp path too, not only the linear one.
   it('agrees exactly with the /season hub for every player on the board', () => {
     const base = makeCtx();
-    base.setNow(689 * 30 * 86_400_000);
+    base.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690
     for (const id of ['a', 'b']) getOrCreateUser(base, id, id.toUpperCase());
     base.db.insert(schema.speciesSeen).values({ userId: 'a', speciesId: 'triceratops', firstAt: 0 }).run();
     base.db.insert(schema.speciesSeen).values({ userId: 'a', speciesId: 'tyrannosaurus', firstAt: 0 }).run();
