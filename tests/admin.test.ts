@@ -4,14 +4,15 @@ import { eq, and } from 'drizzle-orm';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, pendingIncome, buildLot } from '../src/modules/park/service.js';
-import { startBreeding } from '../src/modules/genelab/service.js';
+import { startBreeding, claimBreeding } from '../src/modules/genelab/service.js';
+import { BREED_MS } from '../src/data/breeding.js';
 import { requireOwner } from '../src/modules/admin/guard.js';
 import { adminGive, adminReset, adminFastForward, AdminError } from '../src/modules/admin/service.js';
 import { setMotto, setFeaturedDino } from '../src/modules/park/showcase.js';
 import { adminModule } from '../src/modules/admin/index.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
-import { TRADE_MIN_RATING } from '../src/data/trade.js';
+import { TRADE_MIN_RATING, TRADE_EXPIRY_MS } from '../src/data/trade.js';
 import { ENERGY_CAP, DUEL_START_RATING, DUEL_PAIR_COOLDOWN_MS } from '../src/data/battle/constants.js';
 import { settleEnergy } from '../src/data/battle/energy.js';
 import { track } from '../src/core/stats.js';
@@ -168,6 +169,74 @@ describe('adminFastForward', () => {
   it('rejects hours outside 1..720', () => {
     expect(() => adminFastForward(ctx, 'p', 0)).toThrow(AdminError);
     expect(() => adminFastForward(ctx, 'p', 721)).toThrow(AdminError);
+  });
+});
+
+describe('adminFastForward + breeding', () => {
+  function pairing() {
+    getOrCreateUser(ctx, 'p', 'P');
+    ctx.economy.apply('p', { cash: 500_000 }, 'test', 0);
+    buildLot(ctx, 'p', 'gene_lab');
+    buildLot(ctx, 'p', 'herbivore_paddock');
+    const lot = ctx.db.select().from(schema.lots).all().find((l) => l.kind === 'herbivore_paddock')!;
+    const mk = (species: string) => ctx.db.insert(schema.dinos)
+      .values({ userId: 'p', speciesId: species, lotId: lot.id, hunger: 100, lastFedAt: 0, hatchedAt: 0 })
+      .returning().get();
+    return startBreeding(ctx, 'p', mk('triceratops').id, mk('gallimimus').id, null);
+  }
+
+  // The reported bug: the scheduler timer that ANNOUNCES a pairing is shifted
+  // (timers.firesAt), but breedings.readyAt was not — so fast-forward delivered the
+  // "breeding ready" notification while /breed claim still rejected it.
+  it('advances a pairing past its ready time so it can actually be claimed', () => {
+    const br = pairing();
+    expect(br.readyAt).toBe(BREED_MS.common);   // 30 min out from now = 0
+
+    adminFastForward(ctx, 'p', 1);              // 1 h back, comfortably past it
+
+    const row = ctx.db.select().from(schema.breedings).where(eq(schema.breedings.id, br.id)).get()!;
+    expect(row.readyAt).toBeLessThanOrEqual(ctx.now());
+    expect(row.startedAt).toBe(br.startedAt - 3_600_000);   // duration preserved, not just readyAt
+    expect(() => claimBreeding(ctx, 'p', br.id)).not.toThrow();
+  });
+
+  it('leaves an already-claimed pairing alone', () => {
+    const br = pairing();
+    ctx.db.update(schema.breedings).set({ claimedAt: 123 }).where(eq(schema.breedings.id, br.id)).run();
+
+    adminFastForward(ctx, 'p', 5);
+
+    const row = ctx.db.select().from(schema.breedings).where(eq(schema.breedings.id, br.id)).get()!;
+    expect(row.readyAt).toBe(br.readyAt);       // history, not a live timer
+    expect(row.claimedAt).toBe(123);
+  });
+
+  it('does not touch another player’s pairing', () => {
+    const br = pairing();
+    getOrCreateUser(ctx, 'other', 'Other');
+
+    adminFastForward(ctx, 'other', 10);
+
+    const row = ctx.db.select().from(schema.breedings).where(eq(schema.breedings.id, br.id)).get()!;
+    expect(row.readyAt).toBe(br.readyAt);
+  });
+});
+
+describe('adminFastForward + trades', () => {
+  it('expires a pending trade and releases the escrow it held', () => {
+    getOrCreateUser(ctx, 'o', 'O');
+    getOrCreateUser(ctx, 't', 'T');
+    ctx.db.update(schema.users).set({ parkRating: TRADE_MIN_RATING }).run();
+    const dino = ctx.db.insert(schema.dinos)
+      .values({ userId: 'o', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).returning().get();
+    createTrade(ctx, 'o', 't', { dinoIds: [dino.id], eggIds: [], cash: 0, foods: {} }, { dinoIds: [], eggIds: [], cash: 0, foods: {} });
+    expect(locksFor(ctx, 'o').dinos.has(dino.id)).toBe(true);
+
+    // locksFor evaluates expiry at read time against createdAt, so shifting createdAt
+    // is what makes elapsed time release the escrow — exactly as a real 25 h would.
+    adminFastForward(ctx, 'o', TRADE_EXPIRY_MS / 3_600_000 + 1);
+
+    expect(locksFor(ctx, 'o').dinos.has(dino.id)).toBe(false);
   });
 });
 

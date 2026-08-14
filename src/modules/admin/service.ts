@@ -134,8 +134,9 @@ export function adminFastForward(ctx: Ctx, targetId: string, hours: number): num
     // history for a player who has never claimed a quest.
     // species_seen.first_at_ms is deliberately NOT shifted. It is a historical record with
     // no timer semantics — nothing reads it to decide whether something is due — so
-    // shifting it would only misdate a discovery. Contrast breedings.readyAt, which IS a
-    // timer and is a genuine omission here.
+    // shifting it would only misdate a discovery. That test — "does anything read this to
+    // decide whether something is due?" — is what separates every column shifted here from
+    // every column left alone.
     // users.landmark_tier is deliberately NOT touched: the landmark ladder carries no timer
     // semantics, so there is nothing for a clock shift to move.
     // daily_quests.dayKey is deliberately NOT shifted: fast-forward cannot move the UTC
@@ -156,6 +157,29 @@ export function adminFastForward(ctx: Ctx, targetId: string, hours: number): num
     }).where(eq(schema.expeditions.userId, targetId)).run();
     ctx.db.update(schema.timers).set({ firesAt: sql`${schema.timers.firesAt} - ${shift}` })
       .where(and(eq(schema.timers.userId, targetId), isNull(schema.timers.handledAt))).run();
+    // breedings.readyAt is a live timer — claimBreeding rejects while readyAt > now — and
+    // the scheduler row that ANNOUNCES the pairing is shifted just above. Leaving this
+    // unshifted therefore delivered the "breeding ready" notification while /breed claim
+    // still refused it, which is what made a fast-forwarded pairing look stuck. startedAt
+    // rides along so the pairing's own duration stays consistent with its ready time.
+    // Claimed rows are history rather than timers and are left alone.
+    ctx.db.update(schema.breedings).set({
+      startedAt: sql`${schema.breedings.startedAt} - ${shift}`,
+      readyAt: sql`${schema.breedings.readyAt} - ${shift}`,
+    }).where(and(eq(schema.breedings.userId, targetId), isNull(schema.breedings.claimedAt))).run();
+    // trades.createdAt anchors the 24h expiry, and locksFor evaluates that at READ time, so
+    // shifting it is what actually releases escrow — nothing sweeps. Pending rows only: a
+    // resolved trade is history, and its resolvedAt would have to move in lockstep to stay
+    // coherent. One accepted consequence of that scoping: createTrade's daily cap counts
+    // rows by createdAt regardless of status, so completed trades still count against the
+    // cap after a fast-forward. Expiry and escrow are what this tool is for; adminReset is
+    // the way to clear a spent cap.
+    // Two-sided like the duel log below — shifting a trade the target is party to also moves
+    // it for the counterparty, which is correct: expiry is a property of the trade, not of
+    // one side of it.
+    ctx.db.update(schema.trades).set({ createdAt: sql`${schema.trades.createdAt} - ${shift}` })
+      .where(and(eq(schema.trades.status, 'pending'),
+        or(eq(schema.trades.fromUser, targetId), eq(schema.trades.toUser, targetId)))).run();
     // The duel log is history AND the only anchor of the pair cooldown, which is what
     // separates it from species_seen.first_at_ms above: leaving it unshifted would make
     // the one time-gated rule in the duel feature untestable by this tool. Shifting it
