@@ -977,10 +977,11 @@ The bot can proactively reach you in two ways. **Notifications** fire once
 when a specific action completes — five things in total: an egg finishing
 incubation, an expedition returning, a breeding pairing finishing, trade
 activity, and — since the world went live — a daily world bulletin.
-**Alerts** are different: a recurring sweep that watches two ongoing
-conditions — a dino heading toward escape, and income that's hit its cap
-with cash still pending — and DMs you a combined warning. See Alerts,
-below, for how those work and how to turn them off.
+**Alerts** are different: a recurring sweep that watches three ongoing
+conditions — a dino heading toward escape, income that's hit its cap
+with cash still pending, and a season nearing its end with rewards still
+unclaimed — and DMs you a combined warning. See Alerts, below, for how
+those work and how to turn them off.
 
 - **Egg ready** — fires once the egg you're incubating finishes, naming its
   rarity and pointing you at `/hatch`.
@@ -1019,22 +1020,31 @@ they always arrive by DM — never routed to a server's notification channel
   above.)
 - **Income cap** — your park has stopped earning because pending income
   hit its cap (see Income, above) and cash is still sitting uncollected.
+- **Season ending** — the current season track (see The season track,
+  below) is inside its final 3 days and you still have unlocked rewards
+  sitting unclaimed. `/season` to claim before they forfeit at rollover.
 
-Both conditions are re-checked from scratch on every sweep and each fires
-only once per instant, so feeding the dino or collecting income before the
-next sweep clears the warning — and the same condition returning later (a
-new projected escape time, a fresh cap after a later collect) sends a
-fresh one. Whichever of the two apply arrive together in a single combined
-DM, with buttons to act on the spot: 🍖 Feed all, 💰 Collect, and 🔕 Mute
-alerts.
+All three conditions are re-checked from scratch on every sweep and each
+fires only once per instant, so feeding the dino, collecting income, or
+claiming your season rewards before the next sweep clears that warning —
+and the same condition returning later (a new projected escape time, a
+fresh cap after a later collect) sends a fresh one. Whichever apply arrive
+together in a single combined DM, with buttons to act on the spot: 🍖 Feed
+all, 💰 Collect, and 🔕 Mute alerts.
 
 Alerts are on by default. Turn them off with `/park alerts state:off`
 (back on with `state:on`), or press 🔕 Mute on an alert itself — both flip
 the same per-player switch. That switch also covers one more message outside
-this pair: a ghost duel's result reaching its absent defender (see Duels,
+this trio: a ghost duel's result reaching its absent defender (see Duels,
 below), since that message was never requested by anything the reader did,
-the same reasoning that covers these two alerts. The five notifications
-above keep firing regardless and have no mute of their own.
+the same reasoning that covers these three alerts. There is deliberately
+no separate switch for the season nudge — one mute switch means one mute
+switch, and splitting it out for a marginal gain would need its own
+column. That means muting alerts also silences your season deadline
+warning: forfeiture is "never a surprise" only as long as you're still
+receiving that nudge, so if you've muted alerts, `/season` is on you to
+check as the deadline nears. The five notifications above keep firing
+regardless and have no mute of their own.
 
 Alerts are DM-only (see Where it goes, below), so they also require you to
 have direct messages from server members enabled for the server the bot is
@@ -1048,8 +1058,8 @@ server.
 This section covers the four notifications that can be routed to a
 channel (egg, expedition, breeding, trade) — the world bulletin's delivery
 rule is different and is covered above, and alerts (escape warning, income
-cap) are never channel-routed at all; they're always a DM (see Alerts,
-above). Notifications go to a server's configured notification channel
+cap, season ending) are never channel-routed at all; they're always a DM
+(see Alerts, above). Notifications go to a server's configured notification channel
 first, with a ping, if one is set; otherwise they arrive as a DM with no
 ping. If the
 channel can't be posted to for any reason, the bot silently falls back to a
@@ -1444,7 +1454,13 @@ it. Over a full season the ladder pays 60,000 cash and 110 shards in total.
 **Unclaimed rungs forfeit when the season rolls over — the badge does not.**
 Exactly like an unclaimed daily quest board, any rung you unlocked but never
 claimed is gone once the next season starts, no grace period; `/season`
-shows a countdown so the deadline is never a surprise. Crossing the capstone
+shows a countdown, and a proactive alert DMs you once the season is inside
+its final 3 days if you still have rewards unclaimed (see Alerts, above),
+so the deadline is never a surprise. That nudge shares the same on/off
+switch as the escape and income-cap alerts — `/park alerts state:off` mutes
+all three together, since one mute switch is simpler than a second column
+for a marginal gain. Turn alerts off and the deadline countdown in `/season`
+is still there, but nothing will DM you about it. Crossing the capstone
 works differently: the instant your points reach 800 you're awarded the
 badge outright, whether or not you ever press Claim, and it's yours
 permanently. Cash, shards, food and eggs all come back next season; the

@@ -18,11 +18,12 @@ export const users = sqliteTable('users', {
   questStreak: integer('quest_streak').notNull().default(0),
   questStreakBest: integer('quest_streak_best').notNull().default(0),
   lastQuestClaimAt: integer('last_quest_claim_at_ms').notNull().default(0),
-  // Gates the two proactive alerts (escape, income cap) AND duel results — the three
-  // completion notifications stay unconditional: those were asked for by starting the
-  // hatch, the breeding, the expedition. A duel result is unrequested and arrives
-  // because someone else acted, which is exactly what this flag is for. adminReset
-  // deliberately does not restore this — see the comment in admin/service.ts.
+  // Gates the three proactive alerts (escape, income cap, season ending) AND duel
+  // results — the three completion notifications stay unconditional: those were asked
+  // for by starting the hatch, the breeding, the expedition. A duel result is
+  // unrequested and arrives because someone else acted, which is exactly what this flag
+  // is for. adminReset deliberately does not restore this — see the comment in
+  // admin/service.ts.
   alertsEnabled: integer('alerts_enabled', { mode: 'boolean' }).notNull().default(true),
   // Cosmetic prestige ladder (src/data/landmarks.ts). Deliberately read by NOTHING in
   // rating.ts, clock.ts, lotSlots or matchedKindCount: the sink's power-freedom is

@@ -133,7 +133,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/settings channel` | Set where the bot posts hatch, expedition, breeding, trade, and world-bulletin notifications | **Requires the Manage Server permission**. Doesn't cover the two proactive park alerts (escape warning, income cap) — those are always a DM, toggled per-player with `/park alerts` |
+| `/settings channel` | Set where the bot posts hatch, expedition, breeding, trade, and world-bulletin notifications | **Requires the Manage Server permission**. Doesn't cover the three proactive park alerts (escape warning, income cap, season ending) — those are always a DM, toggled per-player with `/park alerts` |
 | `/settings world-news` | Turn the daily world bulletin on or off for this server | **Requires the Manage Server permission**. Posts to the channel set by `/settings channel` — needs one configured to actually post |
 | `/admin give` | Grant resources to a player | Autocomplete: dino-species. **Bot owner only** |
 | `/admin inspect` | Dump a player's raw state | **Bot owner only** |

@@ -424,7 +424,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    **m) `/settings channel channel:#some-channel`** (run as a user with Manage Guild permission)
    - Should confirm the notification channel was set.
    - Future hatch/expedition pings should post to that channel instead of falling back to DM.
-   - This channel does not receive the two proactive park alerts (escape warning, income cap) — those are always a DM; see step (p) below.
+   - This channel does not receive the three proactive park alerts (escape warning, income cap, season ending) — those are always a DM; see step (p) below.
 
    **n) `/mythic species:<name>` (requires 8★ high-water park rating and 500 shards)**
    - Should show a confirm button and deduct nothing yet; confirming should deduct the shards and grant a Mythic egg of the requested species.
