@@ -2106,18 +2106,30 @@ export const SEASON_END_WARN_MS = 3 * 86_400_000;
 Add the detector — put it in `alert-detect.ts` alongside the two existing predicates:
 
 ```ts
-/** A nudge is owed iff the season ends within SEASON_END_WARN_MS and at least one
- *  unlocked rung is still unclaimed. Cash forfeits at rollover; this is the warning. */
+/**
+ * A nudge is owed iff the season ends within SEASON_END_WARN_MS and at least one unlocked
+ * rung is still unclaimed. Cash forfeits at rollover; this is the warning.
+ *
+ * `endsAt` is the TRUE season boundary — a fixed instant for the whole season — never
+ * `now + daysLeft * DAY`. That anchoring matters more than it looks: firedForMs is
+ * compared with a 2-hour tolerance (ALERT_INSTANT_EPSILON_MS), so a now-anchored value
+ * drifts with time of day and two sweeps three hours apart would each read as a NEW
+ * instant. At SWEEP_MS the result is a DM roughly every two hours for three days instead
+ * of exactly one per season.
+ */
 export function seasonEndAlertFor(
   view: SeasonView | null, now: number,
 ): { endsAt: number; unclaimed: number } | null {
   if (!view) return null;
-  const endsAt = now + view.daysLeft * 86_400_000;
+  const endsAt = (view.index + 1) * SEASON_DAYS * 86_400_000;
   if (endsAt - now > SEASON_END_WARN_MS) return null;
   const unclaimed = view.rungs.filter((r) => r.unlocked && !r.claimed).length;
   return unclaimed > 0 ? { endsAt, unclaimed } : null;
 }
 ```
+
+`view.index` is the absolute season index, so `(index + 1) * SEASON_DAYS * DAY_MS` is the
+UTC instant the next season begins. Import `SEASON_DAYS` from `../../core/world.js`.
 
 In `alert-sweep.ts`, inside the per-user `try`, after the income-cap block:
 
