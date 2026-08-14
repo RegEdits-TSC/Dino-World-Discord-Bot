@@ -904,8 +904,8 @@ falls.
 
 ### `/top`
 
-`/top` ranks players by one of six metrics — rating, cash, collection,
-legacy standing, battle stars, or duel rating — scoped to either your server or globally.
+`/top` ranks players by one of seven metrics — rating, cash, collection,
+legacy standing, battle stars, duel rating, or season points — scoped to either your server or globally.
 Left unset, scope defaults to your server when run inside a server and to
 global when run in a DM. It always shows the top 10 with no further pages;
 if you're not in that top 10, a footer line shows your own rank and value
@@ -977,10 +977,11 @@ The bot can proactively reach you in two ways. **Notifications** fire once
 when a specific action completes — five things in total: an egg finishing
 incubation, an expedition returning, a breeding pairing finishing, trade
 activity, and — since the world went live — a daily world bulletin.
-**Alerts** are different: a recurring sweep that watches two ongoing
-conditions — a dino heading toward escape, and income that's hit its cap
-with cash still pending — and DMs you a combined warning. See Alerts,
-below, for how those work and how to turn them off.
+**Alerts** are different: a recurring sweep that watches three ongoing
+conditions — a dino heading toward escape, income that's hit its cap
+with cash still pending, and a season nearing its end with rewards still
+unclaimed — and DMs you a combined warning. See Alerts, below, for how
+those work and how to turn them off.
 
 - **Egg ready** — fires once the egg you're incubating finishes, naming its
   rarity and pointing you at `/hatch`.
@@ -1019,22 +1020,31 @@ they always arrive by DM — never routed to a server's notification channel
   above.)
 - **Income cap** — your park has stopped earning because pending income
   hit its cap (see Income, above) and cash is still sitting uncollected.
+- **Season ending** — the current season track (see The season track,
+  below) is inside its final 3 days and you still have unlocked rewards
+  sitting unclaimed. `/season` to claim before they forfeit at rollover.
 
-Both conditions are re-checked from scratch on every sweep and each fires
-only once per instant, so feeding the dino or collecting income before the
-next sweep clears the warning — and the same condition returning later (a
-new projected escape time, a fresh cap after a later collect) sends a
-fresh one. Whichever of the two apply arrive together in a single combined
-DM, with buttons to act on the spot: 🍖 Feed all, 💰 Collect, and 🔕 Mute
-alerts.
+All three conditions are re-checked from scratch on every sweep and each
+fires only once per instant, so feeding the dino, collecting income, or
+claiming your season rewards before the next sweep clears that warning —
+and the same condition returning later (a new projected escape time, a
+fresh cap after a later collect) sends a fresh one. Whichever apply arrive
+together in a single combined DM, with buttons to act on the spot: 🍖 Feed
+all, 💰 Collect, and 🔕 Mute alerts.
 
 Alerts are on by default. Turn them off with `/park alerts state:off`
 (back on with `state:on`), or press 🔕 Mute on an alert itself — both flip
 the same per-player switch. That switch also covers one more message outside
-this pair: a ghost duel's result reaching its absent defender (see Duels,
+this trio: a ghost duel's result reaching its absent defender (see Duels,
 below), since that message was never requested by anything the reader did,
-the same reasoning that covers these two alerts. The five notifications
-above keep firing regardless and have no mute of their own.
+the same reasoning that covers these three alerts. There is deliberately
+no separate switch for the season nudge — one mute switch means one mute
+switch, and splitting it out for a marginal gain would need its own
+column. That means muting alerts also silences your season deadline
+warning: forfeiture is "never a surprise" only as long as you're still
+receiving that nudge, so if you've muted alerts, `/season` is on you to
+check as the deadline nears. The five notifications above keep firing
+regardless and have no mute of their own.
 
 Alerts are DM-only (see Where it goes, below), so they also require you to
 have direct messages from server members enabled for the server the bot is
@@ -1048,8 +1058,8 @@ server.
 This section covers the four notifications that can be routed to a
 channel (egg, expedition, breeding, trade) — the world bulletin's delivery
 rule is different and is covered above, and alerts (escape warning, income
-cap) are never channel-routed at all; they're always a DM (see Alerts,
-above). Notifications go to a server's configured notification channel
+cap, season ending) are never channel-routed at all; they're always a DM
+(see Alerts, above). Notifications go to a server's configured notification channel
 first, with a ping, if one is set; otherwise they arrive as a DM with no
 ping. If the
 channel can't be posted to for any reason, the bot silently falls back to a
@@ -1383,7 +1393,114 @@ the page shows a medal for every tier you've already claimed and a progress
 bar toward the next one you haven't. **Claim all** pays every claimable tier
 across every track in one reply.
 
-## 18. The world
+## 18. The season track
+
+Alongside the daily quest board there's a longer loop riding the same
+30-day cycle that names each season (see The world, below): `/season` shows
+your progress, a ladder of eight reward rungs, and — past the top rung — a
+permanent collectible badge.
+
+Seasons are numbered, not named, and the number never resets or moves
+backwards. Every 30 days ticks the count up by one, forever, independent of
+which of the three cosmetic flavours (Wet, Dry, Cold) happens to be showing
+that month — two seasons that share a flavour can be years apart.
+
+**The season already running when the bot launched is Season 0, not Season
+1.** It's a deliberately short launch season — shorter than a full 30 days
+— so don't be surprised if you see a Season 0 badge on an early player's
+park card, or if the capstone feels tight during it. Season 1, and every
+season after it, is a full 30 days for everyone.
+
+### Where points come from
+
+Points are earned from nine capped sources — things you're probably already
+doing, each worth points only up to its own ceiling:
+
+| Source | What raises it | Cap |
+| --- | --- | --- |
+| Campaign | Fighting a battle stage, win or lose — 1 point per 4 fights | 250 |
+| Expeditions | Claiming a finished expedition — 5 points each | 250 |
+| Hatchery | Hatching an egg — 3 points each | 225 |
+| Gene Lab | Claiming a finished breeding pairing — 5 points each | 180 |
+| Dino care | Feeding a dino — 1 point per 3 feeds | 120 |
+| Sales | Selling a dino — 3 points each | 100 |
+| Splicing | Splicing a trait — 15 points each | 90 |
+| Commerce | A completed trade (15 points) or a shop purchase (1 point) | 60 |
+| Park collections | Pressing Collect on your park, any amount — 1 point each | 60 |
+
+That's 1,335 points available against an 800-point capstone, so you can clear
+the whole track without maxing a single source — and no one source can carry
+you there alone; even the two largest, Campaign and Expeditions, top out
+under a third of the capstone on their own. **The cap on each source is what
+makes that true.** Without one, the cheapest thing to repeat (feeding, which
+costs almost nothing) would be the only source worth working, turning the
+season into one chore instead of a reason to touch the rest of the game.
+With a cap, every source saturates early and stops mattering, so reaching
+the capstone means playing broadly rather than grinding one thing narrowly.
+
+### The rungs
+
+| Rung | Points | Reward |
+| --- | --- | --- |
+| 1 | 50 | 3,000 cash |
+| 2 | 125 | 6,000 cash + 20 Royal Greens |
+| 3 | 225 | 8,000 cash + 15 shards |
+| 4 | 350 | 10,000 cash + 1 rare egg |
+| 5 | 475 | 12,000 cash + 25 shards |
+| 6 | 600 | 12,000 cash + 40 Prime Steak |
+| 7 | 700 | 1 epic egg + 30 shards |
+| 8 (capstone) | 800 | 9,000 cash + 40 shards |
+
+A rung unlocks the moment your points cross it and stays claimable for the
+rest of the season. `/season`'s **Claim** button pays every unlocked rung
+you haven't claimed yet, all at once — nothing is paid out until you press
+it. Over a full season the ladder pays 60,000 cash and 110 shards in total.
+
+**Unclaimed rungs forfeit when the season rolls over — the badge does not.**
+Exactly like an unclaimed daily quest board, any rung you unlocked but never
+claimed is gone once the next season starts, no grace period; `/season`
+shows a countdown, and a proactive alert DMs you once the season is inside
+its final 3 days if you still have rewards unclaimed (see Alerts, above),
+so the deadline is never a surprise. That nudge shares the same on/off
+switch as the escape and income-cap alerts — `/park alerts state:off` mutes
+all three together, since one mute switch is simpler than a second column
+for a marginal gain. Turn alerts off and the deadline countdown in `/season`
+is still there, but nothing will DM you about it. Crossing the capstone
+works differently: the instant your points reach 800 you're awarded the
+badge outright, whether or not you ever press Claim, and it's yours
+permanently. Cash, shards, food and eggs all come back next season; the
+badge does not, so it was never made to answer to the same deadline. Your
+park card shows how many badges you've earned and the most recent one, once
+you have at least one.
+
+### The veteran head start
+
+The very first season you ever play — not necessarily calendar Season 1,
+whichever one your account first has a row for — starts with a head start
+added to your points before you've done anything that season: the number of
+species you've discovered, plus your battle stars, plus your best-ever park
+rating divided by 25, capped at 200 in total. A brand new account computes to
+roughly zero; a long-time player can walk in already past the second rung,
+just short of the third. It's paid once, frozen at that moment, and never
+recalculated — a veteran's
+head start doesn't grow as later seasons pass, and it isn't paid again.
+
+### Pacing
+
+Playing a normal mix across the nine sources clears the 800-point capstone
+around day 21 of the 30-day season, with real slack left over. Skip the Gene
+Lab entirely — no breeding, no splicing — and you can still clear it, just
+later, around day 28: two days of margin before the season ends, the
+tightest path in the ladder. Even occasional play isn't shut out: ten days
+of ordinary play reaches roughly 418 points, comfortably mid-ladder.
+
+The five sources with no cooldown or facility gate at all — Dino care,
+Sales, Splicing, Commerce, and Park collections — cap out at 430 points
+combined, deliberately just over half the capstone: even a player who spent
+their very first day maxing every one of those still can't bank more than
+about 54% of the season in one sitting.
+
+## 19. The world
 
 Every day, the whole game shares one randomly-rolled world event and one of
 three cosmetic seasons. Both are derived fresh from the current UTC date —
@@ -1435,10 +1552,14 @@ that hasn't happened yet.
 
 Alongside the daily event, the calendar also cycles through three cosmetic
 seasons — Wet, Dry, Cold — 30 days each, in that fixed order, repeating
-indefinitely. Seasons are purely cosmetic: `/world` names the current
-season and which day of the 30 you're on. **A season carries no gameplay
-modifier of any kind** — it never interacts with the day's event, your
-income, prices, or anything else in this guide.
+indefinitely. `/world` names the current season and which day of the 30
+you're on, and the park map's ground art re-tints to match. **A season still
+carries no gameplay modifier of any kind** — it never interacts with the
+day's event, your income, prices, or anything else in this guide. What
+changed is that the cycle is no longer purely decorative: these same 30-day
+boundaries also drive the season track's numbering and rollover (see The
+season track, above) — but that's a rewards ladder layered on top of the
+cycle, never a multiplier riding inside it.
 
 ### `/world`
 
@@ -1447,7 +1568,7 @@ language, the current season and day, a countdown to when the event turns
 over (UTC midnight), and tomorrow's event — by name only, so you know
 what's coming without the game handing you its exact numbers early.
 
-## 19. Duels
+## 20. Duels
 
 Duels are free exhibition fights between two players. They cost no energy,
 and they pay no cash, shards, food or battle XP — the only thing that moves

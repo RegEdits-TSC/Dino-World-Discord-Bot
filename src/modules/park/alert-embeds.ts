@@ -1,7 +1,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { assetImage, attach } from '../../core/images.js';
 import type { NotifyPayload } from '../../core/notify.js';
-import type { EscapeAlert, IncomeCapAlert } from './alert-detect.js';
+import type { EscapeAlert, IncomeCapAlert, SeasonEndAlert } from './alert-detect.js';
 
 const MAX_LISTED = 5;
 
@@ -20,13 +20,14 @@ function fmtRemaining(ms: number): string {
  * pushes into an explicit array in place and only shallow-copies it.
  */
 export function alertPayload(
-  userId: string, escapes: EscapeAlert[], income: IncomeCapAlert | null, now: number,
+  userId: string, escapes: EscapeAlert[], income: IncomeCapAlert | null,
+  season: SeasonEndAlert | null, now: number,
 ): (NotifyPayload & { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }) | null {
   // An alert with no conditions is not an empty alert, it is no alert. Returning null here
   // means no caller can coerce this function into building `setDescription('')`, which
   // @discordjs/builders' embed validator rejects outright — the crash is removed by
   // construction rather than defended against at every call site.
-  if (escapes.length === 0 && !income) return null;
+  if (escapes.length === 0 && !income && !season) return null;
 
   const lines: string[] = [];
 
@@ -42,9 +43,19 @@ export function alertPayload(
     // starving park stops earlier (accruedIncome clamps per dino at escapeAt/hungerZero).
     lines.push(`**💰 Income capped** — **${income.pending.toLocaleString('en-US')}** cash pending at your ${income.capHours}-hour cap, no longer growing`);
   }
+  if (season) {
+    const days = Math.max(1, Math.ceil((season.endsAt - now) / 86_400_000));
+    lines.push(`**🎖️ Season ends in ${days}d** — ${season.unclaimed} reward(s) unclaimed. **/season** to claim.`);
+  }
 
+  // A season-only DM has no dino or income to attend to — title it for what it actually
+  // is (a rewards deadline) rather than the escape/income-cap framing that fits the other
+  // two conditions.
+  const title = escapes.length === 0 && !income && season
+    ? '🎖️ Season ending soon'
+    : '🚨 Your park needs you';
   const embed = new EmbedBuilder().setColor(0xe67e22)
-    .setTitle('🚨 Your park needs you')
+    .setTitle(title)
     .setDescription(lines.join('\n'))
     .setFooter({ text: 'Turn these off any time with /park alerts state:off' });
 

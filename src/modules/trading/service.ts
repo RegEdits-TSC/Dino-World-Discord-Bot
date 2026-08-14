@@ -10,6 +10,7 @@ import { TRADE_MIN_RATING, TRADE_DAILY_CAP, TRADE_MAX_ITEMS_PER_SIDE, TRADE_EXPI
 import { recomputeRating } from '../park/rating.js';
 import { track } from '../../core/stats.js';
 import { recordSpeciesSeen } from '../../core/species-seen.js';
+import { stampSeasonBadge } from '../daily/season.js';
 
 export { TradeError } from './validate.js';
 export type Trade = typeof schema.trades.$inferSelect;
@@ -137,6 +138,14 @@ export function acceptTrade(ctx: Ctx, userId: string, tradeId: number): Trade {
     if (moves) {
       track(ctx, trade.fromUser, 'trades_completed', 1);
       track(ctx, trade.toUser, 'trades_completed', 1);
+      // trade.fromUser is not the dispatching user (trade.toUser is, by calling
+      // acceptTrade), so no postDispatch hook will run for them off this interaction —
+      // their season points just moved with nothing to stamp the capstone badge. Without
+      // this, a sender who crosses the capstone on this trade alone and never dispatches
+      // again before the season rolls loses the badge permanently: points are never
+      // derived for a past season. A write context, so stamping another player's row here
+      // does not bend the read-path rule stampSeasonBadge's own comment documents.
+      stampSeasonBadge(ctx, trade.fromUser);
     }
     return ctx.db.update(schema.trades).set({ status: 'accepted', resolvedAt: ctx.now() })
       .where(eq(schema.trades.id, tradeId)).returning().get();

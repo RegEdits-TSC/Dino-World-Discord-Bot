@@ -22,6 +22,7 @@ import { locksFor } from '../src/core/locks.js';
 import { TRADE_MIN_RATING } from '../src/data/trade.js';
 import { ENERGY_CAP } from '../src/data/battle/constants.js';
 import { rollDailyQuests } from '../src/modules/daily/service.js';
+import { rollSeason, claimSeason, stampSeasonBadge } from '../src/modules/daily/season.js';
 import { track } from '../src/core/stats.js';
 import { dayKeyUTC } from '../src/core/clock.js';
 import { QUESTS } from '../src/data/quests.js';
@@ -243,6 +244,34 @@ assignDino(ctx, P4, enrichedDino.id, enrichedLot.id);
 const P5 = 'live-p5';
 getOrCreateUser(ctx, P5, 'LegacyKeeper');
 for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, P5, s.id);
+
+// Season track fixture: its own player, walked through in stages so the gallery can show
+// two genuinely different states rather than one contrived one. rollSeason is called by
+// hand — this script calls every command's execute() directly (see the slash/button
+// helpers below), bypassing routeInteraction and therefore dailyRouterHooks.preDispatch
+// entirely, the same reason rollDailyQuests is called by hand above. It must run before
+// any stat is tracked, so the baseline freezes at zero rather than after the fact.
+//
+// Stage 1 (pre-claim): eggs_hatched 40 -> Hatchery 120, dinos_fed 300 -> Care 100,
+// dinos_sold 20 -> Sales 60. 280 points clears rungs 1-3 (50/125/225); claimSeason banks
+// all three immediately, so the mid-season case below opens with checkmarks already
+// earned rather than three still-pending gifts.
+//
+// Stage 2 (post-claim, still pre-render): eggs_hatched +30 (cum. 70) -> Hatchery 210,
+// dinos_sold +15 (cum. 35, clamped) -> Sales stays at its 100 cap. 410 points crosses
+// rung 4 (350) without reaching rung 5 (475) — the /season case renders from exactly
+// this point, so the hub shows claimed rungs, one freshly unlocked and still claimable,
+// and locked rungs beyond it, all in one card. Stage 3 (pushing past the 800 capstone for
+// the badge case) runs later, inline in that case's own run() — see the cases list below.
+const P6 = 'live-p6';
+getOrCreateUser(ctx, P6, 'SeasonRunner');
+rollSeason(ctx, P6);
+track(ctx, P6, 'eggs_hatched', 40);
+track(ctx, P6, 'dinos_fed', 300);
+track(ctx, P6, 'dinos_sold', 20);
+claimSeason(ctx, P6);
+track(ctx, P6, 'eggs_hatched', 30);
+track(ctx, P6, 'dinos_sold', 15);
 
 // If any service signature above disagrees with the source, match the source —
 // tests/*.test.ts show every call shape.
@@ -489,6 +518,19 @@ const cases: Case[] = [
   // above — page 1 shows real, non-zero progress on several tracks rather than a
   // freshly-seeded zero board.
   { title: '/achievements — page 1', run: () => slash('daily', 'achievements', { name: 'achievements', user: P1 }) },
+  { title: '/season — P6, mid-season: 3 rungs claimed, a 4th freshly unlocked, the rest locked', run: () => slash('daily', 'season', { name: 'season', user: P6 }) },
+  { title: '/park view — P6, capstone crossed: earned badge field on the dashboard', run: () => {
+      // Campaign and Expeditions both clamp at their 250-point caps, pushing P6 from
+      // 410 (the state the /season case above renders) to 910 — comfortably past the
+      // 800-point capstone. stampSeasonBadge normally runs from
+      // dailyRouterHooks.postDispatch after every real dispatch; this script calls
+      // command.execute directly and never runs the router, so it's called here by
+      // hand, the same reason rollSeason above is.
+      track(ctx, P6, 'battles_fought', 1000);
+      track(ctx, P6, 'expeditions_claimed', 60);
+      stampSeasonBadge(ctx, P6);
+      return slash('park', 'park', { name: 'park', sub: 'view', user: P6 });
+    } },
   // Run last of all: sweepCapture mutates lastFedAt (every P1 dino) and lastCollectAt,
   // which several cases above read or rely on staying untouched (feed all, the breed
   // hunger gate, park:collect, every battle case's squad). Nothing below this point

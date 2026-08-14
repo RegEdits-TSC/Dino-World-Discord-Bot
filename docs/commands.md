@@ -94,6 +94,12 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/daily` | Your daily quest board, streak, and Claim button | Rolls a fresh board the first time you do anything each day (UTC); unclaimed quests expire at reset |
 | `/achievements` | Your lifetime achievement tracks, with a Claim all button | Paginated, 10 per page |
 
+## 🎖️ Season track
+
+| Command | What it does | Notes |
+| --- | --- | --- |
+| `/season` | Your season track — points from nine capped sources, eight reward rungs, and a Claim button | Crossing the 800-point capstone earns a permanent badge on your park card, whether or not you've claimed a rung. Unclaimed rungs forfeit when the season rolls over |
+
 ## 🌍 World
 
 | Command | What it does | Notes |
@@ -120,14 +126,14 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/top` | Leaderboards by rating, cash, collection, legacy standing, battle stars, or duel rating | Server or global scope. Up to five **Visit** buttons open the ranked players' parks |
+| `/top` | Leaderboards by rating, cash, collection, legacy standing, battle stars, duel rating, or season points | Server or global scope. Up to five **Visit** buttons open the ranked players' parks |
 | `/help` | How to play, across **twelve** topics | Run with no topic for a first-ten-minutes walkthrough |
 
 ## ⚙️ Server settings and admin
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/settings channel` | Set where the bot posts hatch, expedition, breeding, trade, and world-bulletin notifications | **Requires the Manage Server permission**. Doesn't cover the two proactive park alerts (escape warning, income cap) — those are always a DM, toggled per-player with `/park alerts` |
+| `/settings channel` | Set where the bot posts hatch, expedition, breeding, trade, and world-bulletin notifications | **Requires the Manage Server permission**. Doesn't cover the three proactive park alerts (escape warning, income cap, season ending) — those are always a DM, toggled per-player with `/park alerts` |
 | `/settings world-news` | Turn the daily world bulletin on or off for this server | **Requires the Manage Server permission**. Posts to the channel set by `/settings channel` — needs one configured to actually post |
 | `/admin give` | Grant resources to a player | Autocomplete: dino-species. **Bot owner only** |
 | `/admin inspect` | Dump a player's raw state | **Bot owner only** |

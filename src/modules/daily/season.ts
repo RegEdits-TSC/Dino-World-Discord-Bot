@@ -1,0 +1,231 @@
+import { and, eq, isNotNull } from 'drizzle-orm';
+import { schema } from '../../core/db/index.js';
+import type { Ctx } from '../../core/context.js';
+import { seasonIndexFor, seasonFor, seasonDay, seasonNumberOf, SEASON_DAYS, type Season } from '../../core/world.js';
+import { readStats, STATS, type StatId } from '../../core/stats.js';
+import {
+  HEAD_START_CAP, SEASON_SOURCES, SEASON_RUNGS, SEASON_CAPSTONE, pointsFrom,
+  type SeasonSource, type SeasonRung,
+} from '../../data/seasons.js';
+import { dexProgress } from '../dex/service.js';
+import type { FoodId } from '../../data/foods.js';
+
+export function currentRow(ctx: Ctx, userId: string) {
+  return ctx.db.select().from(schema.seasonProgress)
+    .where(and(
+      eq(schema.seasonProgress.userId, userId),
+      eq(schema.seasonProgress.seasonIndex, seasonIndexFor(ctx.now())),
+    )).get();
+}
+
+/**
+ * A veteran head start, paid once on a player's FIRST season ever — not on calendar
+ * season 1, so a returning player who first appears in season 5 is still credited and a
+ * genuinely new account computes to ~0 with no special case.
+ *
+ * Reads ONLY signals that are complete for every account: species_seen (credited at all
+ * three mint/transfer sites and backfilled by scripts/backfill-species-seen.ts), battle
+ * stars, and ratingHighWater. Achievement claims are excluded even though they look like
+ * the obvious fourth term — 7 of 12 ACHIEVEMENTS tracks sit on user_stats counters
+ * migration 0006 never backfilled, so including them would under-credit the oldest
+ * accounts, the same inversion legacyPoints was built across three other tables to avoid.
+ *
+ * Rating is divided by 25, not 10, so its term (max 40) stays the smallest of the three:
+ * it is the one signal a veteran can still move DURING the season, and weighting it
+ * heavier would drift toward double-counting live progress.
+ */
+export function headStartFor(ctx: Ctx, userId: string): number {
+  const user = ctx.db.select().from(schema.users)
+    .where(eq(schema.users.discordId, userId)).get();
+  if (!user) return 0;
+  const stars = ctx.db.select().from(schema.battleProgress)
+    .where(eq(schema.battleProgress.userId, userId)).all()
+    .reduce((s, r) => s + r.stars, 0);
+  const species = dexProgress(ctx, userId).seen;
+  return Math.min(HEAD_START_CAP, species + stars + Math.floor(user.ratingHighWater / 25));
+}
+
+/**
+ * Freeze this season's baselines. Lazy and idempotent, the same shape as
+ * rollDailyQuests — but WITHOUT its delete-other-keys sweep: past rows are retained
+ * because badgeAt on one is the permanent record of that season's capstone.
+ *
+ * Freezes EVERY StatId, not only the ones SEASON_SOURCES currently reads. A source added
+ * in a later season would otherwise find no baseline key, read it as 0, and credit that
+ * player's entire lifetime counter in a single tick.
+ */
+export function rollSeason(ctx: Ctx, userId: string): void {
+  const user = ctx.db.select().from(schema.users)
+    .where(eq(schema.users.discordId, userId)).get();
+  if (!user) return;
+  if (currentRow(ctx, userId)) return;
+  const now = ctx.now();
+  const seasonIndex = seasonIndexFor(now);
+  const stats = readStats(ctx, userId);
+  const baselines: Record<string, number> = {};
+  for (const stat of Object.keys(STATS) as StatId[]) baselines[stat] = stats[stat] ?? 0;
+  // First season EVER for this player, not season 1 of the calendar.
+  const isFirstEver = ctx.db.select().from(schema.seasonProgress)
+    .where(eq(schema.seasonProgress.userId, userId)).get() === undefined;
+  ctx.db.insert(schema.seasonProgress).values({
+    userId, seasonIndex, baselines,
+    headStart: isFirstEver ? headStartFor(ctx, userId) : 0,
+    createdAt: now,
+  }).onConflictDoNothing().run();
+}
+
+export interface SeasonBreakdown { source: SeasonSource; points: number }
+export interface SeasonRungView { idx: number; rung: SeasonRung; unlocked: boolean; claimed: boolean }
+export interface SeasonView {
+  index: number; number: number; season: Season;
+  dayOfSeason: number; daysLeft: number;
+  headStart: number; points: number;
+  breakdown: SeasonBreakdown[]; rungs: SeasonRungView[];
+  badgeAt: number | null;
+  // High-water mark for the rung-unlocked hint (src/modules/daily/hooks.ts): the
+  // highest rung idx already announced, -1 meaning none yet. Exposed here (rather than
+  // making hooks.ts re-query currentRow itself) for the same reason badgeAt is —
+  // one row read serves every consumer of this view.
+  hintedRung: number;
+}
+
+/** Batches with ONE readStats call — never a query per source. */
+export function seasonPoints(ctx: Ctx, userId: string): number {
+  const row = currentRow(ctx, userId);
+  if (!row) return 0;
+  const stats = readStats(ctx, userId);
+  return pointsFrom(row.baselines, stats, row.headStart).total;
+}
+
+export function seasonView(ctx: Ctx, userId: string): SeasonView | null {
+  const row = currentRow(ctx, userId);
+  if (!row) return null;
+  const now = ctx.now();
+  const stats = readStats(ctx, userId);
+  const { total: points, breakdown } = pointsFrom(row.baselines, stats, row.headStart);
+  const claimed = new Set(ctx.db.select().from(schema.seasonClaims)
+    .where(and(
+      eq(schema.seasonClaims.userId, userId),
+      eq(schema.seasonClaims.seasonIndex, row.seasonIndex),
+    )).all().map((c) => c.rung));
+  return {
+    index: row.seasonIndex,
+    number: seasonNumberOf(row.seasonIndex),
+    season: seasonFor(now),
+    dayOfSeason: seasonDay(now),
+    daysLeft: SEASON_DAYS - seasonDay(now) + 1,
+    headStart: row.headStart,
+    points,
+    breakdown,
+    rungs: SEASON_RUNGS.map((rung, idx) => ({
+      idx, rung, unlocked: points >= rung.points, claimed: claimed.has(idx),
+    })),
+    badgeAt: row.badgeAt,
+    hintedRung: row.hintedRung,
+  };
+}
+
+/**
+ * Stamp the high-water mark for the rung-unlocked hint after a successful send —
+ * mirrors the quest side's notifiedAt-after-send discipline in
+ * dailyRouterHooks.postDispatch: an errored followUp must leave the hint owed, so this
+ * is called only once the send has actually succeeded, never before.
+ *
+ * `topReady` must be monotonically increasing per caller — hooks.ts derives it as the
+ * highest unlocked-and-unclaimed rung idx, so a later call (a further rung unlocking)
+ * always passes a larger value, and a claim never lowers it (claiming doesn't touch
+ * this column at all, only seasonView's live `claimed` read does).
+ */
+export function stampSeasonHint(ctx: Ctx, userId: string, seasonIndex: number, topReady: number): void {
+  ctx.db.update(schema.seasonProgress).set({ hintedRung: topReady })
+    .where(and(
+      eq(schema.seasonProgress.userId, userId),
+      eq(schema.seasonProgress.seasonIndex, seasonIndex),
+    )).run();
+}
+
+export interface SeasonClaimResult {
+  claimed: SeasonRungView[];
+  rewards: { cash: number; shards: number; foods: Partial<Record<FoodId, number>> };
+  eggs: Array<'rare' | 'epic'>;
+}
+
+/**
+ * Pays every unlocked-unclaimed rung of the CURRENT season in one transaction with a
+ * single summed apply — the claimAchievements shape, so 'season:rungs' produces exactly
+ * one tx_log row for the cash/shard pair however many rungs it covers. An empty claim
+ * returns before the transaction: no apply, no rows, no tx_log entry.
+ *
+ * Scoped to the current season only. A rung unlocked last season and never claimed is
+ * forfeited by design, exactly as claimQuests forfeits an unclaimed board after midnight.
+ * The BADGE is not claimed here — it is stamped on crossing, by stampSeasonBadge below,
+ * precisely so it survives this forfeiture.
+ */
+export function claimSeason(ctx: Ctx, userId: string): SeasonClaimResult {
+  const empty: SeasonClaimResult = { claimed: [], rewards: { cash: 0, shards: 0, foods: {} }, eggs: [] };
+  const view = seasonView(ctx, userId);
+  if (!view) return empty;
+  const claimable = view.rungs.filter((r) => r.unlocked && !r.claimed);
+  if (!claimable.length) return empty;
+
+  const now = ctx.now();
+  const rewards = { cash: 0, shards: 0, foods: {} as Partial<Record<FoodId, number>> };
+  const eggs: Array<'rare' | 'epic'> = [];
+  for (const r of claimable) {
+    rewards.cash += r.rung.rewards.cash ?? 0;
+    rewards.shards += r.rung.rewards.shards ?? 0;
+    if (r.rung.rewards.food) {
+      const { foodId, qty } = r.rung.rewards.food;
+      rewards.foods[foodId] = (rewards.foods[foodId] ?? 0) + qty;
+    }
+    if (r.rung.rewards.eggRarity) eggs.push(r.rung.rewards.eggRarity);
+  }
+
+  ctx.db.transaction(() => {
+    ctx.economy.apply(userId, rewards, 'season:rungs', now);
+    for (const r of claimable) {
+      ctx.db.insert(schema.seasonClaims)
+        .values({ userId, seasonIndex: view.index, rung: r.idx, claimedAt: now })
+        .onConflictDoNothing().run();
+    }
+    for (const rarity of eggs) {
+      ctx.db.insert(schema.eggs).values({
+        userId, rarity, speciesId: null, source: 'quest', obtainedAt: now,
+      }).run();
+    }
+  });
+  return { claimed: claimable, rewards, eggs };
+}
+
+/**
+ * Grant the capstone badge on CROSSING. Returns true only on the call that stamps it.
+ *
+ * Called from dailyRouterHooks.postDispatch — a WRITE context. It must never be reached
+ * from seasonView, visitPayload or any leaderboard path: those run against other players'
+ * ids, and the repo rule (src/modules/park/ranks.ts's legacyRank/bumpLegacyBest split) is
+ * that a read path must never mutate a row belonging to a user who took no action.
+ *
+ * Guarded on badgeAt IS NULL so it is idempotent and the stamped instant never moves.
+ */
+export function stampSeasonBadge(ctx: Ctx, userId: string): boolean {
+  const row = currentRow(ctx, userId);
+  if (!row || row.badgeAt !== null) return false;
+  if (seasonPoints(ctx, userId) < SEASON_CAPSTONE) return false;
+  ctx.db.update(schema.seasonProgress).set({ badgeAt: ctx.now() })
+    .where(and(
+      eq(schema.seasonProgress.userId, userId),
+      eq(schema.seasonProgress.seasonIndex, row.seasonIndex),
+    )).run();
+  return true;
+}
+
+/** Pure read. Safe for another player's id — see stampSeasonBadge's note. */
+export function seasonBadges(ctx: Ctx, userId: string): { count: number; latest: number | null } {
+  const rows = ctx.db.select().from(schema.seasonProgress)
+    .where(and(
+      eq(schema.seasonProgress.userId, userId),
+      isNotNull(schema.seasonProgress.badgeAt),
+    )).all();
+  if (!rows.length) return { count: 0, latest: null };
+  return { count: rows.length, latest: Math.max(...rows.map((r) => r.seasonIndex)) };
+}

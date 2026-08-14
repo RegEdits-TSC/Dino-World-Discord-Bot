@@ -18,11 +18,12 @@ export const users = sqliteTable('users', {
   questStreak: integer('quest_streak').notNull().default(0),
   questStreakBest: integer('quest_streak_best').notNull().default(0),
   lastQuestClaimAt: integer('last_quest_claim_at_ms').notNull().default(0),
-  // Gates the two proactive alerts (escape, income cap) AND duel results — the three
-  // completion notifications stay unconditional: those were asked for by starting the
-  // hatch, the breeding, the expedition. A duel result is unrequested and arrives
-  // because someone else acted, which is exactly what this flag is for. adminReset
-  // deliberately does not restore this — see the comment in admin/service.ts.
+  // Gates the three proactive alerts (escape, income cap, season ending) AND duel
+  // results — the three completion notifications stay unconditional: those were asked
+  // for by starting the hatch, the breeding, the expedition. A duel result is
+  // unrequested and arrives because someone else acted, which is exactly what this flag
+  // is for. adminReset deliberately does not restore this — see the comment in
+  // admin/service.ts.
   alertsEnabled: integer('alerts_enabled', { mode: 'boolean' }).notNull().default(true),
   // Cosmetic prestige ladder (src/data/landmarks.ts). Deliberately read by NOTHING in
   // rating.ts, clock.ts, lotSlots or matchedKindCount: the sink's power-freedom is
@@ -265,3 +266,37 @@ export const duels = sqliteTable('duels', {
   eloDelta: integer('elo_delta').notNull(),
   createdAt: integer('created_at_ms').notNull(),
 });
+
+// The season track (spec 4d). One row per (user, season) the player was active in —
+// deliberately NOT swept the way daily_quests sweeps other dayKeys, because badgeAt on a
+// PAST row is the permanent record of that season's capstone. Twelve rows per player per
+// year.
+//
+// `baselines` freezes EVERY StatId at roll time, not only the ones the ladder currently
+// reads: a source added in a later season would otherwise find no key, read the baseline
+// as 0, and credit that player's whole lifetime counter in one tick.
+//
+// Never derive points for a PAST season — user_stats keeps growing after a season ends,
+// so a delta against an old baseline climbs forever. A past row's meaning is badgeAt.
+export const seasonProgress = sqliteTable('season_progress', {
+  userId: text('user_id').notNull().references(() => users.discordId),
+  seasonIndex: integer('season_index').notNull(),
+  baselines: text('baselines', { mode: 'json' }).$type<Record<string, number>>().notNull().default({}),
+  headStart: integer('head_start').notNull().default(0),
+  badgeAt: integer('badge_at_ms'),
+  // High-water mark for the "season reward ready" hint (src/modules/daily/hooks.ts):
+  // the highest rung idx already announced. -1 is the sentinel for "nothing announced
+  // yet" — rung indices are 0-based, so it can never collide with a real rung.
+  hintedRung: integer('hinted_rung').notNull().default(-1),
+  createdAt: integer('created_at_ms').notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.seasonIndex] })]);
+
+// Consumable rungs only. The badge is seasonProgress.badgeAt, not a row here, because it
+// is granted on crossing rather than claimed — keeping them apart is what stops an
+// unclaimed rung 8 from silently costing a permanent collectible.
+export const seasonClaims = sqliteTable('season_claims', {
+  userId: text('user_id').notNull().references(() => users.discordId),
+  seasonIndex: integer('season_index').notNull(),
+  rung: integer('rung').notNull(),
+  claimedAt: integer('claimed_at_ms').notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.seasonIndex, t.rung] })]);

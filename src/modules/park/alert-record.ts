@@ -3,7 +3,7 @@ import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { ESCAPE_WARN_MS } from '../../core/clock.js';
 
-export type AlertKind = 'escape' | 'income_cap';
+export type AlertKind = 'escape' | 'income_cap' | 'season_end';
 export type EscapeTier = 'heads_up' | 'last_call';
 
 /** Last call lead. Deliberately separate from ESCAPE_WARN_MS, which is reused as the
@@ -19,6 +19,9 @@ export const ESCAPE_TIERS: ReadonlyArray<{ tier: EscapeTier; leadMs: number }> =
 ];
 
 export const ALERT_RECORD_TTL_MS = 30 * 86_400_000;
+
+/** How long before a season ends the nudge may fire. */
+export const SEASON_END_WARN_MS = 3 * 86_400_000;
 
 /**
  * How far an alert instant may move before it counts as a genuinely new instant.

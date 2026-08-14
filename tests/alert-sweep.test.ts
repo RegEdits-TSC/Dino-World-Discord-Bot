@@ -5,6 +5,8 @@ import { schema } from '../src/core/db/index.js';
 import type { NotifyPayload, Sender } from '../src/core/notify.js';
 import { armAlertSweep, alertSweepHandler, ALERT_TIMER, SWEEP_MS } from '../src/modules/park/alert-sweep.js';
 import { ESCAPE_WARN_MS, GRACE_MS, HUNGER_DRAIN_MS } from '../src/core/clock.js';
+import { rollSeason } from '../src/modules/daily/season.js';
+import { track } from '../src/core/stats.js';
 
 function capture() {
   const dms: Array<{ userId: string; payload: NotifyPayload }> = [];
@@ -212,5 +214,63 @@ describe('alert sweep', () => {
     expect(dms).toHaveLength(2);
     await handler(timer(ctx.now()));
     expect(dms).toHaveLength(2);
+  });
+});
+
+describe('season-ending nudge', () => {
+  const DAY = 86_400_000;
+  const S1 = 690 * 30 * DAY;   // season 1, day 1 (SEASON_EPOCH is 690)
+
+  // A park with a lot and no dinos: clears the sweep's lots guard, trips neither of the
+  // two existing detectors, so the only alert that can fire here is the season one.
+  function seedQuietPark(ctx: ReturnType<typeof makeCtx>, id = 'u1') {
+    ctx.db.insert(schema.users).values({ discordId: id, lastCollectAt: 0, createdAt: 0 }).run();
+    ctx.db.insert(schema.lots)
+      .values({ userId: id, type: 'paddock', kind: 'herbivore_paddock', name: 'p' }).run();
+  }
+
+  const sweep = async (ctx: ReturnType<typeof makeCtx>, sender: Sender) =>
+    alertSweepHandler(sender, ctx)(timer(ctx.now()));
+
+  it('fires once in the final window for a player holding unclaimed rungs', async () => {
+    const ctx = makeCtx(); ctx.setNow(S1);
+    const { dms, sender } = capture();
+    seedQuietPark(ctx);
+    rollSeason(ctx, 'u1');
+    track(ctx, 'u1', 'expeditions_claimed', 10);   // 50 = rung 1, unclaimed
+    ctx.setNow(S1 + 28 * DAY);                     // 2 days left
+    await sweep(ctx, sender);
+    expect(dms).toHaveLength(1);
+    expect(JSON.stringify(dms[0].payload)).toContain('Season');
+    // A second sweep, 3 hours later — past ALERT_INSTANT_EPSILON_MS (2h) but still inside
+    // the 3-day window — must not re-send: firedForMs is the season's END instant, which
+    // depends only on view.index/SEASON_DAYS, never on `now`, so it recomputes identical
+    // on both sweeps. A now-anchored firedForMs would record values 3h apart, exceed the
+    // epsilon, and re-fire here — this is what makes that bug observable rather than
+    // masked by two sweeps sharing one unchanged `now`.
+    ctx.setNow(S1 + 28 * DAY + 3 * 3_600_000);
+    await sweep(ctx, sender);
+    expect(dms).toHaveLength(1);
+  });
+
+  it('does not fire when nothing is claimable', async () => {
+    const ctx = makeCtx(); ctx.setNow(S1);
+    const { dms, sender } = capture();
+    seedQuietPark(ctx);
+    rollSeason(ctx, 'u1');
+    ctx.setNow(S1 + 28 * DAY);
+    await sweep(ctx, sender);
+    expect(dms).toHaveLength(0);
+  });
+
+  it('does not fire outside the final window', async () => {
+    const ctx = makeCtx(); ctx.setNow(S1);
+    const { dms, sender } = capture();
+    seedQuietPark(ctx);
+    rollSeason(ctx, 'u1');
+    track(ctx, 'u1', 'expeditions_claimed', 10);
+    ctx.setNow(S1 + 10 * DAY);                     // 20 days left
+    await sweep(ctx, sender);
+    expect(dms).toHaveLength(0);
   });
 });
