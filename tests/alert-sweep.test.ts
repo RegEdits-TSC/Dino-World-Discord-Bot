@@ -242,8 +242,13 @@ describe('season-ending nudge', () => {
     await sweep(ctx, sender);
     expect(dms).toHaveLength(1);
     expect(JSON.stringify(dms[0].payload)).toContain('Season');
-    // A second sweep inside the same window must not re-send: firedForMs is the season's
-    // END instant, not `now`.
+    // A second sweep, 3 hours later — past ALERT_INSTANT_EPSILON_MS (2h) but still inside
+    // the 3-day window — must not re-send: firedForMs is the season's END instant, which
+    // depends only on view.index/SEASON_DAYS, never on `now`, so it recomputes identical
+    // on both sweeps. A now-anchored firedForMs would record values 3h apart, exceed the
+    // epsilon, and re-fire here — this is what makes that bug observable rather than
+    // masked by two sweeps sharing one unchanged `now`.
+    ctx.setNow(S1 + 28 * DAY + 3 * 3_600_000);
     await sweep(ctx, sender);
     expect(dms).toHaveLength(1);
   });

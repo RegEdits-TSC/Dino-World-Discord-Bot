@@ -72,6 +72,11 @@ export function alertSweepHandler(sender: Sender, ctx: Ctx) {
         const income = cap && !alreadySent(ctx, u.discordId, 'income_cap', 0, '', cap.capAt)
           ? cap : null;
 
+        // Known, accepted gap: this sits behind the `lots.length === 0` guard above, so a
+        // player with season points but no park at all is never nudged here, even though
+        // reaching an unlocked rung with zero lots is reachable in principle (60 shop
+        // purchases alone clears rung 1) and they can still see it on /season. Not worth
+        // restructuring the sweep to reach a player who never built a park.
         const seasonEnd = seasonEndAlertFor(seasonView(ctx, u.discordId), now);
         // firedForMs is the season's END instant, not `now` — so however many sweeps run
         // inside the window, exactly one DM goes out per season.

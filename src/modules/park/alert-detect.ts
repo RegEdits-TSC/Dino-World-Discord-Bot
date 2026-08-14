@@ -74,6 +74,8 @@ export function incomeCapAlertFor(
   return { capAt, pending, capHours: hours };
 }
 
+export interface SeasonEndAlert { endsAt: number; unclaimed: number }
+
 /**
  * A nudge is owed iff the season ends within SEASON_END_WARN_MS and at least one unlocked
  * rung is still unclaimed. Cash forfeits at rollover; this is the warning.
@@ -85,8 +87,6 @@ export function incomeCapAlertFor(
  * instant. At SWEEP_MS the result is a DM roughly every two hours for three days instead
  * of exactly one per season.
  */
-export interface SeasonEndAlert { endsAt: number; unclaimed: number }
-
 export function seasonEndAlertFor(
   view: SeasonView | null, now: number,
 ): SeasonEndAlert | null {
