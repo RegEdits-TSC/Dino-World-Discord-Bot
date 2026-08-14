@@ -83,7 +83,18 @@ export function seasonIndexFor(now: number): number {
 // recomputed, not copied.
 export const SEASON_EPOCH = 689;
 
-/** Display number only — never a storage key. Non-positive before the epoch. */
+/**
+ * Display number only — never a storage key. Non-positive before the epoch.
+ *
+ * The one place this formula is written. seasonNumberFor derives it from a timestamp;
+ * callers that already hold a season INDEX (a season_progress row, a leaderboard read)
+ * call seasonNumberOf directly rather than re-deriving `index - SEASON_EPOCH + 1` by hand
+ * — a drifted copy mislabels a permanent collectible (the season badge).
+ */
+export function seasonNumberOf(index: number): number {
+  return index - SEASON_EPOCH + 1;
+}
+
 export function seasonNumberFor(now: number): number {
-  return seasonIndexFor(now) - SEASON_EPOCH + 1;
+  return seasonNumberOf(seasonIndexFor(now));
 }

@@ -6,7 +6,7 @@ import type { LandmarkDef } from '../../data/landmarks.js';
 import type { LegacyTier } from './ranks.js';
 import { assetImage, attach } from '../../core/images.js';
 import type { Featured } from './showcase.js';
-import { SEASON_EPOCH } from '../../core/world.js';
+import { seasonNumberOf } from '../../core/world.js';
 
 const LOT_EMOJI: Record<string, string> = {
   carnivore_paddock: 'dw_lot_carnivore', herbivore_paddock: 'dw_lot_herbivore',
@@ -72,7 +72,7 @@ export function dashboardPayload(
     const { count, latest } = opts.seasonBadges;
     embed.addFields({
       name: '🎖️ Seasons',
-      value: `${count} badge${count === 1 ? '' : 's'}${latest === null ? '' : ` · latest Season ${latest - SEASON_EPOCH + 1}`}`,
+      value: `${count} badge${count === 1 ? '' : 's'}${latest === null ? '' : ` · latest Season ${seasonNumberOf(latest)}`}`,
       inline: true,
     });
   }

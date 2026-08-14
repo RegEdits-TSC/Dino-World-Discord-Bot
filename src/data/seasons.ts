@@ -1,4 +1,4 @@
-import type { StatId } from '../core/stats.js';
+import { STATS, type StatId } from '../core/stats.js';
 import type { FoodId } from './foods.js';
 
 /**
@@ -105,4 +105,30 @@ export function sourcePoints(src: SeasonSource, deltas: Partial<Record<StatId, n
     raw += Math.floor(d / e.per) * e.points;
   }
   return Math.min(src.cap, raw);
+}
+
+/**
+ * The single source of truth for turning a frozen baseline plus a live stats snapshot into
+ * a season score. Shared by seasonPoints/seasonView (src/modules/daily/season.ts) and
+ * seasonScores (src/modules/leaderboards/service.ts) — those three used to hand-duplicate
+ * this exact loop, and the duplication already produced one real divergence (the board
+ * iterating frozen baseline keys while the hub iterated the live STATS union). Needs no Ctx
+ * and no DB: callers do their own reads and pass the results in.
+ *
+ * Iterates Object.keys(STATS), not Object.keys(baselines) — a source added after a
+ * player's season rolled would otherwise find no baseline key for it and silently score 0
+ * for that source rather than crediting the full lifetime delta.
+ */
+export function pointsFrom(
+  baselines: Record<string, number>,
+  stats: Partial<Record<StatId, number>>,
+  headStart: number,
+): { total: number; breakdown: Array<{ source: SeasonSource; points: number }> } {
+  const deltas: Partial<Record<StatId, number>> = {};
+  for (const stat of Object.keys(STATS) as StatId[]) {
+    deltas[stat] = Math.max(0, (stats[stat] ?? 0) - (baselines[stat] ?? 0));
+  }
+  const breakdown = SEASON_SOURCES.map((source) => ({ source, points: sourcePoints(source, deltas) }));
+  const total = headStart + breakdown.reduce((s, b) => s + b.points, 0);
+  return { total, breakdown };
 }

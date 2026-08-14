@@ -1,10 +1,10 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
-import { seasonIndexFor, seasonFor, seasonDay, SEASON_DAYS, SEASON_EPOCH, type Season } from '../../core/world.js';
+import { seasonIndexFor, seasonFor, seasonDay, seasonNumberOf, SEASON_DAYS, type Season } from '../../core/world.js';
 import { readStats, STATS, type StatId } from '../../core/stats.js';
 import {
-  HEAD_START_CAP, SEASON_SOURCES, SEASON_RUNGS, SEASON_CAPSTONE, sourcePoints,
+  HEAD_START_CAP, SEASON_SOURCES, SEASON_RUNGS, SEASON_CAPSTONE, pointsFrom,
   type SeasonSource, type SeasonRung,
 } from '../../data/seasons.js';
 import { dexProgress } from '../dex/service.js';
@@ -89,41 +89,20 @@ export interface SeasonView {
   hintedRung: number;
 }
 
-/**
- * Deltas since this season's frozen baseline, per stat, clamped at 0.
- *
- * The invariant is real: adminReset deletes user_stats rows, so a baseline row surviving a
- * step behind its counters yields current - baseline < 0. But this clamp is not what
- * enforces it today — sourcePoints (src/data/seasons.ts) already clamps the same value per
- * stat on the way in, and both current call sites (seasonPoints, seasonView) feed every
- * value straight into sourcePoints. The clamp here is belt-and-braces for a future caller
- * of deltas() that doesn't route through sourcePoints; a mutation test confirms removing it
- * changes no behaviour against today's two call sites.
- */
-function deltas(ctx: Ctx, userId: string, baselines: Record<string, number>): Partial<Record<StatId, number>> {
-  const stats = readStats(ctx, userId);
-  const out: Partial<Record<StatId, number>> = {};
-  for (const stat of Object.keys(STATS) as StatId[]) {
-    out[stat] = Math.max(0, (stats[stat] ?? 0) - (baselines[stat] ?? 0));
-  }
-  return out;
-}
-
 /** Batches with ONE readStats call — never a query per source. */
 export function seasonPoints(ctx: Ctx, userId: string): number {
   const row = currentRow(ctx, userId);
   if (!row) return 0;
-  const d = deltas(ctx, userId, row.baselines);
-  return row.headStart + SEASON_SOURCES.reduce((s, src) => s + sourcePoints(src, d), 0);
+  const stats = readStats(ctx, userId);
+  return pointsFrom(row.baselines, stats, row.headStart).total;
 }
 
 export function seasonView(ctx: Ctx, userId: string): SeasonView | null {
   const row = currentRow(ctx, userId);
   if (!row) return null;
   const now = ctx.now();
-  const d = deltas(ctx, userId, row.baselines);
-  const breakdown = SEASON_SOURCES.map((source) => ({ source, points: sourcePoints(source, d) }));
-  const points = row.headStart + breakdown.reduce((s, b) => s + b.points, 0);
+  const stats = readStats(ctx, userId);
+  const { total: points, breakdown } = pointsFrom(row.baselines, stats, row.headStart);
   const claimed = new Set(ctx.db.select().from(schema.seasonClaims)
     .where(and(
       eq(schema.seasonClaims.userId, userId),
@@ -131,7 +110,7 @@ export function seasonView(ctx: Ctx, userId: string): SeasonView | null {
     )).all().map((c) => c.rung));
   return {
     index: row.seasonIndex,
-    number: row.seasonIndex - SEASON_EPOCH + 1,
+    number: seasonNumberOf(row.seasonIndex),
     season: seasonFor(now),
     dayOfSeason: seasonDay(now),
     daysLeft: SEASON_DAYS - seasonDay(now) + 1,
@@ -179,8 +158,8 @@ export interface SeasonClaimResult {
  *
  * Scoped to the current season only. A rung unlocked last season and never claimed is
  * forfeited by design, exactly as claimQuests forfeits an unclaimed board after midnight.
- * The BADGE is not claimed here — it is stamped on crossing (a later task) precisely
- * so it survives this forfeiture.
+ * The BADGE is not claimed here — it is stamped on crossing, by stampSeasonBadge below,
+ * precisely so it survives this forfeiture.
  */
 export function claimSeason(ctx: Ctx, userId: string): SeasonClaimResult {
   const empty: SeasonClaimResult = { claimed: [], rewards: { cash: 0, shards: 0, foods: {} }, eggs: [] };
