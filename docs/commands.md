@@ -120,7 +120,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/top` | Leaderboards by rating, cash, collection, legacy standing, battle stars, or duel rating | Server or global scope. Up to five **Visit** buttons open the ranked players' parks |
+| `/top` | Leaderboards by rating, cash, collection, legacy standing, battle stars, duel rating, or season points | Server or global scope. Up to five **Visit** buttons open the ranked players' parks |
 | `/help` | How to play, across **twelve** topics | Run with no topic for a first-ten-minutes walkthrough |
 
 ## ⚙️ Server settings and admin

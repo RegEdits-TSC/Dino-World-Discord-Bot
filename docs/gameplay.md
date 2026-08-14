@@ -904,8 +904,8 @@ falls.
 
 ### `/top`
 
-`/top` ranks players by one of six metrics — rating, cash, collection,
-legacy standing, battle stars, or duel rating — scoped to either your server or globally.
+`/top` ranks players by one of seven metrics — rating, cash, collection,
+legacy standing, battle stars, duel rating, or season points — scoped to either your server or globally.
 Left unset, scope defaults to your server when run inside a server and to
 global when run in a DM. It always shows the top 10 with no further pages;
 if you're not in that top 10, a footer line shows your own rank and value

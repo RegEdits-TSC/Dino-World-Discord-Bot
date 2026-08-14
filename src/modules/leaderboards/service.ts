@@ -1,10 +1,12 @@
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { RARITY_WEIGHT } from '../../data/progression.js';
 import { allSpecies, getSpecies } from '../../data/species/index.js';
+import { seasonIndexFor } from '../../core/world.js';
+import { SEASON_SOURCES, sourcePoints } from '../../data/seasons.js';
 
-export type Metric = 'rating' | 'cash' | 'collection' | 'legacy' | 'stars' | 'duels';
+export type Metric = 'rating' | 'cash' | 'collection' | 'legacy' | 'stars' | 'duels' | 'season';
 export type Scope = 'server' | 'global';
 
 export function collectionScore(ctx: Ctx, userId: string): number {
@@ -102,6 +104,54 @@ export function legacyScores(ctx: Ctx, userIds?: string[]): Map<string, number> 
   return out;
 }
 
+/**
+ * Live season points, the board-wide twin of seasonPoints — deliberately live, never the
+ * badge high-water. The board answers "who is ahead right now"; the park card answers
+ * "what have you ever earned". Same split legacyScores draws against legacyRankBest.
+ *
+ * Two reads, both batched: season_progress scoped to the CURRENT season index (rows are
+ * retained per season, so an unfiltered read would return a player's whole history and
+ * pick an arbitrary baseline), and user_stats once for the whole board — the per-stat
+ * filter is a JS predicate, not a second query.
+ *
+ * A player with no row for this season scores 0 and is NOT rolled here: minting a baseline
+ * from a read path would be one write per candidate on every /top render.
+ */
+export function seasonScores(ctx: Ctx, userIds?: string[]): Map<string, number> {
+  const index = seasonIndexFor(ctx.now());
+  const progressRows = userIds === undefined
+    ? ctx.db.select().from(schema.seasonProgress)
+        .where(eq(schema.seasonProgress.seasonIndex, index)).all()
+    : userIds.length
+      ? ctx.db.select().from(schema.seasonProgress)
+          .where(and(eq(schema.seasonProgress.seasonIndex, index),
+                     inArray(schema.seasonProgress.userId, userIds))).all()
+      : [];
+  const statRows = userIds === undefined
+    ? ctx.db.select().from(schema.userStats).all()
+    : userIds.length
+      ? ctx.db.select().from(schema.userStats).where(inArray(schema.userStats.userId, userIds)).all()
+      : [];
+  const byUserStats = new Map<string, Record<string, number>>();
+  for (const r of statRows) {
+    let m = byUserStats.get(r.userId);
+    if (!m) { m = {}; byUserStats.set(r.userId, m); }
+    m[r.stat] = r.value;
+  }
+  const out = new Map<string, number>();
+  for (const row of progressRows) {
+    const stats = byUserStats.get(row.userId) ?? {};
+    const deltas: Record<string, number> = {};
+    for (const [stat, base] of Object.entries(row.baselines)) {
+      deltas[stat] = Math.max(0, (stats[stat] ?? 0) - base);
+    }
+    const points = row.headStart
+      + SEASON_SOURCES.reduce((s, src) => s + sourcePoints(src, deltas), 0);
+    out.set(row.userId, points);
+  }
+  return out;
+}
+
 function scored(
   ctx: Ctx, metric: Metric, scope: Scope, guildId: string | null,
 ): Array<{ userId: string; displayName: string; value: number }> {
@@ -132,6 +182,7 @@ function scored(
   const byUser = metric === 'collection' ? collectionScores(ctx, memberIds)
     : metric === 'legacy' ? legacyScores(ctx, memberIds)
     : metric === 'stars' ? starScores(ctx, memberIds)
+    : metric === 'season' ? seasonScores(ctx, memberIds)
     : null;
   const rows = users.map((u) => ({
     userId: u.discordId,

@@ -7,6 +7,8 @@ import { topPlayers, collectionScore, playerRank, collectionScores, starScores, 
 import { leaderboardsModule } from '../src/modules/leaderboards/index.js';
 import { schema } from '../src/core/db/index.js';
 import { legacyPoints } from '../src/modules/park/ranks.js';
+import { rollSeason, seasonPoints } from '../src/modules/daily/season.js';
+import { track } from '../src/core/stats.js';
 import type { Db } from '../src/core/db/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
@@ -214,7 +216,7 @@ describe('leaderboard query cost', () => {
   // playerRank, which runs scored() a second time, and that branch flips between the two
   // fixture sizes (the caller is inside the top 10 at 3 players and outside it at 30) —
   // so a command-level count would differ for a reason that is not the N+1.
-  const cost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars' | 'duels') => {
+  const cost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars' | 'duels' | 'season') => {
     const board = boardOf(size);
     topPlayers(board.ctx, metric, 'global', null);
     return board.queries();
@@ -228,6 +230,7 @@ describe('leaderboard query cost', () => {
     ['stars', 2],         // + battle_progress
     ['collection', 2],    // + dinos
     ['legacy', 4],        // + species_seen, achievement_claims, battle_progress
+    ['season', 3],         // + season_progress, user_stats
   ] as const)('costs a fixed %s queries whatever the roster size', (metric, expected) => {
     expect(cost(3, metric)).toBe(expected);
     expect(cost(30, metric)).toBe(expected);
@@ -239,7 +242,7 @@ describe('leaderboard query cost', () => {
   // only the roster's non-member count, which is what proves the extra user_guilds read,
   // the users slice, and the metric's own source-table read(s) all stay flat whether 1 of
   // 3 or 1 of 30 players is actually in the guild.
-  const serverCost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars' | 'duels') => {
+  const serverCost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars' | 'duels' | 'season') => {
     const board = boardOf(size, 'g1');
     topPlayers(board.ctx, metric, 'server', 'g1');
     return board.queries();
@@ -251,6 +254,7 @@ describe('leaderboard query cost', () => {
     ['stars', 3],          // + battle_progress
     ['collection', 3],     // + dinos
     ['legacy', 5],         // + species_seen, achievement_claims, battle_progress
+    ['season', 4],          // + user_guilds
   ] as const)('costs a fixed %s queries for a server-scoped board whatever the roster size', (metric, expected) => {
     expect(serverCost(3, metric)).toBe(expected);
     expect(serverCost(30, metric)).toBe(expected);
@@ -271,6 +275,7 @@ describe('leaderboard query cost', () => {
     ['stars', 1],
     ['collection', 1],
     ['legacy', 1],
+    ['season', 1],          // user_guilds only — both season reads short-circuit on []
   ] as const)('costs no extra %s queries for a server-scoped board with zero guild members', (metric, expected) => {
     const board = boardOf(3, 'g1');   // seeds p0 into g1 — 'g2' below has no members at all
     expect(topPlayers(board.ctx, metric, 'server', 'g2')).toEqual([]);
@@ -327,13 +332,47 @@ describe('new metrics', () => {
     expect(embed.description).toBe('**1.** A — 2');
   });
 
-  it('offers exactly the six metrics the service knows', () => {
+  it('offers exactly the seven metrics the service knows', () => {
     const json = leaderboardsModule.commands[0].data.toJSON() as {
       options?: Array<{ name: string; choices?: Array<{ value: string }> }>;
     };
     const metric = json.options!.find((o) => o.name === 'metric')!;
     expect(metric.choices!.map((c) => c.value))
-      .toEqual(['rating', 'cash', 'collection', 'legacy', 'stars', 'duels']);
+      .toEqual(['rating', 'cash', 'collection', 'legacy', 'stars', 'duels', 'season']);
+  });
+
+  it('ranks live season points, agreeing with the /season hub', () => {
+    const base = makeCtx();
+    base.setNow(689 * 30 * 86_400_000);
+    for (const id of ['a', 'b']) getOrCreateUser(base, id, id.toUpperCase());
+    rollSeason(base, 'a'); rollSeason(base, 'b');
+    track(base, 'a', 'expeditions_claimed', 10);   // 50
+    track(base, 'b', 'expeditions_claimed', 4);    // 20
+    const rows = topPlayers(base, 'season', 'global', null);
+    expect(rows.map((r) => [r.userId, r.value])).toEqual([['a', 50], ['b', 20]]);
+    expect(rows[0].value).toBe(seasonPoints(base, 'a'));
+  });
+
+  // Rows are retained per season (badgeAt on a past row is a permanent record), so a
+  // player who has played more than one season has more than one season_progress row.
+  // seasonScores must score them off the CURRENT season's row only — an unfiltered read
+  // would return the whole history and let table order pick an arbitrary baseline. The
+  // stale row here is inserted AFTER the live one specifically so an unfiltered read
+  // (which would iterate both and last-write-wins into the output map) lets the stale
+  // headStart of 999 clobber the correct live total of 50, rather than happening to agree
+  // with it by coincidence of insertion order.
+  it('scores off the current season only, never a past row on the same player', () => {
+    const base = makeCtx();
+    base.setNow(689 * 30 * 86_400_000);
+    getOrCreateUser(base, 'a', 'A');
+    rollSeason(base, 'a');
+    track(base, 'a', 'expeditions_claimed', 10);   // 50 points this season
+    // A stale row from the previous season, inserted after the live one.
+    base.db.insert(schema.seasonProgress).values({
+      userId: 'a', seasonIndex: 688, baselines: {}, headStart: 999, createdAt: 0,
+    }).run();
+    const rows = topPlayers(base, 'season', 'global', null);
+    expect(rows.map((r) => [r.userId, r.value])).toEqual([['a', 50]]);
   });
 
   it('/top duels ranks by the stored Elo as a whole number', async () => {

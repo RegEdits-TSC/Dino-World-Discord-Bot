@@ -67,7 +67,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Offers expire after a while; offered items are locked until resolved.',
   ].join('\n') },
   ranks: { title: '🏆 Ranks', art: { kind: 'banners', name: 'leaderboards' }, body: [
-    '`/top metric:<rating|cash|collection|legacy|stars|duels> [scope]` — server or global leaderboards.',
+    '`/top metric:<rating|cash|collection|legacy|stars|duels|season> [scope]` — server or global leaderboards.',
     'Up to five Visit buttons sit under the board — click one to jump straight into that player\'s park.',
     'Rating grows with dinos, lots, and comfort; it gates expeditions, shop tiers, and Mythics.',
   ].join('\n') },
