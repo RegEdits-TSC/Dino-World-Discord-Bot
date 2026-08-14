@@ -4,7 +4,7 @@ import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { track, STATS } from '../src/core/stats.js';
-import { rollSeason, headStartFor, seasonPoints, seasonView } from '../src/modules/daily/season.js';
+import { rollSeason, headStartFor, seasonPoints, seasonView, claimSeason } from '../src/modules/daily/season.js';
 import { SEASON_DAYS } from '../src/core/world.js';
 import { SEASON_CAPSTONE } from '../src/data/seasons.js';
 
@@ -221,5 +221,92 @@ describe('seasonView', () => {
     expect(v.rungs[0].claimed).toBe(false);
     expect(v.rungs[1].unlocked).toBe(false);
     expect(v.rungs.map((r) => r.idx)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  // claimed has only ever been asserted false up to this point — nothing wrote a
+  // season_claims row yet. This is the first test to exercise the true branch, which is
+  // exactly what would catch claimSeason writing a 1-based rung against this 0-based read.
+  it('reports a claimed rung as claimed and a later one as still unclaimed', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 20);  // 100 -- rung 1 unlocked, rung 2 not
+    claimSeason(ctx, 'p');
+    const v = seasonView(ctx, 'p')!;
+    expect(v.rungs[0].claimed).toBe(true);
+    expect(v.rungs[1].claimed).toBe(false);
+  });
+});
+
+const cash = (userId = 'p') => ctx.db.select().from(schema.users)
+  .where(eq(schema.users.discordId, userId)).get()!.cash;
+const claimRows = () => ctx.db.select().from(schema.seasonClaims)
+  .where(eq(schema.seasonClaims.userId, 'p')).all();
+
+describe('claimSeason', () => {
+  it('pays nothing and writes nothing when no rung is unlocked', () => {
+    rollSeason(ctx, 'p');
+    const before = cash();
+    const res = claimSeason(ctx, 'p');
+    expect(res.claimed).toEqual([]);
+    expect(res.rewards.cash).toBe(0);
+    expect(cash()).toBe(before);
+    expect(claimRows()).toHaveLength(0);
+    expect(ctx.db.select().from(schema.txLog).all()).toHaveLength(0);
+  });
+
+  it('pays every unlocked rung at once and records each', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 45);   // 225 = rungs 1,2,3
+    const before = cash();
+    const res = claimSeason(ctx, 'p');
+    expect(res.claimed.map((c) => c.idx)).toEqual([0, 1, 2]);
+    expect(res.rewards.cash).toBe(3_000 + 6_000 + 8_000);
+    expect(res.rewards.shards).toBe(15);
+    expect(res.rewards.foods.royal_greens).toBe(20);
+    expect(cash()).toBe(before + 17_000);
+    expect(claimRows().map((r) => r.rung).sort()).toEqual([0, 1, 2]);
+  });
+
+  it('is idempotent — a second claim pays nothing', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 10);   // 50 = rung 1
+    claimSeason(ctx, 'p');
+    const after = cash();
+    const res = claimSeason(ctx, 'p');
+    expect(res.claimed).toEqual([]);
+    expect(cash()).toBe(after);
+    expect(claimRows()).toHaveLength(1);
+  });
+
+  it('grants egg rungs as real egg rows', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 50);   // 250 -> not yet rung 4
+    track(ctx, 'p', 'battles_fought', 400);       // +100 = 350 = rung 4
+    const res = claimSeason(ctx, 'p');
+    expect(res.eggs).toEqual(['rare']);
+    const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, 'p')).all();
+    expect(eggs).toHaveLength(1);
+    expect(eggs[0].rarity).toBe('rare');
+    expect(eggs[0].source).toBe('quest');
+  });
+
+  it('writes exactly one tx_log row for the cash and shard pair', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 45);
+    claimSeason(ctx, 'p');
+    const logs = ctx.db.select().from(schema.txLog).all()
+      .filter((r) => r.reason === 'season:rungs' && r.foodId === null);
+    expect(logs).toHaveLength(1);
+    expect(logs[0].cashDelta).toBe(17_000);
+  });
+
+  // Forfeiture: rungs belong to the season they were unlocked in.
+  it('cannot claim a previous season’s rungs after rollover', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 10);   // 50 = rung 1, never claimed
+    ctx.setNow(S2);
+    rollSeason(ctx, 'p');
+    const before = cash();
+    expect(claimSeason(ctx, 'p').claimed).toEqual([]);
+    expect(cash()).toBe(before);
   });
 });

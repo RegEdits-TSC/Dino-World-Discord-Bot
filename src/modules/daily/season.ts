@@ -8,6 +8,7 @@ import {
   type SeasonSource, type SeasonRung,
 } from '../../data/seasons.js';
 import { dexProgress } from '../dex/service.js';
+import type { FoodId } from '../../data/foods.js';
 
 export function currentRow(ctx: Ctx, userId: string) {
   return ctx.db.select().from(schema.seasonProgress)
@@ -137,4 +138,57 @@ export function seasonView(ctx: Ctx, userId: string): SeasonView | null {
     })),
     badgeAt: row.badgeAt,
   };
+}
+
+export interface SeasonClaimResult {
+  claimed: SeasonRungView[];
+  rewards: { cash: number; shards: number; foods: Partial<Record<FoodId, number>> };
+  eggs: Array<'rare' | 'epic'>;
+}
+
+/**
+ * Pays every unlocked-unclaimed rung of the CURRENT season in one transaction with a
+ * single summed apply — the claimAchievements shape, so 'season:rungs' produces exactly
+ * one tx_log row for the cash/shard pair however many rungs it covers. An empty claim
+ * returns before the transaction: no apply, no rows, no tx_log entry.
+ *
+ * Scoped to the current season only. A rung unlocked last season and never claimed is
+ * forfeited by design, exactly as claimQuests forfeits an unclaimed board after midnight.
+ * The BADGE is not claimed here — it is stamped on crossing (a later task) precisely
+ * so it survives this forfeiture.
+ */
+export function claimSeason(ctx: Ctx, userId: string): SeasonClaimResult {
+  const empty: SeasonClaimResult = { claimed: [], rewards: { cash: 0, shards: 0, foods: {} }, eggs: [] };
+  const view = seasonView(ctx, userId);
+  if (!view) return empty;
+  const claimable = view.rungs.filter((r) => r.unlocked && !r.claimed);
+  if (!claimable.length) return empty;
+
+  const now = ctx.now();
+  const rewards = { cash: 0, shards: 0, foods: {} as Partial<Record<FoodId, number>> };
+  const eggs: Array<'rare' | 'epic'> = [];
+  for (const r of claimable) {
+    rewards.cash += r.rung.rewards.cash ?? 0;
+    rewards.shards += r.rung.rewards.shards ?? 0;
+    if (r.rung.rewards.food) {
+      const { foodId, qty } = r.rung.rewards.food;
+      rewards.foods[foodId] = (rewards.foods[foodId] ?? 0) + qty;
+    }
+    if (r.rung.rewards.eggRarity) eggs.push(r.rung.rewards.eggRarity);
+  }
+
+  ctx.db.transaction(() => {
+    ctx.economy.apply(userId, rewards, 'season:rungs', now);
+    for (const r of claimable) {
+      ctx.db.insert(schema.seasonClaims)
+        .values({ userId, seasonIndex: view.index, rung: r.idx, claimedAt: now })
+        .onConflictDoNothing().run();
+    }
+    for (const rarity of eggs) {
+      ctx.db.insert(schema.eggs).values({
+        userId, rarity, speciesId: null, source: 'quest', obtainedAt: now,
+      }).run();
+    }
+  });
+  return { claimed: claimable, rewards, eggs };
 }
