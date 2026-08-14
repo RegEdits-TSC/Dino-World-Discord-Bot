@@ -4,6 +4,9 @@ import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
 import { rollDailyQuests, claimQuests, claimAchievements } from './service.js';
 import { hubPayload, claimPayload, achievementsPayload, claimAllPayload } from './embeds.js';
+import { rollSeason, seasonView, claimSeason } from './season.js';
+import { seasonPayload, seasonClaimPayload } from './season-embeds.js';
+import { seasonIndexFor } from '../../core/world.js';
 
 export const dailyModule: ModuleManifest = {
   name: 'daily',
@@ -22,6 +25,14 @@ export const dailyModule: ModuleManifest = {
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         await i.reply(achievementsPayload(ctx, i.user.id, 1));
+      },
+    },
+    {
+      data: new SlashCommandBuilder().setName('season').setDescription('Your season track, rewards, and badge'),
+      async execute(ctx, i) {
+        getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        rollSeason(ctx, i.user.id);
+        await i.reply(seasonPayload(seasonView(ctx, i.user.id)!, i.user.id));
       },
     },
   ],
@@ -62,6 +73,29 @@ export const dailyModule: ModuleManifest = {
           return;
         }
         await i.reply({ ...claimAllPayload(result), flags: MessageFlags.Ephemeral });
+      },
+    },
+    {
+      prefix: 'season',
+      async execute(ctx, i) {
+        // Same owner-lock discipline as 'daily' and 'ach', plus a season check: the
+        // customId carries the season it was minted for, and a card left open across a
+        // rollover must not pay this season's rungs against last season's ladder.
+        const [, action, uid, indexStr] = i.customId.split(':');
+        if (action !== 'claim') { await i.deferUpdate(); return; }
+        if (i.user.id !== uid) { await i.reply({ content: 'Not your season track.', flags: MessageFlags.Ephemeral }); return; }
+        const offered = Number(indexStr);
+        if (!Number.isInteger(offered) || offered !== seasonIndexFor(ctx.now())) {
+          await i.reply({ content: 'That season has ended — run **/season** for the current one.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        rollSeason(ctx, i.user.id);
+        const result = claimSeason(ctx, i.user.id);
+        if (!result.claimed.length) {
+          await i.reply({ content: 'Nothing to claim yet — keep playing.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        await i.reply({ ...seasonClaimPayload(result), flags: MessageFlags.Ephemeral });
       },
     },
   ],

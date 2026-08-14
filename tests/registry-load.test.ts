@@ -7,6 +7,6 @@ describe('full module registry', () => {
     const flags = Object.fromEntries(ALL_MODULES.map((m) => [m.name, true]));
     const r = new ModuleRegistry(ALL_MODULES, flags);
     expect(ALL_MODULES).toHaveLength(16);
-    expect(r.commands().length).toBe(27);
+    expect(r.commands().length).toBe(28);
   });
 });

@@ -351,7 +351,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    ```bash
    npm run deploy-commands
    ```
-   Should report `27` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, leaderboards, admin, help, battles, genelab, daily, world, dex, and duels modules combined).
+   Should report `28` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, leaderboards, admin, help, battles, genelab, daily, world, dex, and duels modules combined).
 
 2. **Start the bot**:
    ```bash
