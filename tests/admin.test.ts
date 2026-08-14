@@ -21,6 +21,7 @@ import { QUESTS } from '../src/data/quests.js';
 import { rollDailyQuests, claimQuests } from '../src/modules/daily/service.js';
 import { recordSpeciesSeen, seenSpecies, firstSeenAt } from '../src/core/species-seen.js';
 import { cooldownUntil } from '../src/modules/duels/service.js';
+import { rollSeason } from '../src/modules/daily/season.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });   // config.ownerId === 'owner'
@@ -516,4 +517,38 @@ it('fast-forward shifts the duel log so a pair cooldown can lapse', () => {
   expect(cooldownUntil(ctx, 'u1', 'u2')).not.toBeNull();
   adminFastForward(ctx, 'u1', DUEL_PAIR_COOLDOWN_MS / 3_600_000 + 1);
   expect(cooldownUntil(ctx, 'u1', 'u2')).toBeNull();
+});
+
+it('wipes every season row and claim, including past seasons, and leaves other users alone', () => {
+  ctx.setNow(689 * 30 * 86_400_000);
+  getOrCreateUser(ctx, 'p', 'P');
+  getOrCreateUser(ctx, 'other', 'O');
+  for (const uid of ['p', 'other']) {
+    ctx.db.insert(schema.seasonProgress)
+      .values({ userId: uid, seasonIndex: 688, baselines: {}, headStart: 0, badgeAt: 1, createdAt: 0 }).run();
+    ctx.db.insert(schema.seasonProgress)
+      .values({ userId: uid, seasonIndex: 689, baselines: {}, headStart: 0, createdAt: 0 }).run();
+    ctx.db.insert(schema.seasonClaims)
+      .values({ userId: uid, seasonIndex: 689, rung: 0, claimedAt: 0 }).run();
+  }
+  adminReset(ctx, 'p');
+  expect(ctx.db.select().from(schema.seasonProgress)
+    .where(eq(schema.seasonProgress.userId, 'p')).all()).toHaveLength(0);
+  expect(ctx.db.select().from(schema.seasonClaims)
+    .where(eq(schema.seasonClaims.userId, 'p')).all()).toHaveLength(0);
+  expect(ctx.db.select().from(schema.seasonProgress)
+    .where(eq(schema.seasonProgress.userId, 'other')).all()).toHaveLength(2);
+});
+
+it('adminFastForward leaves season rows untouched — it cannot move the UTC calendar', () => {
+  ctx.setNow(689 * 30 * 86_400_000);
+  getOrCreateUser(ctx, 'p', 'P');
+  rollSeason(ctx, 'p');
+  const before = ctx.db.select().from(schema.seasonProgress)
+    .where(eq(schema.seasonProgress.userId, 'p')).get()!;
+  adminFastForward(ctx, 'p', 48);
+  const after = ctx.db.select().from(schema.seasonProgress)
+    .where(eq(schema.seasonProgress.userId, 'p')).get()!;
+  expect(after.seasonIndex).toBe(before.seasonIndex);
+  expect(after.createdAt).toBe(before.createdAt);
 });

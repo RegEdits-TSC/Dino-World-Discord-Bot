@@ -67,6 +67,13 @@ export function adminReset(ctx: Ctx, targetId: string): void {
     ctx.db.delete(schema.userStats).where(eq(schema.userStats.userId, targetId)).run();
     ctx.db.delete(schema.dailyQuests).where(eq(schema.dailyQuests.userId, targetId)).run();
     ctx.db.delete(schema.achievementClaims).where(eq(schema.achievementClaims.userId, targetId)).run();
+    // Same rule again, and it bites harder here: these tables span EVERY season, not just
+    // the current one, so a scoped delete would leave a wiped account holding badges. That
+    // destroys the badge collection, which is the correct reading of a reset and is worth
+    // stating out loud — badgeAt is otherwise the one value in this feature nothing else
+    // can ever clear.
+    ctx.db.delete(schema.seasonProgress).where(eq(schema.seasonProgress.userId, targetId)).run();
+    ctx.db.delete(schema.seasonClaims).where(eq(schema.seasonClaims.userId, targetId)).run();
     // Same rule the breedings and user_stats fixes taught: reset must delete from every
     // table the feature reads. A surviving alerts_sent row would suppress the first
     // alert a "fresh" account earns.
@@ -142,6 +149,9 @@ export function adminFastForward(ctx: Ctx, targetId: string, hours: number): num
     // daily_quests.dayKey is deliberately NOT shifted: fast-forward cannot move the UTC
     // calendar, so today's board stays today's. Shifting the claim anchor is what lets a
     // streak gap or continuation be simulated.
+    // season_progress/season_claims are deliberately NOT touched, for the same reason:
+    // seasonIndex derives from the UTC calendar, which fast-forward cannot move. There is
+    // no season streak, so there is no claim anchor worth shifting either.
     ctx.db.update(schema.users)
       .set({ lastQuestClaimAt: sql`${schema.users.lastQuestClaimAt} - ${shift}` })
       .where(and(eq(schema.users.discordId, targetId), gt(schema.users.lastQuestClaimAt, 0))).run();
