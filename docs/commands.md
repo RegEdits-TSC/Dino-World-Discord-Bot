@@ -94,6 +94,12 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/daily` | Your daily quest board, streak, and Claim button | Rolls a fresh board the first time you do anything each day (UTC); unclaimed quests expire at reset |
 | `/achievements` | Your lifetime achievement tracks, with a Claim all button | Paginated, 10 per page |
 
+## 🎖️ Season track
+
+| Command | What it does | Notes |
+| --- | --- | --- |
+| `/season` | Your season track — points from nine capped sources, eight reward rungs, and a Claim button | Crossing the 800-point capstone earns a permanent badge on your park card, whether or not you've claimed a rung. Unclaimed rungs forfeit when the season rolls over |
+
 ## 🌍 World
 
 | Command | What it does | Notes |

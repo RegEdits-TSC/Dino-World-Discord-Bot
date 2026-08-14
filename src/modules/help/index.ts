@@ -93,6 +93,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Claiming on consecutive days builds a streak — milestones at 3, 7, 14 days, then every 30 days after, pay a bonus chest of cash, shards, or an egg.',
     'Breaking your streak resets it to 1. Chests only ever pay once, the first time a streak passes a new personal-best milestone.',
     '`/achievements` — lifetime progress across 12 tracks, each with 4 tiers (bronze/silver/gold/platinum) paying cash and shards as you cross them.',
+    '`/season` — the current 30-day season track: points from nine capped sources, eight reward rungs, and a Claim button. Crossing the 800-point capstone earns a permanent badge on your park card; unclaimed rungs forfeit at rollover, the badge never does.',
   ].join('\n') },
   duel: { title: '⚔️ Duels', body: [
     'Duels are free exhibition fights against another player. They cost no energy and pay no cash, shards or XP — the only thing at stake is your duel rating.',

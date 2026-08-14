@@ -1383,7 +1383,102 @@ the page shows a medal for every tier you've already claimed and a progress
 bar toward the next one you haven't. **Claim all** pays every claimable tier
 across every track in one reply.
 
-## 18. The world
+## 18. The season track
+
+Alongside the daily quest board there's a longer loop riding the same
+30-day cycle that names each season (see The world, below): `/season` shows
+your progress, a ladder of eight reward rungs, and — past the top rung — a
+permanent collectible badge.
+
+Seasons are numbered, not named, and the number never resets or moves
+backwards. The first season the bot ever ran is Season 1, and every 30 days
+ticks the count up by one, forever, independent of which of the three
+cosmetic flavours (Wet, Dry, Cold) happens to be showing that month — two
+seasons that share a flavour can be years apart.
+
+### Where points come from
+
+Points are earned from nine capped sources — things you're probably already
+doing, each worth points only up to its own ceiling:
+
+| Source | What raises it | Cap |
+| --- | --- | --- |
+| Campaign | Fighting a battle stage, win or lose — 1 point per 4 fights | 250 |
+| Expeditions | Claiming a finished expedition — 5 points each | 250 |
+| Hatchery | Hatching an egg — 3 points each | 225 |
+| Gene Lab | Claiming a finished breeding pairing — 5 points each | 180 |
+| Dino care | Feeding a dino — 1 point per 3 feeds | 120 |
+| Sales | Selling a dino — 3 points each | 100 |
+| Splicing | Splicing a trait — 15 points each | 90 |
+| Commerce | A completed trade (15 points) or a shop purchase (1 point) | 60 |
+| Park collections | Pressing Collect on your park, any amount — 1 point each | 60 |
+
+That's 1,335 points available against an 800-point capstone, so you can clear
+the whole track without maxing a single source — and no one source can carry
+you there alone; even the two largest, Campaign and Expeditions, top out
+under a third of the capstone on their own. **The cap on each source is what
+makes that true.** Without one, the cheapest thing to repeat (feeding, which
+costs almost nothing) would be the only source worth working, turning the
+season into one chore instead of a reason to touch the rest of the game.
+With a cap, every source saturates early and stops mattering, so reaching
+the capstone means playing broadly rather than grinding one thing narrowly.
+
+### The rungs
+
+| Rung | Points | Reward |
+| --- | --- | --- |
+| 1 | 50 | 3,000 cash |
+| 2 | 125 | 6,000 cash + 20 Royal Greens |
+| 3 | 225 | 8,000 cash + 15 shards |
+| 4 | 350 | 10,000 cash + 1 rare egg |
+| 5 | 475 | 12,000 cash + 25 shards |
+| 6 | 600 | 12,000 cash + 40 Prime Steak |
+| 7 | 700 | 1 epic egg + 30 shards |
+| 8 (capstone) | 800 | 9,000 cash + 40 shards |
+
+A rung unlocks the moment your points cross it and stays claimable for the
+rest of the season. `/season`'s **Claim** button pays every unlocked rung
+you haven't claimed yet, all at once — nothing is paid out until you press
+it. Over a full season the ladder pays 60,000 cash and 110 shards in total.
+
+**Unclaimed rungs forfeit when the season rolls over — the badge does not.**
+Exactly like an unclaimed daily quest board, any rung you unlocked but never
+claimed is gone once the next season starts, no grace period; `/season`
+shows a countdown so the deadline is never a surprise. Crossing the capstone
+works differently: the instant your points reach 800 you're awarded the
+badge outright, whether or not you ever press Claim, and it's yours
+permanently. Cash, shards, food and eggs all come back next season; the
+badge does not, so it was never made to answer to the same deadline. Your
+park card shows how many badges you've earned and the most recent one, once
+you have at least one.
+
+### The veteran head start
+
+The very first season you ever play — not necessarily calendar Season 1,
+whichever one your account first has a row for — starts with a head start
+added to your points before you've done anything that season: the number of
+species you've discovered, plus your battle stars, plus your best-ever park
+rating divided by 25, capped at 200 in total. A brand new account computes to
+roughly zero; a long-time player can walk in already past the third rung.
+It's paid once, frozen at that moment, and never recalculated — a veteran's
+head start doesn't grow as later seasons pass, and it isn't paid again.
+
+### Pacing
+
+Playing a normal mix across the nine sources clears the 800-point capstone
+around day 21 of the 30-day season, with real slack left over. Skip the Gene
+Lab entirely — no breeding, no splicing — and you can still clear it, just
+later, around day 28: two days of margin before the season ends, the
+tightest path in the ladder. Even occasional play isn't shut out: ten days
+of ordinary play reaches roughly 418 points, comfortably mid-ladder.
+
+The five sources with no cooldown or facility gate at all — Dino care,
+Sales, Splicing, Commerce, and Park collections — cap out at 430 points
+combined, deliberately just over half the capstone: even a player who spent
+their very first day maxing every one of those still can't bank more than
+about 54% of the season in one sitting.
+
+## 19. The world
 
 Every day, the whole game shares one randomly-rolled world event and one of
 three cosmetic seasons. Both are derived fresh from the current UTC date —
@@ -1435,10 +1530,14 @@ that hasn't happened yet.
 
 Alongside the daily event, the calendar also cycles through three cosmetic
 seasons — Wet, Dry, Cold — 30 days each, in that fixed order, repeating
-indefinitely. Seasons are purely cosmetic: `/world` names the current
-season and which day of the 30 you're on. **A season carries no gameplay
-modifier of any kind** — it never interacts with the day's event, your
-income, prices, or anything else in this guide.
+indefinitely. `/world` names the current season and which day of the 30
+you're on, and the park map's ground art re-tints to match. **A season still
+carries no gameplay modifier of any kind** — it never interacts with the
+day's event, your income, prices, or anything else in this guide. What
+changed is that the cycle is no longer purely decorative: these same 30-day
+boundaries also drive the season track's numbering and rollover (see The
+season track, above) — but that's a rewards ladder layered on top of the
+cycle, never a multiplier riding inside it.
 
 ### `/world`
 
@@ -1447,7 +1546,7 @@ language, the current season and day, a countdown to when the event turns
 over (UTC midnight), and tomorrow's event — by name only, so you know
 what's coming without the game handing you its exact numbers early.
 
-## 19. Duels
+## 20. Duels
 
 Duels are free exhibition fights between two players. They cost no energy,
 and they pay no cash, shards, food or battle XP — the only thing that moves

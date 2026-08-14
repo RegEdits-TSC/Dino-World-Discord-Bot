@@ -868,10 +868,23 @@
   `.select()` queries per metric, independent of roster size: 1 for cash/rating (the
   candidate scan alone), 2 for stars (+ `battle_progress`), 2 for collection
   (+ `dinos`), 4 for legacy (+ `species_seen`, `achievement_claims`,
-  `battle_progress` via `starScores`) — one more each for a server-scoped board, which
-  reads `user_guilds` first to resolve `memberIds`. Every one of those extra reads is
+  `battle_progress` via `starScores`), 3 for season (+ `season_progress` scoped to the
+  CURRENT `seasonIndex`, + `user_stats` for the whole board) — one more each for a
+  server-scoped board, which reads `user_guilds` first to resolve `memberIds` (season
+  server-scoped is 4; a guild with zero registered members costs exactly 1 — the
+  `user_guilds` read alone, since both of `seasonScores`' reads short-circuit on an
+  empty `memberIds` array without touching the DB). Every one of those extra reads is
   ONE query per source TABLE, grouped in JS, never one per candidate — the batch-per-
   user rule `src/core/locks.ts` already established, widened to batch-per-board.
+  `seasonScores` (the live board-wide twin of `seasonPoints`, never the badge
+  high-water — the same `legacyScores`/`legacyRankBest` split below, drawn for the
+  same reason) iterates `Object.keys(STATS)` when computing each row's deltas, NOT
+  `Object.entries(row.baselines)` — the two agree today, but only the former survives
+  a new `StatId` shipping after live rows already exist; the latter would silently
+  under-report that player against their own `/season` hub, which reads baselines the
+  same STATS-keyed way. A player with no `season_progress` row for the current index
+  scores 0 and is deliberately NOT rolled from this read path — minting a baseline
+  from `/top` would be one write per candidate on every board render.
   Deliberately not `GROUP BY`: nothing in `src/` has ever used `groupBy`/`count`/`sum`,
   every read here is `.all()` plus a JS reduce, and SQL `SUM()` over an empty row set
   returns NULL where `.reduce(…, 0)` returns 0 — silently turning a fresh account's
@@ -953,3 +966,94 @@
   work (`/park motto`, `/park feature`) before each remembered to add a line. Adding a
   new HELP_TOPICS **key** changes the `/help` builder's own choices and forces
   `npm run deploy-commands`; adding a line to an EXISTING topic's body does not.
+- The season track (`/season`, `src/modules/daily/season.ts` + `src/data/seasons.ts`)
+  rides the SAME 30-day cycle `seasonFor`/`seasonDay` already drove — `seasonFor`'s own
+  comment in `src/core/world.ts` now says it plainly: the cycle is no longer purely
+  cosmetic, but **a season still carries NO modifiers of any kind**, so every
+  season×event stacking question stays exactly as dead as it always was — a reward
+  rung is not a multiplier. `SEASON_EPOCH` (`src/core/world.ts`, currently **689**) is a
+  WRITTEN LITERAL, never derived at runtime: `seasonNumberFor` computes the DISPLAY
+  number as `seasonIndex - SEASON_EPOCH + 1`, so moving this constant retroactively
+  renumbers every badge a player has already earned. It must be recomputed by hand (not
+  copied forward) if this ships after 2026-09-04 (`dayIndex` 20,700) — the comment above
+  it names that boundary for exactly this reason.
+  Two migrations, not one: **0015** (`season_progress` + `season_claims`, both tables,
+  no column drop) and **0016** (`season_progress.hinted_rung`, added in a later task for
+  one-shot hint suppression — see below). Both apply on the same boot.
+  `season_progress` rows are RETAINED per season rather than swept on rollover, unlike
+  `rollDailyQuests`'s delete-every-other-key sweep — because `badgeAt` on a PAST row is
+  the permanent record of that season's capstone, and a sweep would destroy the
+  collection it exists to record. The flip side is a real trap: points must NEVER be
+  derived for a past season's row. `user_stats` keeps growing after a season ends, so a
+  delta computed against an old frozen baseline climbs forever — `currentRow`/
+  `seasonView`/`seasonPoints` all read ONLY the row matching `seasonIndexFor(ctx.now())`,
+  never an arbitrary past one, and that restriction is the whole reason it's safe to
+  retain the rows at all.
+  The capstone badge is stamped from `dailyRouterHooks.postDispatch` — a WRITE
+  context — and NEVER from a read path: `visitPayload`, `topPlayers`/`seasonScores` and
+  `/park view user:<other>` must all stay pure reads of `badgeAt`, the same
+  `legacyRank`/`bumpLegacyBest` split `src/modules/park/ranks.ts` already established.
+  `stampSeasonBadge` is guarded on `badgeAt IS NULL` (idempotent, stamped instant never
+  moves) and runs BEFORE the hint-exemption `return`s in `postDispatch` — a player who
+  crosses the capstone while running an exempt command like `/season` itself must still
+  have it recorded, only the hint TEXT is suppressed for exempt commands/prefixes.
+  Because `postDispatch`/`preDispatch` are ROUTER hooks, anything that calls a command's
+  `execute` directly — `scripts/test-live.ts`'s `slash()`/`button()` helpers do exactly
+  this, bypassing `routeInteraction` entirely — never triggers `rollSeason` or
+  `stampSeasonBadge` on its own. `test-live.ts` already calls `rollDailyQuests` by hand
+  for the same reason; any season-related gallery case needs `rollSeason(ctx, userId)`
+  called by hand BEFORE the `/season` command runs (its `seasonView(ctx, ...)!` asserts
+  non-null and throws if the row was never rolled) and `stampSeasonBadge(ctx, userId)`
+  called by hand to put a badge on a park card — there is no router in this script to do
+  it for you.
+  The day-1 bankable pool — the five sources with no facility or cooldown gate at all
+  (care 120 + sales 100 + splicing 90 + commerce 60 + collections 60 = **430**) — is the
+  real guard against maxing the ladder in a single sitting: 430/800 = 0.5375, just over
+  half the 800 capstone, with `tests/season-balance.test.ts` pinning both the exact sum
+  and the `< 0.55` ratio ceiling. That ratio is the tightest static margin in the whole
+  balance suite (0.0125 of headroom) — a future cap increase on ANY of those five
+  sources, even by 10 points, breaches it.
+  **Genuine finding, not a defect: 7 of the 9 source caps never bind for the moderate
+  profile inside a 30-day season — only `splicing` and `collections` do.**
+  `genelab`'s 180-point cap, for example, is unreachable by the moderate profile inside
+  the season window at all: its raw score tops out at 150 (`floor(30 days) * 5`), and
+  the cap only becomes binding at day 36, six days past the season's own horizon. That
+  matches the file's own stated design — caps exist to contain the GRINDER, not the
+  baseline player — so don't "fix" a cap that looks slack without checking whether it
+  was ever meant to bind for anyone but a player deliberately maxing that one source.
+  **Measured economy, superseding the design spec's hand-computed hypotheses** (task 15
+  independently re-derived every figure from live `seasons.ts` content, no tuning): the
+  moderate profile clears the 800 capstone on day **21** (808 points, not the spec's
+  hypothesised day 21.4); a Gene-Lab-less profile clears on day **28** (821 points, not
+  day 27.3) — real slack before the 30-day boundary is **2 days**, not 2.7, making it the
+  tightest of the four balance gates; a player who only logs in for 10 days reaches
+  **418** points, landing between rung 4 (350) and rung 5 (475).
+  The rung-unlocked hint is a HUMAN RULING, not the plan's original design: the plan's
+  prose said to persist "already hinted" but its own code snippet implemented no stamp,
+  which would have re-fired the hint on every non-exempt dispatch for up to 30 days. The
+  shipped design hints ONCE per newly-unlocked rung via `season_progress.hinted_rung`
+  (migration 0016, default -1, a HIGH-WATER MARK compared with `>`, not an
+  unlocked-and-unclaimed existence check) — mirrors the quest side's
+  notifiedAt-after-send discipline exactly: stamped only after the combined followUp in
+  `postDispatch` actually succeeds, never before, so an errored send leaves the hint
+  owed rather than silently consuming it. Claiming a rung never lowers `hinted_rung`
+  (`claimSeason` doesn't touch the column), so a claim quietly retires that rung's hint
+  without re-arming it; only a FURTHER rung unlocking (`topReady` climbing past the
+  stored value) fires again, and a new season's fresh row resets to -1 on its own.
+  `season:claim:<uid>:<seasonIndex>` carries the season index in the customId — the
+  `park:landmark:buy` stale-button lesson applied before it needed relearning, since a
+  `/season` card left open across a rollover would otherwise pay this season's rungs
+  against last season's ladder. Validated strictly after the owner check and before any
+  read or write; `!Number.isInteger(offered)` is provably redundant (`seasonIndexFor`
+  always returns an integer, so the bare `!==` alone rejects every non-integer target)
+  but is kept deliberately as explicit boundary validation on client-supplied input.
+  The season-ending nudge rides the EXISTING 15-minute `alert_sweep` timer as a new
+  alert kind, firing only to players holding unclaimed unlocked rungs. `firedForMs` is
+  anchored to the season's true END instant (`(index + 1) * SEASON_DAYS * DAY_MS`), not
+  `now + daysLeft * DAY` — the pre-flight scan on this plan caught that the naive
+  version drifts with time-of-day past the sweep's own epsilon and would have DM'd
+  roughly every 2 hours for the last 3 days of a season instead of once. It inherits the
+  sweep's existing `lots.length === 0` guard, so a player with season points but zero
+  lots is never nudged — reachable in principle (60 shop purchases alone clears rung 1)
+  but accepted rather than special-cased, since that player still sees the rung on
+  `/season` itself.
