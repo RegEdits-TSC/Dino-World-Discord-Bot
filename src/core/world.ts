@@ -59,13 +59,31 @@ export type Season = 'wet' | 'dry' | 'cold';
 const SEASONS: Season[] = ['wet', 'dry', 'cold'];
 export const SEASON_DAYS = 30;
 
-// Seasons are COSMETIC. They re-tint the park map ground and name a line on
-// /world, and carry no modifier at all — which is what removes every
-// season×event stacking question. Adding modifiers later is purely additive.
+// Seasons carry NO MODIFIERS — that is what removes every season×event stacking
+// question, and it stays true now that the season track (spec 4d) pays rewards:
+// a reward is not a modifier. What changed is that the cycle is no longer purely
+// cosmetic — season_progress/season_claims key off seasonIndexFor below.
 export function seasonFor(now: number): Season {
   return SEASONS[Math.floor(dayIndex(now) / SEASON_DAYS) % SEASONS.length];
 }
 
 export function seasonDay(now: number): number {
   return (dayIndex(now) % SEASON_DAYS) + 1;
+}
+
+/** The absolute season index — the STORAGE key. Never clamped, never offset. */
+export function seasonIndexFor(now: number): number {
+  return Math.floor(dayIndex(now) / SEASON_DAYS);
+}
+
+// dayIndex counts from the Unix epoch, so the live cycle is already ~season 689.
+// This constant is the index live on ship day (2026-08-14, dayIndex 20,679) and is a
+// WRITTEN LITERAL: deriving it at runtime, or moving it later, renumbers every badge
+// already earned. If this ships after 2026-09-04 (dayIndex 20,700) it must be
+// recomputed, not copied.
+export const SEASON_EPOCH = 689;
+
+/** Display number only — never a storage key. Non-positive before the epoch. */
+export function seasonNumberFor(now: number): number {
+  return seasonIndexFor(now) - SEASON_EPOCH + 1;
 }
