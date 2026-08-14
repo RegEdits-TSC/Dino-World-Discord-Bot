@@ -9,6 +9,8 @@ import { eq } from 'drizzle-orm';
 import { tradingModule } from '../src/modules/trading/index.js';
 import { fakeCommand } from './harness.js';
 import { TRADE_MIN_RATING } from '../src/data/trade.js';
+import { track } from '../src/core/stats.js';
+import { rollSeason, seasonBadges } from '../src/modules/daily/season.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx();
@@ -171,6 +173,24 @@ describe('acceptTrade', () => {
     expect(() => createTrade(ctx, 'a', 'b', { ...empty, foods: { goat: 1 } }, empty)).toThrow(TradeError);  // a holds no goat
     const ids = [1, 2, 3, 4, 5];
     expect(() => createTrade(ctx, 'a', 'b', { ...empty, dinoIds: ids, foods: { goat: 1 } }, empty)).toThrow(TradeError);
+  });
+
+  // trade.fromUser is not the one dispatching /trade accept — trade.toUser is. Without a
+  // stamp here, the sender's season points move on this trade but no postDispatch hook
+  // ever runs for them, and a badge crossed on a trade alone, with no later interaction
+  // before rollover, would be lost forever (points are never derived for a past season).
+  it('stamps the season badge for the sender (fromUser) on crossing, though only the recipient dispatched', () => {
+    rollSeason(ctx, 'a');
+    // Stack four ungated-by-time sources to 785 — one point short of the 800 capstone
+    // minus this trade's own 15-point commerce contribution.
+    track(ctx, 'a', 'battles_fought', 1000);      // campaign, capped at 250
+    track(ctx, 'a', 'expeditions_claimed', 50);   // expeditions, capped at 250
+    track(ctx, 'a', 'eggs_hatched', 75);          // hatchery, capped at 225
+    track(ctx, 'a', 'breedings_claimed', 12);     // genelab, 60 of its 180 cap
+    expect(seasonBadges(ctx, 'a').count).toBe(0);
+    const t = createTrade(ctx, 'a', 'b', { ...empty, cash: 1 }, empty);
+    acceptTrade(ctx, 'b', t.id);                  // 'b' dispatches, not 'a'
+    expect(seasonBadges(ctx, 'a')).toEqual({ count: 1, latest: 0 });
   });
 });
 

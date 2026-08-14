@@ -3,6 +3,7 @@ import { alertPayload } from '../src/modules/park/alert-embeds.js';
 import { validateMessagePayload } from './lib/discord-limits.js';
 
 const esc = (over = {}) => ({ dinoId: 1, name: 'Rexy', escapeAt: 3_600_000, tier: 'last_call' as const, ...over });
+const seasonNudge = { endsAt: 3 * 86_400_000, unclaimed: 2 };
 // alertPayload returns null only for the "nothing to report" case (asserted below); every
 // other test here supplies at least one condition, so a non-null assertion at the call site
 // is safe and keeps the assertions below unchanged.
@@ -59,6 +60,18 @@ describe('alertPayload', () => {
   it('passes Discord limit validation in the everyday case', () => {
     const p = alertPayload('u1', [esc()], { capAt: 0, pending: 1240, capHours: 8 }, null, 0);
     expect(() => validateMessagePayload(p, 'alert payload')).not.toThrow();
+  });
+
+  it('titles a season-only alert for the season nudge, not the generic park warning', () => {
+    const p = alertPayload('u1', [], null, seasonNudge, 0)!;
+    expect(json(p).title).toBe('🎖️ Season ending soon');
+  });
+
+  it('keeps the generic title when an escape or income-cap condition rides alongside the season nudge', () => {
+    const withEscape = alertPayload('u1', [esc()], null, seasonNudge, 0)!;
+    expect(json(withEscape).title).toBe('🚨 Your park needs you');
+    const withIncome = alertPayload('u1', [], { capAt: 0, pending: 500, capHours: 8 }, seasonNudge, 0)!;
+    expect(json(withIncome).title).toBe('🚨 Your park needs you');
   });
 
   it('returns null when there is nothing to report', () => {

@@ -48,8 +48,14 @@ export function alertPayload(
     lines.push(`**🎖️ Season ends in ${days}d** — ${season.unclaimed} reward(s) unclaimed. **/season** to claim.`);
   }
 
+  // A season-only DM has no dino or income to attend to — title it for what it actually
+  // is (a rewards deadline) rather than the escape/income-cap framing that fits the other
+  // two conditions.
+  const title = escapes.length === 0 && !income && season
+    ? '🎖️ Season ending soon'
+    : '🚨 Your park needs you';
   const embed = new EmbedBuilder().setColor(0xe67e22)
-    .setTitle('🚨 Your park needs you')
+    .setTitle(title)
     .setDescription(lines.join('\n'))
     .setFooter({ text: 'Turn these off any time with /park alerts state:off' });
 
