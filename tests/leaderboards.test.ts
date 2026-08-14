@@ -375,6 +375,33 @@ describe('new metrics', () => {
     expect(rows.map((r) => [r.userId, r.value])).toEqual([['a', 50]]);
   });
 
+  // seasonScores must compute deltas exactly the way seasonPoints (src/modules/daily/
+  // season.ts's deltas()) does — over the LIVE StatId union, defaulting a missing
+  // baseline key to 0 — never over whatever keys happen to be frozen into the row's
+  // `baselines` JSON. The two are indistinguishable today because rollSeason freezes
+  // every StatId at roll time, but this pins the board and the hub to compute the same
+  // way rather than merely agreeing by coincidence of what's frozen now. Player 'a'
+  // carries a nonzero head start (species seen + battle stars banked before their
+  // first-ever roll); player 'b' drives one source (Park collections, cap 60) past its
+  // cap, so the assertion covers the clamp path too, not only the linear one.
+  it('agrees exactly with the /season hub for every player on the board', () => {
+    const base = makeCtx();
+    base.setNow(689 * 30 * 86_400_000);
+    for (const id of ['a', 'b']) getOrCreateUser(base, id, id.toUpperCase());
+    base.db.insert(schema.speciesSeen).values({ userId: 'a', speciesId: 'triceratops', firstAt: 0 }).run();
+    base.db.insert(schema.speciesSeen).values({ userId: 'a', speciesId: 'tyrannosaurus', firstAt: 0 }).run();
+    base.db.insert(schema.battleProgress).values({ userId: 'a', stageId: 's1', stars: 3 }).run();
+    base.db.insert(schema.battleProgress).values({ userId: 'a', stageId: 's2', stars: 2 }).run();
+    rollSeason(base, 'a'); rollSeason(base, 'b');   // headStart frozen here, from the seed above
+    track(base, 'a', 'expeditions_claimed', 3);      // 15 pts, well under its 250 cap
+    track(base, 'b', 'income_collections', 200);     // raw 200, clamped to the source's cap of 60
+    track(base, 'b', 'dinos_fed', 9);                // 3 pts, a second uncapped source
+    for (const id of ['a', 'b']) {
+      expect(topPlayers(base, 'season', 'global', null).find((r) => r.userId === id)!.value)
+        .toBe(seasonPoints(base, id));
+    }
+  });
+
   it('/top duels ranks by the stored Elo as a whole number', async () => {
     getOrCreateUser(ctx, 'a', 'A');
     ctx.db.update(schema.users).set({ duelRating: 1180 }).where(eq(schema.users.discordId, 'a')).run();

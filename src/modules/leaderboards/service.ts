@@ -5,6 +5,7 @@ import { RARITY_WEIGHT } from '../../data/progression.js';
 import { allSpecies, getSpecies } from '../../data/species/index.js';
 import { seasonIndexFor } from '../../core/world.js';
 import { SEASON_SOURCES, sourcePoints } from '../../data/seasons.js';
+import { STATS, type StatId } from '../../core/stats.js';
 
 export type Metric = 'rating' | 'cash' | 'collection' | 'legacy' | 'stars' | 'duels' | 'season';
 export type Scope = 'server' | 'global';
@@ -142,8 +143,8 @@ export function seasonScores(ctx: Ctx, userIds?: string[]): Map<string, number> 
   for (const row of progressRows) {
     const stats = byUserStats.get(row.userId) ?? {};
     const deltas: Record<string, number> = {};
-    for (const [stat, base] of Object.entries(row.baselines)) {
-      deltas[stat] = Math.max(0, (stats[stat] ?? 0) - base);
+    for (const stat of Object.keys(STATS) as StatId[]) {
+      deltas[stat] = Math.max(0, (stats[stat] ?? 0) - (row.baselines[stat] ?? 0));
     }
     const points = row.headStart
       + SEASON_SOURCES.reduce((s, src) => s + sourcePoints(src, deltas), 0);
