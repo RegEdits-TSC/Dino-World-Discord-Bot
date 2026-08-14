@@ -1,10 +1,10 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { seasonIndexFor, seasonFor, seasonDay, SEASON_DAYS, SEASON_EPOCH, type Season } from '../../core/world.js';
 import { readStats, STATS, type StatId } from '../../core/stats.js';
 import {
-  HEAD_START_CAP, SEASON_SOURCES, SEASON_RUNGS, sourcePoints,
+  HEAD_START_CAP, SEASON_SOURCES, SEASON_RUNGS, SEASON_CAPSTONE, sourcePoints,
   type SeasonSource, type SeasonRung,
 } from '../../data/seasons.js';
 import { dexProgress } from '../dex/service.js';
@@ -191,4 +191,37 @@ export function claimSeason(ctx: Ctx, userId: string): SeasonClaimResult {
     }
   });
   return { claimed: claimable, rewards, eggs };
+}
+
+/**
+ * Grant the capstone badge on CROSSING. Returns true only on the call that stamps it.
+ *
+ * Called from dailyRouterHooks.postDispatch — a WRITE context. It must never be reached
+ * from seasonView, visitPayload or any leaderboard path: those run against other players'
+ * ids, and the repo rule (src/modules/park/ranks.ts's legacyRank/bumpLegacyBest split) is
+ * that a read path must never mutate a row belonging to a user who took no action.
+ *
+ * Guarded on badgeAt IS NULL so it is idempotent and the stamped instant never moves.
+ */
+export function stampSeasonBadge(ctx: Ctx, userId: string): boolean {
+  const row = currentRow(ctx, userId);
+  if (!row || row.badgeAt !== null) return false;
+  if (seasonPoints(ctx, userId) < SEASON_CAPSTONE) return false;
+  ctx.db.update(schema.seasonProgress).set({ badgeAt: ctx.now() })
+    .where(and(
+      eq(schema.seasonProgress.userId, userId),
+      eq(schema.seasonProgress.seasonIndex, row.seasonIndex),
+    )).run();
+  return true;
+}
+
+/** Pure read. Safe for another player's id — see stampSeasonBadge's note. */
+export function seasonBadges(ctx: Ctx, userId: string): { count: number; latest: number | null } {
+  const rows = ctx.db.select().from(schema.seasonProgress)
+    .where(and(
+      eq(schema.seasonProgress.userId, userId),
+      isNotNull(schema.seasonProgress.badgeAt),
+    )).all();
+  if (!rows.length) return { count: 0, latest: null };
+  return { count: rows.length, latest: Math.max(...rows.map((r) => r.seasonIndex)) };
 }

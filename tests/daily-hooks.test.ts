@@ -10,6 +10,7 @@ import { dayKeyUTC } from '../src/core/clock.js';
 import { track } from '../src/core/stats.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { rollDailyQuests, questProgress } from '../src/modules/daily/service.js';
+import { seasonBadges } from '../src/modules/daily/season.js';
 import { dailyRouterHooks } from '../src/modules/daily/hooks.js';
 
 function sc(name: string) {
@@ -280,6 +281,32 @@ describe('dailyRouterHooks', () => {
     const i = fakeCommand({ name: 'play', user: uid });
     await routeInteraction(ctx, registry, i.asInteraction(), dailyRouterHooks);
     expect(i.replies).toHaveLength(1);
+  });
+
+  // Distinguishes the badge stamp's placement from the daily-quest hint's exemptions,
+  // which govern completely different concerns: EXEMPT_COMMANDS/EXEMPT_PREFIXES silence a
+  // hint about a screen the player is already on, and have nothing to do with the season
+  // track. A command named 'daily' is exempt from the hint but must still cross the
+  // capstone and stamp the badge in the very same dispatch.
+  it('a command named daily still stamps the season badge on crossing, even though it is hint-exempt', async () => {
+    const ctx = makeCtx();
+    const uid = 'season-badge-daily-cmd-user';
+    ctx.db.insert(schema.users).values({ discordId: uid, lastCollectAt: 0, createdAt: 0 }).run();
+    const dailyCapstoneCmd: CommandDef = {
+      data: sc('daily'),
+      async execute(ctx2, i) {
+        track(ctx2, i.user.id, 'expeditions_claimed', 50);   // 250
+        track(ctx2, i.user.id, 'battles_fought', 1000);      // +250 = 500
+        track(ctx2, i.user.id, 'eggs_hatched', 75);           // +225 = 725
+        track(ctx2, i.user.id, 'dinos_fed', 360);             // +120 = 845 >= 800
+        await i.reply('ok');
+      },
+    };
+    const registry = regWith([dailyCapstoneCmd]);
+
+    await routeInteraction(ctx, registry, fakeCommand({ name: 'daily', user: uid }).asInteraction(), dailyRouterHooks);
+
+    expect(seasonBadges(ctx, uid).count).toBe(1);
   });
 
   it('routeInteraction with no hooks argument still works and neither rolls nor hints (back-compat)', async () => {

@@ -310,3 +310,82 @@ describe('claimSeason', () => {
     expect(cash()).toBe(before);
   });
 });
+
+import { stampSeasonBadge, seasonBadges } from '../src/modules/daily/season.js';
+
+const badgeAt = (index = 689) => ctx.db.select().from(schema.seasonProgress)
+  .where(and(eq(schema.seasonProgress.userId, 'p'), eq(schema.seasonProgress.seasonIndex, index)))
+  .get()!.badgeAt;
+
+describe('stampSeasonBadge', () => {
+  it('does nothing below the capstone', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 50);   // 250
+    expect(stampSeasonBadge(ctx, 'p')).toBe(false);
+    expect(badgeAt()).toBeNull();
+  });
+
+  it('stamps once on crossing and is idempotent afterwards', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 50);   // 250
+    track(ctx, 'p', 'battles_fought', 1000);      // +250 = 500
+    track(ctx, 'p', 'eggs_hatched', 75);          // +225 = 725
+    track(ctx, 'p', 'dinos_fed', 360);            // +120 = 845 >= 800
+    ctx.setNow(S1 + 3 * DAY);
+    expect(stampSeasonBadge(ctx, 'p')).toBe(true);
+    expect(badgeAt()).toBe(S1 + 3 * DAY);
+    ctx.setNow(S1 + 4 * DAY);
+    expect(stampSeasonBadge(ctx, 'p')).toBe(false);
+    expect(badgeAt()).toBe(S1 + 3 * DAY);          // never re-stamped
+  });
+
+  it('no-ops when the season has not been rolled', () => {
+    expect(stampSeasonBadge(ctx, 'p')).toBe(false);
+  });
+
+  // THE §9 DECISION'S GATE. Cash forfeits at rollover; the badge does not, because a
+  // badge is re-earnable by nothing and a missed button must not put a permanent hole in
+  // the collection.
+  it('a badge survives an unclaimed rung 8 across the rollover', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 50);
+    track(ctx, 'p', 'battles_fought', 1000);
+    track(ctx, 'p', 'eggs_hatched', 75);
+    track(ctx, 'p', 'dinos_fed', 360);
+    stampSeasonBadge(ctx, 'p');
+    const before = cash();
+    ctx.setNow(S2);
+    rollSeason(ctx, 'p');
+    expect(claimSeason(ctx, 'p').claimed).toEqual([]);   // consumables forfeited
+    expect(cash()).toBe(before);
+    expect(badgeAt(689)).not.toBeNull();                 // badge kept
+    expect(seasonBadges(ctx, 'p').count).toBe(1);
+  });
+});
+
+describe('seasonBadges', () => {
+  it('counts badged seasons and names the latest', () => {
+    expect(seasonBadges(ctx, 'p')).toEqual({ count: 0, latest: null });
+    rollSeason(ctx, 'p');
+    ctx.db.update(schema.seasonProgress).set({ badgeAt: S1 })
+      .where(and(eq(schema.seasonProgress.userId, 'p'),
+                 eq(schema.seasonProgress.seasonIndex, 689))).run();
+    ctx.setNow(S2);
+    rollSeason(ctx, 'p');
+    expect(seasonBadges(ctx, 'p')).toEqual({ count: 1, latest: 689 });
+    ctx.db.update(schema.seasonProgress).set({ badgeAt: S2 })
+      .where(and(eq(schema.seasonProgress.userId, 'p'),
+                 eq(schema.seasonProgress.seasonIndex, 690))).run();
+    expect(seasonBadges(ctx, 'p')).toEqual({ count: 2, latest: 690 });
+  });
+
+  it('is a pure read — it never stamps', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 50);
+    track(ctx, 'p', 'battles_fought', 1000);
+    track(ctx, 'p', 'eggs_hatched', 75);
+    track(ctx, 'p', 'dinos_fed', 360);
+    expect(seasonBadges(ctx, 'p').count).toBe(0);
+    expect(badgeAt()).toBeNull();
+  });
+});

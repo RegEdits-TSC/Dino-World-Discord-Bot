@@ -3,6 +3,7 @@ import type { RouterHooks } from '../../core/router.js';
 import { eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import { rollDailyQuests, questProgress } from './service.js';
+import { rollSeason, stampSeasonBadge } from './season.js';
 
 const EXEMPT_COMMANDS = new Set(['daily', 'achievements']);
 // `alert` is exempt for the same reason daily/ach are: an alert is a DM, where an
@@ -18,12 +19,20 @@ export const dailyRouterHooks: RouterHooks = {
   // Rolls BEFORE the command runs, so the day's first action counts toward its own
   // quest. rollDailyQuests no-ops when today's rows already exist or the user row
   // doesn't exist yet (brand-new player) — the latter case is covered below instead.
-  preDispatch: (ctx, userId) => rollDailyQuests(ctx, userId),
+  preDispatch: (ctx, userId) => { rollDailyQuests(ctx, userId); rollSeason(ctx, userId); },
   postDispatch: async (ctx, i, source) => {
     // Covers the brand-new player whose users row was just created mid-dispatch
     // (preDispatch no-op'd on the missing row). Their first action does not count
     // toward its own quest — the baseline snapshots after it — which is accepted.
     rollDailyQuests(ctx, i.user.id);
+    rollSeason(ctx, i.user.id);
+    // The badge stamp runs BEFORE the exemption returns below. Those exemptions suppress
+    // the daily-quest hint TEXT only, for a screen (/daily, /achievements, alert DMs) the
+    // player is already looking at — they say nothing about the season track. A player who
+    // crosses the capstone while dispatching one of those exempt commands must still have
+    // it recorded; moving this call after the returns would silently drop that stamp, caught
+    // only by tests/daily-hooks.test.ts's "still stamps the season badge ... hint-exempt" case.
+    stampSeasonBadge(ctx, i.user.id);
     // No hint about the screen the user is already looking at.
     if (source.command && EXEMPT_COMMANDS.has(source.command)) return;
     if (source.prefix && EXEMPT_PREFIXES.has(source.prefix)) return;
