@@ -6,7 +6,6 @@ import { getOrCreateUser } from '../src/modules/park/service.js';
 import { track, STATS } from '../src/core/stats.js';
 import { rollSeason, headStartFor, seasonPoints, seasonView, claimSeason } from '../src/modules/daily/season.js';
 import { SEASON_DAYS } from '../src/core/world.js';
-import { SEASON_CAPSTONE } from '../src/data/seasons.js';
 
 const DAY = 86_400_000;
 export const S1 = 689 * SEASON_DAYS * DAY;   // season 1, day 1

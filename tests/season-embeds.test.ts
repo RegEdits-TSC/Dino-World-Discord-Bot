@@ -34,7 +34,10 @@ describe('seasonPayload', () => {
     const json = seasonPayload(seasonView(ctx, 'p')!, 'p').embeds[0].toJSON();
     const text = JSON.stringify(json);
     expect(text).toContain('Expeditions');
-    expect(text).toContain('15');
+    // The rungs field always renders "**225** — 8,000 cash, 15 shards" (rung 3's reward),
+    // so a bare toContain('15') would pass even with zero expedition points — assert the
+    // actual breakdown line instead: 3 expeditions x 5 points = 15, against its 250 cap.
+    expect(text).toContain('Expeditions **15**/250');
     expect(text).toContain('30 days left');
   });
 });

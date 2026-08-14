@@ -37,8 +37,14 @@ describe('season balance', () => {
   // The Gene Lab gate, made falsifiable. 270 points sit behind a 20,000-cash lot; a
   // lab-less player must still clear the season, and any retune that pushes them past
   // day 30 fails HERE rather than in a player's inbox.
+  //
+  // Domain widened to 0..40, past the 30-day season, on purpose: a search capped at
+  // exactly the pass/fail boundary (0..30) can only ever report "undefined" on a
+  // regression, never how far past day 30 the real answer moved. This is the tightest
+  // margin in the whole ladder (2 days), which is exactly why it's worth a search that
+  // stays informative when it fails.
   it('a lab-less moderate profile still clears inside 30 days', () => {
-    const day = [...Array(31).keys()].find((d) => pointsAfter(d, ['genelab', 'splicing']) >= SEASON_CAPSTONE);
+    const day = [...Array(41).keys()].find((d) => pointsAfter(d, ['genelab', 'splicing']) >= SEASON_CAPSTONE);
     expect(day, 'a Gene-Lab-less player can no longer clear the season').toBeDefined();
     expect(day!).toBeLessThanOrEqual(30);
   });
