@@ -21,6 +21,7 @@ function metricLabel(metric: Metric): string {
     stars: '⭐ Battle Stars',
     duels: '⚔️ Duel Rating',
     season: '🎖️ Season',
+    attendance: '🎡 Attendance',
   }[metric];
 }
 function formatValue(metric: Metric, value: number): string {
@@ -54,6 +55,7 @@ export const leaderboardsModule: ModuleManifest = {
             { name: 'stars', value: 'stars' },
             { name: 'duels', value: 'duels' },
             { name: 'season', value: 'season' },
+            { name: 'attendance', value: 'attendance' },
           ))
         .addStringOption((o) => o.setName('scope').setDescription('server or global')
           .addChoices({ name: 'server', value: 'server' }, { name: 'global', value: 'global' })),

@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { MessageFlags } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
-import { getOrCreateUser } from '../src/modules/park/service.js';
+import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
+import { recomputeRating } from '../src/modules/park/rating.js';
+import { attendanceOf } from '../src/modules/park/attendance.js';
 import { topPlayers, collectionScore, playerRank, collectionScores, starScores, legacyScores } from '../src/modules/leaderboards/service.js';
 import { leaderboardsModule } from '../src/modules/leaderboards/index.js';
 import { schema } from '../src/core/db/index.js';
@@ -216,7 +218,7 @@ describe('leaderboard query cost', () => {
   // playerRank, which runs scored() a second time, and that branch flips between the two
   // fixture sizes (the caller is inside the top 10 at 3 players and outside it at 30) —
   // so a command-level count would differ for a reason that is not the N+1.
-  const cost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars' | 'duels' | 'season') => {
+  const cost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars' | 'duels' | 'season' | 'attendance') => {
     const board = boardOf(size);
     topPlayers(board.ctx, metric, 'global', null);
     return board.queries();
@@ -231,6 +233,7 @@ describe('leaderboard query cost', () => {
     ['collection', 2],    // + dinos
     ['legacy', 4],        // + species_seen, achievement_claims, battle_progress
     ['season', 3],         // + season_progress, user_stats
+    ['attendance', 4],     // + dinos, lots, attractions
   ] as const)('costs a fixed %s queries whatever the roster size', (metric, expected) => {
     expect(cost(3, metric)).toBe(expected);
     expect(cost(30, metric)).toBe(expected);
@@ -242,7 +245,7 @@ describe('leaderboard query cost', () => {
   // only the roster's non-member count, which is what proves the extra user_guilds read,
   // the users slice, and the metric's own source-table read(s) all stay flat whether 1 of
   // 3 or 1 of 30 players is actually in the guild.
-  const serverCost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars' | 'duels' | 'season') => {
+  const serverCost = (size: number, metric: 'cash' | 'collection' | 'legacy' | 'stars' | 'duels' | 'season' | 'attendance') => {
     const board = boardOf(size, 'g1');
     topPlayers(board.ctx, metric, 'server', 'g1');
     return board.queries();
@@ -255,6 +258,7 @@ describe('leaderboard query cost', () => {
     ['collection', 3],     // + dinos
     ['legacy', 5],         // + species_seen, achievement_claims, battle_progress
     ['season', 4],          // + user_guilds
+    ['attendance', 5],     // + dinos, lots, attractions
   ] as const)('costs a fixed %s queries for a server-scoped board whatever the roster size', (metric, expected) => {
     expect(serverCost(3, metric)).toBe(expected);
     expect(serverCost(30, metric)).toBe(expected);
@@ -276,6 +280,7 @@ describe('leaderboard query cost', () => {
     ['collection', 1],
     ['legacy', 1],
     ['season', 1],          // user_guilds only — both season reads short-circuit on []
+    ['attendance', 1],      // user_guilds only — all three attendance reads short-circuit on []
   ] as const)('costs no extra %s queries for a server-scoped board with zero guild members', (metric, expected) => {
     const board = boardOf(3, 'g1');   // seeds p0 into g1 — 'g2' below has no members at all
     expect(topPlayers(board.ctx, metric, 'server', 'g2')).toEqual([]);
@@ -332,13 +337,13 @@ describe('new metrics', () => {
     expect(embed.description).toBe('**1.** A — 2');
   });
 
-  it('offers exactly the seven metrics the service knows', () => {
+  it('offers exactly the eight metrics the service knows', () => {
     const json = leaderboardsModule.commands[0].data.toJSON() as {
       options?: Array<{ name: string; choices?: Array<{ value: string }> }>;
     };
     const metric = json.options!.find((o) => o.name === 'metric')!;
     expect(metric.choices!.map((c) => c.value))
-      .toEqual(['rating', 'cash', 'collection', 'legacy', 'stars', 'duels', 'season']);
+      .toEqual(['rating', 'cash', 'collection', 'legacy', 'stars', 'duels', 'season', 'attendance']);
   });
 
   it('ranks live season points, agreeing with the /season hub', () => {
@@ -400,6 +405,45 @@ describe('new metrics', () => {
       expect(topPlayers(base, 'season', 'global', null).find((r) => r.userId === id)!.value)
         .toBe(seasonPoints(base, id));
     }
+  });
+
+  // Seeds a real paddock + assigned dinos (not bare dinos rows) so attendanceScores must
+  // read lots to see the paddock-type filter attendanceOf/recomputeRating also apply —
+  // a bare dinos-table read alone would still pass a laxer version of this test.
+  const seedAttendance = (id: string, speciesIds: string[]) => {
+    getOrCreateUser(ctx, id, id);
+    ctx.economy.apply(id, { cash: 50_000 }, 'test:seed', 0);
+    const lot = buildLot(ctx, id, 'herbivore_paddock');
+    for (const speciesId of speciesIds) {
+      ctx.db.insert(schema.dinos).values({
+        userId: id, lotId: lot.id, speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0,
+      }).run();
+    }
+    recomputeRating(ctx, id);
+  };
+
+  it('ranks parks by attendance, most varied first', () => {
+    seedAttendance('u1', ['triceratops']);
+    seedAttendance('u2', ['triceratops', 'gallimimus', 'stegosaurus']);
+
+    const board = topPlayers(ctx, 'attendance', 'global', null);
+    // Full ordering, not just the winner: a board that merely put u2 first without
+    // also placing u1 second could still be silently dropping or misordering rows.
+    expect(board.map((r) => r.userId)).toEqual(['u2', 'u1']);
+    expect(board[0].value).toBeGreaterThan(board[1].value);
+  });
+
+  it('returns an empty attendance board for a guild with no registered members', () => {
+    expect(topPlayers(ctx, 'attendance', 'server', 'g-empty')).toEqual([]);
+  });
+
+  // The board and /guests view must never disagree on the formula — both read
+  // attendanceFrom, one batched across the whole board, the other per-user.
+  it('agrees with /guests view (attendanceOf) for the same player', () => {
+    seedAttendance('u1', ['triceratops', 'gallimimus']);
+    const board = topPlayers(ctx, 'attendance', 'global', null);
+    expect(board[0].value).toBe(attendanceOf(ctx, 'u1').attendance);
+    expect(board[0].value).toBeGreaterThan(0);
   });
 
   it('/top duels ranks by the stored Elo as a whole number', async () => {
