@@ -847,10 +847,10 @@ Expected: FAIL — cannot resolve `../src/modules/guests/service.js`.
 In `src/core/stats.ts`, add one entry to the `STATS` map:
 
 ```ts
-  attractions_built: 'Attractions built',
+  attractions_built: 'count',
 ```
 
-Match the surrounding entries' exact value style — read the existing map first and copy the shape rather than assuming it is a label string.
+`STATS` is typed `as const satisfies Record<string, 'count' | 'sum'>` — the value is a KIND TAG, not a human label. `'count'` is correct here because `track(ctx, userId, 'attractions_built', 1)` steps by exactly 1 per build event, which is what that tag means in the file's own doc comment. Read the existing map before writing the line rather than assuming its shape.
 
 Then fix the three pins this moves:
 - `tests/stats.test.ts:8` — `toHaveLength(18)` becomes `19`, and the test NAME (which quotes the count) must change with it.
