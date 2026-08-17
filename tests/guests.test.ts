@@ -9,8 +9,10 @@ import {
   buildAttraction, upgradeAttraction,
   UnknownAttractionError, AttractionLockedError,
   DuplicateAttractionError, AttractionMaxedError,
+  claimableMilestones, claimMilestone, MilestoneUnavailableError,
 } from '../src/modules/guests/service.js';
 import { ATTRACTIONS } from '../src/data/attractions.js';
+import { ATTENDANCE_MILESTONES } from '../src/data/attendance.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
@@ -83,5 +85,55 @@ describe('upgradeAttraction', () => {
   it('refuses to upgrade something that was never built', () => {
     rich();
     expect(() => upgradeAttraction(ctx, 'u1', 'picnic_lawn')).toThrow(UnknownAttractionError);
+  });
+});
+
+describe('milestones', () => {
+  const first = ATTENDANCE_MILESTONES[0];
+
+  it('offers nothing below the first threshold', () => {
+    rich(0);
+    expect(claimableMilestones(ctx, 'u1')).toEqual([]);
+  });
+
+  it('offers every crossed milestone and pays its reward', () => {
+    rich(first.at);
+    expect(claimableMilestones(ctx, 'u1').map((m) => m.at)).toEqual([first.at]);
+    const before = ctx.db.select().from(schema.users).all()[0].cash;
+
+    claimMilestone(ctx, 'u1', first.at);
+
+    expect(ctx.db.select().from(schema.users).all()[0].cash).toBe(before + (first.reward.cash ?? 0));
+    expect(ctx.db.select().from(schema.attendanceClaims).all()).toHaveLength(1);
+    expect(claimableMilestones(ctx, 'u1')).toEqual([]);
+  });
+
+  it('is idempotent — a second claim of the same milestone pays nothing', () => {
+    rich(first.at);
+    claimMilestone(ctx, 'u1', first.at);
+    const after = ctx.db.select().from(schema.users).all()[0].cash;
+    expect(() => claimMilestone(ctx, 'u1', first.at)).toThrow(MilestoneUnavailableError);
+    expect(ctx.db.select().from(schema.users).all()[0].cash).toBe(after);
+    expect(ctx.db.select().from(schema.attendanceClaims).all()).toHaveLength(1);
+  });
+
+  it('refuses a milestone the high-water has not reached', () => {
+    rich(first.at - 1);
+    expect(() => claimMilestone(ctx, 'u1', first.at)).toThrow(MilestoneUnavailableError);
+  });
+
+  it('refuses a threshold that is not a milestone at all', () => {
+    rich(999_999);
+    expect(() => claimMilestone(ctx, 'u1', 12_345)).toThrow(MilestoneUnavailableError);
+  });
+
+  it('grants an egg when the milestone carries one', () => {
+    const withEgg = ATTENDANCE_MILESTONES.find((m) => m.reward.egg)!;
+    rich(withEgg.at);
+    claimMilestone(ctx, 'u1', withEgg.at);
+    const eggs = ctx.db.select().from(schema.eggs).all();
+    expect(eggs).toHaveLength(1);
+    expect(eggs[0].rarity).toBe(withEgg.reward.egg);
+    expect(eggs[0].source).toBe('guests');
   });
 });

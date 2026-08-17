@@ -5,6 +5,7 @@ import { track } from '../../core/stats.js';
 import { levelValue } from '../park/service.js';
 import { recomputeRating } from '../park/rating.js';
 import { ATTRACTIONS, attractionFor, type AttractionDef } from '../../data/attractions.js';
+import { ATTENDANCE_MILESTONES, milestonesUpTo, type MilestoneDef } from '../../data/attendance.js';
 export class UnknownAttractionError extends Error {}
 /** Carries the attraction's display name so the caller can name it. */
 export class AttractionLockedError extends Error {}
@@ -74,4 +75,43 @@ export function buildableKinds(ctx: Ctx, userId: string): AttractionDef[] {
   const highWater = highWaterOf(ctx, userId);
   const owned = new Set(attractionRows(ctx, userId).map((r) => r.kind));
   return Object.values(ATTRACTIONS).filter((d) => highWater >= d.unlockAt && !owned.has(d.kind));
+}
+
+export class MilestoneUnavailableError extends Error {}
+
+function claimedSet(ctx: Ctx, userId: string): Set<number> {
+  return new Set(ctx.db.select().from(schema.attendanceClaims)
+    .where(eq(schema.attendanceClaims.userId, userId)).all().map((r) => r.milestone));
+}
+
+/** Crossed and not yet claimed. Read-only. */
+export function claimableMilestones(ctx: Ctx, userId: string): MilestoneDef[] {
+  const claimed = claimedSet(ctx, userId);
+  return milestonesUpTo(highWaterOf(ctx, userId)).filter((m) => !claimed.has(m.at));
+}
+
+/**
+ * Claim one milestone. Everything is validated before anything is written, and the whole
+ * grant sits in one transaction so a failed egg insert cannot leave the claim row behind
+ * (which would silently consume the reward forever). The composite primary key on
+ * (userId, milestone) is the backstop against a double-click race.
+ */
+export function claimMilestone(ctx: Ctx, userId: string, at: number): MilestoneDef {
+  const def = ATTENDANCE_MILESTONES.find((m) => m.at === at);
+  if (!def) throw new MilestoneUnavailableError('No such milestone.');
+  if (highWaterOf(ctx, userId) < def.at) throw new MilestoneUnavailableError(def.name);
+  if (claimedSet(ctx, userId).has(def.at)) throw new MilestoneUnavailableError(def.name);
+
+  ctx.db.transaction(() => {
+    const { cash, shards, foods, egg } = def.reward;
+    ctx.economy.apply(userId, { cash, shards, foods }, `milestone:${def.at}`, ctx.now());
+    if (egg) {
+      ctx.db.insert(schema.eggs).values({
+        userId, rarity: egg, speciesId: null, source: 'guests', obtainedAt: ctx.now(),
+      }).run();
+    }
+    ctx.db.insert(schema.attendanceClaims)
+      .values({ userId, milestone: def.at, claimedAt: ctx.now() }).run();
+  });
+  return def;
 }
