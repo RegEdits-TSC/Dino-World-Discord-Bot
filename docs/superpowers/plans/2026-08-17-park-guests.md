@@ -30,7 +30,7 @@
 
 | File | Responsibility |
 |---|---|
-| `src/data/attendance.ts` | Frozen constants and pure math: `attendanceFrom`, `attractionSlots`, `ATTENDANCE_MILESTONES`, `milestonesUpTo`. No DB, no Ctx. |
+| `src/data/attendance.ts` | Frozen constants and pure math: `attendanceFrom`, `ATTENDANCE_MILESTONES`, `milestonesUpTo`. No DB, no Ctx. |
 | `src/data/attractions.ts` | The catalog: 6 kinds × 3 levels, per-level `draw`, cash costs, unlock thresholds. Frozen data only. |
 | `src/modules/park/attendance.ts` | `attendanceOf(ctx, userId)` — a **pure** DB read composing the catalog with the park. Lives in `park/` beside `rating.ts` and `ranks.ts` so `leaderboards` and `park/embeds` can import it without a cycle. |
 | `src/modules/guests/service.ts` | `buildAttraction`, `upgradeAttraction`, `claimMilestone`, `claimableMilestones`, error classes. |
@@ -185,7 +185,9 @@ git commit -m "Add the attractions and attendance-claims tables"
 - Test: `tests/attendance.test.ts`
 
 **Interfaces:**
-- Produces: `ATTENDANCE_SCALE: number`, `ATTENDANCE_SPECIES_TARGET: number`, `ATTRACTION_DRAW_TARGET: number`, `ATTRACTION_MAX_BONUS: number`, `VC_ATTENDANCE_MULT: number[]`, `BASE_ATTRACTION_SLOTS: number`, `ATTRACTION_SLOT_THRESHOLDS: number[]`, `attendanceFrom(distinctSpecies: number, drawTotal: number, vcLevel: number): number`, `attractionSlots(highWater: number): number`, `ATTENDANCE_MILESTONES: readonly MilestoneDef[]`, `milestonesUpTo(highWater: number): MilestoneDef[]`.
+- Produces: `ATTENDANCE_SCALE: number`, `ATTENDANCE_SPECIES_TARGET: number`, `ATTRACTION_DRAW_TARGET: number`, `ATTRACTION_MAX_BONUS: number`, `VC_ATTENDANCE_MULT: number[]`, `attendanceFrom(distinctSpecies: number, drawTotal: number, vcLevel: number): number`, `ATTENDANCE_MILESTONES: readonly MilestoneDef[]`, `milestonesUpTo(highWater: number): MilestoneDef[]`.
+
+There is deliberately **no slot pool**. Each attraction kind is gated by its own `unlockAt` threshold and duplicates are refused, so a separate slot ladder would be a second table kept in lockstep with the first for no behavioural difference — the two ladders were identical and the slot check was unreachable.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -194,9 +196,9 @@ Create `tests/attendance.test.ts`:
 ```ts
 import { describe, it, expect } from 'vitest';
 import {
-  attendanceFrom, attractionSlots, ATTENDANCE_SCALE, ATTENDANCE_SPECIES_TARGET,
+  attendanceFrom, ATTENDANCE_SCALE, ATTENDANCE_SPECIES_TARGET,
   ATTRACTION_DRAW_TARGET, ATTRACTION_MAX_BONUS, VC_ATTENDANCE_MULT,
-  BASE_ATTRACTION_SLOTS, ATTRACTION_SLOT_THRESHOLDS, ATTENDANCE_MILESTONES, milestonesUpTo,
+  ATTENDANCE_MILESTONES, milestonesUpTo,
 } from '../src/data/attendance.js';
 
 describe('attendanceFrom', () => {
@@ -224,18 +226,6 @@ describe('attendanceFrom', () => {
 
   it('treats a park with no Visitor Center as the neutral multiplier', () => {
     expect(attendanceFrom(ATTENDANCE_SPECIES_TARGET, 0, 0)).toBe(ATTENDANCE_SCALE);
-  });
-});
-
-describe('attractionSlots', () => {
-  it('starts at the base and grows once per crossed threshold', () => {
-    expect(attractionSlots(0)).toBe(BASE_ATTRACTION_SLOTS);
-    expect(attractionSlots(ATTRACTION_SLOT_THRESHOLDS[0])).toBe(BASE_ATTRACTION_SLOTS + 1);
-  });
-
-  it('degrades safely past the top threshold', () => {
-    const max = BASE_ATTRACTION_SLOTS + ATTRACTION_SLOT_THRESHOLDS.length;
-    expect(attractionSlots(999_999)).toBe(max);
   });
 });
 
@@ -305,10 +295,6 @@ export const ATTRACTION_MAX_BONUS = 0.6;
 /** Per Visitor Center level. Index 0 is level 1, and level 0 (no VC) takes the fallback. */
 export const VC_ATTENDANCE_MULT = [1.0, 1.05, 1.1, 1.15, 1.2];
 
-export const BASE_ATTRACTION_SLOTS = 1;
-/** Attendance high-water for slots 2..6. */
-export const ATTRACTION_SLOT_THRESHOLDS = [150, 300, 500, 700, 900];
-
 export interface MilestoneReward { cash?: number; shards?: number; foods?: Partial<Record<FoodId, number>>; egg?: Rarity }
 export interface MilestoneDef { at: number; name: string; reward: MilestoneReward }
 
@@ -341,15 +327,6 @@ export function attendanceFrom(distinctSpecies: number, drawTotal: number, vcLev
   return Math.round(ATTENDANCE_SCALE * species * attraction * vc);
 }
 
-/**
- * A COUNT of crossed thresholds added to a base — never a table index — so it degrades
- * safely past the end of the array with no bounds check at all. Copied from lotSlots
- * (src/data/progression.ts:25-27).
- */
-export function attractionSlots(highWater: number): number {
-  return BASE_ATTRACTION_SLOTS + ATTRACTION_SLOT_THRESHOLDS.filter((t) => highWater >= t).length;
-}
-
 export function milestonesUpTo(highWater: number): MilestoneDef[] {
   return ATTENDANCE_MILESTONES.filter((m) => highWater >= m.at);
 }
@@ -379,7 +356,7 @@ git commit -m "Add attendance constants and its pure arithmetic"
 - Test: `tests/attractions-content.test.ts`
 
 **Interfaces:**
-- Consumes: `ATTRACTION_DRAW_TARGET`, `ATTRACTION_SLOT_THRESHOLDS` from `src/data/attendance.js`.
+- Consumes: `ATTRACTION_DRAW_TARGET` from `src/data/attendance.js`.
 - Produces: `ATTRACTIONS: Record<string, AttractionDef>`, `AttractionDef { kind, name, maxLevel, draw: number[], buildCost, upgradeCosts: number[], unlockAt }`, `attractionFor(kind: string): AttractionDef | null`, `MAX_ATTRACTION_LEVEL`.
 
 - [ ] **Step 1: Write the failing test**
@@ -389,7 +366,7 @@ Create `tests/attractions-content.test.ts`:
 ```ts
 import { describe, it, expect } from 'vitest';
 import { ATTRACTIONS, attractionFor } from '../src/data/attractions.js';
-import { ATTRACTION_DRAW_TARGET, ATTRACTION_SLOT_THRESHOLDS, BASE_ATTRACTION_SLOTS } from '../src/data/attendance.js';
+import { ATTRACTION_DRAW_TARGET } from '../src/data/attendance.js';
 
 const ALL = Object.values(ATTRACTIONS);
 
@@ -420,14 +397,18 @@ describe('attractions catalog', () => {
     expect(total).toBe(ATTRACTION_DRAW_TARGET);
   });
 
-  it('never offers more kinds than the slot ladder can hold', () => {
-    expect(ALL).toHaveLength(BASE_ATTRACTION_SLOTS + ATTRACTION_SLOT_THRESHOLDS.length);
-  });
-
-  it('unlocks its first kind at zero and the rest on the slot ladder', () => {
+  it('unlocks its first kind at zero and every other at a distinct rising threshold', () => {
     const gates = ALL.map((d) => d.unlockAt).sort((a, b) => a - b);
     expect(gates[0]).toBe(0);
-    for (const g of gates.slice(1)) expect(ATTRACTION_SLOT_THRESHOLDS).toContain(g);
+    expect(new Set(gates).size).toBe(gates.length);
+  });
+
+  it('makes a costlier kind draw more, so the unlock order is also the power order', () => {
+    const byGate = [...ALL].sort((a, b) => a.unlockAt - b.unlockAt);
+    for (let i = 1; i < byGate.length; i++) {
+      const top = (d: typeof byGate[number]) => d.draw[d.draw.length - 1];
+      expect(top(byGate[i])).toBeGreaterThan(top(byGate[i - 1]));
+    }
   });
 
   it('costs a full catalog between 10 and 20 days of reference surplus', () => {
@@ -476,9 +457,12 @@ export interface AttractionDef {
  * exactly 0 to a saturated one). A separate table makes the power-freedom structural rather
  * than a filter someone has to remember, the same argument that kept landmarks off DECOR.
  *
- * Six kinds against six slots: the top of the slot ladder holds exactly one of each, and the
- * top-level draws sum to ATTRACTION_DRAW_TARGET, so a complete catalog saturates the
- * attraction term exactly. Both facts are machine-gated in tests/attractions-content.test.ts.
+ * Six kinds, each gated by its own unlockAt and buildable at most once — there is no separate
+ * slot pool, because a slot ladder keyed on the same high-water would be a second table kept
+ * in lockstep with these thresholds for no behavioural difference. The top-level draws sum to
+ * ATTRACTION_DRAW_TARGET, so a complete catalog saturates the attraction term exactly, and the
+ * unlock order is also the power order. Both facts are machine-gated in
+ * tests/attractions-content.test.ts.
  *
  * Total cost 85,000,000 — 19.8 days of the reference park's unspent surplus (4,297,440/day),
  * against the landmark ladder's 315,000,000 / 47-73 days and the entire rest of the game's
@@ -740,7 +724,7 @@ git commit -m "Derive park attendance and stamp its high-water"
 - Test: `tests/guests.test.ts`
 
 **Interfaces:**
-- Produces: `StatId` gains `'attractions_built'`. `buildAttraction(ctx, userId, kind): AttractionDef`, `upgradeAttraction(ctx, userId, kind): { def: AttractionDef; level: number }`, `attractionRows(ctx, userId)`, and error classes `UnknownAttractionError`, `AttractionLockedError`, `AttractionSlotError`, `DuplicateAttractionError`, `AttractionMaxedError`.
+- Produces: `StatId` gains `'attractions_built'`. `buildAttraction(ctx, userId, kind): AttractionDef`, `upgradeAttraction(ctx, userId, kind): { def: AttractionDef; level: number }`, `attractionRows(ctx, userId)`, and error classes `UnknownAttractionError`, `AttractionLockedError`, `DuplicateAttractionError`, `AttractionMaxedError`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -756,7 +740,7 @@ import { InsufficientFundsError } from '../src/core/economy.js';
 import { readStat } from '../src/core/stats.js';
 import {
   buildAttraction, upgradeAttraction,
-  UnknownAttractionError, AttractionLockedError, AttractionSlotError,
+  UnknownAttractionError, AttractionLockedError,
   DuplicateAttractionError, AttractionMaxedError,
 } from '../src/modules/guests/service.js';
 import { ATTRACTIONS } from '../src/data/attractions.js';
@@ -799,15 +783,6 @@ describe('buildAttraction', () => {
     rich(150);
     buildAttraction(ctx, 'u1', 'picnic_lawn');
     expect(() => buildAttraction(ctx, 'u1', 'picnic_lawn')).toThrow(DuplicateAttractionError);
-  });
-
-  it('refuses to exceed the slot pool', () => {
-    rich(150);                                  // 2 slots
-    buildAttraction(ctx, 'u1', 'picnic_lawn');
-    buildAttraction(ctx, 'u1', 'gift_shop');
-    ctx.db.update(schema.users).set({ attendanceHighWater: 150 })
-      .where(eq(schema.users.discordId, 'u1')).run();
-    expect(() => buildAttraction(ctx, 'u1', 'viewing_platform')).toThrow(AttractionSlotError);
   });
 
   it('leaves no row behind when the charge fails', () => {
@@ -877,12 +852,9 @@ import { track } from '../../core/stats.js';
 import { levelValue } from '../park/service.js';
 import { recomputeRating } from '../park/rating.js';
 import { ATTRACTIONS, attractionFor, type AttractionDef } from '../../data/attractions.js';
-import { attractionSlots } from '../../data/attendance.js';
-
 export class UnknownAttractionError extends Error {}
 /** Carries the attraction's display name so the caller can name it. */
 export class AttractionLockedError extends Error {}
-export class AttractionSlotError extends Error {}
 export class DuplicateAttractionError extends Error {}
 export class AttractionMaxedError extends Error {}
 
@@ -908,8 +880,10 @@ export function buildAttraction(ctx: Ctx, userId: string, kind: string): Attract
   const highWater = highWaterOf(ctx, userId);
   if (highWater < def.unlockAt) throw new AttractionLockedError(def.name);
   const rows = attractionRows(ctx, userId);
+  // Each kind is buildable once, and its own unlockAt is the only gate — there is no
+  // separate slot pool. A slot ladder on the same high-water would have been a second
+  // table to keep in lockstep, and its check could never fire.
   if (rows.some((r) => r.kind === kind)) throw new DuplicateAttractionError(def.name);
-  if (rows.length >= attractionSlots(highWater)) throw new AttractionSlotError();
 
   ctx.db.transaction(() => {
     ctx.economy.apply(userId, { cash: -def.buildCost }, `attraction:${kind}`, ctx.now());
@@ -1166,18 +1140,19 @@ describe('/guests', () => {
     expect(rows[0].level).toBe(2);
   });
 
-  it('reports a full slot pool ephemerally', async () => {
-    rich(0);                                   // high-water 0 => exactly 1 slot
-    await cmd().execute(ctx, fakeCommand({
-      name: 'guests', sub: 'build', user: 'u1', options: { attraction: 'picnic_lawn' },
-    }) as never);
-    ctx.db.update(schema.users).set({ attendanceHighWater: 150 })
-      .where(eq(schema.users.discordId, 'u1')).run();
-    ctx.db.update(schema.users).set({ attendanceHighWater: 0 })
-      .where(eq(schema.users.discordId, 'u1')).run();
-    const i = fakeCommand({ name: 'guests', sub: 'build', user: 'u1', options: { attraction: 'gift_shop' } });
+  it('reports a maxed attraction ephemerally rather than charging again', async () => {
+    rich(0);
+    for (let n = 0; n < 3; n++) {
+      await cmd().execute(ctx, fakeCommand({
+        name: 'guests', sub: 'build', user: 'u1', options: { attraction: 'picnic_lawn' },
+      }) as never);
+    }
+    const cashAtTop = ctx.db.select().from(schema.users).all()[0].cash;
+    const i = fakeCommand({ name: 'guests', sub: 'build', user: 'u1', options: { attraction: 'picnic_lawn' } });
     await cmd().execute(ctx, i as never);
-    expect(replyText(i)).toMatch(/slot/i);
+
+    expect(replyText(i)).toMatch(/top level/i);
+    expect(ctx.db.select().from(schema.users).all()[0].cash).toBe(cashAtTop);
   });
 
   it('refuses a claim button belonging to another player', async () => {
@@ -1205,7 +1180,7 @@ Expected: FAIL — cannot resolve `../src/modules/guests/index.js`.
 
 - [ ] **Step 3: Write the embeds**
 
-Create `src/modules/guests/embeds.ts` with `guestsPayload(ctx, userId)` returning an `EmbedBuilder`-based payload showing: attendance, the three terms broken out (`distinctSpecies / ATTENDANCE_SPECIES_TARGET`, `drawTotal / ATTRACTION_DRAW_TARGET`, Visitor Center level), slots used of `attractionSlots(highWater)`, the owned attractions with levels, the next buildable rung and what it needs, and a claim button per claimable milestone. Copy the embed idiom from `src/modules/park/embeds.ts`. Do **not** hand-assign `payload.files` — use `attach(embed, payload, slot, assetImage(...))` if any art is wired, and skip art entirely for now.
+Create `src/modules/guests/embeds.ts` with `guestsPayload(ctx, userId)` returning an `EmbedBuilder`-based payload showing: attendance, the three terms broken out (`distinctSpecies / ATTENDANCE_SPECIES_TARGET`, `drawTotal / ATTRACTION_DRAW_TARGET`, Visitor Center level), the owned attractions with their levels, the next locked kind and the attendance it needs, and a claim button per claimable milestone. Copy the embed idiom from `src/modules/park/embeds.ts`. Do **not** hand-assign `payload.files` — use `attach(embed, payload, slot, assetImage(...))` if any art is wired, and skip art entirely for now.
 
 - [ ] **Step 4: Write the module**
 
@@ -1220,7 +1195,7 @@ import { ATTRACTIONS } from '../../data/attractions.js';
 import { guestsPayload, builtPayload, milestonePayload } from './embeds.js';
 import {
   buildAttraction, upgradeAttraction, claimMilestone,
-  UnknownAttractionError, AttractionLockedError, AttractionSlotError,
+  UnknownAttractionError, AttractionLockedError,
   DuplicateAttractionError, AttractionMaxedError, MilestoneUnavailableError,
 } from './service.js';
 
@@ -1260,7 +1235,6 @@ export const guestsModule: ModuleManifest = {
               // rethrows so the router's error path reports it rather than swallowing it.
               const msg =
                 e instanceof AttractionLockedError ? `Your park is not drawing enough guests for the ${e.message} yet.`
-                : e instanceof AttractionSlotError ? 'Every attraction slot is full — raise your attendance to unlock another.'
                 : e instanceof DuplicateAttractionError ? `You already have a ${e.message}.`
                 : e instanceof AttractionMaxedError ? `Your ${e.message} is already at its top level.`
                 : e instanceof UnknownAttractionError ? 'No such attraction.'
