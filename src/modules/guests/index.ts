@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
+import { recomputeRating } from '../park/rating.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { ATTRACTIONS } from '../../data/attractions.js';
 import { guestsPayload, builtPayload, milestonePayload } from './embeds.js';
@@ -24,6 +25,14 @@ export const guestsModule: ModuleManifest = {
         .addSubcommand((s) => s.setName('claim').setDescription('Claim a reached attendance milestone')),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        // Stamp the attendance high-water before any subcommand reads it — a WRITE
+        // context (the player's own command), the same precedent /park view's
+        // bumpLegacyBest call sets. recomputeRating is the gate column's only writer
+        // besides adminReset, and every account that existed before this column shipped
+        // starts at a stored 0: without this call, view/build/claim would all read a
+        // high-water frozen at 0 against a dashboard already showing live attendance —
+        // the "Attendance: 1,080 / 1,920" screen next to "not drawing enough guests yet".
+        recomputeRating(ctx, i.user.id);
         // A real switch with a default arm, never a fallthrough to the view: the /park
         // dispatch trap (a new subcommand silently rendering the dashboard and reporting
         // success for a command that did nothing) is what this shape exists to avoid.

@@ -4,17 +4,18 @@ import type { EmbedBuilder, ButtonInteraction } from 'discord.js';
 import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
+import { attendanceOf } from '../src/modules/park/attendance.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
 import { readStat } from '../src/core/stats.js';
 import {
   buildAttraction, upgradeAttraction,
   UnknownAttractionError, AttractionLockedError,
   DuplicateAttractionError, AttractionMaxedError,
-  claimableMilestones, claimMilestone, MilestoneUnavailableError,
+  claimableMilestones, claimMilestone, MilestoneUnavailableError, nextMilestone,
 } from '../src/modules/guests/service.js';
 import { guestsModule } from '../src/modules/guests/index.js';
 import { ATTRACTIONS } from '../src/data/attractions.js';
-import { ATTENDANCE_MILESTONES } from '../src/data/attendance.js';
+import { ATTENDANCE_MILESTONES, ATTENDANCE_SPECIES_TARGET, ATTRACTION_DRAW_TARGET } from '../src/data/attendance.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
@@ -138,32 +139,70 @@ describe('milestones', () => {
     expect(eggs[0].rarity).toBe(withEgg.reward.egg);
     expect(eggs[0].source).toBe('guests');
   });
+
+  it('nextMilestone names the next genuinely-unclaimed rung even after live attendance falls below every already-claimed one', () => {
+    // High-water 700 clears the first three milestones (200/400/700); claim all of them.
+    rich(ATTENDANCE_MILESTONES[2].at);
+    for (const m of ATTENDANCE_MILESTONES.slice(0, 3)) claimMilestone(ctx, 'u1', m.at);
+    expect(claimableMilestones(ctx, 'u1')).toEqual([]);
+    // No park at all was ever built — live attendance is 0, well below every claimed
+    // rung. A next-milestone hint keyed on live attendance (att.attendance) rather than
+    // the high-water/claimed-set would resolve back to the first, already-claimed
+    // milestone here instead of the real next one.
+    expect(attendanceOf(ctx, 'u1').attendance).toBe(0);
+
+    expect(nextMilestone(ctx, 'u1')).toEqual(ATTENDANCE_MILESTONES[3]);
+  });
 });
 
 const cmd = () => guestsModule.commands[0];
 const comp = () => guestsModule.components[0];
 
 describe('/guests', () => {
-  it('view reports attendance and its three terms', async () => {
+  it('view reports the resolved attendance figure and its three terms, keyed to the real values', async () => {
     rich(0);
     const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
     ctx.db.insert(schema.dinos).values({
       userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
     }).run();
+    // Sanity: none of the three terms sits at a round number here (one species, no
+    // attractions, no Visitor Center) — if this fixture ever changed to hit 0 or a
+    // formatting-coincidence value, the exact-match assertions below could pass without
+    // actually proving the field is wired to the real number.
+    const att = attendanceOf(ctx, 'u1');
+    expect(att.distinctSpecies).toBe(1);
+    expect(att.drawTotal).toBe(0);
+    expect(att.vcLevel).toBe(0);
+
     const i = fakeCommand({ name: 'guests', sub: 'view', user: 'u1' });
     await cmd().execute(ctx, i.asChatInput());
     // guestsPayload is embed-based with no top-level `content`, so replyText (which
     // only ever reads `.content`) cannot see it — inspect the embed JSON instead, the
     // same idiom tests/duels.test.ts and tests/season-embeds.test.ts already use.
     const embed = (i.replies[0] as { embeds: EmbedBuilder[] }).embeds[0].toJSON();
-    expect(JSON.stringify(embed)).toMatch(/attendance/i);
+    expect(embed.description).toContain(`**Attendance:** ${att.attendance.toLocaleString()}`);
+    const fields = embed.fields!;
+    expect(fields.find((f) => f.name === 'Variety')!.value)
+      .toBe(`${att.distinctSpecies} / ${ATTENDANCE_SPECIES_TARGET} species`);
+    expect(fields.find((f) => f.name === 'Attractions')!.value)
+      .toBe(`${att.drawTotal} / ${ATTRACTION_DRAW_TARGET} draw`);
+    expect(fields.find((f) => f.name === 'Visitor Center')!.value)
+      .toBe(`Level ${att.vcLevel}`);
   });
 
-  it('build charges and confirms', async () => {
+  it('build charges the exact attraction cost and confirms it by name', async () => {
     rich(0);
+    const before = ctx.db.select().from(schema.users).all()[0].cash;
     const i = fakeCommand({ name: 'guests', sub: 'build', user: 'u1', options: { attraction: 'picnic_lawn' } });
     await cmd().execute(ctx, i.asChatInput());
-    expect(ctx.db.select().from(schema.attractions).all()).toHaveLength(1);
+
+    expect(ctx.db.select().from(schema.users).all()[0].cash)
+      .toBe(before - ATTRACTIONS.picnic_lawn.buildCost);
+    const rows = ctx.db.select().from(schema.attractions).all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].level).toBe(1);
+    const embed = (i.replies[0] as { embeds: EmbedBuilder[] }).embeds[0].toJSON();
+    expect(embed.title).toContain(ATTRACTIONS.picnic_lawn.name);
   });
 
   it('build reports a locked kind ephemerally instead of throwing', async () => {
@@ -270,5 +309,35 @@ describe('/guests', () => {
     expect(i.replies).toHaveLength(1);
     const embed = (i.replies[0] as { embeds: EmbedBuilder[] }).embeds[0].toJSON();
     expect(JSON.stringify(embed)).toMatch(/attendance/i);
+  });
+
+  it('view stamps the attendance high-water before it reads it, so a pre-migration account is not locked out of its own screen', async () => {
+    // No rich() here — attendanceHighWater is left at its migration default of 0, the
+    // same starting point as every account that existed before this column shipped.
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 500_000 }, 'test:seed', 0);
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    const species = [
+      'triceratops', 'stegosaurus', 'parasaurolophus', 'iguanodon', 'ankylosaurus',
+      'brachiosaurus', 'gallimimus', 'maiasaura', 'massospondylus', 'ouranosaurus',
+    ];
+    ctx.db.insert(schema.dinos).values(species.map((speciesId) => ({
+      userId: 'u1', lotId: lot.id, speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }))).run();
+    const liveAttendance = attendanceOf(ctx, 'u1').attendance;
+    // Sanity: the fixture must actually clear the first milestone, or a stale
+    // high-water of 0 and a correctly-stamped one would both fail to offer a claim
+    // button and this test could pass for the wrong reason.
+    expect(liveAttendance).toBeGreaterThanOrEqual(ATTENDANCE_MILESTONES[0].at);
+    expect(ctx.db.select().from(schema.users).all()[0].attendanceHighWater).toBe(0);
+
+    const i = fakeCommand({ name: 'guests', sub: 'view', user: 'u1' });
+    await cmd().execute(ctx, i.asChatInput());
+
+    expect(ctx.db.select().from(schema.users).all()[0].attendanceHighWater).toBe(liveAttendance);
+    const reply = i.replies[0] as { embeds: EmbedBuilder[]; components?: Array<{ toJSON(): { components: Array<{ custom_id: string }> } }> };
+    expect(reply.components).toHaveLength(1);
+    expect(reply.components![0].toJSON().components[0].custom_id)
+      .toBe(`guests:claim:u1:${ATTENDANCE_MILESTONES[0].at}`);
   });
 });

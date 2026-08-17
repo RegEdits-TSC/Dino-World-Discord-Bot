@@ -6,9 +6,9 @@ import { FOODS } from '../../data/foods.js';
 import { ATTRACTIONS, attractionFor, type AttractionDef } from '../../data/attractions.js';
 import {
   ATTENDANCE_MAX, ATTENDANCE_SPECIES_TARGET, ATTRACTION_DRAW_TARGET,
-  ATTENDANCE_MILESTONES, type MilestoneDef,
+  type MilestoneDef,
 } from '../../data/attendance.js';
-import { attractionRows, buildableKinds, claimableMilestones } from './service.js';
+import { attractionRows, buildableKinds, claimableMilestones, nextMilestone } from './service.js';
 
 // Matches dex/embeds.ts's Payload shape: no `files` here at all, ever — this module
 // ships no art, so there is nothing for attach() to append and no attachment set that
@@ -129,12 +129,13 @@ export function builtPayload(ctx: Ctx, userId: string, def: AttractionDef, level
 
 /**
  * The /guests claim screen: whatever the high-water has already crossed and not yet
- * claimed, with a claim button for each. "Next" for an empty board reads against LIVE
- * attendance (attendanceOf), not the stored high-water claimMilestone actually gates —
- * a display-only hint, and the two can only ever disagree in the direction of live
- * attendance reading lower (a sold or escaped dino since the high-water was set), never
- * higher, so this can undersell progress but never mislead a player into expecting a
- * milestone that has not truly unlocked.
+ * claimed, with a claim button for each. "Next" for an empty board comes from
+ * nextMilestone (service.ts), which derives it from the high-water and the claimed set
+ * — never from live attendance (attendanceOf), which can fall (a sold or escaped dino
+ * since the high-water was set). A hint keyed on live attendance could re-name an
+ * already-claimed rung as "next" once the live figure dropped back below it; the
+ * high-water and the claimed set only ever grow, so this always names a genuinely
+ * unclaimed one.
  */
 export function milestonePayload(ctx: Ctx, userId: string): Payload {
   const claimable = claimableMilestones(ctx, userId);
@@ -150,7 +151,7 @@ export function milestonePayload(ctx: Ctx, userId: string): Payload {
       value: claimable.map((m) => `🎁 **${m.name}** (${m.at.toLocaleString()}) — ${rewardLine(m)}`).join('\n'),
     });
   } else {
-    const next = ATTENDANCE_MILESTONES.find((m) => m.at > att.attendance);
+    const next = nextMilestone(ctx, userId);
     embed.addFields({
       name: 'Nothing to claim yet',
       value: next ? `Next: **${next.name}** at ${next.at.toLocaleString()} attendance.` : 'Every milestone is claimed.',

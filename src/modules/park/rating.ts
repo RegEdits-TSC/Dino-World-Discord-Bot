@@ -27,8 +27,13 @@ export function recomputeRating(ctx: Ctx, userId: string): { rating: number; hig
   const highWater = Math.max(user.ratingHighWater, rating);
   // Attendance rides the same recompute rather than 14 new call sites: its inputs are
   // dinos, lots and attractions, so every mutation that moves rating can move it too.
-  // One extra SELECT (attractions) on a per-user table, and one extra column on an
-  // UPDATE that was already being issued.
+  // The real cost is steeper than that framing suggests: attendanceOf calls
+  // toClockDinos a SECOND time rather than reusing the read above, so this line issues
+  // four extra SELECTs (users, lots, dinos, attractions) — three of them (lots, dinos,
+  // attractions) against tables with no index on userId — plus the one extra column on
+  // the UPDATE that was already being issued. Folding attendanceOf's read into the
+  // toClockDinos call above would cut three of those four; left as a possible
+  // optimisation, not done here.
   const attendanceBest = Math.max(user.attendanceHighWater, attendanceOf(ctx, userId).attendance);
   ctx.db.update(schema.users)
     .set({ parkRating: rating, ratingHighWater: highWater, attendanceHighWater: attendanceBest })

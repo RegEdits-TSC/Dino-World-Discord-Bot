@@ -91,6 +91,19 @@ export function claimableMilestones(ctx: Ctx, userId: string): MilestoneDef[] {
 }
 
 /**
+ * The next genuinely-unclaimed rung, for the "nothing to claim yet" hint only. Derived
+ * from the high-water and the claimed set — NEVER from live attendance (attendanceOf),
+ * which can fall (sold or escaped dinos) while the high-water and the claimed set can
+ * only ever grow. A milestone at or below the high-water and still unclaimed would show
+ * up in claimableMilestones instead, so this only ever names a rung genuinely ahead.
+ */
+export function nextMilestone(ctx: Ctx, userId: string): MilestoneDef | null {
+  const highWater = highWaterOf(ctx, userId);
+  const claimed = claimedSet(ctx, userId);
+  return ATTENDANCE_MILESTONES.find((m) => m.at > highWater && !claimed.has(m.at)) ?? null;
+}
+
+/**
  * Claim one milestone. Everything is validated before anything is written, and the whole
  * grant sits in one transaction so a failed egg insert cannot leave the claim row behind
  * (which would silently consume the reward forever). The composite primary key on
