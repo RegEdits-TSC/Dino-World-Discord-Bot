@@ -7,6 +7,7 @@ import type { LegacyTier } from './ranks.js';
 import { assetImage, attach } from '../../core/images.js';
 import type { Featured } from './showcase.js';
 import { seasonNumberOf } from '../../core/world.js';
+import { ATTENDANCE_MAX } from '../../data/attendance.js';
 
 const LOT_EMOJI: Record<string, string> = {
   carnivore_paddock: 'dw_lot_carnivore', herbivore_paddock: 'dw_lot_herbivore',
@@ -26,7 +27,7 @@ export function dashboardPayload(
   // every real call site (src/modules/park/index.ts) always passes ctx.now().
   // Missing defaults to a calm day, the same convention ChaptersView.now uses
   // in src/modules/battles/embeds.ts.
-  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number; legacyRank?: LegacyTier | null; motto?: string; featured?: Featured | null; now?: number; seasonBadges?: { count: number; latest: number | null } } = {},
+  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number; legacyRank?: LegacyTier | null; motto?: string; featured?: Featured | null; now?: number; seasonBadges?: { count: number; latest: number | null }; attendance?: number } = {},
 ) {
   const extras: string[] = [];
   if (escapedCount > 0) extras.push(`${escapedCount} ${emojiTag('dw_alert')} escaped`);
@@ -49,6 +50,12 @@ export function dashboardPayload(
       { name: `${emojiTag('dw_food')} Food`, value: opts.foodLine ?? 'none — /shop food', inline: true },
       { name: `${emojiTag('dw_star')} Rating`, value: (user.parkRating / 100).toFixed(1), inline: true },
       { name: '🦕 Dinos', value: dinoValue, inline: true },
+      // Attendance is deliberately PUBLIC here, unlike shards (hidden everywhere to avoid
+      // a public wealth display) — it's a prestige number, /top ranks on it, and a visited
+      // park is meant to advertise it. ATTENDANCE_MAX, never ATTENDANCE_SCALE — see
+      // guestsPayload's identical note; the scale understates the real ceiling by 92%.
+      // No test pins this card's field count, so the decision lives here as a comment.
+      { name: '🎡 Attendance', value: `${(opts.attendance ?? 0).toLocaleString()} / ${ATTENDANCE_MAX.toLocaleString()}`, inline: true },
       { name: '🏗️ Lots', value: lots.map((l) => {
         const e = emojiTag(LOT_EMOJI[l.kind] ?? '');
         return `#${l.id} ${e ? `${e} ` : ''}${l.name} (lvl ${l.level})`;

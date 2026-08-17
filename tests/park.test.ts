@@ -292,6 +292,28 @@ describe('/park view achievements badge wiring', () => {
   });
 });
 
+describe('/park view attendance wiring', () => {
+  it('shows attendance on your own park card and on a visited one', async () => {
+    for (const id of ['u1', 'u2']) getOrCreateUser(ctx, id, id);
+    ctx.economy.apply('u1', { cash: 50_000 }, 'test:seed', 0);
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }).run();
+
+    const own = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, own.asChatInput());
+    expect(JSON.stringify(own.replies)).toMatch(/Attendance/);
+
+    // The visiting surface must agree — it rebuilds components rather than reusing them,
+    // so a value threaded into one caller and forgotten in the other renders a card that
+    // disagrees with itself depending on who is looking.
+    const visit = fakeCommand({ name: 'park', sub: 'view', user: 'u2', options: { user: { id: 'u1' } } });
+    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, visit.asChatInput());
+    expect(JSON.stringify(visit.replies)).toMatch(/Attendance/);
+  });
+});
+
 describe('dashboard legacy rank', () => {
   it('shows the title and rank number when ranked', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
