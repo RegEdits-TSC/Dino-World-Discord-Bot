@@ -24,6 +24,14 @@ export interface ParkSnapshot {
   // fail to typecheck, and a snapshot built before this feature must still render.
   // Omitted entirely at tier 0, so a park with no landmark produces byte-identical output.
   landmarkTier?: number;
+  // Built attractions, drawn as cells after the landmark cell — optional for the same
+  // reason season and the tier field above are: a required field fails only
+  // `npm run typecheck`, not build or test, and several hand-built ParkSnapshot literals
+  // and `as never` casts in the render tests would not error at all. Omitted entirely
+  // when a park has built none, so that park renders byte-identical output. Plain
+  // `{ kind, level }` objects only — never a raw Drizzle row — because this snapshot
+  // crosses a postMessage worker boundary and must stay structuredClone-able.
+  attractions?: Array<{ kind: string; level: number }>;
   lots: SnapshotLot[];
 }
 
@@ -35,6 +43,8 @@ export function buildParkSnapshot(ctx: Ctx, userId: string): ParkSnapshot {
   if (!user) throw new Error(`No park for user ${userId}`);
   const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, userId)).all();
   const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all();
+  const attractionRows = ctx.db.select().from(schema.attractions)
+    .where(eq(schema.attractions.userId, userId)).all();
 
   const byLot = new Map<number, SnapshotDino[]>();   // key: lotId (0 = unassigned)
   let escapedCount = 0;
@@ -53,6 +63,9 @@ export function buildParkSnapshot(ctx: Ctx, userId: string): ParkSnapshot {
     dinoCount: dinos.length, escapedCount, lotCap: lotSlots(user.ratingHighWater),
     season: seasonFor(ctx.now()),
     ...(user.landmarkTier > 0 ? { landmarkTier: user.landmarkTier } : {}),
+    ...(attractionRows.length > 0
+      ? { attractions: attractionRows.map((r) => ({ kind: r.kind, level: r.level })) }
+      : {}),
     lots: lots.map((l) => ({
       id: l.id, type: l.type, kind: l.kind, name: l.name, level: l.level,
       decorCount: l.decor.length, dinos: byLot.get(l.id) ?? [],
