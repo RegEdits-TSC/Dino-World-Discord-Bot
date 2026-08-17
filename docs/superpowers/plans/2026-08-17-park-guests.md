@@ -365,7 +365,7 @@ Create `tests/attractions-content.test.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { ATTRACTIONS, attractionFor } from '../src/data/attractions.js';
+import { ATTRACTIONS, attractionFor, MAX_ATTRACTION_LEVEL } from '../src/data/attractions.js';
 import { ATTRACTION_DRAW_TARGET } from '../src/data/attendance.js';
 
 const ALL = Object.values(ATTRACTIONS);
@@ -411,11 +411,23 @@ describe('attractions catalog', () => {
     }
   });
 
-  it('costs a full catalog between 10 and 20 days of reference surplus', () => {
+  it('costs a full catalog between 10 and 25 days of reference surplus', () => {
     const total = ALL.reduce((s, d) => s + d.buildCost + d.upgradeCosts.reduce((a, b) => a + b, 0), 0);
     const REFERENCE_SURPLUS_PER_DAY = 4_297_440;   // src/data/landmarks.ts
     expect(total / REFERENCE_SURPLUS_PER_DAY).toBeGreaterThan(10);
-    expect(total / REFERENCE_SURPLUS_PER_DAY).toBeLessThan(20);
+    expect(total / REFERENCE_SURPLUS_PER_DAY).toBeLessThan(25);
+  });
+
+  it('makes each kind dearer than the one unlocking before it', () => {
+    const cost = (d: typeof ALL[number]) => d.buildCost + d.upgradeCosts.reduce((a, b) => a + b, 0);
+    const byGate = [...ALL].sort((a, b) => a.unlockAt - b.unlockAt);
+    for (let i = 1; i < byGate.length; i++) {
+      expect(cost(byGate[i])).toBeGreaterThan(cost(byGate[i - 1]));
+    }
+  });
+
+  it('derives MAX_ATTRACTION_LEVEL from the catalog rather than a retyped literal', () => {
+    expect(MAX_ATTRACTION_LEVEL).toBe(Math.max(...ALL.map((d) => d.maxLevel)));
   });
 
   it('resolves a known kind and refuses an unknown one', () => {
@@ -464,7 +476,12 @@ export interface AttractionDef {
  * unlock order is also the power order. Both facts are machine-gated in
  * tests/attractions-content.test.ts.
  *
- * Total cost 85,000,000 — 19.8 days of the reference park's unspent surplus (4,297,440/day),
+ * Per-kind totals rise strictly with the unlock order — 3M / 6M / 12M / 18M / 24M / 30M — so
+ * the last attraction is also the dearest. An earlier draft shaved the top rung to hold an
+ * arbitrary 20-day ceiling, which inverted that and made the final kind cheaper than the one
+ * before it.
+ *
+ * Total cost 93,000,000 — 21.6 days of the reference park's unspent surplus (4,297,440/day),
  * against the landmark ladder's 315,000,000 / 47-73 days and the entire rest of the game's
  * purchasable content at 4,299,000 / ~1 day.
  *
@@ -494,7 +511,7 @@ export const ATTRACTIONS: Record<string, AttractionDef> = {
   },
   grand_atrium: {
     kind: 'grand_atrium', name: 'Grand Atrium', maxLevel: 3,
-    draw: [16, 32, 50], buildCost: 2_000_000, upgradeCosts: [6_000_000, 14_000_000], unlockAt: 900,
+    draw: [16, 32, 50], buildCost: 2_500_000, upgradeCosts: [7_500_000, 20_000_000], unlockAt: 900,
   },
 };
 
@@ -509,7 +526,7 @@ export function attractionFor(kind: string): AttractionDef | null {
 - [ ] **Step 4: Run the test**
 
 Run: `npx vitest run tests/attractions-content.test.ts`
-Expected: PASS. The draw sum is `20+26+32+38+44+50 = 210`, matching `ATTRACTION_DRAW_TARGET`. The cost sum is `3,000,000 + 6,000,000 + 12,000,000 + 18,000,000 + 24,000,000 + 22,000,000 = 85,000,000`, which is `19.78` days of reference surplus.
+Expected: PASS. The draw sum is `20+26+32+38+44+50 = 210`, matching `ATTRACTION_DRAW_TARGET`. The per-kind cost totals are `3,000,000 / 6,000,000 / 12,000,000 / 18,000,000 / 24,000,000 / 30,000,000` — strictly rising with the unlock order — summing to `93,000,000`, which is `21.64` days of reference surplus.
 
 - [ ] **Step 5: Commit**
 
