@@ -10,6 +10,7 @@ import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
 import { dashboardPayload, PARK_HEADER_KEYS } from '../src/modules/park/embeds.js';
 import { visitPayload } from '../src/modules/park/visit.js';
+import { attendanceOf } from '../src/modules/park/attendance.js';
 import { eventHeaderLine } from '../src/modules/world/embeds.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
 import { FACILITIES } from '../src/data/facilities.js';
@@ -293,24 +294,45 @@ describe('/park view achievements badge wiring', () => {
 });
 
 describe('/park view attendance wiring', () => {
-  it('shows attendance on your own park card and on a visited one', async () => {
+  it('keys the attendance field to the right park on your own card and on a visited one', async () => {
     for (const id of ['u1', 'u2']) getOrCreateUser(ctx, id, id);
     ctx.economy.apply('u1', { cash: 50_000 }, 'test:seed', 0);
-    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    ctx.economy.apply('u2', { cash: 50_000 }, 'test:seed', 0);
+    const lot1 = buildLot(ctx, 'u1', 'herbivore_paddock');
     ctx.db.insert(schema.dinos).values({
-      userId: 'u1', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
+      userId: 'u1', lotId: lot1.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
     }).run();
+    // u2's own park gets a DIFFERENT distinct-species count (2, not 1) — attendance's
+    // species term is what moves the figure here, so u1 and u2 must resolve to different
+    // numbers or this test cannot tell a correctly-threaded value from a dropped
+    // `attendance:` line (which renders the unconditional field at its `?? 0` default,
+    // still matching /Attendance/) or a caller-identity mixup.
+    const lot2 = buildLot(ctx, 'u2', 'herbivore_paddock');
+    ctx.db.insert(schema.dinos).values([
+      { userId: 'u2', lotId: lot2.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 },
+      { userId: 'u2', lotId: lot2.id, speciesId: 'stegosaurus', hunger: 100, lastFedAt: 0, hatchedAt: 0 },
+    ]).run();
+
+    const u1Attendance = attendanceOf(ctx, 'u1').attendance;
+    const u2Attendance = attendanceOf(ctx, 'u2').attendance;
+    expect(u1Attendance).not.toBe(u2Attendance);   // sanity: equal values would prove nothing below
+
+    const attendanceField = (replies: unknown[]) =>
+      (replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> })
+        .embeds[0].toJSON().fields!.find((f) => f.name === '🎡 Attendance')!;
 
     const own = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
     await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, own.asChatInput());
-    expect(JSON.stringify(own.replies)).toMatch(/Attendance/);
+    expect(attendanceField(own.replies).value).toContain(u1Attendance.toLocaleString());
 
-    // The visiting surface must agree — it rebuilds components rather than reusing them,
-    // so a value threaded into one caller and forgotten in the other renders a card that
-    // disagrees with itself depending on who is looking.
+    // u2 (the viewer) visits u1's park (the target). The field must carry u1's number —
+    // never u2's own — so a value threaded into one caller and forgotten (or mis-keyed)
+    // in the other renders a card that disagrees with itself depending on who is looking.
     const visit = fakeCommand({ name: 'park', sub: 'view', user: 'u2', options: { user: { id: 'u1' } } });
     await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, visit.asChatInput());
-    expect(JSON.stringify(visit.replies)).toMatch(/Attendance/);
+    const visitField = attendanceField(visit.replies);
+    expect(visitField.value).toContain(u1Attendance.toLocaleString());
+    expect(visitField.value).not.toContain(u2Attendance.toLocaleString());
   });
 });
 
