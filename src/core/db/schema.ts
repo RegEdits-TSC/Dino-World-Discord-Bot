@@ -30,6 +30,13 @@ export const users = sqliteTable('users', {
   // structural rather than a filter someone has to remember. Monotone — only the next
   // tier is ever purchasable — which is also what removes the refund question.
   landmarkTier: integer('landmark_tier').notNull().default(0),
+  // Monotone, stamped by recomputeRating alongside ratingHighWater. Gates attraction
+  // slots, catalog rungs and milestones. Deliberately NO CHECK constraint: SQLite's
+  // ALTER grammar has no ADD CONSTRAINT, so adding one forces a full users table
+  // recreate (drizzle/0003_tricky_zuras.sql is the proof — its only delta was a CHECK).
+  // users.duelRating is the shipped precedent for declining one. A high-water is never
+  // decremented, so there is no underflow to guard.
+  attendanceHighWater: integer('attendance_high_water').notNull().default(0),
   // The showcase a visitor sees on your park card. `motto` is free text; mention
   // injection is already dead because src/index.ts sets allowedMentions: { parse: [] }
   // client-wide, the same shield /park rename relies on — do not add a second
@@ -96,7 +103,7 @@ export const eggs = sqliteTable('eggs', {
   userId: text('user_id').notNull().references(() => users.discordId),
   rarity: text('rarity', { enum: ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] }).notNull(),
   speciesId: text('species_id'),
-  source: text('source', { enum: ['expedition', 'shop', 'trade', 'admin', 'battle', 'breeding', 'quest'] }).notNull(),
+  source: text('source', { enum: ['expedition', 'shop', 'trade', 'admin', 'battle', 'breeding', 'quest', 'guests'] }).notNull(),
   viaTrade: integer('via_trade', { mode: 'boolean' }).notNull().default(false),
   // Bred eggs carry their rolled inheritance here; wild eggs stay [] and roll at hatch.
   // An empty array on a BRED egg is a real result (25% under BRED_SLOT_ODDS), not "unset",
@@ -300,3 +307,22 @@ export const seasonClaims = sqliteTable('season_claims', {
   rung: integer('rung').notNull(),
   claimedAt: integer('claimed_at_ms').notNull(),
 }, (t) => [primaryKey({ columns: [t.userId, t.seasonIndex, t.rung] })]);
+
+export const attractions = sqliteTable('attractions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull().references(() => users.discordId),
+  kind: text('kind').notNull(),
+  level: integer('level').notNull().default(1),
+  // History, not a due-time: adminFastForward deliberately does NOT shift this, the
+  // same decision species_seen.first_at_ms records. If a build cooldown is ever added,
+  // THAT column must shift.
+  builtAt: integer('built_at_ms').notNull(),
+});
+
+// One row per claimed milestone. Composite primary key rather than uniqueIndex, matching
+// season_claims and achievement_claims — the shipped claim-ledger shape.
+export const attendanceClaims = sqliteTable('attendance_claims', {
+  userId: text('user_id').notNull().references(() => users.discordId),
+  milestone: integer('milestone').notNull(),
+  claimedAt: integer('claimed_at_ms').notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.milestone] })]);
