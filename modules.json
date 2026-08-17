@@ -1,1 +1,1 @@
-{ "park": true, "hatchery": true, "expeditions": true, "shop": true, "settings": true, "care": true, "trading": true, "leaderboards": true, "admin": true, "help": true, "battles": true, "genelab": true, "daily": true, "world": true, "dex": true, "duels": true }
+{ "park": true, "hatchery": true, "expeditions": true, "shop": true, "settings": true, "care": true, "trading": true, "leaderboards": true, "admin": true, "help": true, "battles": true, "genelab": true, "daily": true, "world": true, "dex": true, "duels": true, "guests": true }
