@@ -5,7 +5,7 @@ import { levelValue } from '../park/service.js';
 import { FOODS } from '../../data/foods.js';
 import { ATTRACTIONS, attractionFor, type AttractionDef } from '../../data/attractions.js';
 import {
-  ATTENDANCE_SCALE, ATTENDANCE_SPECIES_TARGET, ATTRACTION_DRAW_TARGET,
+  ATTENDANCE_MAX, ATTENDANCE_SPECIES_TARGET, ATTRACTION_DRAW_TARGET,
   ATTENDANCE_MILESTONES, type MilestoneDef,
 } from '../../data/attendance.js';
 import { attractionRows, buildableKinds, claimableMilestones } from './service.js';
@@ -82,7 +82,12 @@ export function guestsPayload(ctx: Ctx, userId: string): Payload {
   const embed = new EmbedBuilder()
     .setTitle('🎡 Park Guests')
     .setColor(0xe67e22)
-    .setDescription(`**Attendance:** ${att.attendance.toLocaleString()} / ${ATTENDANCE_SCALE.toLocaleString()}`)
+    // ATTENDANCE_MAX, never ATTENDANCE_SCALE — the scale is the base multiplier
+    // attendanceFrom is built on, not a ceiling; the real closed-form maximum is
+    // 92% higher (1,920 vs 1,000), and two milestones (1,400 / 1,800) sit above the
+    // scale entirely, so quoting against it would print a park's own next milestone
+    // as "past 100%".
+    .setDescription(`**Attendance:** ${att.attendance.toLocaleString()} / ${ATTENDANCE_MAX.toLocaleString()}`)
     .addFields(
       { name: 'Variety', value: `${att.distinctSpecies} / ${ATTENDANCE_SPECIES_TARGET} species`, inline: true },
       { name: 'Attractions', value: `${att.drawTotal} / ${ATTRACTION_DRAW_TARGET} draw`, inline: true },
@@ -137,7 +142,8 @@ export function milestonePayload(ctx: Ctx, userId: string): Payload {
   const embed = new EmbedBuilder()
     .setTitle('🎁 Attendance Milestones')
     .setColor(0xe67e22)
-    .setDescription(`**Attendance:** ${att.attendance.toLocaleString()} / ${ATTENDANCE_SCALE.toLocaleString()}`);
+    // ATTENDANCE_MAX, not ATTENDANCE_SCALE — see guestsPayload's identical note.
+    .setDescription(`**Attendance:** ${att.attendance.toLocaleString()} / ${ATTENDANCE_MAX.toLocaleString()}`);
   if (claimable.length) {
     embed.addFields({
       name: 'Ready to claim',

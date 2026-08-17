@@ -211,8 +211,64 @@ describe('/guests', () => {
   it('refuses a stale claim button whose milestone is already claimed', async () => {
     rich(ATTENDANCE_MILESTONES[0].at);
     claimMilestone(ctx, 'u1', ATTENDANCE_MILESTONES[0].at);
+    const cashAfterFirstClaim = ctx.db.select().from(schema.users).all()[0].cash;
     const i = fakeButton({ customId: `guests:claim:u1:${ATTENDANCE_MILESTONES[0].at}`, user: 'u1' });
     await comp().execute(ctx, i.asInteraction() as unknown as ButtonInteraction);
     expect(ctx.db.select().from(schema.attendanceClaims).all()).toHaveLength(1);
+    expect(replyText(i.replies[0])).toMatch(/no longer available/i);
+    expect(ctx.db.select().from(schema.users).all()[0].cash).toBe(cashAfterFirstClaim);
+  });
+
+  it('reports an unrecognised subcommand ephemerally instead of falling through to view', async () => {
+    // The real /guests builder only ever defines view/build/claim, so fakeCommand
+    // would throw "has no subcommand 'bogus'" if the command name it looks up
+    // (testRegistry.findCommand) resolves to the real builder — builderSpec's own
+    // fixture-typo guard. A command name the registry doesn't know about (the same
+    // "synthetic command" escape hatch router.test.ts uses) makes builderSpec return
+    // null and skip that validation entirely; execute() itself never reads
+    // i.commandName, only i.options.getSubcommand(), so this still exercises the
+    // guestsModule command's own default arm with a value its real builder could
+    // never actually produce.
+    const i = fakeCommand({ name: 'not-a-real-command', sub: 'bogus', user: 'u1' });
+    await cmd().execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toBe('Unknown /guests subcommand.');
+  });
+
+  it('claim subcommand offers a reached-and-unclaimed milestone with a button', async () => {
+    rich(ATTENDANCE_MILESTONES[0].at);
+    const i = fakeCommand({ name: 'guests', sub: 'claim', user: 'u1' });
+    await cmd().execute(ctx, i.asChatInput());
+    const reply = i.replies[0] as { embeds: EmbedBuilder[]; components?: Array<{ toJSON(): { components: Array<{ custom_id: string }> } }> };
+    expect(JSON.stringify(reply.embeds[0].toJSON())).toContain(ATTENDANCE_MILESTONES[0].name);
+    expect(reply.components).toHaveLength(1);
+    expect(reply.components![0].toJSON().components[0].custom_id)
+      .toBe(`guests:claim:u1:${ATTENDANCE_MILESTONES[0].at}`);
+  });
+
+  it('view produces a claim button once a milestone is reached', async () => {
+    rich(ATTENDANCE_MILESTONES[0].at);
+    const i = fakeCommand({ name: 'guests', sub: 'view', user: 'u1' });
+    await cmd().execute(ctx, i.asChatInput());
+    const reply = i.replies[0] as { components?: Array<{ toJSON(): { components: Array<{ custom_id: string }> } }> };
+    expect(reply.components).toHaveLength(1);
+    expect(reply.components![0].toJSON().components[0].custom_id)
+      .toBe(`guests:claim:u1:${ATTENDANCE_MILESTONES[0].at}`);
+  });
+
+  it('a successful claim pays the reward, records the claim and re-renders the message', async () => {
+    rich(ATTENDANCE_MILESTONES[0].at);
+    const before = ctx.db.select().from(schema.users).all()[0].cash;
+    const i = fakeButton({ customId: `guests:claim:u1:${ATTENDANCE_MILESTONES[0].at}`, user: 'u1' });
+    await comp().execute(ctx, i.asInteraction() as unknown as ButtonInteraction);
+
+    const claims = ctx.db.select().from(schema.attendanceClaims).all();
+    expect(claims).toHaveLength(1);
+    expect(claims[0].milestone).toBe(ATTENDANCE_MILESTONES[0].at);
+    expect(ctx.db.select().from(schema.users).all()[0].cash)
+      .toBe(before + (ATTENDANCE_MILESTONES[0].reward.cash ?? 0));
+    // i.update, not i.reply — the message the button was on advances in place.
+    expect(i.replies).toHaveLength(1);
+    const embed = (i.replies[0] as { embeds: EmbedBuilder[] }).embeds[0].toJSON();
+    expect(JSON.stringify(embed)).toMatch(/attendance/i);
   });
 });

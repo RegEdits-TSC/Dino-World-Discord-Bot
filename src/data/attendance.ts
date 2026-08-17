@@ -34,6 +34,16 @@ export const ATTRACTION_MAX_BONUS = 0.6;
 /** Per Visitor Center level. Index 0 is level 1, and level 0 (no VC) takes the fallback. */
 export const VC_ATTENDANCE_MULT = [1.0, 1.05, 1.1, 1.15, 1.2];
 
+/**
+ * The closed-form ceiling: a saturated species term, a fully built catalog and a
+ * top Visitor Center. Derived from the three constants rather than written down, so
+ * it cannot drift from them. ATTENDANCE_SCALE is the BASE multiplier, not the maximum
+ * — quoting attendance against the scale understates the ceiling by 92%.
+ */
+export const ATTENDANCE_MAX = Math.round(
+  ATTENDANCE_SCALE * (1 + ATTRACTION_MAX_BONUS) * VC_ATTENDANCE_MULT[VC_ATTENDANCE_MULT.length - 1],
+);
+
 export interface MilestoneReward { cash?: number; shards?: number; foods?: Partial<Record<FoodId, number>>; egg?: Rarity }
 export interface MilestoneDef { at: number; name: string; reward: MilestoneReward }
 

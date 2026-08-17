@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   attendanceFrom, ATTENDANCE_SCALE, ATTENDANCE_SPECIES_TARGET,
   ATTRACTION_DRAW_TARGET, ATTRACTION_MAX_BONUS, VC_ATTENDANCE_MULT,
-  ATTENDANCE_MILESTONES, milestonesUpTo,
+  ATTENDANCE_MILESTONES, milestonesUpTo, ATTENDANCE_MAX,
 } from '../src/data/attendance.js';
 import { eq } from 'drizzle-orm';
 import { makeCtx } from './harness.js';
@@ -36,6 +36,17 @@ describe('attendanceFrom', () => {
 
   it('treats a park with no Visitor Center as the neutral multiplier', () => {
     expect(attendanceFrom(ATTENDANCE_SPECIES_TARGET, 0, 0)).toBe(ATTENDANCE_SCALE);
+  });
+});
+
+describe('ATTENDANCE_MAX', () => {
+  it('is the closed-form ceiling, 92% above the base scale', () => {
+    expect(ATTENDANCE_MAX).toBe(1920);
+  });
+
+  it('equals attendanceFrom at every term fully saturated — catches the constants and the formula drifting apart', () => {
+    expect(ATTENDANCE_MAX).toBe(
+      attendanceFrom(ATTENDANCE_SPECIES_TARGET, ATTRACTION_DRAW_TARGET, VC_ATTENDANCE_MULT.length));
   });
 });
 
