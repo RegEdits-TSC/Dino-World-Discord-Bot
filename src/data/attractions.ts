@@ -27,7 +27,7 @@ export interface AttractionDef {
  * unlock order is also the power order. Both facts are machine-gated in
  * tests/attractions-content.test.ts.
  *
- * Total cost 85,000,000 — 19.8 days of the reference park's unspent surplus (4,297,440/day),
+ * Total cost 93,000,000 — 21.6 days of the reference park's unspent surplus (4,297,440/day),
  * against the landmark ladder's 315,000,000 / 47-73 days and the entire rest of the game's
  * purchasable content at 4,299,000 / ~1 day.
  *
@@ -57,7 +57,7 @@ export const ATTRACTIONS: Record<string, AttractionDef> = {
   },
   grand_atrium: {
     kind: 'grand_atrium', name: 'Grand Atrium', maxLevel: 3,
-    draw: [16, 32, 50], buildCost: 2_000_000, upgradeCosts: [6_000_000, 14_000_000], unlockAt: 900,
+    draw: [16, 32, 50], buildCost: 2_500_000, upgradeCosts: [7_500_000, 20_000_000], unlockAt: 900,
   },
 };
 

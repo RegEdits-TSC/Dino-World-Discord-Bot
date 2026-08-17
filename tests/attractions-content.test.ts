@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ATTRACTIONS, attractionFor } from '../src/data/attractions.js';
+import { ATTRACTIONS, attractionFor, MAX_ATTRACTION_LEVEL } from '../src/data/attractions.js';
 import { ATTRACTION_DRAW_TARGET } from '../src/data/attendance.js';
 
 const ALL = Object.values(ATTRACTIONS);
@@ -45,11 +45,24 @@ describe('attractions catalog', () => {
     }
   });
 
-  it('costs a full catalog between 10 and 20 days of reference surplus', () => {
+  it('costs a full catalog between 10 and 25 days of reference surplus', () => {
     const total = ALL.reduce((s, d) => s + d.buildCost + d.upgradeCosts.reduce((a, b) => a + b, 0), 0);
     const REFERENCE_SURPLUS_PER_DAY = 4_297_440;   // src/data/landmarks.ts
     expect(total / REFERENCE_SURPLUS_PER_DAY).toBeGreaterThan(10);
-    expect(total / REFERENCE_SURPLUS_PER_DAY).toBeLessThan(20);
+    expect(total / REFERENCE_SURPLUS_PER_DAY).toBeLessThan(25);
+  });
+
+  it('makes total cost strictly ascending across kinds, so unlock order is also cost order', () => {
+    const byGate = [...ALL].sort((a, b) => a.unlockAt - b.unlockAt);
+    for (let i = 1; i < byGate.length; i++) {
+      const totalCost = (d: typeof byGate[number]) => d.buildCost + d.upgradeCosts.reduce((a, b) => a + b, 0);
+      expect(totalCost(byGate[i])).toBeGreaterThan(totalCost(byGate[i - 1]));
+    }
+  });
+
+  it('exports MAX_ATTRACTION_LEVEL matching the catalog', () => {
+    const maxLevel = Math.max(...ALL.map((d) => d.maxLevel));
+    expect(MAX_ATTRACTION_LEVEL).toBe(maxLevel);
   });
 
   it('resolves a known kind and refuses an unknown one', () => {
