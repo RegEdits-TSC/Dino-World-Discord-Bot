@@ -122,12 +122,20 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/duel squad` | Pick the dinos you field in duels | Up to 3. Run with no options to go back to your top three by level |
 | `/duel record` | Duel rating, win-loss-draw record and recent opponents | Add `player:` to read someone else's |
 
+## 🎡 Park guests
+
+| Command | What it does | Notes |
+| --- | --- | --- |
+| `/guests view` | Your attendance, its three terms (species variety, attraction draw, Visitor Center level), the attractions you own, and any milestone ready to claim | Attendance is derived fresh every time, never stored |
+| `/guests build` | Build a new attraction, or upgrade one you already own to its next level | Priced in cash. Each of six kinds unlocks at its own attendance high-water threshold |
+| `/guests claim` | Claim any attendance milestone your high-water has crossed | Pays cash, food, shards, or an egg — each milestone once, permanently |
+
 ## 🏆 Progress
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/top` | Leaderboards by rating, cash, collection, legacy standing, battle stars, duel rating, or season points | Server or global scope. Up to five **Visit** buttons open the ranked players' parks |
-| `/help` | How to play, across **twelve** topics | Run with no topic for a first-ten-minutes walkthrough |
+| `/top` | Leaderboards by rating, cash, collection, legacy standing, battle stars, duel rating, season points, or attendance | Server or global scope. Up to five **Visit** buttons open the ranked players' parks |
+| `/help` | How to play, across **thirteen** topics | Run with no topic for a first-ten-minutes walkthrough |
 
 ## ⚙️ Server settings and admin
 

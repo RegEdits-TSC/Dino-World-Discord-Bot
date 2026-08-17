@@ -142,11 +142,21 @@ drifts.
 `d.paddock !== null && d.escapedAt === null`. That is **byte-identical** to
 `recomputeRating`'s `assigned` filter (`src/modules/park/rating.ts:18`), and it
 must stay a copy of that predicate rather than a fresh one. It reads the
-**stored** `escapedAt` column, not the computed `escapeAt` instant; every
-surface that renders attendance already calls `settleEscapes` first
-(`snapshot.ts:33`, `visit.ts:68`, both collect sites), so the stored column is
-fresh where it is displayed. `/top` and autocomplete providers do not settle,
-and attendance shown there may lag by one escape — accepted, and noted in §11.
+**stored** `escapedAt` column, not the computed `escapeAt` instant.
+
+**Correction (post-implementation):** this subsection originally claimed that
+"every surface that renders attendance already calls `settleEscapes` first,"
+naming only `/top` and autocomplete as exceptions. That is false as shipped.
+`buildParkSnapshot` (`snapshot.ts:41`) and `visitPayload` (`visit.ts:69`) do
+settle first, so the park card (own and visited) is always fresh. But
+`/guests view` and `/guests claim` (`src/modules/guests/embeds.ts`, via
+`attendanceOf`) render attendance through `toClockDinos` directly and settle
+nothing — they were never routed through either collect site. The impact is
+the same one already accepted for `/top`: an escaped-but-unsettled dino can
+still count toward the variety term on those two screens for a little longer,
+closed by the next command (or visit) that touches the park. Bounded and
+accepted, not a defect to fix — but the exception list is `/top`, autocomplete,
+`/guests view`, and `/guests claim`, not just the first two.
 
 **3.2 The species target is FROZEN.** `ATTENDANCE_SPECIES_TARGET` is a written
 literal and must **never** become a live count over `allSpecies()`. This is the

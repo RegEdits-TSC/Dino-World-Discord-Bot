@@ -44,8 +44,9 @@ the note below.
 | Battle energy | Regenerates on its own, not really a currency | Regenerates over time (capped at 10) | Entering battle stages; cannot be bought, gifted, or refilled by any item |
 
 **There is no player-facing screen that shows your shard balance.** The park
-dashboard has five fields — Cash, Food, Rating, Dinos, Lots — and none of them
-is shards. Your shard total surfaces only in passing: the confirmation
+dashboard has six fields — Cash, Food, Rating, Dinos, Attendance, Lots — and
+none of them is shards. Attendance is a count of park guests, not a currency
+— see Park guests, below. Your shard total surfaces only in passing: the confirmation
 message you get right after selling a dino, and — if you try to `/splice` a
 dino without enough shards to cover the fee — the error that names your
 current balance alongside the cost. Do not go looking for a running shard
@@ -106,6 +107,9 @@ before it caps, and adds a flat bonus to your income:
 | 3 | 16 h | +10% | 31,000 |
 | 4 | 20 h | +15% | 78,000 |
 | 5 | 24 h | +20% | 500,000 |
+
+Its level does one more thing besides: it also sets your attendance
+multiplier, up to +20% at level 5 — see Park guests, below.
 
 The **Food Court** adds only an income bonus:
 
@@ -247,7 +251,8 @@ out, not a higher payout.
 
 Income only accumulates within a capped window measured from your last
 collection — 8 hours by default, or longer with a higher-level Visitor
-Center. Time beyond that cap earns nothing, so collecting regularly matters;
+Center (whose level also raises your attendance — see Park guests, below).
+Time beyond that cap earns nothing, so collecting regularly matters;
 pressing Collect resets the window and starts the clock over. The dashboard
 warns you when pending income has been sitting long enough to be capped. Once
 totalled, your facility income bonuses are added on top and the result is
@@ -904,8 +909,9 @@ falls.
 
 ### `/top`
 
-`/top` ranks players by one of seven metrics — rating, cash, collection,
-legacy standing, battle stars, duel rating, or season points — scoped to either your server or globally.
+`/top` ranks players by one of eight metrics — rating, cash, collection,
+legacy standing, battle stars, duel rating, season points, or attendance —
+scoped to either your server or globally.
 Left unset, scope defaults to your server when run inside a server and to
 global when run in a DM. It always shows the top 10 with no further pages;
 if you're not in that top 10, a footer line shows your own rank and value
@@ -1618,3 +1624,131 @@ be ghosted back straight away. And accepting a challenge settles that
 pairing for a quarter of an hour: post a fresh challenge afterwards if you
 want another live duel with the same player. That limit is directional too
 — a challenge running the other way, from them to you, isn't affected.
+
+## 21. Park guests
+
+Attendance measures how many visitors your park draws — a fifth
+progression axis alongside cash, rating, legacy standing and the season
+track. It's read fresh every time it's shown, from the dinos assigned
+right now, the attractions you've built and your Visitor Center's level.
+Nothing about it is banked or integrated over time the way income is;
+there's no button that pays it out, and nothing sweeps in the background
+to keep it current — it's simply recalculated whenever it's displayed.
+
+### How it's calculated
+
+Attendance combines three terms into a figure quoted on a scale of 1,000 —
+though the true ceiling with every term maxed is 1,920, not 1,000; see
+below for why.
+
+| Term | What raises it | Caps at |
+| --- | --- | --- |
+| Variety | Distinct species currently assigned to a paddock and not escaped | 40 species |
+| Attractions | The combined draw of every attraction you've built, across every level | 210 draw (+60% to attendance) |
+| Visitor Center | The facility's level | +20% at level 5 |
+
+Only dinos currently assigned to a paddock and not escaped count toward the
+variety term — the exact same rule park rating's comfort component uses.
+Owning a species with nowhere to put it, or leaving a dino to wander off,
+doesn't help.
+
+The 40-species target is frozen: it will never grow to track the full
+52-species roster as new species ship, the same guarantee park rating's
+collection target already makes. A moving target would retroactively make
+every threshold and attraction rung already priced against it cheaper the
+day a new species launches — freezing it means a new species only ever
+opens another path to the same target. A park built for variety can reach
+it comfortably (six level-4 paddocks alone hold 48 dinos); a park built
+purely for cash cannot, since every Legendary and Mythic species is a
+carnivore, capping a cash-maximal collection at 5 distinct species held.
+The richest park by cash is deliberately not the best park by attendance.
+
+The attraction total (210) is frozen for the same reason: it's the sum of
+every attraction kind's own draw at its top level, so building the whole
+catalog saturates this term exactly, and only a future attraction kind can
+move that target — never new content by accident.
+
+Because 1,920, not 1,000, is the real ceiling, `/guests view` and your park
+card both quote attendance against 1,920 — so a number that reads as "past
+1,000" isn't a display bug, it just means you've moved past what the bare
+scale figure alone would suggest.
+
+### Attractions
+
+`/guests build attraction:<kind>` builds a new attraction, or upgrades one
+you already own to its next level. Every attraction is priced entirely in
+cash and pays no currency of its own. Each of the six kinds unlocks at its
+own attendance high-water threshold, can be built once, and upgrades
+through two further levels from there:
+
+| Attraction | Unlocks at | Draw (Lv 1 / 2 / 3) | Cost to build | Cost to max |
+| --- | --- | --- | --- | --- |
+| Picnic Lawn | 0 | 6 / 12 / 20 | 250,000 | 3,000,000 |
+| Gift Shop | 150 | 8 / 16 / 26 | 500,000 | 6,000,000 |
+| Viewing Platform | 300 | 10 / 20 / 32 | 1,000,000 | 12,000,000 |
+| Amber Carousel | 500 | 12 / 24 / 38 | 1,500,000 | 18,000,000 |
+| Sky Gondola | 700 | 14 / 28 / 44 | 2,000,000 | 24,000,000 |
+| Grand Atrium | 900 | 16 / 32 / 50 | 2,500,000 | 30,000,000 |
+
+The whole catalog costs 93,000,000 cash in total — well past a starter
+park's build-out (roughly 4.3M) and under the landmark ladder's
+315,000,000. Attractions unlock on your attendance **high-water**, the
+same way lot slots unlock on your best-ever rating: once a rung becomes
+available, it stays available even if your live attendance later drops —
+a sold or escaped dino, say.
+
+Because attendance unlocks attractions, attractions raise attendance, and
+attractions cost cash but pay none back, the loop can never feed itself:
+what bounds it is the finite catalog and your cash on hand, not a tuned
+cap on any single number.
+
+### Milestones
+
+Crossing an attendance high-water threshold unlocks a one-time reward,
+claimed explicitly with `/guests claim` — the same discipline the season
+track's rungs use: nothing pays out on its own, and nothing is paid twice.
+
+| Milestone | Attendance | Reward |
+| --- | --- | --- |
+| Opening Day | 200 | 250,000 cash + 20 Ferns |
+| Word of Mouth | 400 | 750,000 cash + 1 rare egg |
+| Regional Draw | 700 | 2,000,000 cash + 15 shards |
+| Marquee Park | 1,000 | 5,000,000 cash + 1 epic egg |
+| Destination | 1,400 | 12,000,000 cash + 25 shards |
+| World Renowned | 1,800 | 25,000,000 cash + 40 shards + 1 legendary egg |
+
+Each milestone pays out exactly once, permanently — once claimed, it can
+never be re-earned, even if your live attendance later drops back below
+its threshold. All six combined pay 80 shards in total, comfortably under
+the season track's own 110-shard ceiling, so this ladder never becomes the
+cheapest way to shards in the game.
+
+### On your park card and the leaderboard
+
+`/park view` shows your attendance alongside your other dashboard fields.
+Unlike shards, it's deliberately public — attendance is a prestige number,
+`/top` ranks on it, and a visited park is meant to show it off.
+`/top metric:attendance` ranks every player by it: the first leaderboard a
+wide, varied collection can win outright and a narrow, cash-maximal one
+cannot.
+
+Once you've built at least one attraction, it appears as an extra tile on
+your `/park view` map, drawn after your lots and your landmark (if you
+have one), the same way the landmark tile is.
+
+### What doesn't move it
+
+Attendance never reads hunger, comfort, the day's world event, the season,
+or your landmark tier — none of those can move it, on purpose. It's a
+gate, and a gate whose threshold moved with the clock, the calendar, or a
+deliberately powerless cosmetic ladder would have no stable line to cross.
+
+Your park card and a visited park both settle any escapes that are due
+before showing attendance, so the number you see there is always current.
+`/guests view`, `/guests claim` and `/top` do not settle first, so a dino
+that's due to escape but hasn't been stamped yet can still count toward
+your variety term on those three screens for a little longer — the next
+command that touches your park (or the next time someone visits it) closes
+the gap. Likewise, a dino held in an active trade or an unclaimed breeding
+pairing still counts toward attendance, the same way it can still fight in
+battle — it hasn't actually left your park yet.
