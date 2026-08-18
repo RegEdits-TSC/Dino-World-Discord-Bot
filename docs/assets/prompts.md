@@ -1307,6 +1307,386 @@ Egg rarities so it is a choice, not a third undocumented margin.
   head, a sharp predatory bite, wide watchful eyes, and violet-and-teal scales
   that read as a clever pack helper rather than a brute.
 
+## Hero species portraits
+
+Eight per-species portraits for the rarest species in the roster — the five
+legendaries and the three mythics — resolved by `dinoImage`
+(`src/core/images.ts`) ahead of the archetype art, and used at every surface
+that shows one dino: the `/dex view` entry thumbnail, the `hatch:crack` reveal
+thumbnail, the featured dino on the park card, the duel lead, and the non-boss
+battle thumbnail.
+
+| File | Size | Use |
+|---|---|---|
+| `assets/images/dinos/tyrannosaurus.webp` | 1024×1024, transparent | per-species override for `dinos/bruiser-carnivore.webp` |
+| `assets/images/dinos/spinoraptor.webp` | 1024×1024, transparent | per-species override for `dinos/bruiser-carnivore.webp` |
+| `assets/images/dinos/liopleurodon.webp` | 1024×1024, transparent | per-species override for `dinos/bruiser-carnivore.webp` |
+| `assets/images/dinos/indominus.webp` | 1024×1024, transparent | per-species override for `dinos/bruiser-carnivore.webp` |
+| `assets/images/dinos/mosasaurus.webp` | 1024×1024, transparent | per-species override for `dinos/tank-carnivore.webp` |
+| `assets/images/dinos/ultimasaurus.webp` | 1024×1024, transparent | per-species override for `dinos/tank-carnivore.webp` |
+| `assets/images/dinos/quetzalcoatlus.webp` | 1024×1024, transparent | per-species override for `dinos/swift-carnivore.webp` |
+| `assets/images/dinos/indoraptor.webp` | 1024×1024, transparent | per-species override for `dinos/swift-carnivore.webp` |
+
+**Override, never replacement.** `dinoImage(speciesId, archetype, diet)` tries
+`dinos/<speciesId>.webp` first and falls back to `dinos/<archetype>-<diet>.webp`,
+so the other 44 species keep the shared archetype art and adding a species stays
+a data-only change. Deleting any one of these eight files restores that species'
+archetype art with no code change and no error — the same null-degrade every
+family here relies on.
+
+**Rim light: a HARD SPECULAR EDGE on the silhouette, never a soft outer glow.**
+This is the one prompt constraint that can silently produce an asset *worse* than
+the stand-in it replaces. `remove_background` cuts on alpha: a soft outer glow is
+either eaten whole by the matte, leaving a portrait that reads as flatter than
+the archetype art beside it, or it survives as a pale halo ringing the animal on
+transparency — which reads as a rendering fault at 80px thumbnail size, in both
+Discord themes. The rim must sit ON the creature's own edge pixels, crisp, with
+no bloom, no feathering and no falloff into the background.
+
+- **Legendary rim: warm gold `#f1c40f`** — `tyrannosaurus`, `spinoraptor`,
+  `liopleurodon`, `mosasaurus`, `quetzalcoatlus`. This is exactly
+  `RARITY_COLOR.legendary` (`src/modules/hatchery/embeds.ts`), so the rim and the
+  reveal embed's side bar agree.
+- **Mythic rim: violet `#8e44ad`** — `indominus`, `indoraptor`, `ultimasaurus`.
+  Violet deliberately does **not** match `RARITY_COLOR.mythic` (`0xe74c3c`, red).
+  A red rim on Indominus' pale bone hide and on Indoraptor's black-and-gold reads
+  as blood or damage; violet reads as engineered, which is what the mythic tier
+  is. Do not "correct" this to the embed color.
+
+**Hard no-glow rule** (inherited verbatim from Dino archetypes, and it is not in
+tension with the rim light above — a rim is on-silhouette, a glow is off-it): no
+glow, rays, embers, sparkles, or light effects may extend beyond the dinosaur
+silhouette. Emissive detail is allowed only ON surfaces. Every prompt below
+carries both rules.
+
+**Margin: 31px — `node scripts/fit-art.mjs cutout`, never the boss portraits'
+one-off pass.** These render beside the archetype art in the same embeds, so they
+must match that family, not `assets/images/battles/`. The divergence between the
+two families is recorded in the table in Egg rarities; this set sits on the
+`fit-art.mjs` side of it. `tests/images.test.ts` asserts the fitted margin to
+±1px per file.
+
+**Facing right:** like all seven boss portraits and all eight archetype cutouts,
+snout pointing right. Two boss generations came back mirrored and had to be
+flipped in post — check every generation against its reference before shipping.
+
+**Workflow (reference chain):** each hero portrait is generated as an image-edit
+of **the archetype cutout that species currently shares** (Nano Banana Pro,
+`medias` role `image`) — the strongest available style lock, because the stand-in
+is precisely the image the new file replaces, so pose, camera, scale in frame and
+rendering all carry over for free. Post-process each with `remove_background`,
+then
+`node scripts/fit-art.mjs cutout <src> assets/images/dinos/<speciesId>.webp`.
+
+| Target | Reference attached as `image` |
+|---|---|
+| `dinos/tyrannosaurus.webp` | `assets/images/dinos/bruiser-carnivore.webp` |
+| `dinos/spinoraptor.webp` | `assets/images/dinos/bruiser-carnivore.webp` |
+| `dinos/liopleurodon.webp` | `assets/images/dinos/bruiser-carnivore.webp` |
+| `dinos/indominus.webp` | `assets/images/dinos/bruiser-carnivore.webp` |
+| `dinos/mosasaurus.webp` | `assets/images/dinos/tank-carnivore.webp` |
+| `dinos/ultimasaurus.webp` | `assets/images/dinos/tank-carnivore.webp` |
+| `dinos/quetzalcoatlus.webp` | `assets/images/dinos/swift-carnivore.webp` |
+| `dinos/indoraptor.webp` | `assets/images/dinos/swift-carnivore.webp` |
+
+**Species, not individual, and not a kind either.** The archetype set reads as a
+*kind* (clean, unblemished, flat); the boss portraits read as a named
+*individual* (scarred, chipped, damaged). These sit between: individuating
+species detail — a real skull shape, real coloring, real body plan — but no
+scars, no chipped teeth, no torn frills, no battle damage. Scarring stays
+reserved for `assets/images/battles/`.
+
+**Two stand-ins are anatomically wrong, and correcting them is a large part of
+why this set exists.** `liopleurodon` is a short-necked marine pliosaur currently
+rendered as a heavy toothy land theropod, and `quetzalcoatlus` is a toothless
+azhdarchid pterosaur currently rendered as a lean toothy land theropod. Their
+prompts below say so explicitly and instruct the model to replace the entire body
+plan rather than restyle the reference — an edit prompt that only adds color to a
+theropod will happily keep the theropod.
+
+**Silhouettes that grow past the reference: `spinoraptor`'s sail,
+`quetzalcoatlus`' crest and neck, `ultimasaurus`' shoulder plating.** These three
+read larger in frame than the archetype poses they edit from, and that is exactly
+how `boss-founders_park` came back cropped at the bottom and right edges on its
+first attempt. All three prompts below therefore carry the CRITICAL FRAMING block
+from Battle bosses. If a generation still touches an edge, regenerate rather than
+re-cropping.
+
+### tyrannosaurus (dinos/tyrannosaurus.webp)
+
+Reference: `assets/images/dinos/bruiser-carnivore.webp`. Rim: gold `#f1c40f`.
+
+> Keep the exact same head-and-shoulders three-quarter portrait framing as the
+> reference image: same camera angle, same scale in frame, same small even
+> margin, facing right with the snout pointing right, on a plain flat light-gray
+> studio background with no scenery and no ground shadow. Change the dinosaur to
+> a massive cartoon Tyrannosaurus rex with a deep boxy skull, heavy brow ridges
+> over small forward-set eyes, thick jaw muscles, banded teeth showing at the lip
+> line, a powerfully corded neck, tiny two-fingered forelimbs, and coarse pebbled
+> hide in deep crimson over charcoal with a paler bone-white throat. Render it as
+> a specific species with individuating detail, but with clean unblemished hide:
+> no scars, no chipped teeth, no battle damage. Add a hard specular rim light
+> along the silhouette edge only — a crisp warm gold #f1c40f highlight sitting
+> tight on the creature's outline, like a sharp light source directly behind it.
+> The rim must stay ON the animal's own edge; it must not bleed, feather, bloom
+> or halo outward into the background, and there must be no soft glow of any kind
+> around the silhouette. No glow, rays, embers, sparkles, or light effects
+> extending beyond the dinosaur silhouette; glowing details may appear only on
+> the surfaces themselves. Plain flat light-gray studio background, completely
+> empty, no drawn border, no frame, no panel edge, no letterboxing. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated colors,
+> strong glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no human characters, no UI elements.
+
+### spinoraptor (dinos/spinoraptor.webp)
+
+Reference: `assets/images/dinos/bruiser-carnivore.webp`. Rim: gold `#f1c40f`.
+Carries the CRITICAL FRAMING block — the sail runs well above the reference's
+shoulder line.
+
+> Keep the exact same head-and-shoulders three-quarter portrait camera angle and
+> facing as the reference image: facing right with the snout pointing right, on a
+> plain flat light-gray studio background with no scenery and no ground shadow.
+> Change the dinosaur to a cartoon hybrid theropod — a raptor's narrow alert head
+> and sickle-clawed forelimbs carried on a heavy spinosaur frame, with a long
+> crocodilian snout of interlocking conical teeth, a high forward-set eye, and a
+> tall ridged skin sail rising from the shoulders and back — coloured in olive
+> and rust striping with the sail membrane in warm translucent amber. Render it
+> as a specific species with individuating detail, but with clean unblemished
+> hide: no scars, no chipped teeth, no torn sail, no battle damage. Add a hard
+> specular rim light along the silhouette edge only — a crisp warm gold #f1c40f
+> highlight sitting tight on the creature's outline, including the top edge of
+> the sail, like a sharp light source directly behind it. The rim must stay ON
+> the animal's own edge; it must not bleed, feather, bloom or halo outward into
+> the background, and there must be no soft glow of any kind around the
+> silhouette. No glow, rays, embers, sparkles, or light effects extending beyond
+> the dinosaur silhouette; glowing details may appear only on the surfaces
+> themselves. CRITICAL FRAMING: zoom out so the ENTIRE creature — the whole head,
+> the full neck, the complete sail and both shoulders — sits well inside the
+> frame, small in the canvas, surrounded by a wide band of empty background on
+> all four sides. Nothing may touch, run off, or be cropped by any edge of the
+> image, especially the top and bottom edges. Plain flat light-gray studio
+> background, completely empty, no drawn border, no frame, no panel edge, no
+> letterboxing. Glossy cartoon mobile-game art style, bold dark outlines, vibrant
+> saturated colors, strong glossy highlights, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no lettering, no words, no
+> numbers, no signage writing anywhere in the scene, no human characters, no UI
+> elements.
+
+### liopleurodon (dinos/liopleurodon.webp)
+
+Reference: `assets/images/dinos/bruiser-carnivore.webp`. Rim: gold `#f1c40f`.
+**Anatomy correction — the reference is the wrong animal.** Liopleurodon is a
+short-necked marine pliosaur: four broad paddle flippers, no hind legs, no
+upright bipedal stance, no theropod skull. The stand-in is a land theropod, so
+the prompt replaces the body plan outright rather than restyling it.
+
+> Keep only the camera angle, the scale in frame, the small even margin and the
+> facing of the reference image — head and forequarters in three-quarter view,
+> facing right with the snout pointing right, on a plain flat light-gray studio
+> background with no scenery and no ground shadow. The animal in the reference is
+> a land theropod and is the WRONG animal: replace the entire body plan. Do not
+> keep the hind legs, do not keep the upright bipedal stance, do not keep the
+> theropod skull. Draw instead a cartoon Liopleurodon — a short-necked marine
+> pliosaur with an enormous elongated crocodile-like skull that is nearly a
+> quarter of its whole body, a jaw of long interlocking fangs, a thick short
+> muscular neck running straight into a broad torpedo-shaped body, and four wide
+> flat paddle flippers with no toes and no claws, the leading front flipper
+> sweeping into frame. Smooth wet rubbery hide with no scales and no feathers,
+> countershaded deep marine blue over a pale silver belly, with a wet glossy
+> sheen. Render it as a specific species with individuating detail, but with
+> clean unblemished hide: no scars, no chipped teeth, no battle damage. Add a
+> hard specular rim light along the silhouette edge only — a crisp warm gold
+> #f1c40f highlight sitting tight on the creature's outline, like a sharp light
+> source directly behind it. The rim must stay ON the animal's own edge; it must
+> not bleed, feather, bloom or halo outward into the background, and there must
+> be no soft glow of any kind around the silhouette. No water, no waves, no
+> spray, no bubbles, no underwater caustics — the background stays an empty flat
+> studio gray. No glow, rays, embers, sparkles, or light effects extending beyond
+> the creature silhouette; glowing details may appear only on the surfaces
+> themselves. Plain flat light-gray studio background, completely empty, no drawn
+> border, no frame, no panel edge, no letterboxing. Glossy cartoon mobile-game
+> art style, bold dark outlines, vibrant saturated colors, strong glossy
+> highlights, clean cel shading with smooth gradients, polished game-asset look.
+> No text, no lettering, no words, no numbers, no signage writing anywhere in the
+> scene, no human characters, no UI elements.
+
+### mosasaurus (dinos/mosasaurus.webp)
+
+Reference: `assets/images/dinos/tank-carnivore.webp`. Rim: gold `#f1c40f`. The
+stand-in's broad blunt snout is already the right general read, so this is a
+restyle rather than a body-plan replacement — but the flippers are new and must
+be stated.
+
+> Keep the exact same head-and-shoulders three-quarter portrait framing as the
+> reference image: same camera angle, same scale in frame, same small even
+> margin, facing right with the snout pointing right, on a plain flat light-gray
+> studio background with no scenery and no ground shadow. Change the animal to a
+> cartoon Mosasaurus — a huge marine lizard with a long streamlined body, a broad
+> wedge-shaped skull, a heavy lower jaw and a double row of conical teeth, a
+> forked flicking tongue, small high-set eyes, keeled scales ridging the back of
+> the neck, and short broad paddle flippers rather than clawed legs, with the
+> leading flipper visible at the lower edge of the portrait. Slate and deep teal
+> countershading over a cream belly, with a wet glossy sheen. Render it as a
+> specific species with individuating detail, but with clean unblemished hide: no
+> scars, no chipped teeth, no battle damage. Add a hard specular rim light along
+> the silhouette edge only — a crisp warm gold #f1c40f highlight sitting tight on
+> the creature's outline, like a sharp light source directly behind it. The rim
+> must stay ON the animal's own edge; it must not bleed, feather, bloom or halo
+> outward into the background, and there must be no soft glow of any kind around
+> the silhouette. No water, no waves, no spray, no bubbles, no underwater
+> caustics — the background stays an empty flat studio gray. No glow, rays,
+> embers, sparkles, or light effects extending beyond the creature silhouette;
+> glowing details may appear only on the surfaces themselves. Plain flat
+> light-gray studio background, completely empty, no drawn border, no frame, no
+> panel edge, no letterboxing. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel shading
+> with smooth gradients, polished game-asset look. No text, no lettering, no
+> words, no numbers, no signage writing anywhere in the scene, no human
+> characters, no UI elements.
+
+### quetzalcoatlus (dinos/quetzalcoatlus.webp)
+
+Reference: `assets/images/dinos/swift-carnivore.webp`. Rim: gold `#f1c40f`.
+**Anatomy correction — the reference is the wrong animal.** Quetzalcoatlus is a
+toothless azhdarchid pterosaur; the stand-in is a lean toothy theropod, and
+`## Dino archetypes` above already records that mismatch as an accepted cost of
+the fixed set. This file is what pays it off. Carries the CRITICAL FRAMING block
+— the crest and the long neck both run past the reference's silhouette.
+
+> Keep only the camera angle, the scale in frame, the small even margin and the
+> facing of the reference image — head-and-shoulders three-quarter view, facing
+> right with the beak pointing right, on a plain flat light-gray studio
+> background with no scenery and no ground shadow. The animal in the reference is
+> a toothy land theropod and is the WRONG animal: replace the entire body plan.
+> Draw instead a cartoon Quetzalcoatlus, a giant azhdarchid pterosaur — a long
+> straight spear-like beak that is completely TOOTHLESS with smooth clean jaw
+> edges, a tall backswept blade-shaped head crest, a very long stiff upright
+> neck, a small compact body covered in short fuzzy pycnofibres rather than
+> scales, and a membranous wing folded at the shoulder with the wing finger
+> visible as a long spar. No teeth anywhere, no scaly theropod snout, no clawed
+> theropod forelimbs, no feathered wings. Pale bone-white and slate colouring
+> with a warm coral crest and a dark eye stripe. Render it as a specific species
+> with individuating detail, but with clean unblemished hide: no scars, no torn
+> wing membrane, no battle damage. Add a hard specular rim light along the
+> silhouette edge only — a crisp warm gold #f1c40f highlight sitting tight on the
+> creature's outline, including the crest and the beak, like a sharp light source
+> directly behind it. The rim must stay ON the animal's own edge; it must not
+> bleed, feather, bloom or halo outward into the background, and there must be no
+> soft glow of any kind around the silhouette. No glow, rays, embers, sparkles,
+> or light effects extending beyond the creature silhouette; glowing details may
+> appear only on the surfaces themselves. CRITICAL FRAMING: zoom out so the
+> ENTIRE creature — the whole beak, the full crest, the complete neck and both
+> shoulders — sits well inside the frame, small in the canvas, surrounded by a
+> wide band of empty background on all four sides. Nothing may touch, run off, or
+> be cropped by any edge of the image, especially the top and right edges. Plain
+> flat light-gray studio background, completely empty, no drawn border, no frame,
+> no panel edge, no letterboxing. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel shading
+> with smooth gradients, polished game-asset look. No text, no lettering, no
+> words, no numbers, no signage writing anywhere in the scene, no human
+> characters, no UI elements.
+
+### indominus (dinos/indominus.webp)
+
+Reference: `assets/images/dinos/bruiser-carnivore.webp`. Rim: violet `#8e44ad`.
+This is the file the release exists for: a player pulling a Mythic Indominus
+currently sees the same red bruiser bust as a common-tier roll.
+
+> Keep the exact same head-and-shoulders three-quarter portrait framing as the
+> reference image: same camera angle, same scale in frame, same small even
+> margin, facing right with the snout pointing right, on a plain flat light-gray
+> studio background with no scenery and no ground shadow. Change the dinosaur to
+> a cartoon Indominus rex — a large engineered hybrid theropod with pale
+> bone-white hide, knobbly osteoderm ridges running along the skull and down the
+> neck, a heavy elongated jaw with irregular oversized teeth, long clawed
+> three-fingered forelimbs, and cold amber-red eyes with narrow slit pupils, with
+> faint darker grey mottling breaking up the white. It must read as calm,
+> intelligent and unnatural rather than raging. Render it as a specific species
+> with individuating detail, but with clean unblemished hide: no scars, no
+> chipped teeth, no battle damage. Add a hard specular rim light along the
+> silhouette edge only — a crisp violet #8e44ad highlight sitting tight on the
+> creature's outline, like a sharp light source directly behind it. The rim must
+> stay ON the animal's own edge; it must not bleed, feather, bloom or halo
+> outward into the background, and there must be no soft glow of any kind around
+> the silhouette. No glow, rays, embers, sparkles, or light effects extending
+> beyond the dinosaur silhouette; glowing details may appear only on the surfaces
+> themselves. Plain flat light-gray studio background, completely empty, no drawn
+> border, no frame, no panel edge, no letterboxing. Glossy cartoon mobile-game
+> art style, bold dark outlines, vibrant saturated colors, strong glossy
+> highlights, clean cel shading with smooth gradients, polished game-asset look.
+> No text, no lettering, no words, no numbers, no signage writing anywhere in the
+> scene, no human characters, no UI elements.
+
+### indoraptor (dinos/indoraptor.webp)
+
+Reference: `assets/images/dinos/swift-carnivore.webp`. Rim: violet `#8e44ad`.
+
+> Keep the exact same head-and-shoulders three-quarter portrait framing as the
+> reference image: same camera angle, same scale in frame, same small even
+> margin, facing right with the snout pointing right, on a plain flat light-gray
+> studio background with no scenery and no ground shadow. Change the dinosaur to
+> a cartoon Indoraptor — a lean engineered raptor-form hybrid with glossy jet
+> black hide, a single sharp gold stripe running from behind the eye down the
+> neck and flank, a narrow elongated skull with a low brow, a high forward-set
+> eye with a pale yellow iris and a slit pupil, hooked forelimb claws, and a
+> low-slung sinuous predatory posture. It must read as sly and malicious rather
+> than brutish. Render it as a specific species with individuating detail, but
+> with clean unblemished hide: no scars, no chipped teeth, no battle damage. Add
+> a hard specular rim light along the silhouette edge only — a crisp violet
+> #8e44ad highlight sitting tight on the creature's outline, like a sharp light
+> source directly behind it. The rim must stay ON the animal's own edge; it must
+> not bleed, feather, bloom or halo outward into the background, and there must
+> be no soft glow of any kind around the silhouette. The rim is the only thing
+> separating a black animal from the background — keep it crisp and unbroken
+> along the whole outline. No glow, rays, embers, sparkles, or light effects
+> extending beyond the dinosaur silhouette; glowing details may appear only on
+> the surfaces themselves. Plain flat light-gray studio background, completely
+> empty, no drawn border, no frame, no panel edge, no letterboxing. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated colors,
+> strong glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no human characters, no UI elements.
+
+### ultimasaurus (dinos/ultimasaurus.webp)
+
+Reference: `assets/images/dinos/tank-carnivore.webp`. Rim: violet `#8e44ad`.
+Carries the CRITICAL FRAMING block — this is the same design that cropped at the
+bottom and right on `boss-founders_park`'s first attempt. Note this is the
+*species* portrait, distinct from the chapter-7 boss portrait
+`assets/images/battles/boss-founders_park-portrait.webp`, which stays scarred,
+tagged and fitted at 24px; the two must not be confused or reused for each other.
+
+> Keep the exact same head-and-shoulders three-quarter portrait camera angle and
+> facing as the reference image: facing right with the snout pointing right, on a
+> plain flat light-gray studio background with no scenery and no ground shadow.
+> Change the dinosaur to a cartoon Ultimasaurus — a composite armoured apex
+> hybrid with a tyrannosaur's broad heavy skull, a pair of forward-curving brow
+> horns, overlapping ankylosaur-style armour plates running across the shoulders
+> and down the back, blunt bony knuckles ridging the jawline, and hooked sickle
+> claws on the forelimbs. Deep burnished bronze and obsidian plating, with thin
+> molten-orange seams glowing between the plates — the glow must be painted only
+> ON the plate surfaces themselves and must not spill off the animal. Render it
+> as a specific species with individuating detail, but with clean unblemished
+> plating: no scars, no chipped plates, no battle damage, no metal tag. Add a
+> hard specular rim light along the silhouette edge only — a crisp violet #8e44ad
+> highlight sitting tight on the creature's outline, like a sharp light source
+> directly behind it. The rim must stay ON the animal's own edge; it must not
+> bleed, feather, bloom or halo outward into the background, and there must be no
+> soft glow of any kind around the silhouette. No glow, rays, embers, sparkles,
+> or light effects extending beyond the creature silhouette. CRITICAL FRAMING:
+> zoom out so the ENTIRE creature — the whole head, both horns, the full neck and
+> both complete armoured shoulders — sits well inside the frame, small in the
+> canvas, surrounded by a wide band of empty background on all four sides.
+> Nothing may touch, run off, or be cropped by any edge of the image, especially
+> the bottom and right edges. Plain flat light-gray studio background, completely
+> empty, no drawn border, no frame, no panel edge, no letterboxing. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated colors,
+> strong glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no human characters, no UI elements.
+
 ## Park map
 
 Three opaque rasters drawn by the park renderer (`src/core/render/draw.ts`)

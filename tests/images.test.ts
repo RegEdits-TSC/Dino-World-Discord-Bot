@@ -413,6 +413,30 @@ const ARCHETYPES = Object.keys(
 const DIETS = Object.keys({ herbivore: 0, carnivore: 0 } satisfies Record<Diet, 0>) as Diet[];
 const DINO_ART_KEYS = ARCHETYPES.flatMap((a) => DIETS.map((d) => `${a}-${d}`));
 
+// The 8 rarest species — the five legendaries and the three mythics — each ship a
+// per-species OVERRIDE portrait that dinoImage() prefers over the archetype×diet
+// art they used to share. HAND-TYPED on purpose: deriving this from rarity would
+// silently demand a new raster the moment a legendary or mythic species ships,
+// which is exactly the "adding a species is a data-only change" guarantee the
+// fixed 8-file archetype set exists to keep. Adding a ninth hero portrait is an
+// edit here, deliberately.
+const HERO_SPECIES = [
+  'indominus', 'indoraptor', 'liopleurodon', 'mosasaurus',
+  'quetzalcoatlus', 'spinoraptor', 'tyrannosaurus', 'ultimasaurus',
+].sort();
+
+// Enumerated from DISK, never from HERO_SPECIES: a hand-typed list can only prove
+// that what exists, exists (the same reason scrapeBannerNames above is a scrape).
+// Reading the directory is what makes a stray or misspelled file — dinos/t-rex.webp,
+// dinos/gift-shop.webp — visible, instead of it null-degrading into an imageless
+// embed forever with this suite green.
+const DINO_ART_FILES = readdirSync(resolve(process.cwd(), 'assets/images/dinos'))
+  .filter((f) => f.endsWith('.webp'))
+  .map((f) => f.replace(/\.webp$/, ''))
+  .sort();
+const SPECIES_IDS = new Set(allSpecies().map((s) => s.id));
+const SPECIES_ART_FILES = DINO_ART_FILES.filter((n) => SPECIES_IDS.has(n));
+
 describe('dino archetype prompts', () => {
   // Same precedent as tests/battle-content.test.ts's bossId cross-check:
   // prompts.md is the regeneration source of truth, so a shipped asset with no
@@ -423,6 +447,16 @@ describe('dino archetype prompts', () => {
     expect(prompts).toContain('## Dino archetypes');
     expect(prompts).toContain('assets/images/dinos/');
     for (const key of DINO_ART_KEYS) expect(prompts, key).toContain(`${key}.webp`);
+  });
+
+  // Same precedent as the archetype case above and tests/battle-content.test.ts's
+  // bossId cross-check: prompts.md is the regeneration source of truth, so a
+  // shipped raster with no prompt row is unreproducible.
+  it('documents a regeneration prompt for all 8 hero species portraits', () => {
+    const prompts = readFileSync(new URL('../docs/assets/prompts.md', import.meta.url), 'utf8');
+    expect(HERO_SPECIES).toHaveLength(8);
+    expect(prompts).toContain('## Hero species portraits');
+    for (const id of HERO_SPECIES) expect(prompts, id).toContain(`dinos/${id}.webp`);
   });
 });
 
@@ -436,6 +470,41 @@ describe('dino archetype art', () => {
   it('every species resolves to a shipped archetype image', () => {
     for (const s of allSpecies()) {
       expect(assetImage('dinos', `${s.archetype}-${s.diet}`), s.id).not.toBeNull();
+    }
+  });
+});
+
+describe('hero species art', () => {
+  // it.each over an EMPTY array registers zero tests and goes dark with the suite
+  // still green — the same failure mode the banner-scrape guard above exists for.
+  // This case is what makes a missing, short or misnamed set red, and it also
+  // classifies every file in the directory: a dinos/ raster that is neither an
+  // archetype-diet pair nor a real species id is referenced by nothing and renders
+  // nowhere, because dinoImage only ever asks for those two shapes.
+  it('ships exactly the hero portraits, and no unclassifiable dinos/ file', () => {
+    expect(SPECIES_ART_FILES, 'per-species override files on disk').toEqual(HERO_SPECIES);
+    const known = new Set([...DINO_ART_KEYS, ...SPECIES_IDS]);
+    const strays = DINO_ART_FILES.filter((n) => !known.has(n));
+    expect(strays, `neither an archetype-diet pair nor a species id: ${strays.join(', ')}`).toEqual([]);
+  });
+
+  // The gap this closes: expectTransparentCutout was reachable for the dinos kind
+  // ONLY through it.each(DINO_ART_KEYS) — an 8-name list derived from the Archetype
+  // and Diet type unions — so a per-species override file inherited NO dimension, no
+  // corner-transparency and NO margin checking at all. 31px here, matching the
+  // archetype set these render beside in the same embeds; never the boss portraits'
+  // 24px (expectTransparentCutout picks the number off `kind`).
+  it.each(SPECIES_ART_FILES)('%s is a 1024×1024 transparent cutout at the 31px margin',
+    (name) => expectTransparentCutout('dinos', name));
+
+  // The override must be an override, not a replacement: the other 44 species ship
+  // no file of their own and must keep resolving archetype art through dinoImage's
+  // fallback arm, or "adding a species is a data-only change" stops being true.
+  it('every non-hero species still resolves to a shipped archetype image', () => {
+    for (const s of allSpecies()) {
+      if (HERO_SPECIES.includes(s.id)) continue;
+      expect(assetImage('dinos', `${s.archetype}-${s.diet}`), s.id).not.toBeNull();
+      expect(assetImage('dinos', s.id), `${s.id} unexpectedly ships its own portrait`).toBeNull();
     }
   });
 });
@@ -513,11 +582,10 @@ describe('cross-kind basename collisions', () => {
 // The inverse of the banner orphan check above, for the one directory with TWO
 // naming families: `<archetype>-<diet>` (the fixed set of 8) and `<speciesId>`
 // (the optional per-species override). Both sides are derived — DINO_ART_KEYS
-// from the real Archetype/Diet unions, ids from allSpecies() — so a typo'd or
-// retired name is caught here rather than null-degrading to an imageless embed,
-// which is silent everywhere else.
-const SPECIES_IDS = new Set(allSpecies().map((s) => s.id));
-
+// from the real Archetype/Diet unions, SPECIES_IDS (declared above, alongside
+// HERO_SPECIES) from allSpecies() — so a typo'd or retired name is caught here
+// rather than null-degrading to an imageless embed, which is silent everywhere
+// else.
 describe('dino art file names', () => {
   it('every committed dinos/ file is an archetype-diet pair or a real species id', () => {
     const names = readdirSync(resolve(process.cwd(), 'assets/images/dinos'))

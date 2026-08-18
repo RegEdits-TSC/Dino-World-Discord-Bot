@@ -12,6 +12,7 @@ import type { BattleResult } from '../src/data/battle/resolve.js';
 import { DUEL_PAIR_COOLDOWN_MS, DUEL_CHALLENGE_TTL_MS } from '../src/data/battle/constants.js';
 import { duelResultPayload, challengePayload, recordPayload, DUEL_PREFIX } from '../src/modules/duels/embeds.js';
 import { duelsModule } from '../src/modules/duels/index.js';
+import { dinoImage } from '../src/core/images.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
@@ -433,11 +434,18 @@ describe('duel embeds', () => {
   // The opposite regression to the collision guard above: an attach() that silently
   // stopped firing would leave files undefined and pass every other assertion here.
   // attach APPENDS and call order is upload order, so the order is pinned too.
-  it('attaches the lead archetype x diet thumbnail first, then the duel banner', () => {
+  //
+  // The expected name is resolved through dinoImage — the same call duelResultPayload
+  // makes — rather than hand-built from archetype/diet: `strong` above is the roster's
+  // first legendary, and since the hero-species portraits shipped, a legendary or
+  // mythic lead now resolves to its own dinos/<speciesId>.webp ahead of the shared
+  // archetype art. Hardcoding `${archetype}-${diet}.webp` here would silently stop
+  // matching the moment a species that fixture picks gains an override file.
+  it('attaches the lead thumbnail first, then the duel banner', () => {
     const out = outcome();
     const payload = duelResultPayload(out);
     const lead = out.result === 'loss' ? out.squads.defender[0] : out.squads.challenger[0];
-    const expected = `${lead.archetype}-${lead.diet}.webp`;
+    const expected = dinoImage(lead.speciesId, lead.archetype, lead.diet)!.file.name;
     expect(payload.files!.map((f) => f.name)).toEqual([expected, 'duel.webp']);
     const embed = payload.embeds[0].toJSON();
     expect(embed.thumbnail?.url).toBe(`attachment://${expected}`);
