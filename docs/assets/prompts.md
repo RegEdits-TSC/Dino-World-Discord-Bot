@@ -53,13 +53,30 @@ encoded through `@napi-rs/canvas`'s `canvas.toBuffer('image/webp', 95)`, and
 indistinguishable from PNG at the sizes Discord renders. The conversion pass that
 introduced it took the 40 files committed at the time from **63.4 MB of PNG to 8.9 MB
 of WebP** — about 86% smaller in aggregate.
-`scripts/fit-art.mjs` emits it directly, so both modes write the shipped format and no
+`scripts/fit-art.mjs` emits it directly, so every mode writes the shipped format and no
 separate conversion step is needed. Intermediates are exempt: a generator's output and
 the `remove_background` result in the walkthroughs below are whatever the tool produced
 (usually PNG), and only the final write is WebP. `assets/emojis/png/` is **not** WebP —
 Discord's application-emoji upload expects PNG and `manifest.json` hashes those exact
 bytes — and `assets/emojis/svg/` stays SVG because the park renderer decodes it
 synchronously.
+
+**Post-processing modes (`scripts/fit-art.mjs`).** Every mode writes WebP q95 and
+takes whatever the generator emitted (usually PNG) as its source.
+
+| Mode | Output | Fit | Used by |
+|---|---|---|---|
+| `node scripts/fit-art.mjs banner <src> <dest>` | 1536×1024 (3:2) | cover-scale, center-crop | `assets/images/sites/<id>-banner.webp`, `assets/images/banners/` |
+| `node scripts/fit-art.mjs ground <src> <dest>` | 1200×800 (3:2) | cover-scale, center-crop | `assets/images/park/ground{,-wet,-dry,-cold}.webp` |
+| `node scripts/fit-art.mjs band <src> <dest>` | 270×150 (1.8:1) | cover-scale, center-crop | `assets/images/park/attraction-<kind>.webp`, `assets/images/park/landmark-{a,b,c}.webp` — anything the park renderer draws 1:1 at `TILE_W`×`TILE_H` |
+| `node scripts/fit-art.mjs cutout <src> <dest>` | 1024×1024 transparent | defringe, then whole-bbox fit at a 31px margin | `assets/images/hatch/`, `assets/images/dinos/` |
+
+`band` exists because 270×150 is 1.8:1 and no generator offers that aspect ratio:
+generate at 16:9 and let the mode crop. It is the `ground` mode's arithmetic with
+different constants, nothing more. It is **not** a complete recipe for the two
+tile plates — those need a bounding-box crop first, described under Park map —
+and it is **not** interchangeable with `cutout`, which fits a transparent
+subject rather than cover-cropping an opaque frame.
 
 **Decode trap: Content Credentials (C2PA) in a source PNG.** *Symptom:*
 `scripts/fit-art.mjs` — or any other pass that hands a freshly generated PNG to
@@ -1119,7 +1136,10 @@ generation's aspect ratio (16:9) is already close to the tile's (270:150 =
 margin survives almost unchanged into the shipped tile as a stray border
 outside the plate's own frame. Crop tight to the plate object's own bounding
 box first, then cover-fit that crop to 270×150 — do not cover-fit the raw
-generation directly.
+generation directly. `fit-art.mjs band` performs that second step only, so a
+plate regeneration still needs the bounding-box crop by hand before the mode is
+run. Art that already fills its frame edge to edge — the landmark bands, the
+attraction bands — goes straight through `band` with no pre-crop.
 
 **Contrast requirement (hard gate, not a style preference):** `drawTile`
 (`draw.ts`) paints the lot name and `Lv N` in the tile's fixed palette text
@@ -1284,10 +1304,11 @@ Sentinel, Amber Obelisk), band `c` tiers 5–6 (Grand Rotunda, Titan Monument) �
 three bands rather than six rasters, so the monument visibly grows twice.
 Generated with model `nano_banana_pro` (the API silently routes this to
 `nano_banana_2`) at aspect ratio `16:9`, source output 1376×768, cover-scaled
-and center-cropped to 270×150 WebP q95 — the same cover-and-crop idea as
-`fit-art.mjs`'s `ground`/`banner` modes, but 270×150 has no committed mode of
-its own; these three were fitted with a one-off pass rather than a new
-`fit-art.mjs` mode.
+and center-cropped to 270×150 WebP q95. These three predate `fit-art.mjs`'s
+`band` mode and were fitted with a one-off pass; `band` now does exactly that
+cover-and-crop at exactly that size, so a regeneration runs
+`node scripts/fit-art.mjs band <src> assets/images/park/landmark-a.webp`
+rather than repeating the one-off.
 
 **Contrast requirement (hard gate, not a style preference):** same reasoning
 as the two plates above — `drawLandmark` paints the tier name in

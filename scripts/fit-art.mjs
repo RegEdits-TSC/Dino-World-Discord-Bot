@@ -1,6 +1,7 @@
 // Post-processing for generated art (see docs/assets/prompts.md).
 //   node scripts/fit-art.mjs banner <src> <dest>   -> 1536x1024, cover-scaled, center-cropped, WebP q95
 //   node scripts/fit-art.mjs ground <src> <dest>   -> 1200x800, cover-scaled, center-cropped, WebP q95
+//   node scripts/fit-art.mjs band   <src> <dest>   -> 270x150, cover-scaled, center-cropped, WebP q95
 //   node scripts/fit-art.mjs cutout <src> <dest>   -> 1024x1024 transparent, defringed and centered, WebP q95
 //
 // `cutout` is the processor for the hatch cracks and for any future cutout family.
@@ -12,7 +13,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createCanvas, Image } from '@napi-rs/canvas';
 
-// The cover-scaled modes. Both are 3:2 — `ground` differs from `banner` only in
+// The cover-scaled modes. `banner` and `ground` are both 3:2 and differ only in
 // pixel size, because the park renderer's ground is cover-scaled onto a canvas
 // that is at most 752px tall (gridDims in src/core/render/draw.ts: height =
 // 88 + 166*rows, and rows maxes out at 4 — lotSlots caps at 10 in
@@ -20,10 +21,21 @@ import { createCanvas, Image } from '@napi-rs/canvas';
 // more bytes than the renderer can ever use. 1200x800 is what the committed
 // park/ground.webp already is; the season variants must match it exactly or
 // they crop differently from each other at the same row count.
-const COVER = { banner: [1536, 1024], ground: [1200, 800] };
+//
+// `band` is 270x150 — TILE_W x TILE_H in src/core/render/draw.ts — and 1.8:1, an
+// aspect ratio no generator offers, so the source is generated at 16:9 and
+// cropped down. Committing at exactly the tile size is what the mode is for:
+// drawTile and drawLandmark call drawImage(img, x, y, TILE_W, TILE_H) with an
+// explicit destination size, so an off-size raster is silently squashed to fit
+// and never throws — a 1024-square source ships stretched from 1.0 to 1.8 and
+// still renders "successfully". Every 270x150 asset committed before this mode
+// existed (the two plates, the three landmark bands) was fitted by a separate
+// one-off pass; the plates additionally cropped to the plate object's own
+// bounding box FIRST, which this mode does not do — see docs/assets/prompts.md.
+const COVER = { banner: [1536, 1024], ground: [1200, 800], band: [270, 150] };
 const [mode, src, dest] = process.argv.slice(2);
 if (!(mode === 'cutout' || Object.hasOwn(COVER, mode)) || !src || !dest) {
-  console.error('usage: node scripts/fit-art.mjs <banner|ground|cutout> <src> <dest.webp>');
+  console.error('usage: node scripts/fit-art.mjs <banner|ground|band|cutout> <src> <dest.webp>');
   process.exit(2);
 }
 
