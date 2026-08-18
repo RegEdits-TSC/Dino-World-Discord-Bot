@@ -434,3 +434,57 @@ describe('dinoImage', () => {
     }
   });
 });
+
+// Attachment names are BASENAMES ONLY — assetImage builds `${name}.webp` with no
+// `kind` prefix — so two refs on ONE payload that resolve to the same basename
+// make `attachment://<name>.webp` ambiguous and one of the two embed slots
+// renders the wrong picture. attach() appends and can never clobber, but it
+// cannot DEDUPE, so nothing else in the suite can see this. Exhaustive by
+// construction: `satisfies Record<AssetKind, 0>` rejects a missing key and an
+// unknown one, so a seventh kind added to assetImage fails typecheck here before
+// it can ship uncovered. assets/images/park/ is deliberately absent — those
+// rasters are read by the park renderer directly and never become Discord
+// attachments, so they cannot collide with anything.
+type AssetKind = Parameters<typeof assetImage>[0];
+const ASSET_KINDS = Object.keys({
+  eggs: 0, sites: 0, banners: 0, battles: 0, hatch: 0, dinos: 0,
+} satisfies Record<AssetKind, 0>) as AssetKind[];
+
+describe('cross-kind basename collisions', () => {
+  it('no two committed assets share a basename across the six assetImage kinds', () => {
+    const owners = new Map<string, AssetKind[]>();
+    for (const kind of ASSET_KINDS) {
+      for (const file of readdirSync(resolve(process.cwd(), 'assets/images', kind))) {
+        if (!file.endsWith('.webp')) continue;   // battles/ ships a .gitkeep
+        const base = file.replace(/\.webp$/, '');
+        const owner = owners.get(base);
+        if (owner) owner.push(kind);
+        else owners.set(base, [kind]);
+      }
+    }
+    expect(owners.size, 'no assets found — wrong root?').toBeGreaterThan(0);
+    const collisions = [...owners]
+      .filter(([, kinds]) => kinds.length > 1)
+      .map(([base, kinds]) => `${base}.webp: ${kinds.join(' + ')}`);
+    expect(collisions, `rename one side — two payloads cannot both use these:\n${collisions.join('\n')}`).toEqual([]);
+  });
+});
+
+// The inverse of the banner orphan check above, for the one directory with TWO
+// naming families: `<archetype>-<diet>` (the fixed set of 8) and `<speciesId>`
+// (the optional per-species override). Both sides are derived — DINO_ART_KEYS
+// from the real Archetype/Diet unions, ids from allSpecies() — so a typo'd or
+// retired name is caught here rather than null-degrading to an imageless embed,
+// which is silent everywhere else.
+const SPECIES_IDS = new Set(allSpecies().map((s) => s.id));
+
+describe('dino art file names', () => {
+  it('every committed dinos/ file is an archetype-diet pair or a real species id', () => {
+    const names = readdirSync(resolve(process.cwd(), 'assets/images/dinos'))
+      .filter((f) => f.endsWith('.webp'))
+      .map((f) => f.replace(/\.webp$/, ''));
+    expect(names.length, 'no dino art found — wrong root?').toBeGreaterThan(0);
+    const strays = names.filter((n) => !DINO_ART_KEYS.includes(n) && !SPECIES_IDS.has(n));
+    expect(strays, `neither an archetype-diet pair nor a species id: ${strays.join(', ')}`).toEqual([]);
+  });
+});
