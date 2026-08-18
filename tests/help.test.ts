@@ -53,7 +53,7 @@ describe('/help', () => {
     // fall to 0 alongside it and this test would pass with zero assertions run.
     // Naming every topic also fails a PARTIAL regression (art dropped from one).
     expect([...covered].sort()).toEqual(
-      ['battles', 'care', 'eggs', 'expeditions', 'genelab', 'getting-started', 'guests', 'ranks', 'shop', 'trading']);
+      ['battles', 'care', 'duel', 'eggs', 'expeditions', 'genelab', 'getting-started', 'guests', 'ranks', 'shop', 'trading']);
   });
   it('carries a genelab topic', () => {
     expect(Object.keys(HELP_TOPICS)).toContain('genelab');
@@ -86,8 +86,9 @@ describe('/help', () => {
     for (const sub of ['ghost', 'challenge', 'squad', 'record']) {
       expect(body, `HELP_TOPICS.duel should mention /duel ${sub}`).toContain(`/duel ${sub}`);
     }
-    // No art descriptor: an art-bearing topic must also be added to the hard-coded
-    // sorted list in the art test above, and 3b ships no new image files.
-    expect(HELP_TOPICS.duel?.art).toBeUndefined();
+    // The duel topic shipped art-less in 3b because that branch added no image files.
+    // It has its own banner now, so it must also appear in the hard-coded sorted list
+    // in the art test above — that list is what fails a PARTIAL regression.
+    expect(HELP_TOPICS.duel?.art).toEqual({ kind: 'banners', name: 'duel' });
   });
 });

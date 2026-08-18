@@ -10,7 +10,7 @@ import { allSpecies } from '../src/data/species/index.js';
 import { outcomeFor } from '../src/data/battle/duel.js';
 import type { BattleResult } from '../src/data/battle/resolve.js';
 import { DUEL_PAIR_COOLDOWN_MS, DUEL_CHALLENGE_TTL_MS } from '../src/data/battle/constants.js';
-import { duelResultPayload, challengePayload, DUEL_PREFIX } from '../src/modules/duels/embeds.js';
+import { duelResultPayload, challengePayload, recordPayload, DUEL_PREFIX } from '../src/modules/duels/embeds.js';
 import { duelsModule } from '../src/modules/duels/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
@@ -419,25 +419,42 @@ describe('duel embeds', () => {
     expect(JSON.stringify(embed)).toContain(String(out.ratingAfter.challenger));
   });
 
-  // Two art refs could resolve to the SAME basename whenever both leads share an
-  // archetype×diet, and attach() appends without deduping — one embed slot would
-  // then render the wrong picture. Exactly one ref, always.
-  it('never attaches more than one image', () => {
-    const payload = duelResultPayload(outcome());
-    expect((payload.files ?? []).length).toBeLessThanOrEqual(1);
+  // Two DINO refs could resolve to the SAME basename whenever both leads share an
+  // archetype×diet, and attach() appends without deduping — one embed slot would then
+  // render the other's picture. Exactly one dino ref, always. The duel banner rides
+  // alongside it safely because `duel.webp` can never equal `<archetype>-<diet>.webp`;
+  // what matters is the basenames being distinct, not the count.
+  it('attaches exactly two images and no two share a basename', () => {
+    const names = duelResultPayload(outcome()).files!.map((f) => f.name);
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size, `colliding attachment names: ${names.join(', ')}`).toBe(2);
   });
 
-  // <= 1 above guards the collision hazard (two refs sharing one basename); this
-  // guards the opposite regression — an attach() that silently stopped firing would
-  // leave files undefined and pass every other assertion in this block.
-  it('attaches exactly one image, keyed on the winning lead archetype x diet', () => {
+  // The opposite regression to the collision guard above: an attach() that silently
+  // stopped firing would leave files undefined and pass every other assertion here.
+  // attach APPENDS and call order is upload order, so the order is pinned too.
+  it('attaches the lead archetype x diet thumbnail first, then the duel banner', () => {
     const out = outcome();
     const payload = duelResultPayload(out);
     const lead = out.result === 'loss' ? out.squads.defender[0] : out.squads.challenger[0];
     const expected = `${lead.archetype}-${lead.diet}.webp`;
-    expect(payload.files?.length).toBe(1);
-    expect(payload.files![0].name).toBe(expected);
-    expect(payload.embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${expected}`);
+    expect(payload.files!.map((f) => f.name)).toEqual([expected, 'duel.webp']);
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.thumbnail?.url).toBe(`attachment://${expected}`);
+    expect(embed.image?.url).toBe('attachment://duel.webp');
+  });
+
+  it('dresses the challenge card with the duel banner', () => {
+    const payload = challengePayload('111', '222', 'A', 'B', 900_000);
+    expect(payload.files!.map((f) => f.name)).toEqual(['duel.webp']);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://duel.webp');
+  });
+
+  it('dresses the record card with the duel banner', () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    const payload = recordPayload('A', duelRecord(ctx, 'a'));
+    expect(payload.files!.map((f) => f.name)).toEqual(['duel.webp']);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://duel.webp');
   });
 
   it('carries no buttons on a result', () => {
@@ -570,6 +587,19 @@ describe('/duel challenge', () => {
     // from what is now a result message.
     expect(payload.attachments).toEqual([]);
     expect(payload.components).toEqual([]);
+  });
+
+  it('accepting uploads the result art while still shedding the challenge card attachment set', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    const b = await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    const payload = b.replies[0] as { files?: Array<{ name?: string | null }>; attachments?: unknown[] };
+    // i.update carrying files replaces the message's whole attachment set, and the
+    // explicit attachments: [] is what drops the challenge card's own duel.webp upload
+    // so the result's two files are the only ones left on the message.
+    expect(payload.attachments).toEqual([]);
+    expect(payload.files!.map((f) => f.name)).toContain('duel.webp');
+    expect(payload.files).toHaveLength(2);
   });
 
   // The only test that can tell an ARMED double-accept guard from a disarmed one at the

@@ -1,5 +1,5 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type AttachmentBuilder } from 'discord.js';
-import { dinoImage, attach } from '../../core/images.js';
+import { assetImage, dinoImage, attach } from '../../core/images.js';
 import type { DuelOutcome, DuelRecord, DuelSquadMember } from './service.js';
 
 // The component prefix AND the first segment of every customId this module mints.
@@ -49,12 +49,16 @@ export function duelResultPayload(outcome: DuelOutcome): DuelPayload {
       { name: outcome.beats[0].title, value: outcome.beats[0].lines.join('\n') },
       { name: outcome.beats[1].title, value: outcome.beats[1].lines.join('\n') },
     );
-  // EXACTLY ONE ref. Attachment names are basenames with no kind prefix, so a second
-  // ref would collide whenever both leads share an archetype×diet — attach appends
-  // without deduping and one slot would render the other's picture.
+  // EXACTLY ONE *dino* ref. Attachment names are basenames with no kind prefix, so a
+  // second dino ref would collide whenever both leads share an archetype×diet — attach
+  // appends without deduping and one slot would render the other's picture. The duel
+  // banner below is a different basename entirely, so it is safe alongside it.
   const lead = result === 'loss' ? squads.defender[0] : squads.challenger[0];
   const payload: DuelPayload = { embeds: [embed], components: [] };
   attach(embed, payload, 'thumbnail', dinoImage(lead.speciesId, lead.archetype, lead.diet));
+  // attach APPENDS and call order is upload order — the thumbnail stays files[0] and the
+  // banner is files[1]. tests/duels.test.ts pins that order with toEqual; never swap them.
+  attach(embed, payload, 'image', assetImage('banners', 'duel'));
   return payload;
 }
 
@@ -80,7 +84,9 @@ export function challengePayload(
     new ButtonBuilder().setCustomId(`${DUEL_PREFIX}:decline:${challengerId}:${defenderId}:${expiresAtMs}`)
       .setLabel('Decline').setStyle(ButtonStyle.Secondary),
   );
-  return { embeds: [embed], components: [row] };
+  const payload: DuelPayload = { embeds: [embed], components: [row] };
+  attach(embed, payload, 'image', assetImage('banners', 'duel'));
+  return payload;
 }
 
 /**
@@ -102,5 +108,7 @@ export function recordPayload(name: string, record: DuelRecord): DuelPayload {
     // Elo is a plain integer. Never divide it: only parkRating is stored ×100.
     .setDescription(`**${record.rating}** rating\n${record.wins}W / ${record.losses}L / ${record.draws}D`)
     .addFields({ name: 'Recent duels', value: history });
-  return { embeds: [embed], components: [] };
+  const payload: DuelPayload = { embeds: [embed], components: [] };
+  attach(embed, payload, 'image', assetImage('banners', 'duel'));
+  return payload;
 }

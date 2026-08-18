@@ -101,7 +101,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '`/guests build attraction:<kind>` — build a new attraction, or upgrade one you already own to its next level. Priced in cash; each of the six kinds unlocks at its own attendance threshold.',
     '`/guests claim` — see and claim any attendance milestone your high-water has crossed. Milestones pay once each, permanently — cash, shards, food, or an egg.',
   ].join('\n') },
-  duel: { title: '⚔️ Duels', body: [
+  duel: { title: '⚔️ Duels', art: { kind: 'banners', name: 'duel' }, body: [
     'Duels are free exhibition fights against another player. They cost no energy and pay no cash, shards or XP — the only thing at stake is your duel rating.',
     '`/duel ghost opponent:<player>` — fight a snapshot of their squad right now. They do not need to be online; they are told afterwards.',
     '`/duel challenge opponent:<player>` — post a live challenge they can Accept or Decline. It expires after 15 minutes.',

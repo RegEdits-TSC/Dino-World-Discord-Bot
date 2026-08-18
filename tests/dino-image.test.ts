@@ -76,9 +76,12 @@ describe('duelResultPayload routes the winning lead through dinoImage', () => {
     const payload = duelResultPayload(out);
     const lead = out.result === 'loss' ? out.squads.defender[0] : out.squads.challenger[0];
     expect(vi.mocked(dinoImage).mock.calls).toEqual([[lead.speciesId, lead.archetype, lead.diet]]);
-    // Still EXACTLY ONE ref: two would collide on a shared basename and attach never dedupes.
-    expect(payload.files!.map((f) => f.name)).toEqual([`${lead.speciesId}.webp`]);
+    // Still EXACTLY ONE *dino* ref: two would collide on a shared basename and attach never
+    // dedupes. The duel banner is a second, distinctly-named file riding alongside it — call
+    // order is upload order, so the dino thumbnail stays files[0] and the banner is files[1].
+    expect(payload.files!.map((f) => f.name)).toEqual([`${lead.speciesId}.webp`, 'duel.webp']);
     expect(payload.embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${lead.speciesId}.webp`);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://duel.webp');
   });
 });
 
