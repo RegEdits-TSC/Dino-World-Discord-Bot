@@ -33,7 +33,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Income accrues while dinos are comfortable, up to your Visitor Center cap — collect often.',
     'Dinos in the wrong-diet paddock earn half comfort — the bot warns before you assign one.',
   ].join('\n') },
-  eggs: { title: '🥚 Eggs', art: { kind: 'eggs', name: 'rare' }, body: [
+  eggs: { title: '🥚 Eggs', art: { kind: 'banners', name: 'eggs_incubator' }, body: [
     '`/eggs` — your eggs and incubator status.',
     '`/incubate egg:<id>` — start the timer (slots grow with the Hatchery Lab).',
     '`/hatch egg:<id>` — crack a ready egg and meet your dino.',
@@ -87,7 +87,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Bred eggs roll better trait odds than a wild hatch, and there\'s a small chance of a rarity upgrade (never past Legendary — breeding can never produce a Mythic).',
     `\`/splice dino:<id> slot:<1|2>\` — spend ${SPLICE_SHARD_COST} shards to re-roll one trait slot. The replacement is random and can be worse than what you had.`,
   ].join('\n') },
-  daily: { title: 'Daily quests', body: [
+  daily: { title: 'Daily quests', art: { kind: 'banners', name: 'daily' }, body: [
     '`/daily` — see today\'s 3 quests, your streak, and claim any that are complete.',
     'Quests reset every day at UTC midnight; anything left unclaimed is forfeited, not carried over.',
     'Claiming on consecutive days builds a streak — milestones at 3, 7, 14 days, then every 30 days after, pay a bonus chest of cash, shards, or an egg.',

@@ -172,6 +172,20 @@ describe('/daily claim button', () => {
     expect(btn.deferOpts).toHaveLength(1);
     expect(btn.replies).toHaveLength(0);
   });
+
+  it('dresses the claim reply with the daily banner', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    await dailyCmd.execute(ctx, fakeCommand({ name: 'daily', user: 'u1' }).asChatInput());
+    const rows = rowsFor(ctx, 'u1');
+    const def = QUESTS.find((q) => q.id === rows[0].questId)!;
+    track(ctx, 'u1', def.stat, rows[0].target);
+
+    const btn = fakeButton({ customId: 'daily:claim:u1', user: 'u1' });
+    await dailyBtn.execute(ctx, btn.asChatInput() as never);
+    const payload = btn.replies[0] as EmbedPayload;
+    expect(payload.files).toHaveLength(1);
+    expect(payload.files![0].name).toBe('daily.webp');
+  });
 });
 
 describe('/achievements', () => {
@@ -296,5 +310,16 @@ describe('ach:claimall button', () => {
     await achBtn.execute(ctx, btn.asChatInput() as never);
     expect(btn.deferOpts).toHaveLength(1);
     expect(btn.replies).toHaveLength(0);
+  });
+
+  it('dresses the claim-all reply with the achievements banner', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'u1');
+    track(ctx, 'u1', 'stages_first_cleared', explorerDef.tiers[3]);
+    const btn = fakeButton({ customId: 'ach:claimall:u1', user: 'u1' });
+    await achBtn.execute(ctx, btn.asChatInput() as never);
+    const payload = btn.replies[0] as EmbedPayload;
+    expect(payload.files).toHaveLength(1);
+    expect(payload.files![0].name).toBe('achievements.webp');
   });
 });

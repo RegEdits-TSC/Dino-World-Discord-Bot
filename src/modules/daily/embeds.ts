@@ -83,7 +83,9 @@ export function claimPayload(result: ClaimResult): Payload {
       value: `${emojiTag('dw_chest')} ${result.chest.streak}-day chest: ${chestParts.join(', ')}`,
     });
   }
-  return { embeds: [embed] };
+  const payload: Payload = { embeds: [embed] };
+  attach(embed, payload, 'image', assetImage('banners', 'daily'));
+  return payload;
 }
 
 // Follows the /dino list pagination idiom exactly (src/modules/park/index.ts,
@@ -121,5 +123,7 @@ export function claimAllPayload(result: ReturnType<typeof claimAchievements>): P
     .setTitle('🏆 Achievements claimed')
     .setDescription(lines.join('\n'))
     .addFields({ name: 'Rewards', value: rewardParts.join(', ') });
-  return { embeds: [embed] };
+  const payload: Payload = { embeds: [embed] };
+  attach(embed, payload, 'image', assetImage('banners', 'achievements'));
+  return payload;
 }

@@ -441,12 +441,12 @@ vertical excess, which is center-cropped).
 | `assets/images/banners/collect.webp` | 1536×1024 | `park:collect` reply embed image |
 | `assets/images/banners/rescue.webp` | 1536×1024 | `/rescue` success embed image |
 | `assets/images/banners/dino_roster.webp` | 1536×1024 | `/dino list` embed image |
-| `assets/images/banners/eggs_incubator.webp` | 1536×1024 | `/eggs` embed image |
+| `assets/images/banners/eggs_incubator.webp` | 1536×1024 | `/eggs` embed image, `/help topic:eggs` |
 | `assets/images/banners/sell.webp` | 1536×1024 | `/sell` confirmation prompt embed image |
 | `assets/images/banners/gene_lab.webp` | 1536×1024 | `/breed` confirm/status/claim embed image |
 | `assets/images/banners/gene_splice.webp` | 1536×1024 | `/splice` preview/result embed image |
-| `assets/images/banners/daily.webp` | 1536×1024 | `/daily` hub embed image |
-| `assets/images/banners/achievements.webp` | 1536×1024 | `/achievements` embed image |
+| `assets/images/banners/daily.webp` | 1536×1024 | `/daily` hub + `daily:claim` embed image, `/help topic:daily` |
+| `assets/images/banners/achievements.webp` | 1536×1024 | `/achievements` + `ach:claimall` embed image |
 | `assets/images/banners/guests.webp` | 1536×1024 | `/guests view`, `/guests build`, `/guests claim` and `/help topic:guests` embed image |
 | `assets/images/banners/dex.webp` | 1536×1024 | `/dex list` embed image |
 | `assets/images/banners/landmark.webp` | 1536×1024 | `/park landmark` embed image |

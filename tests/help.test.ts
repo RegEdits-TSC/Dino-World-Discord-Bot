@@ -53,7 +53,14 @@ describe('/help', () => {
     // fall to 0 alongside it and this test would pass with zero assertions run.
     // Naming every topic also fails a PARTIAL regression (art dropped from one).
     expect([...covered].sort()).toEqual(
-      ['battles', 'care', 'duel', 'eggs', 'expeditions', 'genelab', 'getting-started', 'guests', 'ranks', 'shop', 'trading']);
+      ['battles', 'care', 'daily', 'duel', 'eggs', 'expeditions', 'genelab', 'getting-started', 'guests', 'ranks', 'shop', 'trading']);
+  });
+  // The eggs topic borrowed eggs/rare — a single rarity's egg icon standing in for the
+  // whole hatchery screen. banners/eggs_incubator is the picture /eggs itself already
+  // uses. The daily topic shipped bare; banners/daily is what /daily itself uses.
+  it('points the daily and eggs topics at the banners their own screens use', () => {
+    expect(HELP_TOPICS.daily.art).toEqual({ kind: 'banners', name: 'daily' });
+    expect(HELP_TOPICS.eggs.art).toEqual({ kind: 'banners', name: 'eggs_incubator' });
   });
   // /help topic:battles and /help topic:expeditions shared sites/coastal_dig-banner
   // VERBATIM — the whole campaign, seven chapters of it, illustrated with the picture
