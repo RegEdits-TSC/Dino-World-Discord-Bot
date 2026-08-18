@@ -4,7 +4,7 @@ The volcano/frozen banners and volcano thumb were generated with ChatGPT image
 generation; the remaining coastal/amber banners and the coastal/amber/frozen
 thumbs were generated with Higgsfield Nano Banana Pro. The six egg rarities were
 generated with Higgsfield Nano Banana Pro as a reference chain (see the Egg
-rarities section). The 29 embed banners were generated with Higgsfield
+rarities section). The 30 embed banners were generated with Higgsfield
 Nano Banana Pro, `care_neglect` as a reference chain off `care` and
 `battle_defeat` off `battle_victory`. The six hatch cracks were generated as
 reference-chain edits of their own egg icons. These prompts are the source of
@@ -423,7 +423,7 @@ fixed it; keep that block verbatim on any future regeneration of this scene.
 
 ## Embed banners
 
-29 wide banners for the surfaces that have no site or egg art of their
+30 wide banners for the surfaces that have no site or egg art of their
 own. All generated with Higgsfield Nano Banana Pro at 3:2, then scaled to
 1536×1024 (the generator emits 1264×848; scaling to full width leaves ~6px of
 vertical excess, which is center-cropped).
@@ -450,6 +450,7 @@ vertical excess, which is center-cropped).
 | `assets/images/banners/guests.webp` | 1536×1024 | `/guests view`, `/guests build`, `/guests claim` and `/help topic:guests` embed image |
 | `assets/images/banners/dex.webp` | 1536×1024 | `/dex list` embed image |
 | `assets/images/banners/landmark.webp` | 1536×1024 | `/park landmark` embed image |
+| `assets/images/banners/season.webp` | 1536×1024 | `/season` hub + `season:claim` embed image, and the season-ending alert DM |
 | `assets/images/banners/event-clear_skies.webp` | 1536×1024 | `/world` hub embed image, Clear Skies |
 | `assets/images/banners/event-amber_storm.webp` | 1536×1024 | `/world` hub embed image, Amber Storm |
 | `assets/images/banners/event-fossil_rush.webp` | 1536×1024 | `/world` hub embed image, Fossil Rush |
@@ -775,6 +776,41 @@ specified as plain and colored rather than left open to interpretation.
 > game-asset look. No text, no lettering, no words, no numbers, no plaques, no
 > dedication inscriptions or carved writing anywhere on the monument or its base,
 > no signage writing anywhere in the scene, no human characters, no UI elements.
+
+**Season (`season.webp`):** generated with model `nano_banana_pro` (the API
+silently routes this to `nano_banana_2`) at aspect ratio `3:2`, source output
+1264×848, then `node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024
+WebP q95 — same pipeline as the rest of this section. The three cloth hangings
+stand in for the wet / dry / cold cycle deliberately: the season track rides
+the same 30-day rotation the park ground art already renders, so the banner
+has to read as "this season" rather than as a generic festival. Generated with
+`leaderboards.webp` **and** `achievements.webp` attached as `image`
+references: the first carries the ceremonial-plaza bunting and pennant
+vocabulary, the second the medal-on-ribbon vocabulary, and the season banner
+combines both into one scene.
+
+> **season.webp:** A wide cartoon scene of a dinosaur park season festival
+> ground: a tall carved timber totem post in the center hung with a large
+> gleaming gold medal on a deep purple ribbon, a row of four wooden reward
+> posts stepping up in height beside it, each topped with a small prize — a
+> plump coin sack, a glowing crystal shard, a bundle of fresh ferns, a
+> speckled egg in straw — strings of colorful triangular pennants running
+> between the posts, three large painted cloth hangings behind them showing a
+> rain-soaked paddock, a sun-baked golden plain, and a frost-dusted ridge, a
+> cheerful cartoon dinosaur looking up at the medal with its head raised, warm
+> late-afternoon light with petals drifting through the air. Glossy cartoon
+> mobile-game art style, bold dark outlines, vibrant saturated colors, strong
+> glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no human characters, no UI elements.
+
+A first attempt rendered a plain dollar sign on the coin sack — not signage,
+but the same class of stray glyph the `collect.webp` note above warns about.
+The prompt above is the intended, load-bearing version; the fix that actually
+shipped strengthened "a plump coin sack" to "a plump coin sack with no
+markings or symbols on it" and added "no dollar signs, no currency symbols" to
+the negative clause. Regenerating from the shorter version risks reproducing
+the glyph.
 
 **Gene Lab (`gene_lab.webp`) and Gene Splice (`gene_splice.webp`):** generated
 with model `nano_banana_pro` (the API silently routes this to `nano_banana_2`)
