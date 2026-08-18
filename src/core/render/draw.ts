@@ -187,8 +187,12 @@ function drawLandmark(c: SKRSContext2D, x: number, y: number, img: Image | null,
 // and tsconfig sets strict but not noUncheckedIndexedAccess, so a retired slug TYPES as Image | null
 // while RETURNING undefined. drawImage(undefined) throws the identical TypeError drawImage(null)
 // does, and that throw is not a degrade: it becomes { ok: false } from handleRenderRequest, rejects
-// in client.ts, and costs the user the entire park image. Neither `npm run build` nor `npm test` can
-// see the wrong guard.
+// in client.ts, and costs the user the entire park image. `npm run build` can't see the wrong guard —
+// the type checker reads Image | null either way regardless of what the record holds — but
+// tests/render-draw.test.ts's retired-kind tests do, and a populated record is not what makes them
+// able to: `{}['retired_kind']` and `{ gift_shop: img }['retired_kind']` both evaluate to the
+// identical `undefined`, so a `!== null` regression throws under an empty record exactly as it does
+// under a populated one.
 //
 // save()/clip()/restore() around the blit is mandatory, exactly as drawTile's plate branch above: an
 // opaque rectangular raster would otherwise square off the rounded corners, and a leaked clip would

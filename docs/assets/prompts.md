@@ -41,6 +41,12 @@ icons in `assets/images/eggs/` (glossy cartoon game style):
 | `assets/images/park/landmark-a.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 1–2 (Stone Marker, Fossil Plinth) |
 | `assets/images/park/landmark-b.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 3–4 (Bronze Sentinel, Amber Obelisk) |
 | `assets/images/park/landmark-c.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 5–6 (Grand Rotunda, Titan Monument) |
+| `assets/images/park/attraction-picnic_lawn.webp` | 270×150 | `/park view` attraction cell art, `picnic_lawn` |
+| `assets/images/park/attraction-gift_shop.webp` | 270×150 | `/park view` attraction cell art, `gift_shop` |
+| `assets/images/park/attraction-viewing_platform.webp` | 270×150 | `/park view` attraction cell art, `viewing_platform` |
+| `assets/images/park/attraction-amber_carousel.webp` | 270×150 | `/park view` attraction cell art, `amber_carousel` |
+| `assets/images/park/attraction-sky_gondola.webp` | 270×150 | `/park view` attraction cell art, `sky_gondola` |
+| `assets/images/park/attraction-grand_atrium.webp` | 270×150 | `/park view` attraction cell art, `grand_atrium` |
 
 \* Except the shipped `assets/images/sites/volcano_core-thumb.webp`, which is
 **1254×1254** — a discrepancy from the original PNG's IHDR that predates the
@@ -1563,6 +1569,211 @@ attempt — passed with no rework needed. Also worth recording: band a's MEAN
 contrast in the failed first pass was a healthy 5.53:1 while its WORST pixel
 was 1.14:1 — judging by eye, or by an average rather than the worst pixel, on
 the final WebP would have shipped an illegible label.
+
+**park/attraction-{picnic_lawn,gift_shop,viewing_platform,amber_carousel,sky_gondola,grand_atrium}**
+— the guest attraction cell (`drawAttraction`, `draw.ts`), one raster per
+`ATTRACTIONS` kind (`src/data/attractions.ts`). The basename after
+`attraction-` is the catalog slug **verbatim, underscores and all**:
+`attraction-gift-shop.webp` against the slug `gift_shop` is not a near miss,
+it is a silent flat-fill degrade that looks exactly like art nobody has
+shipped yet, which is why `tests/park-art-assets.test.ts` enumerates this
+directory and requires set equality with `Object.keys(ATTRACTIONS)` rather
+than trusting a hand-typed list alone. Generated with model
+`nano_banana_pro` (the API silently routes this to `nano_banana_2`) at
+aspect ratio `16:9`, source output 1376×768, then
+`node scripts/fit-art.mjs band <src> assets/images/park/attraction-<kind>.webp`
+— cover-scaled and center-cropped to 270×150 WebP q95. The three landmark
+bands above predate that mode and were fitted by a one-off pass; this family
+is the reason the mode exists, and nothing at 270×150 should be hand-fitted
+again.
+
+**Workflow (reference chain):** each is an image-edit of a committed landmark
+band, never of another attraction and never from a bare text prompt, so the
+two families share light direction, outline weight, ground treatment and
+palette temperature — they sit in the same grid, on the same ground raster,
+one cell apart. `picnic_lawn`, `gift_shop` and `viewing_platform` reference
+`landmark-a` (the modest ground-level scene); `amber_carousel` and
+`sky_gondola` reference `landmark-b` (the mid-scale monument pair);
+`grand_atrium` references `landmark-c` (the only grand architectural
+interior in either family). The catalog's unlock order is also its power
+order, so the set escalates the same way the landmark bands do: turf and
+trestle tables, then a kiosk, then built timber, then a fairground ride,
+then engineering, then architecture.
+
+**No guest figures in any of the six.** The shared style block's "no
+characters" clause applies unchanged: a crowd is unreadable at 270×150, and
+attendance is a number on the card, not something the tile depicts.
+
+**Contrast requirement (hard gate, not a style preference) — the dark band
+sits at the TOP here, not the bottom.** `drawAttraction` paints the kind
+name in `#eaf4fb` at tile-local `(14, 34)` (18px) and `Lv N` at `(14, 54)`
+(13px), both directly over the art with no scrim — the mirror image of
+`drawLandmark`, which paints its single line at `(14, TILE_H - 16)`.
+Copying a landmark prompt's "BOTTOM FIFTH … dark kerb band" clause verbatim
+therefore puts the dark band where no text is and strands both labels over
+open sky. Sample the committed WebP over the label rectangle x 14–250,
+y 14–58 and take the **worst** pixel, never the mean: band a of the landmark
+pass measured a healthy 5.53:1 mean against a 1.14:1 worst, and judging by
+average would have shipped an illegible label. The flat `#2d4a63` fill these
+rasters replace measures 8.29:1 against `#eaf4fb`; treat ~6:1 as the target,
+matching what the plates and the landmark bands settled on, with 4.5:1 as a
+floor rather than a goal.
+
+**park/attraction-picnic_lawn — Picnic Lawn:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the
+> ENTIRE frame edge to edge with no border, no plain background margin and
+> no framing device: a mown green picnic lawn scene occupying only the
+> LOWER HALF of the frame, with two long wooden trestle tables and benches
+> at the centre, a red-and-white checked blanket spread on the grass beside
+> a wicker hamper, and a single SHORT furled cream parasol on a low pole
+> that stays entirely below the vertical centre of the frame, low hedges
+> and a few ferns visible only near the bottom edge — nothing pale or
+> light-coloured may cross into the top half. The TOP HALF of the frame,
+> from the very top edge down to the exact vertical centre, is rendered as
+> a single perfectly flat, completely uniform solid dark green colour
+> swatch — absolutely no leaf shapes, no grain, no highlights, no darker or
+> lighter patches, no texture of any kind, no visible sky — with a single
+> hard straight horizontal lower edge, clearly darker than everything below
+> it, so pale text can sit on it legibly anywhere in that band. Even flat
+> lighting, no cast shadows. Glossy cartoon mobile-game art style, bold
+> dark outlines, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no characters, no UI elements.
+
+**park/attraction-gift_shop — Gift Shop:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the
+> ENTIRE frame edge to edge with no border, no plain background margin and
+> no framing device: a small timber-and-glass souvenir kiosk occupying only
+> the LOWER HALF of the frame, its window shelves stacked with plush toy
+> dinosaurs, painted eggs and souvenir mugs, a paved forecourt with potted
+> ferns at the very bottom edge. The TOP HALF of the frame, from the very
+> top edge down to the exact vertical centre, is rendered as a single
+> perfectly flat, completely uniform solid dark green colour swatch —
+> absolutely no leaf shapes, no grain, no highlights, no darker or lighter
+> patches, no texture of any kind, no scalloped trim, no striped awning —
+> with a single hard straight horizontal lower edge, clearly darker than
+> everything below it, so pale text can sit on it legibly anywhere in that
+> band; any striped awning or scalloped edge must sit entirely below the
+> vertical centre of the frame. Even flat lighting, no cast shadows. Glossy
+> cartoon mobile-game art style, bold dark outlines, clean cel shading with
+> smooth gradients, polished game-asset look. No text, no characters, no UI
+> elements.
+
+**park/attraction-viewing_platform — Viewing Platform:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the
+> ENTIRE frame edge to edge with no border, no plain background margin and
+> no framing device: a raised wooden observation deck occupying only the
+> LOWER HALF of the frame, built on sturdy support posts with a plank
+> staircase leading up to it, a waist-high safety railing along its edge
+> and a brass viewing telescope mounted on a post at the railing, a jungle
+> valley glimpsed only near the bottom edge. The TOP HALF of the frame,
+> from the very top edge down to the exact vertical centre, is a solid flat
+> dark timber roof-beam band running the full width with a single hard
+> straight horizontal lower edge — no gradient fade, no visible sky or
+> foliage crossing it — clearly darker than everything below it, so pale
+> text can sit on it legibly anywhere in that band. Even flat lighting, no
+> cast shadows. Glossy cartoon mobile-game art style, bold dark outlines,
+> clean cel shading with smooth gradients, polished game-asset look. No
+> text, no characters, no UI elements.
+
+**park/attraction-amber_carousel — Amber Carousel:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the
+> ENTIRE frame edge to edge with no border, no plain background margin and
+> no framing device: a fairground carousel occupying only the LOWER HALF of
+> the frame, carved dinosaur mounts on polished brass poles, glowing
+> translucent amber panels casting warm gold light, low hedges visible only
+> near the bottom edge. The TOP HALF of the frame, from the very top edge
+> down to the exact vertical centre, is a solid flat deep maroon canopy
+> band running the full width with a single hard straight horizontal lower
+> edge — no scalloped trim, no gradient fade, no texture crossing it —
+> clearly darker than everything below it, so pale text can sit on it
+> legibly anywhere in that band; the scalloped canopy trim must sit
+> entirely below the vertical centre of the frame. Even flat lighting, no
+> cast shadows. Glossy cartoon mobile-game art style, bold dark outlines,
+> clean cel shading with smooth gradients, polished game-asset look. No
+> text, no characters, no UI elements.
+
+**park/attraction-sky_gondola — Sky Gondola:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the
+> ENTIRE frame edge to edge with no border, no plain background margin and
+> no framing device: a cable-car station occupying only the LOWER HALF of
+> the frame, two rounded gondola cabins hanging from a taut steel cable, a
+> lattice pylon tower, a jungle valley glimpsed only near the bottom edge.
+> The TOP HALF of the frame, from the very top edge down to the exact
+> vertical centre, is a solid flat dark slate storm-sky band running the
+> full width with a single hard straight horizontal lower edge — no
+> gradient fade, no visible cable, cabin or pylon crossing it — clearly
+> darker than everything below it, so pale text can sit on it legibly
+> anywhere in that band. Even flat lighting, no cast shadows. Glossy
+> cartoon mobile-game art style, bold dark outlines, clean cel shading with
+> smooth gradients, polished game-asset look. No text, no characters, no UI
+> elements.
+
+**park/attraction-grand_atrium — Grand Atrium:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the
+> ENTIRE frame edge to edge with no border, no plain background margin and
+> no framing device: a vast domed glass atrium, small and low, occupying
+> only the LOWER 40% of the frame, tall palms and tree ferns visible
+> through its panes with a small mounted dinosaur skeleton on a plinth
+> inside, a paved approach at the very bottom edge. There must be a clear
+> gap of plain green foliage or ground between the top of the dome and the
+> middle of the frame — the dome's curved roofline must not approach the
+> vertical centre. The TOP 60% of the frame, from the very top edge down
+> well past the vertical centre, is rendered as a single perfectly flat,
+> completely uniform VERY DARK matte brown-black colour swatch, almost
+> black — absolutely no gold trim line, no gradient, no lighter patch, no
+> highlight of any kind, no glass or dome detail, no texture of any kind —
+> with a single hard straight horizontal lower edge, clearly and
+> dramatically darker than everything below it, so pale text can sit on it
+> legibly anywhere in that band. Even flat lighting, no cast shadows.
+> Glossy cartoon mobile-game art style, bold dark outlines, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no
+> characters, no UI elements.
+
+**Lesson — a fractional band height ("TOP THIRD") renders shorter in
+practice than the fraction says, and the failure only shows up at the
+worst pixel.** The first attempt at all six used the same "TOP THIRD"
+phrasing that the shared style guidance above suggests by analogy with the
+landmark bottom-fifth band, sized to nominally cover 256 of the 768 source
+pixels. Measured worst-pixel contrast on that pass was **1.00–1.66:1
+across all six** — a near-total failure — because the model's actual dark
+region ended well short of even that fraction (as little as 28px of 150
+committed pixels, versus roughly 50px needed to clear the label
+rectangle's y 14–58), the same optimistic-fraction gap the landmark pass's
+own Lesson above records for portrait-framed objects. Widening the
+fraction to "TOP HALF" (or "TOP 60%" for grand_atrium) with an explicit
+hard straight lower edge and "no gradient/scallop/texture crossing it"
+fixed four of six outright (viewing_platform 12.70:1, amber_carousel
+12.99:1, sky_gondola 9.49:1 on the first retry; grand_atrium eventually
+16.24:1 after two more rounds). The remaining two failure modes were
+narrower and easy to miss by eye at full size: picnic_lawn's furled
+parasol finial and grand_atrium's mounted skeleton's skull were each tall
+enough to poke a pale, near-text-coloured pixel just across the band
+boundary — invisible at a glance, decisive at the worst-pixel sample.
+Both needed the foreground element explicitly bounded ("stays entirely
+below the vertical centre," "nothing pale may cross into the top half")
+before they cleared. picnic_lawn and gift_shop separately needed the band
+material itself re-described as "a single perfectly flat, completely
+uniform … colour swatch" rather than a scene element ("tree-canopy",
+"shop-awning") — describing the band AS an object again let the model add
+leaf/grain texture with occasional lighter flecks, the same object-vs-flat-
+color trap the landmark Lesson names for composition, recurring here for
+material instead. Total: six kinds, twenty generation calls across five
+rounds, eighteen of which produced usable output — the other two were the
+SAME kind (viewing_platform) hitting an unrelated NSFW false positive once
+in round one and once in round two, each cleared by an immediate retry of
+the identical prompt. By round: round one, six initial submissions plus
+the first viewing_platform retry (seven calls); round two, six TOP-HALF
+rewrites plus the second viewing_platform retry (seven calls); round
+three, two calls fixing picnic_lawn and grand_atrium; round four, three
+calls fixing picnic_lawn, gift_shop and grand_atrium again; round five,
+one call fixing grand_atrium alone — before all six cleared the ~6:1
+target with margin.
 
 ## Hatch cracks
 

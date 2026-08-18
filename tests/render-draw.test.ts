@@ -341,12 +341,15 @@ describe('renderParkPng', () => {
     // noUncheckedIndexedAccess — so indexing it with a retired slug TYPES as Image | null while
     // RETURNING undefined, and drawImage(undefined) throws the identical TypeError drawImage(null)
     // does. That throw is not a degrade: it becomes { ok: false } from handleRenderRequest, rejects in
-    // client.ts and costs the user the whole park image. Neither `npm run build` nor `npm test` can
-    // see the wrong guard on its own.
+    // client.ts and costs the user the whole park image. `npm run build` can't see the wrong guard on
+    // its own — the type checker reads Image | null either way — so this has to be caught at runtime.
     //
-    // The record must be POPULATED for this to bite. The retired-slug test above renders with the
-    // default EMPTY_ART, whose attractions is {}, so an implementation could in principle be wrong
-    // only for a partially-populated record and still pass it.
+    // A populated record is NOT what makes that possible: `{}['retired_kind']` and
+    // `{ gift_shop: img }['retired_kind']` both evaluate to the identical `undefined`, so the
+    // EMPTY_ART-backed retired-slug test above already catches a `!== null` regression on its own —
+    // confirmed by reverting the guard and watching both tests fail together. This test is kept as a
+    // second confirmation under a mixed-population park (some attraction art loaded, one slug
+    // retired), the shape a live deploy actually reaches, not because the empty case is insufficient.
     it('renders a retired kind without throwing even when other attraction art is loaded', () => {
       const artWithSome: ParkArt = {
         ...EMPTY_ART,

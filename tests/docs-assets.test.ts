@@ -34,6 +34,9 @@ describe('docs track the committed assets', () => {
       'park/ground.webp', 'park/ground-wet.webp', 'park/ground-dry.webp', 'park/ground-cold.webp',
       'park/plate-paddock.webp', 'park/plate-facility.webp',
       'park/landmark-a.webp', 'park/landmark-b.webp', 'park/landmark-c.webp',
+      'park/attraction-picnic_lawn.webp', 'park/attraction-gift_shop.webp',
+      'park/attraction-viewing_platform.webp', 'park/attraction-amber_carousel.webp',
+      'park/attraction-sky_gondola.webp', 'park/attraction-grand_atrium.webp',
     ]) {
       expect(prompts, `prompts.md is missing the regeneration target ${f}`).toContain(f);
     }
