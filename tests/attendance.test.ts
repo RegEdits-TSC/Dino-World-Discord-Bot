@@ -124,6 +124,42 @@ describe('attendanceOf', () => {
     expect(attendanceOf(ctx, 'u1').drawTotal).toBe(0);
   });
 
+  it('drops a live-escaped dino whose escape has never been settled, and banks nothing for it', () => {
+    const ctx = makeCtx();
+    const lot = seedPark(ctx);
+    const species = [
+      'triceratops', 'stegosaurus', 'parasaurolophus', 'iguanodon',
+      'ankylosaurus', 'brachiosaurus', 'gallimimus', 'maiasaura',
+      'massospondylus', 'ouranosaurus', 'dryosaurus', 'othnielia',
+    ];
+    // escapedAt is left NULL on every row and stays that way for the whole test — that is
+    // the entire point. Neither /guests build nor /build nor /upgrade calls settleEscapes,
+    // so a park can sit for weeks with live-escaped dinos whose column was never stamped.
+    ctx.db.insert(schema.dinos).values(species.map((speciesId) => ({
+      userId: 'u1', lotId: lot.id, speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }))).run();
+    const fed = attendanceOf(ctx, 'u1');
+    expect(fed.distinctSpecies).toBe(species.length);
+    expect(fed.attendance).toBe(300);
+
+    // 30 days, far past escapeAt (40h for a fed, undecorated herbivore paddock).
+    ctx.setNow(30 * 86_400_000);
+    expect(ctx.db.select().from(schema.dinos).all().every((d) => d.escapedAt === null)).toBe(true);
+
+    const starved = attendanceOf(ctx, 'u1');
+    expect(starved.distinctSpecies).toBe(0);
+    expect(starved.attendance).toBe(0);
+    // Still PURE: the fix is a time-aware FILTER, never a settling call. attendanceOf is
+    // read for other players' parks (/top, a visit, another player's card), where writing
+    // would settle escapes for a command that player never ran.
+    expect(ctx.db.select().from(schema.dinos).all().every((d) => d.escapedAt === null)).toBe(true);
+
+    // And the monotone high-water — which claimMilestone pays out on, with no path back
+    // down — banks nothing for a park whose dinos are all long gone.
+    recomputeRating(ctx, 'u1');
+    expect(ctx.db.select().from(schema.users).all()[0].attendanceHighWater).toBe(0);
+  });
+
   it('recomputeRating stamps a monotone attendance high-water', () => {
     const ctx = makeCtx();
     const lot = seedPark(ctx);

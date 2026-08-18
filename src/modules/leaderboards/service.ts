@@ -157,11 +157,13 @@ export function seasonScores(ctx: Ctx, userIds?: string[]): Map<string, number> 
  * grouped in JS, then recomputed through attendanceFrom exactly like attendanceOf does —
  * so the board and /guests view can never disagree on the formula.
  *
- * The dino predicate matches attendanceOf/recomputeRating's `assigned` filter byte for
- * byte: a dino counts only when its lot is PADDOCK-typed (never a facility) and its
- * stored escapedAt is null. That is the STORED column, never the computed escape instant
- * — the same "no surface has to settle just to render a number" discipline attendanceOf
- * documents.
+ * The dino predicate matches recomputeRating's `assigned` filter: a dino counts only when
+ * its lot is PADDOCK-typed (never a facility) and its stored escapedAt is null. It is
+ * deliberately LAXER than attendanceOf, which resolves the live escape instant through
+ * escapeMoment — so a board row can read higher than that player's own /guests view for a
+ * park whose escapes nothing has settled yet, and converges the next time any command
+ * touches it. Accepted: this board is a standing, and only the high-water attendanceOf
+ * feeds — the column milestone payouts gate on, with no path back down — had to be exact.
  *
  * All three reads are memberIds-scoped through the same three-branch shape as
  * collectionScores; a user with no row in any of the three tables is simply absent from
