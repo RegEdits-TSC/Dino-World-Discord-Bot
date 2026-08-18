@@ -77,7 +77,9 @@ common-tier bruiser roll.
 ## Scope
 
 **In:** 20 rasters, 4 emoji, the wiring for all of them, a full 17-module
-adversarial sweep, and a fix plus regression test for every confirmed defect.
+adversarial sweep, and a fix plus regression test for every confirmed defect —
+including the two the pre-flight already confirmed in guests (F1 and F2 under
+**Hardening sweep**), neither of which needs a migration.
 
 **Out, deliberately:**
 
@@ -161,20 +163,56 @@ embeds and split across two payloads by the F1/F4 contract.
 
 ### B. Attraction art family
 
-- `ParkArt.attractions: Record<string, Image | null>`, keyed exhaustively from
-  `Object.keys(ATTRACTIONS)` and null-initialised in `EMPTY_ART` — the same
-  discipline `landmarks` and `dinoChips` already follow. The draw site reads
-  `art.attractions[kind] ?? null`, so an unknown kind can never reach
-  `drawImage(undefined)`, which throws exactly as `drawImage(null)` does and costs
-  the whole park image.
+- `ParkArt.attractions: Record<string, Image | null>` — the `lotIcons` shape
+  (`src/core/render/art.ts:19`), **not** the exhaustively-keyed `landmarks` /
+  `dinoChips` shape. Attraction slugs are not a closed union:
+  `src/data/attractions.ts:2` types `kind` as `string`, `src/core/db/schema.ts:314`
+  carries no SQL CHECK, and `src/core/render/draw.ts:181-184` promises tolerance of
+  a retired slug — machine-gated at `tests/render-draw.test.ts:334-336`, which
+  renders `attractions: [{ kind: 'retired_kind', level: 1 }]` and requires no throw.
+  An exhaustive `Record<AttractionKind, …>` would break that promise.
+- **The draw site guards `if (img)`, never `if (img !== null)`** — the guard must
+  cover `undefined` as well as `null`. `tsconfig.json` sets `strict` but not
+  `noUncheckedIndexedAccess`, so indexing a `Record<string, Image | null>` with a
+  `string` *types* as `Image | null` while *returning* `undefined` for a miss.
+  `drawImage(undefined)` throws the identical `TypeError` as `drawImage(null)`, and
+  a throw is not a degrade: it fails the render request, rejects in
+  `src/core/render/client.ts`, and costs the user the entire park image. Neither
+  `npm run build` nor `npm test` can see this. Pattern to copy:
+  `src/core/render/draw.ts:119-121`.
 - The six rasters join the **existing** `Promise.all` in `loadParkArt`
-  (`src/core/render/art.ts:87`). No second await, so the never-rejects guarantee
-  `worker.ts`'s top-level await depends on is inherited rather than re-established.
-- `drawAttraction` (`src/core/render/draw.ts:185`) gains an `img` parameter. **When
-  `img` is null it draws exactly what it draws today** — same flat fill, same
-  label, same coordinates. `tests/render-draw.test.ts` renders with `EMPTY_ART`, so
-  this keeps every pinned pixel sample byte-identical. The art path mirrors
-  `drawLandmark` (`:160`).
+  (`src/core/render/art.ts:87`) **through the existing `raster()` helper** (`:84`),
+  which wraps `readFileSync` and `await img.decode()` in one `try` so a missing or
+  corrupt file resolves to `null`. That is what makes every member non-rejecting,
+  and it is why the never-rejects guarantee is inherited rather than re-established.
+  A hand-rolled read that bypasses the helper breaks `worker.ts`'s top-level await,
+  which terminates and nulls the worker — every later `/park view` then loses its
+  image and respawns another doomed worker. Measured cost of the extra six: none
+  (27 ms before, 27 ms after — the reads are synchronous, only `decode()` overlaps),
+  and about +1.2 MB resident at tile size.
+- **The `Promise.all` destructure goes from 9 members to 15, and a swapped pair is
+  silent and green.** `tests/render-park-art.test.ts:114-127` documents this exact
+  defect class for `groundBySeason` and records the only test shape that catches
+  it: the reference image must be read off disk **by expected filename**, never
+  sourced from `loadParkArt`'s own output, or the assertion is tautological against
+  the very swap it exists to detect.
+- `drawAttraction` (`src/core/render/draw.ts:185`) gains an `img` parameter — it
+  takes no `art` argument today, so the call site at `:242-243` changes too. **When
+  `img` is null it draws exactly what it draws today** — same flat `#2d4a63` rrect,
+  same 3px `#7fb3d9` stroke, same label coordinates. `tests/render-draw.test.ts`
+  renders with `EMPTY_ART`, so this keeps every pinned pixel sample byte-identical.
+  Four further invariants when it gains art:
+  - `save()` / `clip()` / `restore()` around the blit is **mandatory**
+    (`draw.ts:106-107`): an opaque rectangular raster squares off the rounded
+    corners, and a leaked clip corrupts the up-to-six sibling attraction cells drawn
+    in the same loop.
+  - `drawImage(img, x, y, TILE_W, TILE_H)` — 1:1 to the tile, no offset, as
+    `drawTile` (`:109`) and `drawLandmark` (`:164`) do.
+  - Keep `attractionFor(kind)?.name ?? kind`. Do **not** copy `drawLandmark`'s
+    `landmarkFor(tier)!` non-null assertion (`:170-172`) — a landmark tier cannot be
+    retired, an attraction slug can.
+  - Moving the labels to `y + TILE_H - 16` the way `drawLandmark` does is
+    pinned-pixel-safe but is a design decision, not a copy-paste.
 - `renderParkPng` stays synchronous. Raster decode is asynchronous under
   `@napi-rs/canvas` and must never move into it.
 - Attraction cells still append after the landmark cell, so no tile index moves.
@@ -195,6 +233,17 @@ falls back to `dmSend` — and `MessagePayload.create()` pushes resolved files i
 `attachments` in place while only shallow-copying it, so a pre-set key would carry
 a mutation from the first attempt into the second. This is the exact inverse of
 the `fightFrames` rule, where `attachments: []` is mandatory and unconditional.
+
+**`guests:claim` needs its own explicit `attachments` decision.**
+`src/modules/guests/index.ts:112` re-renders with `await i.update(guestsPayload(…))`,
+and an `i.update` carrying `files` replaces the message's whole attachment set. The
+module has never shipped art, so no test in `tests/guests.test.ts` asserts anything
+about `files` or `attachments` on that path — there is no equivalent of the
+`fightFrames` frame contract to inherit. Since both the pre-claim and post-claim
+renders go through the same builder and reference the same banner, the update
+re-attaches it and the set is replaced with an identical one; the decision is to
+let `attach()` supply `files` on every render and never set `attachments` by hand.
+This must be asserted, not assumed.
 
 ### D. Cross-kind name collision gate
 
@@ -250,7 +299,21 @@ renders solid black under resvg unless `gradientUnits="userSpaceOnUse"` with
 `tests/emoji-assets.test.ts` rejects any PNG whose opaque pixels are more than 2%
 pure `#000000`.
 
-Every new asset gets a row in `docs/assets/prompts.md`.
+**The 270×150 rasters must be committed at 270×150, not at generator-native size.**
+`drawImage(img, x, y, TILE_W, TILE_H)` passes an explicit destination size, so a
+1024² source is non-uniformly squashed — aspect 1.0 stretched to 1.8 — and never
+throws. `scripts/fit-art.mjs:23` covers only `banner` (1536×1024) and `ground`
+(1200×800) and exits 2 on anything else, which is why this release adds a `band`
+mode rather than repeating a one-off. The existing 270×150 assets were each a
+separate hand pass: the three landmark bands at `docs/assets/prompts.md:1285-1291`,
+and the two plates at `:1113-1121`, which crop to the object's own bounding box
+**first** and only then cover-fit — the note there warns explicitly against
+cover-fitting a raw generation.
+
+Every new asset gets a row in `docs/assets/prompts.md`. Nothing enforces this
+globally — only bosses, the 8 dino archetypes, two Gene Lab banners and the nine
+park rasters are machine-checked — so undocumented art ships green and
+unreproducible. The `band` mode gets its own row too.
 
 Budget: 632 Higgsfield credits available, roughly 150 expected.
 
@@ -296,32 +359,132 @@ Fixes are test-first: a failing regression test, then the fix.
 it becomes its own task and is named a release gate. It does not silently expand
 into the art work, and it is not downgraded to keep the release moving.
 
+### Findings already confirmed by the pre-flight pass
+
+A four-lens pre-flight over render plumbing, test gates, the two newest features
+and the operator pipeline ran before this spec was finalised. It confirmed two
+defects, both in guests, both reproduced with executable probes. Neither needs a
+migration, so the release gate above is not tripped. The season track probed
+clean.
+
+**F1 — `/guests view` is a read path that writes, and can revoke `/trade`.**
+`src/modules/guests/index.ts:35` calls `recomputeRating` for every subcommand
+including `view`. Its comment justifies this in terms of the monotone attendance
+high-water, but `src/modules/park/rating.ts:38-40` writes three columns in one
+`UPDATE`, including **`parkRating`** — the live value, which falls freely as
+comfort decays. `liveRating()` (`src/modules/trading/service.ts:20-22`) is a plain
+`SELECT users.park_rating` checked against `TRADE_MIN_RATING` (400) at both
+`createTrade` and `acceptTrade`.
+
+Measured — 8 herbivore species, one L1 paddock, `setNow(20h)`, no other action:
+stored rating **215 before `/guests view`, 137 after**. A 0.78★ drop caused by
+reading a screen. At the gate boundary this kills a pending offer and leaves the
+counterparty's escrowed dino locked for nothing.
+
+`/park view` deliberately never recomputes, and `docs/gameplay.md:889` documents
+that invariant explicitly.
+
+**Fix: restrict `recomputeRating` to the `build` and `claim` arms** — the two that
+genuinely mutate, and which already call it via
+`src/modules/guests/service.ts:49,69`. `view` becomes a pure read. No doc change
+is needed, because the documented behaviour is the correct one. `attendanceHighWater`
+still advances on every build, claim, feed, assign, upgrade and decorate, so
+nothing becomes unreachable.
+
+Existing tests miss it because `tests/guests.test.ts:314` asserts only that
+`attendanceHighWater` moves up and never looks at `parkRating`, and every guests
+fixture runs at `nowMs = 0` with `lastFedAt: 0`, where the recompute is a no-op.
+
+**F2 — `attendanceHighWater` banks phantom attendance from escaped dinos.**
+`src/modules/park/attendance.ts:34` filters on the **stored** `escapedAt` column
+with no time term, and neither `/guests build` nor `/build`/`/upgrade` calls
+`settleEscapes`. `ratingHighWater` is immune to the same shape because
+`baseComfortAt` is time-aware — a starving dino contributes near-zero comfort.
+Attendance has no such protection, and the high-water is monotone.
+
+Measured — 12 species, `setNow(30 days)`, three `/guests build` dispatches and
+nothing else: high-water **300 → 317**, counting dinos that were all long past
+`escapeAt`; a subsequent `settleEscapes()` marks all 12 escaped and live
+attendance falls to 0. At endgame scale (40 species, L5 Visitor Center, full
+attraction catalog) the same mechanism reaches 1920 and crosses two milestones
+worth 37,000,000 cash, 65 shards and a legendary egg — claimed by a park with no
+living dinos, from a state that never simultaneously existed.
+`claimMilestone` (`src/modules/guests/service.ts:115`) gates on exactly this
+column, and there is no path back down.
+
+**Fix: make `attendanceOf` time-aware** — filter on live escape state rather than
+the stored column, the same way `baseComfortAt` already does. `attendanceOf` must
+stay **pure**: it is read for other players' parks via `/top` and visits, so this
+is a filter change and never a settling call.
+
+Existing tests miss it because `tests/attendance.test.ts:79` seeds `escapedAt`
+explicitly — the already-settled case — and `:127` runs at `nowMs = 0`. No test in
+`tests/guests.test.ts` advances the clock.
+
+**F3 — latent, zero impact today, recorded so it is not rediscovered as a bug.**
+PR #36 added `attractions_built` to `STATS` mid-season, so `season_progress` rows
+minted between 2026-08-14 and 2026-08-17 carry no baseline for it and `pointsFrom`
+would credit the whole lifetime counter. No `SEASON_SOURCE` reads that stat, so
+the impact is exactly zero. It becomes real only if a future season source uses a
+`StatId` added after live rows existed.
+
 ## Testing
 
 **Existing gates that fire with no new code:**
 
-- `tests/images.test.ts` scrapes every `assetImage('banners', …)` call and demands
-  a committed file, so a banner cannot be wired without shipping the asset. It also
-  asserts every file under `assets/images/` is WebP, banners are 1536×1024, and
-  cutouts are 1024².
-- `tests/emoji-assets.test.ts` covers the 4 new SVG/PNG pairs — dimensions,
-  transparency, the pure-black ceiling.
+- `tests/images.test.ts:75-81` fails on a wired banner with no committed file, and
+  `:165-170` fails on a committed banner with no call site (the orphan check).
+  `:341-347` requires every file under `assets/images/` to be `.webp`.
+- `tests/emoji-assets.test.ts:61-97` covers the 4 new SVG/PNG pairs — 128×128,
+  transparent corners, an opaque centre, and the 2% pure-black ceiling.
 - `tests/render-draw.test.ts` pins exact pixel samples, rendering with `EMPTY_ART`.
+  Verified: none of its pinned samples land inside an attraction cell, and its
+  byte-identical pins use a fixture declaring no attractions, so `drawAttraction`
+  never runs in them.
+
+**Hard-coded lists that must be edited — none of these fail informatively, and
+several are the only thing standing between a mistake and a green run:**
+
+| Site | Edit |
+|---|---|
+| `tests/images.test.ts:181-188` | one `it.each` case per new banner, 1536×1024 |
+| `tests/park-art-assets.test.ts:29-33` | hand-typed list; the 6 attraction bands are **not** auto-covered |
+| `tests/emojis.test.ts:37-53` | the literal 53-name list becomes 57 |
+| `tests/help.test.ts:37-57` | hard-coded topic list; a topic gaining `art` fails until added |
+| `tests/docs-assets.test.ts:26-30` | `docs/assets/prompts.md` "26 embed banners" → 32 |
+| `tests/docs-assets.test.ts:14-19` | `docs/ops.md:64` "53 custom emojis" → 57 |
+| `tests/docs-assets.test.ts:32-40` | hard-coded park raster list |
+| `tests/render-draw.test.ts:141-149` | the suite's only exhaustive `ParkArt` literal — a new required field is a **typecheck** break, invisible to `build` and `test` |
+| `tests/render-art.test.ts:81-87` | enumerates `ParkArt` fields explicitly; a new family is silently untested unless added |
 
 **New tests:**
 
 1. No two asset basenames collide across all six kinds (**Architecture D**).
-2. Attraction bands are 270×150.
+2. Attraction bands are 270×150 — and a **directory-enumerating** test, the inverse
+   of the banner orphan check, so a raster named `gift-shop.webp` against the slug
+   `gift_shop` fails instead of silently null-degrading to an imageless embed.
 3. Every committed `dinos/<name>.webp` is either a real `archetype-diet` pair or a
-   real species id — guards the silent failure where a typo'd filename never loads
-   and the fallback masks it permanently.
+   real species id, **and** every per-species file passes `expectTransparentCutout`
+   at 1024² with the 31px margin. Today that helper is invoked only via
+   `it.each(DINO_ART_KEYS)` — an 8-name type union — so per-species files inherit
+   **no** dimension, transparency or margin checking at all.
 4. `dinoImage` returns the species file when present and the archetype file when
    not. Mocks `assetImage`; test fixtures are never staged inside
    `assets/images/`, because vitest runs test files in parallel forks and a write
    or delete on a committed asset path can be observed by another file mid-run.
 5. An attraction cell renders differently with art than without, and the
-   without-art path is byte-identical to today.
-6. One regression test per confirmed sweep defect, written failing first.
+   without-art path is byte-identical to today. The difference assertion must
+   compare against the real raster read off disk by expected filename, never
+   against `loadParkArt`'s own output — `tests/render-park-art.test.ts:114-127`
+   records why the tautological version cannot catch a swapped pair, and
+   `:153-158` records that a bare "differs from the flat fill" check already let a
+   removed `drawImage` through undetected.
+6. **One payload test per hero species reaching a real embed.** None of the 8
+   chosen species appears in any existing pinned fixture — the pinned ones are
+   velociraptor, triceratops, compsognathus, othnielia and microceratus — so
+   nothing existing moves, which also means the override ships entirely untested
+   unless this is added deliberately.
+7. One regression test per confirmed sweep defect, written failing first.
 
 `tests/contract.test.ts` holding at 29 commands is the proof that no builder
 changed, which is what makes `deploy-commands` unnecessary. If that number moves,
@@ -339,23 +502,38 @@ test count.
 the process lifetime, so a running bot that already resolved a path as missing will
 never see the file appear. New art always requires a restart.
 
-1. `npm run build-emojis` — renders the 4 new SVGs to committed 128² PNGs. Local,
-   reversible.
-2. `npm run typecheck`, full suite, `npm run build`.
-3. Merge, pull on host, `npm run build` — the bot runs compiled `dist/`.
-4. `npm run deploy-emojis` — **the one irreversible live write.**
+1. `npm run build-emojis` — renders the 4 new SVGs to committed 128² PNGs. Must
+   precede step 5: `src/deploy-emojis.ts` reads only `assets/emojis/png/`, so an
+   unrendered SVG does not exist to the deployer.
+2. `npm run typecheck`, full suite, `npm run build`. Commit art, PNGs, banner call
+   sites **and** the updated doc counts together — `tests/docs-assets.test.ts`
+   fails otherwise.
+3. Merge, pull on host, `npm ci && npm run build` — the bot runs compiled `dist/`.
+   Assets themselves are never compiled or copied; every path resolves from cwd at
+   runtime. But a new banner forces a src change anyway (the orphan check demands a
+   call site), and the new `ParkArt` family certainly does.
+4. Back up the DB, per standing practice. No migration ships unless the sweep
+   forces one.
+5. `npm run deploy-emojis` — **the one irreversible live write.**
    `assets/emojis/manifest.json` hashes the exact PNG bytes, so a rerun only
    touches what changed.
-5. Restart the bot — after step 4, so the emoji map loaded at client ready contains
-   the new ids. Verify on the `Loaded 57 application emojis` line. The restart is
-   also what clears the asset-existence cache.
-6. `npm run test:live` — posts the full payload gallery to `TEST_CHANNEL_ID`.
-   REST-only, no second gateway session, safe while the bot is live. **This is the
-   acceptance check for an art release:** every new banner, band and portrait is
-   seen, not merely asserted to exist.
-
-DB backup before deploying, per standing practice. No migration ships unless the
-sweep forces one.
+6. **Commit `manifest.json` immediately, even after a partial or failed run** — it
+   is written in a `finally`. A lost manifest makes all 57 emojis look changed and
+   delete-and-recreates every one, which invalidates every emoji already rendered
+   in every posted message.
+7. Restart the bot. Mandatory, and for three independent reasons: park rasters
+   preload once at worker boot, `assetImage` caches per-path existence for the
+   process lifetime, and the emoji map is fetched once at `ClientReady`. Verify on
+   the `Loaded 57 application emojis` line.
+8. `npm run test:live` — **last.** It parity-asserts `manifest.json` against the
+   live emoji list, so running it before step 5 reports every new emoji as missing.
+   Needs all six of `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DATABASE_PATH`,
+   `OWNER_ID`, `DEV_GUILD_ID`, `TEST_CHANNEL_ID`. REST-only, no `client.login`, so
+   it is safe while the bot is live — but it re-PUTs the dev guild's command set
+   with all modules forced on, so it is that guild's last command writer.
+   **This is the acceptance check for an art release:** ~59 cases post their real
+   embeds, components and attachments, and it is the only surface that puts human
+   eyes on new art.
 
 ## Risks
 
@@ -384,3 +562,6 @@ sweep forces one.
 | Sweep depth | All 17 modules | Chosen over auditing only the two newest features |
 | Sweep triage | Fix everything confirmed | With a named release gate for migration- or balance-class findings |
 | Generation model | `nano_banana_pro`, image-to-image | Matches the existing corpus; style lock beats one saved call |
+| F1 fix | Restrict `recomputeRating` to `build`/`claim` | Makes `view` a pure read, matching `/park view` and the behaviour `docs/gameplay.md:889` already documents; needs no doc change |
+| F2 fix | Make `attendanceOf` time-aware | Mirrors why `baseComfortAt` made `ratingHighWater` immune; keeps `attendanceOf` pure, which it must be — it is read for other players' parks |
+| Attraction raster home | `assets/images/park/` | Sits with the other tile rasters and needs no widening of `assetImage`'s kind union; its gate is hand-typed, so the files must be added to it explicitly |
