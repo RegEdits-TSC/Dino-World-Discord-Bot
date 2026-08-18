@@ -146,6 +146,7 @@ describe('renderParkPng', () => {
     lotIcons: { carnivore_paddock: svgStub('#00ffff', 64, 64), hatchery_lab: svgStub('#00ffff', 64, 64) },
     dinoChips: { common: null, uncommon: null, rare: null, epic: null, legendary: svgStub('#ffff00', 64, 64), mythic: null },
     landmarks: { a: null, b: null, c: null },
+    attractions: {},
   };
 
   async function sampler(png: Buffer): Promise<(x: number, y: number) => number[]> {
@@ -333,6 +334,23 @@ describe('renderParkPng', () => {
 
     it('renders an attraction of an unknown or retired kind without throwing', () => {
       expect(() => renderParkPng({ ...sample, attractions: [{ kind: 'retired_kind', level: 1 }] })).not.toThrow();
+    });
+
+    // ParkArt gained an `attractions` family with no rasters committed yet, so every entry is null and
+    // an attraction cell must still render exactly what it rendered before the field existed. Both
+    // directions are pinned: an art object that CARRIES the record must agree with EMPTY_ART, and
+    // EMPTY_ART must agree with the no-art call — the same fallback pin the top-level
+    // "an all-null ParkArt renders byte-for-byte what the no-art call renders" test makes for a park
+    // with no attractions at all, restated for a park that has some. Task 14 gives drawAttraction an
+    // art path; this is what proves its null branch did not drift.
+    it('an attractions record of all-null entries renders byte-identically to no art at all', () => {
+      const snap: ParkSnapshot = {
+        ...sample,
+        attractions: [{ kind: 'gift_shop', level: 2 }, { kind: 'picnic_lawn', level: 1 }],
+      };
+      const nulledArt: ParkArt = { ...EMPTY_ART, attractions: { gift_shop: null, picnic_lawn: null } };
+      expect(renderParkPng(snap, nulledArt).equals(renderParkPng(snap, EMPTY_ART))).toBe(true);
+      expect(renderParkPng(snap, EMPTY_ART).equals(renderParkPng(snap))).toBe(true);
     });
   });
 });

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { EMPTY_ART, loadParkArt, loadSvgImage } from '../src/core/render/art.js';
 import { RARITY } from '../src/data/rarity.js';
+import { ATTRACTIONS } from '../src/data/attractions.js';
 import type { Rarity } from '../src/data/types.js';
 
 describe('EMPTY_ART', () => {
@@ -20,6 +21,11 @@ describe('EMPTY_ART', () => {
       expect(Object.hasOwn(EMPTY_ART.dinoChips, r), `dinoChips missing key ${r}`).toBe(true);
       expect(EMPTY_ART.dinoChips[r]).toBeNull();
     }
+    // The OPEN shape, exactly like lotIcons and deliberately unlike dinoChips/groundBySeason/landmarks:
+    // attraction slugs are not a closed union, so an absent key reading back `undefined` is the
+    // intended, tested behaviour (tests/render-draw.test.ts renders a `retired_kind` and requires no
+    // throw). An exhaustively-keyed Record would break that promise.
+    expect(EMPTY_ART.attractions).toEqual({});
   });
 });
 
@@ -68,6 +74,19 @@ describe('loadParkArt', () => {
     }
   });
 
+  // The kind list drives both the reads and the keys they are stored under, inside loadParkArt, so a
+  // hand-swapped kind→image pairing is not expressible — the defect class
+  // tests/render-park-art.test.ts:114-127 documents for groundBySeason, where a swapped pair in an
+  // object literal is silent and green. No attraction raster is committed yet, so every value is null
+  // today; this asserts the KEYS, which is the part that must not drift.
+  it('carries one attraction slot per catalog kind, and leaves unknown slugs unmapped', async () => {
+    const art = await loadParkArt();
+    expect(Object.keys(art.attractions).sort()).toEqual(Object.keys(ATTRACTIONS).sort());
+    // A slug with no entry must read back undefined and fall through to the flat fill, never resolve
+    // to some near-miss file — the same contract lotIcons['not_a_real_kind'] is pinned on above.
+    expect(art.attractions['retired_kind']).toBeUndefined();
+  });
+
   it('resolves with all-null art instead of rejecting when nothing is on disk', async () => {
     // Every read is relative to process.cwd(), so an empty temp cwd reproduces a deploy that shipped
     // without assets/. Rejection is the failure mode that matters: worker.ts top-level-awaits this,
@@ -85,6 +104,7 @@ describe('loadParkArt', () => {
       expect(art.lotIcons['carnivore_paddock']).toBeNull();
       expect(art.dinoChips.mythic).toBeNull();
       expect(art.landmarks).toEqual({ a: null, b: null, c: null });
+      expect(art.attractions['gift_shop']).toBeNull();
     } finally {
       process.chdir(cwd);
     }
