@@ -219,9 +219,15 @@ embeds and split across two payloads by the F1/F4 contract.
 
 ### C. Banner wiring
 
-`guests/embeds.ts` and `dex/embeds.ts` `Payload` types gain
-`files?: AttachmentBuilder[]`. Both carry a comment asserting they never will;
-those comments are rewritten, not deleted.
+`src/modules/guests/embeds.ts:16` gains `files?: AttachmentBuilder[]` on its
+`Payload` type. **`src/modules/dex/embeds.ts:12` does not** — it already declares
+that field, because `dexViewPayload` has attached an archetype thumbnail since the
+dex shipped. What dex needs is the stale comment at `:42-46` rewritten, and that
+comment sits above `dexListPayload`, not above the interface.
+
+The guests comment is wrong in a second way worth fixing while it is being
+rewritten: it claims the type "matches `dex/embeds.ts`'s `Payload` shape", which
+has not been true since dex gained its thumbnail.
 
 Every new slot goes through `attach()`. Hand-assigning `payload.files` is banned
 outright by `tests/images.test.ts`.
