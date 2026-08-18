@@ -188,14 +188,18 @@ describe('park render with the committed art', () => {
   // is not a substitute either — that shape already let a removed drawImage call through undetected
   // once (see this file's own note at the renderAlone helper).
   //
-  // No attraction raster is committed yet — this task ships the draw path, not the art — so the image
-  // is landmark-a.webp, read by that explicit filename. It is a real committed 270×150 fully-opaque
-  // raster, which is all this assertion needs: it proves drawAttraction actually blits the Image it
-  // is handed, 1:1 to the tile, at the cell draw.ts targets. When the six real bands land, this test
-  // re-points at assets/images/park/attraction-gift_shop.webp and nothing else changes.
+  // The six real attraction bands are committed now, so this reads the real
+  // assets/images/park/attraction-gift_shop.webp raster by explicit filename, rather than the
+  // landmark-a.webp stand-in an earlier draft of this test used before that art existed. It still
+  // hand-builds a synthetic ParkArt below (EMPTY_ART plus one manually-set attractions entry) instead
+  // of calling loadParkArt() itself — deliberately: this test's job is the DRAW-PATH geometry, that
+  // drawAttraction blits whatever Image it is handed 1:1 at the cell draw.ts targets, never whether
+  // loadParkArt wires the six real files to their catalog keys correctly. That second question is a
+  // different failure mode (a filename/slug mismatch, not a bad blit) and is covered on its own by
+  // tests/render-art.test.ts's "loads all six attraction bands from the real asset directory".
   it('blits the attraction image it is handed 1:1 into the attraction cell', async () => {
     const img = new Image();
-    img.src = readFileSync(resolve(process.cwd(), 'assets/images/park', 'landmark-a.webp'));
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/park', 'attraction-gift_shop.webp'));
     await img.decode();          // raster decode is async — an un-awaited decode draws a blank canvas
 
     // `sample` has 2 lots and lotCap 5, so hasBuild is true and, with no landmarkTier, the first

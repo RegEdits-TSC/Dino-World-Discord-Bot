@@ -77,14 +77,31 @@ describe('loadParkArt', () => {
   // The kind list drives both the reads and the keys they are stored under, inside loadParkArt, so a
   // hand-swapped kind→image pairing is not expressible — the defect class
   // tests/render-park-art.test.ts:114-127 documents for groundBySeason, where a swapped pair in an
-  // object literal is silent and green. No attraction raster is committed yet, so every value is null
-  // today; this asserts the KEYS, which is the part that must not drift.
+  // object literal is silent and green. This asserts the KEYS only, which is what a mis-paired entry
+  // would get wrong; the six committed rasters' own VALUES (that each actually decodes to a non-null
+  // Image) are asserted separately by "loads all six attraction bands from the real asset directory"
+  // below.
   it('carries one attraction slot per catalog kind, and leaves unknown slugs unmapped', async () => {
     const art = await loadParkArt();
     expect(Object.keys(art.attractions).sort()).toEqual(Object.keys(ATTRACTIONS).sort());
     // A slug with no entry must read back undefined and fall through to the flat fill, never resolve
     // to some near-miss file — the same contract lotIcons['not_a_real_kind'] is pinned on above.
     expect(art.attractions['retired_kind']).toBeUndefined();
+  });
+
+  // The inverse of the landmark test above, and the one this family was missing: that test's own
+  // comment explains why a KEYS-only or all-null-resolves-cleanly check can't tell "file missing" from
+  // "filename wrong" apart — only a read of the real committed assets/images/park/attraction-*.webp
+  // files, keyed off the real ATTRACTIONS catalog rather than a hand-typed list, can. Without this, a
+  // typo'd separator in art.ts's raster(`attraction-${kind}.webp`) call (e.g. an underscore where the
+  // literal has a hyphen) leaves every attraction slot resolving to null in production — the flat
+  // #2d4a63 fill on every built attraction cell, on every /park view, with zero test failure anywhere.
+  it('loads all six attraction bands from the real asset directory', async () => {
+    const art = await loadParkArt();
+    for (const kind of Object.keys(ATTRACTIONS)) {
+      expect(art.attractions[kind], `assets/images/park/attraction-${kind}.webp missing or undecodable`).not.toBeNull();
+      expect(art.attractions[kind]!.width).toBeGreaterThan(0);
+    }
   });
 
   it('resolves with all-null art instead of rejecting when nothing is on disk', async () => {
