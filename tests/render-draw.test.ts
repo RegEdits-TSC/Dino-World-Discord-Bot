@@ -336,6 +336,28 @@ describe('renderParkPng', () => {
       expect(() => renderParkPng({ ...sample, attractions: [{ kind: 'retired_kind', level: 1 }] })).not.toThrow();
     });
 
+    // The reason the draw site must guard `if (img)` and never `if (img !== null)`. ParkArt.attractions
+    // is an OPEN Record<string, Image | null>, and tsconfig sets strict but not
+    // noUncheckedIndexedAccess — so indexing it with a retired slug TYPES as Image | null while
+    // RETURNING undefined, and drawImage(undefined) throws the identical TypeError drawImage(null)
+    // does. That throw is not a degrade: it becomes { ok: false } from handleRenderRequest, rejects in
+    // client.ts and costs the user the whole park image. Neither `npm run build` nor `npm test` can
+    // see the wrong guard on its own.
+    //
+    // The record must be POPULATED for this to bite. The retired-slug test above renders with the
+    // default EMPTY_ART, whose attractions is {}, so an implementation could in principle be wrong
+    // only for a partially-populated record and still pass it.
+    it('renders a retired kind without throwing even when other attraction art is loaded', () => {
+      const artWithSome: ParkArt = {
+        ...EMPTY_ART,
+        attractions: { gift_shop: svgStub('#00ffff', 270, 150) },
+      };
+      expect(() => renderParkPng(
+        { ...sample, attractions: [{ kind: 'retired_kind', level: 1 }] },
+        artWithSome,
+      )).not.toThrow();
+    });
+
     // ParkArt gained an `attractions` family with no rasters committed yet, so every entry is null and
     // an attraction cell must still render exactly what it rendered before the field existed. Both
     // directions are pinned: an art object that CARRIES the record must agree with EMPTY_ART, and

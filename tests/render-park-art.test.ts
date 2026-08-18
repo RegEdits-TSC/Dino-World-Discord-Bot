@@ -3,7 +3,7 @@ import { createCanvas, Image } from '@napi-rs/canvas';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { renderParkPng, gridDims } from '../src/core/render/draw.js';
-import { EMPTY_ART, loadParkArt } from '../src/core/render/art.js';
+import { EMPTY_ART, loadParkArt, type ParkArt } from '../src/core/render/art.js';
 import type { ParkSnapshot } from '../src/modules/park/snapshot.js';
 
 const sample: ParkSnapshot = {
@@ -177,5 +177,44 @@ describe('park render with the committed art', () => {
     // label band, which `drawLandmark` paints at roughly tile-local y+118 to y+136 (18px text baseline
     // at y + TILE_H - 16 = y + 134).
     expect(pixelAt(real, cellX + 135, cellY + 60)).toEqual(pixelAt(landmarkRef, 135, 60));
+  });
+
+  // The attraction family's positive real-raster check, in the same shape as the landmark one above
+  // and the seasonal-ground one before it: the reference image is read straight off disk BY EXPECTED
+  // FILENAME and drawn alone with the identical drawImage arguments draw.ts uses — never sourced from
+  // loadParkArt's own output. Sourcing it from loadParkArt makes the assertion tautological against
+  // exactly the defect it exists to catch: a mis-paired kind→image entry moves the reference along
+  // with the real render and the two agree by construction. A bare "differs from the flat fill" check
+  // is not a substitute either — that shape already let a removed drawImage call through undetected
+  // once (see this file's own note at the renderAlone helper).
+  //
+  // No attraction raster is committed yet — this task ships the draw path, not the art — so the image
+  // is landmark-a.webp, read by that explicit filename. It is a real committed 270×150 fully-opaque
+  // raster, which is all this assertion needs: it proves drawAttraction actually blits the Image it
+  // is handed, 1:1 to the tile, at the cell draw.ts targets. When the six real bands land, this test
+  // re-points at assets/images/park/attraction-gift_shop.webp and nothing else changes.
+  it('blits the attraction image it is handed 1:1 into the attraction cell', async () => {
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/park', 'landmark-a.webp'));
+    await img.decode();          // raster decode is async — an un-awaited decode draws a blank canvas
+
+    // `sample` has 2 lots and lotCap 5, so hasBuild is true and, with no landmarkTier, the first
+    // attraction takes cell index 3 — draw.ts's own
+    // `snap.lots.length + (hasBuild ? 1 : 0) + (band ? 1 : 0)` — which is column `3 % COLS = 0`,
+    // row `floor(3 / COLS) = 1` at 3 columns. Origin is
+    // (PAD, HEADER_H + PAD + (TILE_H + GAP)) = (20, 64 + 20 + 166) = (20, 250).
+    const art: ParkArt = { ...EMPTY_ART, attractions: { gift_shop: img } };
+    const png = renderParkPng({ ...sample, attractions: [{ kind: 'gift_shop', level: 2 }] }, art);
+    const real = await decodeToCanvas(png);
+
+    const cellX = PAD, cellY = HEADER_H + PAD + (TILE_H + GAP);
+    const ref = renderAlone(TILE_W, TILE_H, (c) => c.drawImage(img, 0, 0, TILE_W, TILE_H));
+    // Tile-local (135, 100): horizontally centered, well clear of the rounded-rect corners and below
+    // both labels, which drawAttraction paints at the tile's TOP (18px baseline at y + 34, 13px at
+    // y + 54) rather than at the bottom the way drawLandmark does.
+    expect(pixelAt(real, cellX + 135, cellY + 100)).toEqual(pixelAt(ref, 135, 100));
+
+    // And the flat-fill sentinel is genuinely gone: #2d4a63 is what the null branch paints there.
+    expect(pixelAt(real, cellX + 135, cellY + 100)).not.toEqual([0x2d, 0x4a, 0x63]);
   });
 });
