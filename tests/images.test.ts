@@ -171,7 +171,7 @@ describe('banner art', () => {
 
   // Discord scales an embed image to the embed width, so an off-size banner
   // letterboxes or crops; 1536×1024 matches the site banners already shipping.
-  // Covers all 27 committed banners, not just the 18 the static scrape can see:
+  // Covers all 28 committed banners, not just the 19 the static scrape can see:
   // event-<id> names come from a template literal (world/embeds.ts) no scrape can
   // resolve, so they are appended here from WORLD_EVENTS directly — same
   // cross-check precedent as the CAMPAIGN/WORLD_EVENTS loops in "the committed
@@ -198,6 +198,18 @@ describe('banner art', () => {
     expect(BANNERS, 'banners/guests is not reachable by scrapeBannerNames').toContain('guests');
     const img = new Image();
     img.src = readFileSync(resolve(process.cwd(), 'assets/images/banners', 'guests.webp'));
+    await img.decode();
+    expect(img.width).toBe(1536);
+    expect(img.height).toBe(1024);
+  });
+
+  // Same reasoning as the guests case above: the it.each loop's case for this name is
+  // REGISTERED from the scrape, so a wiring form scrapeBannerNames cannot read would
+  // register zero cases for it and go dark with the suite green.
+  it('dex is scrape-visible and ships at 1536×1024', async () => {
+    expect(BANNERS, 'banners/dex is not reachable by scrapeBannerNames').toContain('dex');
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/banners', 'dex.webp'));
     await img.decode();
     expect(img.width).toBe(1536);
     expect(img.height).toBe(1024);

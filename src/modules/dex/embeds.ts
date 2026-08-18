@@ -2,7 +2,7 @@ import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'disc
 import type { AttachmentBuilder } from 'discord.js';
 import type { Ctx } from '../../core/context.js';
 import { paginate } from '../../core/paginate.js';
-import { attach, dinoImage } from '../../core/images.js';
+import { attach, assetImage, dinoImage } from '../../core/images.js';
 import { rarityEmoji } from '../../core/emojis.js';
 import { fmtDuration, capitalize } from '../../core/autocomplete.js';
 import { bumpLegacyBest, tierForPoints } from '../park/ranks.js';
@@ -41,9 +41,11 @@ export function dexPageRow(userId: string, filters: DexFilters, page: number, pa
 
 // Models achievementsPayload (src/modules/daily/embeds.ts:92): the payload builder
 // calls the read service itself, paginate() clamps the page, and the page row only
-// renders once there's more than one page. Ships no banner — this spec has no art
-// (tests/images.test.ts scrapes every `assetImage('banners', ...)` call and would
-// demand a committed file for one).
+// renders once there's more than one page. The previous version of this comment said
+// this surface ships no banner because "this spec has no art" — a record of what a past
+// release did not do, not a design decision, and no longer true: it now attaches
+// banners/dex. tests/images.test.ts scrapes every `assetImage('banners', ...)` call, so
+// that reference is what makes the committed file non-orphaned and dimension-checked.
 export function dexListPayload(ctx: Ctx, userId: string, filters: DexFilters, page: number): Payload {
   const all = dexRows(ctx, userId, filters);
   const { items, page: p, pages } = paginate(all, page);
@@ -57,10 +59,12 @@ export function dexListPayload(ctx: Ctx, userId: string, filters: DexFilters, pa
     .setTitle(`📖 Dex${filterLabel(filters)}`)
     .setDescription(lines)
     .setFooter({ text: `${progress.seen}/${progress.total} seen · Page ${p}/${pages}${rankPart}` });
-  return {
+  const payload: Payload = {
     embeds: [embed],
     components: pages > 1 ? [dexPageRow(userId, filters, p, pages)] : [],
   };
+  attach(embed, payload, 'image', assetImage('banners', 'dex'));
+  return payload;
 }
 
 // The cross-link that makes the dex worth consulting before a purchase: decor is

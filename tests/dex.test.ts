@@ -118,6 +118,16 @@ describe('dexListPayload', () => {
     const footer = payload.embeds[0].toJSON().footer!.text;
     expect(footer).toBe('0/52 seen · Page 1/6');
   });
+  it('ships the dex banner as the embed image with its file', () => {
+    const payload = dexListPayload(ctx, 'u1', {}, 1);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://dex.webp');
+    // toEqual on the whole list, not toContain: attach() appends, so a second slot
+    // wired later shows up here rather than hiding behind a membership check. The
+    // basenames also have to stay distinct — assetImage names a file `${name}.webp`
+    // with no kind prefix, so two refs resolving to one name make attachment://dex.webp
+    // ambiguous and one embed slot renders the wrong picture.
+    expect(payload.files!.map((f) => f.name)).toEqual(['dex.webp']);
+  });
 });
 
 describe('dexViewPayload', () => {
@@ -178,6 +188,24 @@ describe('dex module', () => {
     await dexModule.components[0].execute(ctx, i.asInteraction() as never);
     expect(i.deferOpts).toHaveLength(1);        // deferred, not answered
     expect(i.replies).toHaveLength(0);
+  });
+  // The page button answers with i.update, and an update carrying `files` replaces the
+  // message's whole attachment set. That handler already sent an explicit
+  // `attachments: []` while the payload carried no files at all; now that it does, the
+  // pair is the fightFrames F1/F4 shape — the empty array sheds the old set and the
+  // fresh upload re-establishes it. Both halves are asserted, because dropping either
+  // one leaves a dangling attachment:// URL with no error anywhere.
+  it('the page button re-attaches the banner alongside its explicit empty attachments', async () => {
+    const i = fakeButton({ customId: 'dex:page:u1:2:-:-:-', user: 'u1' });
+    await dexModule.components[0].execute(ctx, i.asInteraction() as never);
+    const update = i.replies[0] as {
+      embeds: Array<{ toJSON(): { image?: { url: string } } }>;
+      files?: Array<{ name?: string | null }>;
+      attachments: unknown[];
+    };
+    expect(update.embeds[0].toJSON().image?.url).toBe('attachment://dex.webp');
+    expect(update.files!.map((f) => f.name)).toEqual(['dex.webp']);
+    expect(update.attachments).toEqual([]);
   });
 });
 
