@@ -4,7 +4,7 @@ The volcano/frozen banners and volcano thumb were generated with ChatGPT image
 generation; the remaining coastal/amber banners and the coastal/amber/frozen
 thumbs were generated with Higgsfield Nano Banana Pro. The six egg rarities were
 generated with Higgsfield Nano Banana Pro as a reference chain (see the Egg
-rarities section). The 31 embed banners were generated with Higgsfield
+rarities section). The 32 embed banners were generated with Higgsfield
 Nano Banana Pro, `care_neglect` as a reference chain off `care` and
 `battle_defeat` off `battle_victory`. The six hatch cracks were generated as
 reference-chain edits of their own egg icons. These prompts are the source of
@@ -423,7 +423,7 @@ fixed it; keep that block verbatim on any future regeneration of this scene.
 
 ## Embed banners
 
-31 wide banners for the surfaces that have no site or egg art of their
+32 wide banners for the surfaces that have no site or egg art of their
 own. All generated with Higgsfield Nano Banana Pro at 3:2, then scaled to
 1536×1024 (the generator emits 1264×848; scaling to full width leaves ~6px of
 vertical excess, which is center-cropped).
@@ -452,6 +452,7 @@ vertical excess, which is center-cropped).
 | `assets/images/banners/landmark.webp` | 1536×1024 | `/park landmark` embed image |
 | `assets/images/banners/season.webp` | 1536×1024 | `/season` hub + `season:claim` embed image, and the season-ending alert DM |
 | `assets/images/banners/duel.webp` | 1536×1024 | `/duel challenge`, `/duel record` and the duel result embed image, `/help topic:duel` |
+| `assets/images/banners/battles.webp` | 1536×1024 | `/help topic:battles` embed image |
 | `assets/images/banners/event-clear_skies.webp` | 1536×1024 | `/world` hub embed image, Clear Skies |
 | `assets/images/banners/event-amber_storm.webp` | 1536×1024 | `/world` hub embed image, Amber Storm |
 | `assets/images/banners/event-fossil_rush.webp` | 1536×1024 | `/world` hub embed image, Fossil Rush |
@@ -835,6 +836,31 @@ read as an exhibition ground rather than a second war pit.
 > clean cel shading with smooth gradients, polished game-asset look. No text, no
 > lettering, no words, no numbers, no signage writing anywhere in the scene, no
 > human characters, no UI elements.
+
+**Battles (`battles.webp`):** generated with model `nano_banana_pro` (the API
+silently routes this to `nano_banana_2`) at aspect ratio `3:2`, source output
+1264×848, then `node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024
+WebP q95 — same pipeline as the rest of this section. Two constraints on any
+regeneration. It must read as the campaign as a WHOLE — a route with stages
+still ahead of it, hence the receding chain of cairns and the tiered ridges —
+because it replaces a borrow of `sites/coastal_dig-banner`, i.e. the tutorial
+site standing in for all seven chapters. And it must not converge on
+`battle_victory.webp` / `battle_defeat.webp`, which are single-moment arena
+scenes: this is the road to the arena, not the arena.
+
+> **battles.webp:** A wide cartoon scene of the campaign trail leading out of a
+> dinosaur park: a rocky canyon pass opening onto a chain of stacked stone
+> waypoint cairns marching away into the distance, each cairn topped with a
+> small carved dinosaur skull, a heavy timber gate standing open at the near end
+> with two crossed wooden shields lashed to its posts, a broad armored
+> spike-tailed dinosaur planted at the trailhead in a braced ready stance,
+> tiered ridges rising behind one another toward a smoking volcano on the far
+> horizon, dramatic late-afternoon light with long shadows and dust hanging in
+> the air. Glossy cartoon mobile-game art style, bold dark outlines, vibrant
+> saturated colors, strong glossy highlights, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no lettering, no words, no
+> numbers, no signage writing anywhere in the scene, no human characters, no UI
+> elements.
 
 **Gene Lab (`gene_lab.webp`) and Gene Splice (`gene_splice.webp`):** generated
 with model `nano_banana_pro` (the API silently routes this to `nano_banana_2`)

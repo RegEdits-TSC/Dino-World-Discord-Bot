@@ -55,6 +55,17 @@ describe('/help', () => {
     expect([...covered].sort()).toEqual(
       ['battles', 'care', 'duel', 'eggs', 'expeditions', 'genelab', 'getting-started', 'guests', 'ranks', 'shop', 'trading']);
   });
+  // /help topic:battles and /help topic:expeditions shared sites/coastal_dig-banner
+  // VERBATIM — the whole campaign, seven chapters of it, illustrated with the picture
+  // of the tutorial dig site. The generic per-topic art test above cannot see that: it
+  // walks each topic in isolation and both borrows resolve fine.
+  it('gives every art-bearing topic a picture no other topic uses', () => {
+    expect(HELP_TOPICS.battles.art).toEqual({ kind: 'banners', name: 'battles' });
+    expect(HELP_TOPICS.expeditions.art).toEqual({ kind: 'sites', name: 'coastal_dig-banner' });
+    const keys = Object.values(HELP_TOPICS).flatMap((t) => (t.art ? [`${t.art.kind}/${t.art.name}`] : []));
+    expect(keys.length, 'no art-bearing topics found — did the descriptor shape change?').toBeGreaterThan(0);
+    expect(new Set(keys).size, `two topics share art: ${keys.join(', ')}`).toBe(keys.length);
+  });
   it('carries a genelab topic', () => {
     expect(Object.keys(HELP_TOPICS)).toContain('genelab');
   });

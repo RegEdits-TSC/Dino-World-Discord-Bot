@@ -71,7 +71,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Up to five Visit buttons sit under the board — click one to jump straight into that player\'s park.',
     'Rating grows with dinos, lots, and comfort; it gates expeditions, shop tiers, and Mythics.',
   ].join('\n') },
-  battles: { title: '⚔️ Battles', art: { kind: 'sites', name: 'coastal_dig-banner' }, body: [
+  battles: { title: '⚔️ Battles', art: { kind: 'banners', name: 'battles' }, body: [
     '`/battle chapters` — the campaign map: 7 chapters themed to the expedition sites, 5 stages each, the 5th a boss.',
     '`/battle fight stage:<stage> dino1:<id> [dino2] [dino3]` — send a squad of 1–3 dinos; the fight auto-resolves and plays back as a short cinematic (press Skip to jump to the result).',
     'Energy: every attempt costs ⚡ 1–3 by stage, win or lose. You hold up to 10 and regain 1 every 10 minutes.',
