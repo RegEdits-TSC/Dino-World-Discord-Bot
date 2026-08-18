@@ -4,7 +4,7 @@ The volcano/frozen banners and volcano thumb were generated with ChatGPT image
 generation; the remaining coastal/amber banners and the coastal/amber/frozen
 thumbs were generated with Higgsfield Nano Banana Pro. The six egg rarities were
 generated with Higgsfield Nano Banana Pro as a reference chain (see the Egg
-rarities section). The 28 embed banners were generated with Higgsfield
+rarities section). The 29 embed banners were generated with Higgsfield
 Nano Banana Pro, `care_neglect` as a reference chain off `care` and
 `battle_defeat` off `battle_victory`. The six hatch cracks were generated as
 reference-chain edits of their own egg icons. These prompts are the source of
@@ -423,7 +423,7 @@ fixed it; keep that block verbatim on any future regeneration of this scene.
 
 ## Embed banners
 
-28 wide banners for the surfaces that have no site or egg art of their
+29 wide banners for the surfaces that have no site or egg art of their
 own. All generated with Higgsfield Nano Banana Pro at 3:2, then scaled to
 1536×1024 (the generator emits 1264×848; scaling to full width leaves ~6px of
 vertical excess, which is center-cropped).
@@ -449,6 +449,7 @@ vertical excess, which is center-cropped).
 | `assets/images/banners/achievements.webp` | 1536×1024 | `/achievements` embed image |
 | `assets/images/banners/guests.webp` | 1536×1024 | `/guests view`, `/guests build`, `/guests claim` and `/help topic:guests` embed image |
 | `assets/images/banners/dex.webp` | 1536×1024 | `/dex list` embed image |
+| `assets/images/banners/landmark.webp` | 1536×1024 | `/park landmark` embed image |
 | `assets/images/banners/event-clear_skies.webp` | 1536×1024 | `/world` hub embed image, Clear Skies |
 | `assets/images/banners/event-amber_storm.webp` | 1536×1024 | `/world` hub embed image, Amber Storm |
 | `assets/images/banners/event-fossil_rush.webp` | 1536×1024 | `/world` hub embed image, Fossil Rush |
@@ -737,6 +738,43 @@ same of any regeneration that drops either defence.
 > cel shading with smooth gradients, polished game-asset look. No text, no
 > lettering, no words, no numbers, no handwriting, no signage writing anywhere
 > in the scene, no human characters, no UI elements.
+
+**Landmark (`landmark.webp`):** generated with model `nano_banana_pro` (the API
+silently routes this to `nano_banana_2`) at aspect ratio `3:2`, source output
+1264×848, then `node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024
+WebP q95 — same pipeline as the rest of this section. Generated with
+`help.webp` **and** `leaderboards.webp` attached as `image` references:
+`help.webp` carries the carved-monument register and the golden-hour god rays,
+`leaderboards.webp` is the only existing banner built around a ceremonial plaza.
+
+**Do not confuse this with `park/landmark-{a,b,c}` further down this file.**
+Those three are 270×150 map tiles that `drawLandmark` paints a tier name over
+with no scrim, which is why each of them carries a hard contrast requirement and
+an explicit dark kerb band baked into the composition. This is a 1536×1024 embed
+image with no text drawn over it anywhere, so none of that applies — copying the
+"BOTTOM FIFTH is a solid dark slate kerb band" clause across would darken a fifth
+of the banner for nothing.
+
+**No inscriptions is the load-bearing clause.** A monument is the single object a
+model is most likely to letter — a dedication plaque on the plinth reads as
+deliberate and survives casual review. The negative clause names plaques,
+dedication inscriptions and carved writing explicitly, on top of the expanded
+no-text form used elsewhere in this section, and the column banners are
+specified as plain and colored rather than left open to interpretation.
+
+> A wide cartoon scene of a dinosaur park monument plaza at golden hour: a broad
+> paved circle ringed by low stone kerbs and clipped hedges, a tall tiered
+> pale-stone monument rising at its centre banded with glowing amber inlay and
+> topped with a gleaming verdigris-bronze dinosaur silhouette, a shallow
+> reflecting pool in front of it catching the light, flanking marble columns hung
+> with plain colored banners, a small friendly cartoon dinosaur standing at the
+> plaza edge for scale, lush park greenery and distant misty green hills behind,
+> warm golden evening light with long soft shadows and gentle god rays. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated colors,
+> strong glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no plaques, no
+> dedication inscriptions or carved writing anywhere on the monument or its base,
+> no signage writing anywhere in the scene, no human characters, no UI elements.
 
 **Gene Lab (`gene_lab.webp`) and Gene Splice (`gene_splice.webp`):** generated
 with model `nano_banana_pro` (the API silently routes this to `nano_banana_2`)

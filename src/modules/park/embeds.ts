@@ -4,7 +4,7 @@ import { emojiTag } from '../../core/emojis.js';
 import { eventHeaderLine } from '../world/embeds.js';
 import type { LandmarkDef } from '../../data/landmarks.js';
 import type { LegacyTier } from './ranks.js';
-import { dinoImage, attach } from '../../core/images.js';
+import { dinoImage, assetImage, attach } from '../../core/images.js';
 import type { Featured } from './showcase.js';
 import { seasonNumberOf } from '../../core/world.js';
 import { ATTENDANCE_MAX } from '../../data/attendance.js';
@@ -135,7 +135,11 @@ export function landmarkPayload(user: User, current: LandmarkDef | null, next: L
       { name: 'Built', value: current ? `Tier ${current.tier} — ${current.name}` : 'Nothing yet', inline: true },
       { name: 'Next', value: next ? `${next.name} — ${next.cost.toLocaleString('en-US')} cash` : 'The ladder is complete', inline: true },
     );
-  const payload: { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } = { embeds: [embed], components: [] };
+  const payload: {
+    embeds: EmbedBuilder[];
+    components: ActionRowBuilder<ButtonBuilder>[];
+    files?: AttachmentBuilder[];
+  } = { embeds: [embed], components: [] };
   if (next) {
     // The OFFERED tier travels in the customId — the hatch:crack:<eggId> /
     // dex:page:<uid>:<page>:<slugs> precedent — because the label is frozen the moment
@@ -147,5 +151,10 @@ export function landmarkPayload(user: User, current: LandmarkDef | null, next: L
         .setLabel(`Build ${next.name}`).setStyle(ButtonStyle.Primary),
     ));
   }
+  // attach(), never a hand-assigned payload.files — the idiom that shipped three
+  // attachment defects in round 2 and is banned outright by tests/images.test.ts.
+  // `components` stays non-optional: tests/landmarks.test.ts indexes components[0]
+  // directly to read the buy button's customId back.
+  attach(embed, payload, 'image', assetImage('banners', 'landmark'));
   return payload;
 }
