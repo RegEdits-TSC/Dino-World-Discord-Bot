@@ -67,7 +67,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Offers expire after a while; offered items are locked until resolved.',
   ].join('\n') },
   ranks: { title: '🏆 Ranks', art: { kind: 'banners', name: 'leaderboards' }, body: [
-    '`/top metric:<rating|cash|collection|legacy|stars|duels|season> [scope]` — server or global leaderboards.',
+    '`/top metric:<rating|cash|collection|legacy|stars|duels|season|attendance> [scope]` — server or global leaderboards.',
     'Up to five Visit buttons sit under the board — click one to jump straight into that player\'s park.',
     'Rating grows with dinos, lots, and comfort; it gates expeditions, shop tiers, and Mythics.',
   ].join('\n') },
@@ -94,6 +94,12 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Breaking your streak resets it to 1. Chests only ever pay once, the first time a streak passes a new personal-best milestone.',
     '`/achievements` — lifetime progress across 12 tracks, each with 4 tiers (bronze/silver/gold/platinum) paying cash and shards as you cross them.',
     '`/season` — the current 30-day season track: points from nine capped sources, eight reward rungs, and a Claim button. Crossing the 800-point capstone earns a permanent badge on your park card; unclaimed rungs forfeit at rollover, the badge never does.',
+  ].join('\n') },
+  guests: { title: '🎡 Guests', body: [
+    'Attendance measures how many visitors your park draws — a gate for the attraction catalog, not a currency.',
+    '`/guests view` — your attendance and its three terms (species variety, attraction draw, Visitor Center level), the attractions you own, the next one still locked, and any milestone reward ready to claim.',
+    '`/guests build attraction:<kind>` — build a new attraction, or upgrade one you already own to its next level. Priced in cash; each of the six kinds unlocks at its own attendance threshold.',
+    '`/guests claim` — see and claim any attendance milestone your high-water has crossed. Milestones pay once each, permanently — cash, shards, food, or an egg.',
   ].join('\n') },
   duel: { title: '⚔️ Duels', body: [
     'Duels are free exhibition fights against another player. They cost no energy and pay no cash, shards or XP — the only thing at stake is your duel rating.',

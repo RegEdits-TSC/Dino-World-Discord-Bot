@@ -9,6 +9,7 @@ import { seasonBadges } from '../daily/season.js';
 import { legacyRank } from './ranks.js';
 import { featuredFor } from './showcase.js';
 import { dashboardPayload, withParkImage } from './embeds.js';
+import { attendanceOf } from './attendance.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
 import { foodEmoji } from '../../core/emojis.js';
@@ -82,6 +83,7 @@ export async function visitPayload(ctx: Ctx, targetUserId: string): Promise<Visi
     featured: featuredFor(ctx, user),
     now: ctx.now(),
     seasonBadges: seasonBadges(ctx, targetUserId),
+    attendance: attendanceOf(ctx, targetUserId).attendance,
   });
   const payload: VisitPayload = { embeds: built.embeds, components: [] };
   if (built.files) payload.files = built.files;

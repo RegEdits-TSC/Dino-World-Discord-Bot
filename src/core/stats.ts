@@ -12,7 +12,7 @@ export const STATS = {
   stages_first_cleared: 'count', trades_completed: 'count',
   breedings_started: 'count', breedings_claimed: 'count', splices_done: 'count',
   dinos_sold: 'count', shop_purchases: 'count', lots_built: 'count',
-  lots_upgraded: 'count', dinos_rescued: 'count',
+  lots_upgraded: 'count', dinos_rescued: 'count', attractions_built: 'count',
 } as const satisfies Record<string, 'count' | 'sum'>;
 export type StatId = keyof typeof STATS;
 

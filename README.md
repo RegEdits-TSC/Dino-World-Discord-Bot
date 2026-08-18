@@ -33,7 +33,8 @@ bot is in.
 - ⚔️ **Duel other players** — free exhibition fights, ghost or live, that move
   nothing but a zero-sum duel rating
 - 🏆 **Climb leaderboards** — ranked by rating, cash, collection, legacy,
-  battle stars, or duel rating, for your server or globally
+  battle stars, duel rating, season points, or park attendance, for your
+  server or globally
 - 📅 **Keep a daily streak** — roll a fresh quest board every day, claim
   milestone chests for consecutive claims, and work through twelve lifetime
   achievement tracks
@@ -120,7 +121,7 @@ other and every command fails.
 | [Contributing](CONTRIBUTING.md) | Setup, repository conventions, and how to send a change |
 
 In Discord, `/help` is the in-game version: run it with no topic for a
-first-ten-minutes walkthrough, or pass one of its twelve topics for a focused guide.
+first-ten-minutes walkthrough, or pass one of its thirteen topics for a focused guide.
 
 ## 🧪 Development
 

@@ -589,13 +589,20 @@ describe('wild hatch trait odds under world events', () => {
   // Each sample runs the full hatchEgg pipeline (transaction, escrow check,
   // recomputeRating) against a fresh in-memory db user, so 4000 of them cost more
   // than the default 5s test timeout — bumped per-test rather than globally.
+  // The two tests below were initially set to 20 seconds, calibrated against a
+  // smaller suite. As the test suite has grown past 100 files, parallel worker
+  // contention has pushed these statistical simulations past that window. The
+  // timeout increase to 60 seconds preserves the statistical power (N and
+  // tolerances unchanged) while accounting for the larger parallel load — these
+  // tests catch real defects like bucket-swap transpositions and un-normalized
+  // odds scales, so their precision is load-bearing.
   it('uses the standard 55/35/10 odds on a calm day', () => {
     const { zeroShare, meanTraits } = hatchTraitStats(0, 7, N);
     expect(Math.abs(zeroShare - 0.55)).toBeLessThan(TOLERANCE);
     // E[traits] = 0*0.55 + 1*0.35 + 2*0.10 = 0.55 — coincidentally equal to
     // WILD_SLOT_ODDS' own p0, not a copy-paste of the assertion above.
     expect(Math.abs(meanTraits - 0.55)).toBeLessThan(MEAN_TOLERANCE);
-  }, 20_000);
+  }, 60_000);
 
   it('uses 45/40/15 odds during Migration Season', () => {
     const { zeroShare, meanTraits } = hatchTraitStats(27 * DAY, 7, N);
@@ -605,7 +612,7 @@ describe('wild hatch trait odds under world events', () => {
     // identical (still 0.45) but moves this mean to 0.95 — the gap a
     // zero-share-only check cannot see.
     expect(Math.abs(meanTraits - 0.70)).toBeLessThan(MEAN_TOLERANCE);
-  }, 20_000);
+  }, 60_000);
 
   it('never applies the event odds to a bred egg', () => {
     const ctx = makeCtx({ nowMs: 27 * DAY });

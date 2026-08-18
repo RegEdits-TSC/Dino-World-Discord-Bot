@@ -5,8 +5,11 @@ import { RARITY_WEIGHT } from '../../data/progression.js';
 import { allSpecies, getSpecies } from '../../data/species/index.js';
 import { seasonIndexFor } from '../../core/world.js';
 import { pointsFrom } from '../../data/seasons.js';
+import { attendanceFrom } from '../../data/attendance.js';
+import { attractionFor } from '../../data/attractions.js';
+import { facilityLevel, levelValue } from '../park/service.js';
 
-export type Metric = 'rating' | 'cash' | 'collection' | 'legacy' | 'stars' | 'duels' | 'season';
+export type Metric = 'rating' | 'cash' | 'collection' | 'legacy' | 'stars' | 'duels' | 'season' | 'attendance';
 export type Scope = 'server' | 'global';
 
 export function collectionScore(ctx: Ctx, userId: string): number {
@@ -146,6 +149,86 @@ export function seasonScores(ctx: Ctx, userIds?: string[]): Map<string, number> 
   return out;
 }
 
+/**
+ * The board-wide twin of attendanceOf (../park/attendance.ts) — deliberately NOT calling
+ * attendanceOf per candidate, which is the exact per-user-query trap collectionScores was
+ * introduced to retire (see that function's own comment): one dinos + one lots + one
+ * attractions read PER PLAYER on a global board. Three reads for the whole board instead,
+ * grouped in JS, then recomputed through attendanceFrom exactly like attendanceOf does —
+ * so the board and /guests view can never disagree on the formula.
+ *
+ * The dino predicate matches attendanceOf/recomputeRating's `assigned` filter byte for
+ * byte: a dino counts only when its lot is PADDOCK-typed (never a facility) and its
+ * stored escapedAt is null. That is the STORED column, never the computed escape instant
+ * — the same "no surface has to settle just to render a number" discipline attendanceOf
+ * documents.
+ *
+ * All three reads are memberIds-scoped through the same three-branch shape as
+ * collectionScores; a user with no row in any of the three tables is simply absent from
+ * the output map and scores 0 via scored()'s `?? 0`, same as every other builder here.
+ */
+export function attendanceScores(ctx: Ctx, userIds?: string[]): Map<string, number> {
+  const dinoRows = userIds === undefined
+    ? ctx.db.select().from(schema.dinos).all()
+    : userIds.length
+      ? ctx.db.select().from(schema.dinos).where(inArray(schema.dinos.userId, userIds)).all()
+      : [];
+  const lotRows = userIds === undefined
+    ? ctx.db.select().from(schema.lots).all()
+    : userIds.length
+      ? ctx.db.select().from(schema.lots).where(inArray(schema.lots.userId, userIds)).all()
+      : [];
+  const attractionRows = userIds === undefined
+    ? ctx.db.select().from(schema.attractions).all()
+    : userIds.length
+      ? ctx.db.select().from(schema.attractions).where(inArray(schema.attractions.userId, userIds)).all()
+      : [];
+
+  const lotById = new Map(lotRows.map((l) => [l.id, l]));
+  const lotsByUser = new Map<string, typeof lotRows>();
+  for (const l of lotRows) {
+    let arr = lotsByUser.get(l.userId);
+    if (!arr) { arr = []; lotsByUser.set(l.userId, arr); }
+    arr.push(l);
+  }
+
+  const speciesByUser = new Map<string, Set<string>>();
+  for (const d of dinoRows) {
+    if (d.escapedAt !== null) continue;
+    const lot = d.lotId != null ? lotById.get(d.lotId) : undefined;
+    if (!lot || lot.type !== 'paddock') continue;
+    let set = speciesByUser.get(d.userId);
+    if (!set) { set = new Set(); speciesByUser.set(d.userId, set); }
+    set.add(d.speciesId);
+  }
+
+  const drawByUser = new Map<string, number>();
+  for (const r of attractionRows) {
+    // An unknown or retired kind contributes 0 rather than throwing — the same
+    // tolerance attendanceOf gives it.
+    const draw = levelValue(attractionFor(r.kind)?.draw, r.level, 0);
+    drawByUser.set(r.userId, (drawByUser.get(r.userId) ?? 0) + draw);
+  }
+
+  // Candidates are the union of every user who appears in any of the three tables —
+  // never derived from the formula's own zero cases (e.g. skipping anyone with 0
+  // distinct species), which would silently couple this loop to attendanceFrom's
+  // internals instead of just calling it.
+  const candidateIds = new Set<string>();
+  for (const d of dinoRows) candidateIds.add(d.userId);
+  for (const r of attractionRows) candidateIds.add(r.userId);
+  for (const l of lotRows) candidateIds.add(l.userId);
+
+  const out = new Map<string, number>();
+  for (const userId of candidateIds) {
+    const distinctSpecies = speciesByUser.get(userId)?.size ?? 0;
+    const drawTotal = drawByUser.get(userId) ?? 0;
+    const vcLevel = facilityLevel(lotsByUser.get(userId) ?? [], 'visitor_center');
+    out.set(userId, attendanceFrom(distinctSpecies, drawTotal, vcLevel));
+  }
+  return out;
+}
+
 function scored(
   ctx: Ctx, metric: Metric, scope: Scope, guildId: string | null,
 ): Array<{ userId: string; displayName: string; value: number }> {
@@ -177,6 +260,7 @@ function scored(
     : metric === 'legacy' ? legacyScores(ctx, memberIds)
     : metric === 'stars' ? starScores(ctx, memberIds)
     : metric === 'season' ? seasonScores(ctx, memberIds)
+    : metric === 'attendance' ? attendanceScores(ctx, memberIds)
     : null;
   const rows = users.map((u) => ({
     userId: u.discordId,

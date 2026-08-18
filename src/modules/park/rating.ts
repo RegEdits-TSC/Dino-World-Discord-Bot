@@ -3,6 +3,7 @@ import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { baseComfortAt } from '../../core/clock.js';
 import { toClockDinos } from './service.js';
+import { attendanceOf } from './attendance.js';
 import { RARITY_WEIGHT, RATING_WEIGHTS, PARK_TARGET, COLLECTION_TARGET, RATING_SCALE } from '../../data/progression.js';
 
 // re-export the pure gating helpers so later modules can import from './rating.js'
@@ -24,7 +25,18 @@ export function recomputeRating(ctx: Ctx, userId: string): { rating: number; hig
   const rating = Math.round(RATING_SCALE * (
     RATING_WEIGHTS.collection * collection + RATING_WEIGHTS.park * park + RATING_WEIGHTS.comfort * comfort));
   const highWater = Math.max(user.ratingHighWater, rating);
-  ctx.db.update(schema.users).set({ parkRating: rating, ratingHighWater: highWater })
+  // Attendance rides the same recompute rather than 14 new call sites: its inputs are
+  // dinos, lots and attractions, so every mutation that moves rating can move it too.
+  // The real cost is steeper than that framing suggests: attendanceOf calls
+  // toClockDinos a SECOND time rather than reusing the read above, so this line issues
+  // four extra SELECTs (users, lots, dinos, attractions) — three of them (lots, dinos,
+  // attractions) against tables with no index on userId — plus the one extra column on
+  // the UPDATE that was already being issued. Folding attendanceOf's read into the
+  // toClockDinos call above would cut three of those four; left as a possible
+  // optimisation, not done here.
+  const attendanceBest = Math.max(user.attendanceHighWater, attendanceOf(ctx, userId).attendance);
+  ctx.db.update(schema.users)
+    .set({ parkRating: rating, ratingHighWater: highWater, attendanceHighWater: attendanceBest })
     .where(eq(schema.users.discordId, userId)).run();
   return { rating, highWater };
 }

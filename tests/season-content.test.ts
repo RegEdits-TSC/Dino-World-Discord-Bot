@@ -7,7 +7,7 @@ import { FOODS } from '../src/data/foods.js';
 
 // Counters a veteran can never move again. Crediting one would hand a new account a
 // permanent advantage over exactly the players this loop exists to keep.
-const FINITE_STATS = ['stages_first_cleared', 'lots_built', 'lots_upgraded'];
+const FINITE_STATS = ['stages_first_cleared', 'lots_built', 'lots_upgraded', 'attractions_built'];
 // acceptTrade requires a second player, so a source whose ONLY stat is this one is
 // unreachable solo.
 const NEEDS_PARTNER = ['trades_completed'];

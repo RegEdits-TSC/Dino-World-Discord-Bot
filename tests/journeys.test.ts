@@ -23,6 +23,10 @@ import { chapterUnlocked, STAGES, type ProgressMap } from '../src/data/battle/ch
 import { locksFor } from '../src/core/locks.js';
 import { ENERGY_CAP, ENERGY_REGEN_MS } from '../src/data/battle/constants.js';
 import { TRADE_MIN_RATING } from '../src/data/trade.js';
+import { guestsModule } from '../src/modules/guests/index.js';
+import { ATTRACTIONS } from '../src/data/attractions.js';
+import { ATTENDANCE_MILESTONES } from '../src/data/attendance.js';
+import { readStat } from '../src/core/stats.js';
 
 // This file is the regression net over six risky time/state couplings that
 // per-command unit tests miss because they only ever exercise one command at
@@ -491,5 +495,119 @@ describe('journeys', () => {
     ctx.setNow(ctx.now() + fullRegenMs);
     const refilled = runFight(ctx, 'p1', 'coastal_dig_1', [ids[0]]);
     expect(refilled.energyAfter).toBe(ENERGY_CAP - STAGES.get('coastal_dig_1')!.energyCost);
+  });
+
+  it('guests: a varied roster raises attendance, an attraction moves the high-water, and a milestone claims exactly once', async () => {
+    // A fifth progression axis with no end-to-end coverage is exactly the "tests that
+    // cannot fail" shape the daily-loop retro flagged — so every expected number below
+    // is computed from the real formula's inputs (species count, attraction draw), never
+    // copied from a manual run, and the arc drives every number through the real command
+    // and button layer rather than calling attendanceOf/recomputeRating directly.
+    const ctx = makeCtx(); ctx.setNow(0);
+    const users = () => ctx.db.select().from(schema.users).all().find((u) => u.discordId === 'p1')!;
+
+    // Eight distinct species, four per diet — confirmed against src/data/species/*.ts,
+    // not guessed. Granted unassigned; admin give's own recomputeRating cannot move
+    // attendance from these alone, since none is paddocked yet.
+    const herbivores = ['triceratops', 'gallimimus', 'dryosaurus', 'henodus'];
+    const carnivores = ['compsognathus', 'archelon', 'cryolophosaurus', 'dilophosaurus'];
+    await dispatch(ctx, adminModule, 'admin', {
+      name: 'admin', sub: 'give', user: 'owner',
+      options: { user: 'p1', cash: 1_000_000, 'dino-species': herbivores[0] },
+    });
+    for (const species of [...herbivores.slice(1), ...carnivores]) {
+      await dispatch(ctx, adminModule, 'admin', {
+        name: 'admin', sub: 'give', user: 'owner', options: { user: 'p1', 'dino-species': species },
+      });
+    }
+    const dinoIdFor = (species: string) =>
+      ctx.db.select().from(schema.dinos).all().find((d) => d.speciesId === species)!.id;
+    expect(users().attendanceHighWater).toBe(0);
+
+    // Build one paddock per diet (level 1, capacity 2 each) and assign the first two
+    // species of each diet — exactly fills both paddocks. Nothing else has moved
+    // attendance yet, so this is a clean zero-to-something rise.
+    await dispatch(ctx, parkModule, 'build', { name: 'build', user: 'p1', options: { kind: paddockKindFor('herbivore') } });
+    await dispatch(ctx, parkModule, 'build', { name: 'build', user: 'p1', options: { kind: paddockKindFor('carnivore') } });
+    const herbLot = ctx.db.select().from(schema.lots).all().find((l) => l.kind === paddockKindFor('herbivore'))!;
+    const carnLot = ctx.db.select().from(schema.lots).all().find((l) => l.kind === paddockKindFor('carnivore'))!;
+    for (const species of [herbivores[0], herbivores[1]]) {
+      await dispatch(ctx, parkModule, 'dino', {
+        name: 'dino', sub: 'assign', user: 'p1', options: { dino: dinoIdFor(species), lot: herbLot.id },
+      });
+    }
+    for (const species of [carnivores[0], carnivores[1]]) {
+      await dispatch(ctx, parkModule, 'dino', {
+        name: 'dino', sub: 'assign', user: 'p1', options: { dino: dinoIdFor(species), lot: carnLot.id },
+      });
+    }
+    // 4 species / ATTENDANCE_SPECIES_TARGET(40) * ATTENDANCE_SCALE(1000), no attraction,
+    // no Visitor Center — round(1000 * 4/40 * 1 * 1) = 100.
+    const afterFour = users().attendanceHighWater;
+    expect(afterFour).toBe(100);
+
+    // Upgrade both paddocks to level 2 (capacity 4 each) and assign three more distinct
+    // species — 7 total, still short of the first milestone. Attendance must have risen
+    // again, by a different amount than the first jump (guards against a stub that
+    // always adds a fixed 100 regardless of the real species count).
+    await dispatch(ctx, parkModule, 'upgrade', { name: 'upgrade', user: 'p1', options: { lot: herbLot.id } });
+    await dispatch(ctx, parkModule, 'upgrade', { name: 'upgrade', user: 'p1', options: { lot: carnLot.id } });
+    for (const species of [herbivores[2], herbivores[3]]) {
+      await dispatch(ctx, parkModule, 'dino', {
+        name: 'dino', sub: 'assign', user: 'p1', options: { dino: dinoIdFor(species), lot: herbLot.id },
+      });
+    }
+    await dispatch(ctx, parkModule, 'dino', {
+      name: 'dino', sub: 'assign', user: 'p1', options: { dino: dinoIdFor(carnivores[2]), lot: carnLot.id },
+    });
+    // 7 species: round(1000 * 7/40) = 175.
+    const afterSeven = users().attendanceHighWater;
+    expect(afterSeven).toBe(175);
+    expect(afterSeven).toBeGreaterThan(afterFour);
+
+    // Build an attraction through /guests build. Species count is unchanged (still 7),
+    // so any further movement in the high-water is attributable to the attraction's
+    // draw alone — isolating exactly the thing this step exists to prove.
+    const beforeAttraction = users().attendanceHighWater;
+    const build = await dispatch(ctx, guestsModule, 'guests', {
+      name: 'guests', sub: 'build', user: 'p1', options: { attraction: 'picnic_lawn' },
+    });
+    expect(replyText(build.replies[0]) || JSON.stringify(build.replies[0])).toBeTruthy();
+    expect(ctx.db.select().from(schema.attractions).all()).toHaveLength(1);
+    expect(readStat(ctx, 'p1', 'attractions_built')).toBe(1);
+    // draw 6 at level 1 (ATTRACTIONS.picnic_lawn.draw[0]): attraction mult
+    // 1 + min(1, 6/210) * 0.6 = 1.0171428571…; round(1000 * 7/40 * that) = 178.
+    expect(ATTRACTIONS.picnic_lawn.draw[0]).toBe(6);
+    const afterAttraction = users().attendanceHighWater;
+    expect(afterAttraction).toBe(178);
+    expect(afterAttraction).toBeGreaterThan(beforeAttraction);
+
+    // One more species (the 8th) crosses the first milestone (200): round(1000 * 8/40 *
+    // 1.0171428571…) = 203. This is the ONLY thing that changes here — the attraction
+    // stays at level 1 — so crossing the milestone is attributable to the roster alone.
+    await dispatch(ctx, parkModule, 'dino', {
+      name: 'dino', sub: 'assign', user: 'p1', options: { dino: dinoIdFor(carnivores[3]), lot: carnLot.id },
+    });
+    const afterEight = users().attendanceHighWater;
+    expect(afterEight).toBe(203);
+    expect(afterEight).toBeGreaterThanOrEqual(ATTENDANCE_MILESTONES[0].at);
+
+    // Claim it through the real button, not the service function directly.
+    const milestone = ATTENDANCE_MILESTONES[0];
+    const cashBeforeClaim = users().cash;
+    const fernsBeforeClaim = ctx.economy.getFoodInventory('p1').ferns ?? 0;
+    const claim = await click(ctx, guestsModule, `guests:claim:p1:${milestone.at}`, 'p1');
+    expect(JSON.stringify(claim.replies[0])).not.toMatch(/no longer available/i);
+    expect(users().cash).toBe(cashBeforeClaim + (milestone.reward.cash ?? 0));
+    expect(ctx.economy.getFoodInventory('p1').ferns ?? 0).toBe(fernsBeforeClaim + (milestone.reward.foods?.ferns ?? 0));
+    expect(ctx.db.select().from(schema.attendanceClaims).all()).toHaveLength(1);
+
+    // A second claim of the SAME milestone must be refused and must pay nothing —
+    // the idempotency backstop this whole ladder depends on.
+    const cashAfterClaim = users().cash;
+    const reclaim = await click(ctx, guestsModule, `guests:claim:p1:${milestone.at}`, 'p1');
+    expect(replyText(reclaim.replies[0])).toMatch(/no longer available/i);
+    expect(users().cash).toBe(cashAfterClaim);
+    expect(ctx.db.select().from(schema.attendanceClaims).all()).toHaveLength(1);
   });
 });

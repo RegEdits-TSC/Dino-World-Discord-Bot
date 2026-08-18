@@ -1064,3 +1064,26 @@
   lots is never nudged — reachable in principle (60 shop purchases alone clears rung 1)
   but accepted rather than special-cased, since that player still sees the rung on
   `/season` itself.
+- Park guests (`/guests`, migration 0017) adds attendance as a fifth progression axis:
+  `attendanceFrom(distinctSpecies, drawTotal, vcLevel)` (`src/data/attendance.ts`) is
+  derived at read time and stored never, same philosophy as escrow locks, quest progress
+  and world events. Two constants are FROZEN, `COLLECTION_TARGET`'s rule applied twice
+  over: `ATTENDANCE_SPECIES_TARGET` (40) and `ATTRACTION_DRAW_TARGET` (210) must never
+  become live counts over `allSpecies()`/`ATTRACTIONS` — a live denominator taxes every
+  existing park the moment new content ships, and the `min(1, …)` clamp on each is what
+  makes a new species or a new attraction kind an ALTERNATE PATH to the same target
+  rather than silent inflation of it. `attendanceOf` (`src/modules/park/attendance.ts`)
+  is PURE and must never write, because it's read for OTHER players' parks (`/top`, a
+  visit, another player's card); the monotone high-water is stamped separately, only in
+  a write context, by `recomputeRating` (`src/modules/park/rating.ts`) — the same
+  `legacyRank`/`bumpLegacyBest` split `src/modules/park/ranks.ts` already established.
+  `recomputeRating` now stamps TWO high-waters in one `UPDATE` — `ratingHighWater` and
+  `attendanceHighWater`, each independently `Math.max`ed against its stored value in the
+  same call — so every existing rating-triggering action (assign, build, upgrade,
+  decorate, feed, rescue, trade) moves attendance's high-water too, with no new call
+  sites and no risk of the two drifting apart. `/guests view` and `/guests claim`
+  (`src/modules/guests/embeds.ts`, via `attendanceOf` → `toClockDinos`) are two surfaces
+  that render attendance without calling `settleEscapes` first, unlike the park card
+  (own or visited), which always settles before rendering it. The gap is bounded, not a
+  defect: an escaped-but-unsettled dino can still count toward the variety term until
+  some other command or a visit settles it — the same lag `/top` already accepted.

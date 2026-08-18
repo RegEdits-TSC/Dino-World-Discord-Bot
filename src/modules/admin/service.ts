@@ -74,6 +74,11 @@ export function adminReset(ctx: Ctx, targetId: string): void {
     // can ever clear.
     ctx.db.delete(schema.seasonProgress).where(eq(schema.seasonProgress.userId, targetId)).run();
     ctx.db.delete(schema.seasonClaims).where(eq(schema.seasonClaims.userId, targetId)).run();
+    // Same rule again: reset must delete from every table the feature reads. A surviving
+    // attraction or milestone claim would leave a "fresh" account holding paid-for
+    // catalog progress and pre-claimed milestones it never re-earned.
+    ctx.db.delete(schema.attractions).where(eq(schema.attractions.userId, targetId)).run();
+    ctx.db.delete(schema.attendanceClaims).where(eq(schema.attendanceClaims.userId, targetId)).run();
     // Same rule the breedings and user_stats fixes taught: reset must delete from every
     // table the feature reads. A surviving alerts_sent row would suppress the first
     // alert a "fresh" account earns.
@@ -105,6 +110,7 @@ export function adminReset(ctx: Ctx, targetId: string): void {
       questStreak: 0, questStreakBest: 0, lastQuestClaimAt: 0, landmarkTier: 0,
       motto: '', featuredDinoId: null,
       duelRating: DUEL_START_RATING, duelSquad: [],
+      attendanceHighWater: 0,
       // Same rule ratingHighWater already follows: this is the one path that makes the
       // computed legacyPoints total DROP (species_seen, achievement_claims and
       // battle_progress are all deleted above), and legacyRank resolves against
@@ -146,6 +152,11 @@ export function adminFastForward(ctx: Ctx, targetId: string, hours: number): num
     // every column left alone.
     // users.landmark_tier is deliberately NOT touched: the landmark ladder carries no timer
     // semantics, so there is nothing for a clock shift to move.
+    // attractions.built_at_ms and users.attendance_high_water are deliberately NOT touched
+    // either: built_at_ms is history (same reasoning as species_seen.first_at_ms above —
+    // nothing reads it to decide whether something is due), and attendance_high_water is a
+    // balance, not a timer. If a build cooldown is ever added to attractions, THAT column
+    // must shift; this one still shouldn't.
     // daily_quests.dayKey is deliberately NOT shifted: fast-forward cannot move the UTC
     // calendar, so today's board stays today's. Shifting the claim anchor is what lets a
     // streak gap or continuation be simulated.

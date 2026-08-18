@@ -559,3 +559,22 @@ it('adminFastForward leaves season rows untouched — it cannot move the UTC cal
   expect(after.seasonIndex).toBe(before.seasonIndex);
   expect(after.createdAt).toBe(before.createdAt);
 });
+
+it('adminReset clears attractions, milestone claims and the attendance high-water', () => {
+  const ctx = makeCtx();
+  getOrCreateUser(ctx, 'u1', 'Reg');
+  ctx.db.insert(schema.attractions).values({
+    userId: 'u1', kind: 'gift_shop', level: 2, builtAt: 0,
+  }).run();
+  ctx.db.insert(schema.attendanceClaims).values({
+    userId: 'u1', milestone: 200, claimedAt: 0,
+  }).run();
+  ctx.db.update(schema.users).set({ attendanceHighWater: 900 })
+    .where(eq(schema.users.discordId, 'u1')).run();
+
+  adminReset(ctx, 'u1');
+
+  expect(ctx.db.select().from(schema.attractions).all()).toHaveLength(0);
+  expect(ctx.db.select().from(schema.attendanceClaims).all()).toHaveLength(0);
+  expect(ctx.db.select().from(schema.users).all()[0].attendanceHighWater).toBe(0);
+});

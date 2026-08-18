@@ -6,6 +6,7 @@ import { lotIcon, tilePalette, dinoGlyph, RARITY_COLOR } from '../../data/render
 import { EMPTY_ART, type ParkArt } from './art.js';
 import type { Season } from '../world.js';
 import { landmarkBandFor, landmarkFor } from '../../data/landmarks.js';
+import { attractionFor } from '../../data/attractions.js';
 
 const COLS = 3;
 const TILE_W = 270, TILE_H = 150, GAP = 16, PAD = 20, HEADER_H = 64;
@@ -174,11 +175,33 @@ function drawLandmark(c: SKRSContext2D, x: number, y: number, img: Image | null,
   c.fillText(trunc(c, landmarkFor(tier)!.name, TILE_W - 28), x + 14, y + TILE_H - 16);
 }
 
+// One guest attraction cell. No art family ships with this task — ParkArt, EMPTY_ART and
+// loadParkArt all stay untouched — so unlike drawTile/drawLandmark there is no image to guard
+// against: the flat fill plus a label IS the whole cell. attractionFor is a pure catalog
+// lookup, the same kind of call drawLandmark already makes through landmarkFor, so this stays
+// inside renderParkPng's clock-free, DB-free contract. An unrecognised or retired kind
+// degrades to the raw slug rather than throwing, the same tolerance attendanceOf and
+// matchedKindCount give an unknown kind elsewhere.
+function drawAttraction(c: SKRSContext2D, x: number, y: number, kind: string, level: number): void {
+  rrect(c, x, y, TILE_W, TILE_H, 12); c.fillStyle = '#2d4a63'; c.fill();
+  c.lineWidth = 3; c.strokeStyle = '#7fb3d9'; rrect(c, x, y, TILE_W, TILE_H, 12); c.stroke();
+
+  c.fillStyle = '#eaf4fb';
+  c.font = `18px "${SANS}"`;
+  c.fillText(trunc(c, attractionFor(kind)?.name ?? kind, TILE_W - 28), x + 14, y + 34);
+  c.font = `13px "${SANS}"`;
+  c.fillText(`Lv ${level}`, x + 14, y + 54);
+}
+
 export function renderParkPng(snap: ParkSnapshot, art: ParkArt = EMPTY_ART): Buffer {
   ensureFonts();
   const hasBuild = snap.lots.length < snap.lotCap;
   const band = landmarkBandFor(snap.landmarkTier ?? 0);
-  const cellCount = snap.lots.length + (hasBuild ? 1 : 0) + (band ? 1 : 0);
+  // Undefined and [] both mean "no attractions built" — never distinguished, so a park
+  // with none renders byte-identical output either way (see the snapshot field's own
+  // comment). No unconditional cell here: unlike hasBuild, there is no always-on slot.
+  const attractions = snap.attractions ?? [];
+  const cellCount = snap.lots.length + (hasBuild ? 1 : 0) + (band ? 1 : 0) + attractions.length;
   const dims = gridDims(cellCount);
   const canvas = createCanvas(dims.width, dims.height);
   const c = canvas.getContext('2d');
@@ -209,6 +232,15 @@ export function renderParkPng(snap: ParkSnapshot, art: ParkArt = EMPTY_ART): Buf
     const col = idx % COLS, row = Math.floor(idx / COLS);
     drawLandmark(c, PAD + col * (TILE_W + GAP), HEADER_H + PAD + row * (TILE_H + GAP),
       art.landmarks[band], snap.landmarkTier ?? 0);
+  }
+  // Attraction cells append AFTER the landmark cell (constraint: never earlier), so every
+  // tile index that existed before this feature — including the landmark cell's own — keeps
+  // the exact coordinates it already had.
+  const attractionBase = snap.lots.length + (hasBuild ? 1 : 0) + (band ? 1 : 0);
+  for (let i = 0; i < attractions.length; i++) {
+    const idx = attractionBase + i, col = idx % COLS, row = Math.floor(idx / COLS);
+    drawAttraction(c, PAD + col * (TILE_W + GAP), HEADER_H + PAD + row * (TILE_H + GAP),
+      attractions[i].kind, attractions[i].level);
   }
   return canvas.toBuffer('image/png');
 }

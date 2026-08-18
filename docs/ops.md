@@ -220,7 +220,7 @@ Example `modules.json`:
 }
 ```
 
-Sixteen modules ship today:
+Seventeen modules ship today:
 
 - `park` — paddocks, upgrades, park rating, decorations.
 - `hatchery` — eggs, incubation, hatching, Mythic purchases.
@@ -229,7 +229,7 @@ Sixteen modules ship today:
 - `settings` — per-guild configuration (e.g. notification channel, world bulletin opt-in).
 - `care` — feeding dinos and rescuing escapees.
 - `trading` — player-to-player dino/egg/currency trades with escrow.
-- `leaderboards` — server and global rankings by rating, cash, collection, legacy, battle stars, and duel rating.
+- `leaderboards` — server and global rankings by rating, cash, collection, legacy, battle stars, duel rating, season points, and attendance.
 - `admin` — owner-only tools: grant resources, inspect/reset a player, fast-forward a player's clock (QA).
 - `help` — in-game command reference and getting-started guide.
 - `battles` — the PvE campaign: fight chapter stages with a squad for cash, shards, and eggs.
@@ -238,6 +238,7 @@ Sixteen modules ship today:
 - `world` — the daily world event and season, plus the opt-in world bulletin broadcast.
 - `dex` — the species compendium, with filters and per-species detail.
 - `duels` — free player-versus-player exhibition duels and the duel rating.
+- `guests` — park attendance, the attraction catalog, and one-time attendance milestones.
 
 Admin commands are gated to the OWNER_ID user and hidden from non-admins in the Discord UI. Set OWNER_ID in .env.
 
@@ -269,6 +270,7 @@ After `npm run deploy-commands`, confirm the new command set is live by exercisi
 - `/feed all` and `/rescue` — care loop works.
 - `/trade offer user:@someone give-cash:10` then the recipient runs `/trade accept id:<n>` — the escrow swap completes; `/trade list`, `/trade decline`, `/trade cancel` respond.
 - `/top metric:rating` and `/top metric:collection scope:global` — leaderboards render.
+- `/guests view` — attendance and the attraction catalog render; `/guests build attraction:picnic_lawn` responds.
 - `/admin inspect user:@you` — returns your raw state (owner only).
 - `/world` — today's event, season, and turnover countdown render, with the event banner image; `/settings world-news state:on` — confirms the opt-in bulletin toggle (run as a user with Manage Guild permission).
 
@@ -351,7 +353,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
    ```bash
    npm run deploy-commands
    ```
-   Should report `28` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, leaderboards, admin, help, battles, genelab, daily, world, dex, and duels modules combined).
+   Should report `29` commands deployed (park, hatchery, expeditions, shop, settings, care, trading, leaderboards, admin, help, battles, genelab, daily, world, dex, duels, and guests modules combined).
 
 2. **Start the bot**:
    ```bash

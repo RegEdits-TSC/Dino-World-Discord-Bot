@@ -4,8 +4,8 @@ import { getOrCreateUser } from '../src/modules/park/service.js';
 import { track, readStat, readStats, STATS } from '../src/core/stats.js';
 
 describe('stats substrate', () => {
-  it('catalogs exactly the 18 spec stats with count/sum kinds', () => {
-    expect(Object.keys(STATS)).toHaveLength(18);
+  it('catalogs exactly the 19 spec stats with count/sum kinds', () => {
+    expect(Object.keys(STATS)).toHaveLength(19);
     expect(STATS.income_collected).toBe('sum');
     expect(STATS.income_collections).toBe('count');
     expect(STATS.trades_completed).toBe('count');

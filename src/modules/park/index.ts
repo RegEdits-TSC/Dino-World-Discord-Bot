@@ -10,6 +10,7 @@ import { seasonBadges } from '../daily/season.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
 import { dashboardPayload, withParkImage, landmarkPayload } from './embeds.js';
 import { visitPayload } from './visit.js';
+import { attendanceOf } from './attendance.js';
 import { bumpLegacyBest, tierForPoints } from './ranks.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
@@ -198,7 +199,7 @@ export const parkModule: ModuleManifest = {
         const foodLine = (Object.entries(inv) as Array<[FoodId, number]>)
           .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
         const legacyBest = bumpLegacyBest(ctx, i.user.id);
-        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine, earnedTiers: earnedTierCount(ctx, i.user.id), legacyRank: tierForPoints(legacyBest), motto: user.motto, featured: featuredFor(ctx, user), now: nowMs, seasonBadges: seasonBadges(ctx, i.user.id) });
+        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine, earnedTiers: earnedTierCount(ctx, i.user.id), legacyRank: tierForPoints(legacyBest), motto: user.motto, featured: featuredFor(ctx, user), now: nowMs, seasonBadges: seasonBadges(ctx, i.user.id), attendance: attendanceOf(ctx, i.user.id).attendance });
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
         await i.editReply(png ? withParkImage(base, png) : base);

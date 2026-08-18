@@ -252,4 +252,87 @@ describe('renderParkPng', () => {
       expect(at(10, 240)).toEqual([0, 0, 255]);
     });
   });
+
+  // Attraction cells append AFTER the landmark cell, count driven by data — same placement
+  // rule the landmark cell itself follows relative to the build slot, and for the same
+  // reason: every earlier tile must keep the exact coordinates it already had.
+  describe('attraction cells', () => {
+    // The brief's own version of this test only compares renderParkPng(sample) against
+    // renderParkPng({ ...sample, attractions: [] }) to each other. That alone is weaker than
+    // it looks: a broken implementation that always draws one unconditional attraction cell
+    // (the exact bug constraint 2 exists to prevent) would still make `a` and `b` agree with
+    // EACH OTHER, since both calls take the same broken path — so the pair could pass while
+    // the feature is wrong. Pinning the decoded height against the independent gridDims(3)
+    // formula (sample has 2 lots + lotCap 5, so hasBuild is true and 0 attractions must add
+    // no row) is what actually proves no unconditional cell exists.
+    it('renders byte-identically whether attractions is absent or an empty array, matching the pre-attraction grid', async () => {
+      const a = renderParkPng(sample);
+      const b = renderParkPng({ ...sample, attractions: [] });
+      expect(Buffer.compare(a, b)).toBe(0);
+
+      const img = new Image(); img.src = a; await img.decode();
+      expect(img.height).toBe(gridDims(3).height);
+    });
+
+    // The other half of the same concern: "byte-identical at zero" must not be true merely
+    // because the feature does nothing. A built attraction has to actually change the output.
+    it('a park with an attraction renders differently from one without', () => {
+      const bare = renderParkPng(sample);
+      const withOne = renderParkPng({ ...sample, attractions: [{ kind: 'gift_shop', level: 2 }] });
+      expect(Buffer.compare(bare, withOne)).not.toBe(0);
+    });
+
+    it('adds one cell per attraction, after the landmark cell, without moving any earlier tile', async () => {
+      const withOne = renderParkPng({ ...sample, attractions: [{ kind: 'gift_shop', level: 2 }] }, stubArt);
+      const bare = renderParkPng(sample, stubArt);
+      expect(withOne.length).not.toBe(bare.length);
+
+      // Re-run the six pinned pixel samples from "draws ground, both plates, the lot icon
+      // and the dino chip..." above against withOne: an appended cell must not move any of
+      // them.
+      const at = await sampler(withOne);
+      expect(at(10, 240)).toEqual([0, 0, 255]);
+      expect(at(10, 10)).toEqual([35, 74, 30]);
+      expect(at(260, 210)).toEqual([255, 0, 255]);
+      expect(at(546, 210)).toEqual([255, 136, 0]);
+      expect(at(49, 114)).toEqual([0, 255, 255]);
+      expect(at(50, 173)).toEqual([255, 255, 0]);
+
+      const bareImg = new Image(); bareImg.src = bare; await bareImg.decode();
+      const oneImg = new Image(); oneImg.src = withOne; await oneImg.decode();
+      expect(bareImg.height).toBe(gridDims(3).height);
+      expect(oneImg.height).toBe(gridDims(4).height);
+    });
+
+    it('draws one cell per attraction, count driven by data rather than hardcoded to one', async () => {
+      const two = renderParkPng({
+        ...sample,
+        attractions: [{ kind: 'gift_shop', level: 1 }, { kind: 'sky_gondola', level: 3 }],
+      });
+      const img = new Image(); img.src = two; await img.decode();
+      // 2 lots + build(1) + 0 landmark + 2 attractions = 5 cells -> 2 rows.
+      expect(img.height).toBe(gridDims(5).height);
+    });
+
+    it('places attraction cells after the landmark cell when both are present, leaving the landmark cell undisturbed', async () => {
+      const markedArt: ParkArt = { ...EMPTY_ART, landmarks: { a: svgStub('#00ffff', 270, 150), b: null, c: null } };
+      const png = renderParkPng(
+        { ...sample, landmarkTier: 1, attractions: [{ kind: 'gift_shop', level: 2 }] },
+        markedArt,
+      );
+      // Landmark cell is still at its own slot (lots.length + hasBuild = index 3), matching
+      // the existing landmark pin above — appending the attraction cell after it must not
+      // move it.
+      const at = await sampler(png);
+      expect(at(120, 320)).toEqual([0, 255, 255]);
+
+      // 2 lots + build(1) + landmark(1) + 1 attraction = 5 cells -> 2 rows.
+      const img = new Image(); img.src = png; await img.decode();
+      expect(img.height).toBe(gridDims(5).height);
+    });
+
+    it('renders an attraction of an unknown or retired kind without throwing', () => {
+      expect(() => renderParkPng({ ...sample, attractions: [{ kind: 'retired_kind', level: 1 }] })).not.toThrow();
+    });
+  });
 });
