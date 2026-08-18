@@ -95,7 +95,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '`/achievements` — lifetime progress across 12 tracks, each with 4 tiers (bronze/silver/gold/platinum) paying cash and shards as you cross them.',
     '`/season` — the current 30-day season track: points from nine capped sources, eight reward rungs, and a Claim button. Crossing the 800-point capstone earns a permanent badge on your park card; unclaimed rungs forfeit at rollover, the badge never does.',
   ].join('\n') },
-  guests: { title: '🎡 Guests', body: [
+  guests: { title: '🎡 Guests', art: { kind: 'banners', name: 'guests' }, body: [
     'Attendance measures how many visitors your park draws — a gate for the attraction catalog, not a currency.',
     '`/guests view` — your attendance and its three terms (species variety, attraction draw, Visitor Center level), the attractions you own, the next one still locked, and any milestone reward ready to claim.',
     '`/guests build attraction:<kind>` — build a new attraction, or upgrade one you already own to its next level. Priced in cash; each of the six kinds unlocks at its own attendance threshold.',

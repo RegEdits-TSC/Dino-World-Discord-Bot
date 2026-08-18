@@ -1,5 +1,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import type { AttachmentBuilder } from 'discord.js';
 import type { Ctx } from '../../core/context.js';
+import { attach, assetImage } from '../../core/images.js';
 import { attendanceOf } from '../park/attendance.js';
 import { levelValue } from '../park/service.js';
 import { FOODS } from '../../data/foods.js';
@@ -10,10 +12,21 @@ import {
 } from '../../data/attendance.js';
 import { attractionRows, buildableKinds, claimableMilestones, nextMilestone } from './service.js';
 
-// Matches dex/embeds.ts's Payload shape: no `files` here at all, ever — this module
-// ships no art, so there is nothing for attach() to append and no attachment set that
-// a later i.update could ever need to shed.
-export interface Payload { embeds: EmbedBuilder[]; components?: ActionRowBuilder<ButtonBuilder>[] }
+// Matches dex/embeds.ts's Payload shape, `files` and all. The previous version of this
+// comment said there would never be a files key here because the module shipped no art;
+// that recorded what a past release had not done, not a design decision, and it is no
+// longer true. All three builders below attach banners/guests through attach(), so every
+// /guests surface carries exactly one upload. The i.update at src/modules/guests/index.ts
+// re-renders through guestsPayload, and an update carrying `files` replaces the message's
+// whole attachment set — with an identical one, because the pre- and post-claim renders go
+// through the same builder and reference the same banner. That is precisely why nothing
+// here sets an `attachments` key by hand: attach() supplies `files` on every render, so
+// there is never a stale set left for an update to shed.
+export interface Payload {
+  embeds: EmbedBuilder[];
+  components?: ActionRowBuilder<ButtonBuilder>[];
+  files?: AttachmentBuilder[];
+}
 
 /**
  * One reward line per milestone: cash, shards, food and egg all render only when the
@@ -106,7 +119,9 @@ export function guestsPayload(ctx: Ctx, userId: string): Payload {
       value: claimable.map((m) => `🎁 **${m.name}** — ${rewardLine(m)}`).join('\n'),
     });
   }
-  return { embeds: [embed], components: claimRows(userId, claimable) };
+  const payload: Payload = { embeds: [embed], components: claimRows(userId, claimable) };
+  attach(embed, payload, 'image', assetImage('banners', 'guests'));
+  return payload;
 }
 
 /** Confirmation after /guests build — covers both a fresh build (level 1) and an upgrade. */
@@ -124,7 +139,9 @@ export function builtPayload(ctx: Ctx, userId: string, def: AttractionDef, level
       { name: 'Draw', value: `+${draw} attendance draw`, inline: true },
       { name: 'Next upgrade', value: nextCost !== null ? `${nextCost.toLocaleString()} cash` : 'Top level', inline: true },
     );
-  return { embeds: [embed] };
+  const payload: Payload = { embeds: [embed] };
+  attach(embed, payload, 'image', assetImage('banners', 'guests'));
+  return payload;
 }
 
 /**
@@ -157,5 +174,7 @@ export function milestonePayload(ctx: Ctx, userId: string): Payload {
       value: next ? `Next: **${next.name}** at ${next.at.toLocaleString()} attendance.` : 'Every milestone is claimed.',
     });
   }
-  return { embeds: [embed], components: claimRows(userId, claimable) };
+  const payload: Payload = { embeds: [embed], components: claimRows(userId, claimable) };
+  attach(embed, payload, 'image', assetImage('banners', 'guests'));
+  return payload;
 }

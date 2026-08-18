@@ -117,9 +117,11 @@ export const guestsModule: ModuleManifest = {
         }
         // Re-render so the message that was just used advances — a second layer only.
         // The customId check above is what actually protects the claim. No attachments
-        // key: guestsPayload ships no art (the park:landmark:buy success path's own
-        // precedent for a payload that never carries files), so there is nothing stale
-        // for this update to shed.
+        // key by hand: guestsPayload attaches banners/guests on every render, so this
+        // update replaces the message's attachment set with an identical one. Setting
+        // `attachments: []` here would be the fightFrames rule misapplied — that rule
+        // exists because one MessagePayload object reaches two send sites and each must
+        // shed the other's set; this payload is built fresh and sent exactly once.
         await i.update(guestsPayload(ctx, i.user.id));
       },
     },

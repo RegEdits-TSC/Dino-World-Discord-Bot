@@ -171,7 +171,7 @@ describe('banner art', () => {
 
   // Discord scales an embed image to the embed width, so an off-size banner
   // letterboxes or crops; 1536×1024 matches the site banners already shipping.
-  // Covers all 26 committed banners, not just the 17 the static scrape can see:
+  // Covers all 27 committed banners, not just the 18 the static scrape can see:
   // event-<id> names come from a template literal (world/embeds.ts) no scrape can
   // resolve, so they are appended here from WORLD_EVENTS directly — same
   // cross-check precedent as the CAMPAIGN/WORLD_EVENTS loops in "the committed
@@ -182,6 +182,22 @@ describe('banner art', () => {
   it.each(DIMENSION_CHECKED_BANNERS)('%s is 1536×1024', async (name) => {
     const img = new Image();
     img.src = readFileSync(resolve(process.cwd(), 'assets/images/banners', `${name}.webp`));
+    await img.decode();
+    expect(img.width).toBe(1536);
+    expect(img.height).toBe(1024);
+  });
+
+  // The dimension case for this banner is REGISTERED by the it.each above, not written
+  // by hand — DIMENSION_CHECKED_BANNERS is built from BANNERS, which is scraped from
+  // src/. That is exactly why this test exists: a wiring form scrapeBannerNames cannot
+  // read (a call wrapped across two lines, double quotes, a template literal) silently
+  // drops the name out of that loop, registering zero cases for it with the suite still
+  // green. Assert the name is IN the scrape, then read the file directly so a
+  // committed-but-unfitted banner fails here even if the loop is somehow starved.
+  it('guests is scrape-visible and ships at 1536×1024', async () => {
+    expect(BANNERS, 'banners/guests is not reachable by scrapeBannerNames').toContain('guests');
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/banners', 'guests.webp'));
     await img.decode();
     expect(img.width).toBe(1536);
     expect(img.height).toBe(1024);

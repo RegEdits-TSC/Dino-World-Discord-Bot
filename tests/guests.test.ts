@@ -385,4 +385,39 @@ describe('/guests', () => {
     expect(reply.components![0].toJSON().components[0].custom_id)
       .toBe(`guests:claim:u1:${ATTENDANCE_MILESTONES[0].at}`);
   });
+
+  it('every /guests surface ships the guests banner and its file together', async () => {
+    rich(ATTENDANCE_MILESTONES[0].at);
+    for (const sub of ['view', 'build', 'claim'] as const) {
+      const i = fakeCommand({
+        name: 'guests', sub, user: 'u1',
+        options: sub === 'build' ? { attraction: 'picnic_lawn' } : {},
+      });
+      await cmd().execute(ctx, i.asChatInput());
+      const payload = i.replies[0] as { embeds: EmbedBuilder[]; files?: Array<{ name?: string | null }> };
+      expect(payload.embeds[0].toJSON().image?.url, sub).toBe('attachment://guests.webp');
+      // toEqual on the whole list, not toContain: attach() APPENDS, so a second slot
+      // wired later would show up here rather than hiding behind a membership check.
+      expect(payload.files!.map((f) => f.name), sub).toEqual(['guests.webp']);
+    }
+  });
+
+  // An i.update carrying `files` REPLACES the message's whole attachment set. The claim
+  // handler re-renders through guestsPayload, so the banner has to be re-attached on the
+  // post-claim render or the message the player just used loses the image it had — a
+  // silent regression with no error anywhere, and one no existing test could see, since
+  // this module shipped no art before and nothing asserted files/attachments on this path.
+  it('the claim re-render carries the banner again rather than blanking the message art', async () => {
+    rich(ATTENDANCE_MILESTONES[0].at);
+    const i = fakeButton({ customId: `guests:claim:u1:${ATTENDANCE_MILESTONES[0].at}`, user: 'u1' });
+    await comp().execute(ctx, i.asInteraction() as unknown as ButtonInteraction);
+    const update = i.replies[0] as { embeds: EmbedBuilder[]; files?: Array<{ name?: string | null }> };
+    expect(update.embeds[0].toJSON().image?.url).toBe('attachment://guests.webp');
+    expect(update.files!.map((f) => f.name)).toEqual(['guests.webp']);
+    // And NEVER a hand-set attachments key. The fightFrames rule (attachments: []
+    // mandatory and unconditional) exists because one MessagePayload object reaches two
+    // send sites and each must shed the other's set; this payload is built fresh by
+    // guestsPayload and sent exactly once, so the replacement set is already identical.
+    expect('attachments' in update).toBe(false);
+  });
 });
