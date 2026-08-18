@@ -1,5 +1,5 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type AttachmentBuilder } from 'discord.js';
-import { assetImage, attach } from '../../core/images.js';
+import { assetImage, dinoImage, attach } from '../../core/images.js';
 import { getSpecies } from '../../data/species/index.js';
 import { FOODS } from '../../data/foods.js';
 import { CAMPAIGN, STAGES, stageUnlocked, chapterUnlocked, rosterFor, type ProgressMap } from '../../data/battle/chapters/index.js';
@@ -63,11 +63,12 @@ export function fightFrames(
   // above dress() because the thumbnail is now derived from it.
   const roster = rosterFor(stage, outcome.squad.length);
   // A boss stage shows its named individual and nothing else: if the portrait is
-  // missing it degrades to no thumbnail, never to archetype art standing in for a
-  // boss. Non-boss stages have no individual, so they show the archetype of the
-  // lead enemy rosterFor fields — the same entry the enemy list opens with.
+  // missing it degrades to no thumbnail, never to species or archetype art standing in
+  // for a boss. Non-boss stages have no individual, so they show the lead enemy rosterFor
+  // fields — the same entry the enemy list opens with — through dinoImage, which prefers
+  // that species' own portrait and falls back to its archetype art.
   const lead = stage.boss ? null : getSpecies(roster[0].speciesId);
-  const thumb = portrait ?? (lead ? assetImage('dinos', `${lead.archetype}-${lead.diet}`) : null);
+  const thumb = portrait ?? (lead ? dinoImage(lead.id, lead.archetype, lead.diet) : null);
 
   // Files attach on F1 and F4 only, and each attaching frame uploads exactly the
   // files its embed references. F1 and F4 both replace the message's whole

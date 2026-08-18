@@ -288,8 +288,18 @@
   `eggs/<rarity>.webp`. `assets/images/dinos/<archetype>-<diet>.webp` is a fixed
   set of 8 (1024×1024 transparent cutouts, `fit-art.mjs cutout`, so a 31px
   margin against the boss portraits' 24px — deliberate, recorded in
-  `docs/assets/prompts.md`): **art is keyed on archetype×diet, never on species**,
-  which is what keeps adding a species a data-only change. `support-carnivore`
+  `docs/assets/prompts.md`): **art is keyed on archetype×diet, with a per-species file
+  as an OPTIONAL override** — `dinoImage(speciesId, archetype, diet)`
+  (`src/core/images.ts`) tries `dinos/<speciesId>.webp` first and falls back to
+  `dinos/<archetype>-<diet>.webp`, so a species with no file of its own costs no art and
+  adding a species stays a data-only change. All five dino-art call sites go through that
+  helper (`park/embeds.ts`, `duels/embeds.ts`, `dex/embeds.ts`, `hatchery/embeds.ts`,
+  `battles/embeds.ts`), never a bare `assetImage('dinos', …)`; `park/embeds.ts` needed
+  `Featured` (`park/showcase.ts`) to carry `speciesId` for it, a typecheck-only break that
+  `npm run build` and `npm test` both miss. Mocking `assetImage` can NOT intercept the two
+  lookups inside `dinoImage` — that call is module-internal — so a test that needs a
+  dino-art miss must mock `dinoImage` itself (`tests/hatchery.test.ts` and
+  `tests/battles-embeds.test.ts` both do). `support-carnivore`
   shipped with zero species using it for exactly that reason; Archelon (uncommon,
   support archetype, carnivore diet) now does, and it needed no new art at all —
   proof the guarantee holds. That fixed cost has

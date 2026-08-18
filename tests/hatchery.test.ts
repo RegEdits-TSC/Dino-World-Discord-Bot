@@ -11,7 +11,7 @@ import { preHatchPayload, eggListPayload, revealPayload } from '../src/modules/h
 import { getSpecies } from '../src/data/species/index.js';
 import { mythicSpeciesChoices } from '../src/modules/shop/shards.js';
 import { RARITY } from '../src/data/rarity.js';
-import { assetImage } from '../src/core/images.js';
+import { assetImage, dinoImage } from '../src/core/images.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
 import { traitLines } from '../src/core/trait-display.js';
@@ -22,9 +22,11 @@ import { MYTHIC_UNLOCK_RATING } from '../src/data/progression.js';
 // so every test in this file except the two degrade-path tests below is
 // unaffected. Those two override exactly one queued call via
 // mockImplementationOnce to force a miss without touching real asset files.
+// dinoImage needs its own spy: revealPayload resolves the thumb through it now, and its
+// two assetImage lookups are module-internal — the assetImage spy cannot intercept them.
 vi.mock('../src/core/images.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/core/images.js')>();
-  return { ...actual, assetImage: vi.fn(actual.assetImage) };
+  return { ...actual, assetImage: vi.fn(actual.assetImage), dinoImage: vi.fn(actual.dinoImage) };
 });
 
 const M = 60_000;
@@ -285,13 +287,12 @@ describe('hatchery visuals', () => {
     expect(embed.thumbnail?.url).toBe('attachment://swift-carnivore.webp');
     expect(p.files.map((f) => f.name)).toEqual(['swift-carnivore.webp']);
   });
-  it('revealPayload still ships the crack when the archetype art is missing', async () => {
+  it('revealPayload still ships the crack when the archetype art is missing', () => {
     // Degrade path 2/2: the mirror case — a miss on the thumb must not drop the
-    // crack that attach already appended to payload.files.
-    const { assetImage: realAssetImage } = await vi.importActual<typeof import('../src/core/images.js')>('../src/core/images.js');
-    vi.mocked(assetImage)
-      .mockImplementationOnce((kind, name) => realAssetImage(kind, name))   // crack call (1st) -> real
-      .mockImplementationOnce(() => null);                                  // thumb call (2nd) -> missing
+    // crack that attach already appended to payload.files. The miss is forced on
+    // dinoImage, not on the assetImage queue: revealPayload resolves the thumb through
+    // dinoImage, whose own assetImage calls are module-internal and unmockable from here.
+    vi.mocked(dinoImage).mockImplementationOnce(() => null);
     const p = revealPayload(getSpecies('velociraptor'));
     const embed = p.embeds[0].toJSON();
     expect(embed.image?.url).toBe('attachment://rare-crack.webp');

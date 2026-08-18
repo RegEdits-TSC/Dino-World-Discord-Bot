@@ -1,7 +1,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type AttachmentBuilder } from 'discord.js';
 import type { Species } from '../../data/types.js';
 import { RARITY } from '../../data/rarity.js';
-import { assetImage, attach } from '../../core/images.js';
+import { assetImage, dinoImage, attach } from '../../core/images.js';
 import { rarityEmoji } from '../../core/emojis.js';
 import { paginate, pageRow } from '../../core/paginate.js';
 import type { Egg } from './service.js';
@@ -48,9 +48,9 @@ export function revealPayload(species: Species) {
   } = { embeds: [embed], components: [], files: [], attachments: [] };
   attach(embed, payload, 'image', assetImage('hatch', `${species.rarity}-crack`));
   // Two files on one payload, each degrading independently: the crack is the
-  // "your egg burst open" beat, the archetype thumb is what came out of it.
+  // "your egg burst open" beat, the species (or archetype) thumb is what came out of it.
   // attach appends, so neither call can clobber the other's file.
-  attach(embed, payload, 'thumbnail', assetImage('dinos', `${species.archetype}-${species.diet}`));
+  attach(embed, payload, 'thumbnail', dinoImage(species.id, species.archetype, species.diet));
   return payload;
 }
 

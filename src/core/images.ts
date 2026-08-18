@@ -23,6 +23,20 @@ export function assetImage(kind: 'eggs' | 'sites' | 'banners' | 'battles' | 'hat
   return { file: new AttachmentBuilder(abs, { name: fileName }), url: `attachment://${fileName}` };
 }
 
+// Species art is an OPTIONAL override: a committed assets/images/dinos/<speciesId>.webp
+// wins, and a species with no file of its own falls back to its archetype×diet art. That
+// fallback is what keeps adding a species a data-only change — no SpeciesDef field, no
+// species-file edit, no migration. `present()` above caches existsSync per absolute path,
+// so the extra lookup costs one Map hit after the first call.
+//
+// Every dino-art call site goes through this, never a bare assetImage('dinos', …).
+// Note for tests: the two assetImage calls below are MODULE-INTERNAL, so mocking
+// assetImage cannot intercept them — a test that needs a dino-art miss must mock
+// dinoImage itself.
+export function dinoImage(speciesId: string, archetype: string, diet: string): ImageRef | null {
+  return assetImage('dinos', speciesId) ?? assetImage('dinos', `${archetype}-${diet}`);
+}
+
 // Sets an embed slot AND attaches the file, in one statement a caller cannot
 // half-do. Round 2 shipped three attachment defects, each one a call site where
 // "set the slot" and "attach the file" had drifted apart; behind this they

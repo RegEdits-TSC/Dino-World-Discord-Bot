@@ -18,6 +18,12 @@ import { assetImage } from '../src/core/images.js';
 // implementation) wrapped in vi.fn, so the two chaptersPayload degrade-path
 // tests below can still override exactly one queued call via
 // mockImplementationOnce to force a miss without touching real asset files.
+//
+// `dinos: false` has to be expressed on dinoImage rather than on assetImage: fightFrames
+// resolves the lead enemy through dinoImage, whose own two assetImage lookups are
+// module-internal and are therefore never routed through the spy below. Mocked on
+// dinoImage it keeps working, and it stays out of the assetImage once-queue entirely, so
+// the two chaptersPayload tests below keep their 1st-call/2nd-call identity.
 const art = vi.hoisted(() => ({ portraits: true, sites: true, dinos: true }));
 vi.mock('../src/core/images.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/core/images.js')>();
@@ -26,16 +32,18 @@ vi.mock('../src/core/images.js', async (importOriginal) => {
     assetImage: vi.fn((kind: Parameters<typeof actual.assetImage>[0], name: string) => {
       // `sites: false` models a deploy with no chapter art (docs/ops.md: every
       // asset is individually optional) — the only way F1 ends up with no files.
-      // `dinos: false` is the same fixture for the archetype thumbs — without it
-      // F1 always has a file and the replay contract below stops testing the
-      // no-art case it exists to test.
       if (kind === 'sites' && !art.sites) return null;
-      if (kind === 'dinos' && !art.dinos) return null;
       if (kind !== 'battles') return actual.assetImage(kind, name);   // chapter banners/thumbs stay real
       if (!art.portraits) return null;
       const fileName = `${name}.webp`;
       return { file: new AttachmentBuilder(Buffer.from('portrait'), { name: fileName }), url: `attachment://${fileName}` };
     }),
+    // Pass-through by default, so every frame test still resolves the real archetype art.
+    // `dinos: false` is the same fixture the assetImage branch used to provide — without
+    // it F1 always has a file and the replay contract below stops testing the no-art case
+    // it exists to test.
+    dinoImage: vi.fn((speciesId: string, archetype: string, diet: string) =>
+      (art.dinos ? actual.dinoImage(speciesId, archetype, diet) : null)),
   };
 });
 

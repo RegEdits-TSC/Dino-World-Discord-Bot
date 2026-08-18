@@ -2,7 +2,7 @@ import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'disc
 import type { AttachmentBuilder } from 'discord.js';
 import type { Ctx } from '../../core/context.js';
 import { paginate } from '../../core/paginate.js';
-import { attach, assetImage } from '../../core/images.js';
+import { attach, dinoImage } from '../../core/images.js';
 import { rarityEmoji } from '../../core/emojis.js';
 import { fmtDuration, capitalize } from '../../core/autocomplete.js';
 import { bumpLegacyBest, tierForPoints } from '../park/ranks.js';
@@ -89,6 +89,6 @@ export function dexViewPayload(ctx: Ctx, userId: string, speciesId: string): Pay
       },
     );
   const payload: Payload = { embeds: [embed] };
-  attach(embed, payload, 'thumbnail', assetImage('dinos', `${e.species.archetype}-${e.species.diet}`));
+  attach(embed, payload, 'thumbnail', dinoImage(e.species.id, e.species.archetype, e.species.diet));
   return payload;
 }

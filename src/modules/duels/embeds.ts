@@ -1,5 +1,5 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type AttachmentBuilder } from 'discord.js';
-import { assetImage, attach } from '../../core/images.js';
+import { dinoImage, attach } from '../../core/images.js';
 import type { DuelOutcome, DuelRecord, DuelSquadMember } from './service.js';
 
 // The component prefix AND the first segment of every customId this module mints.
@@ -54,7 +54,7 @@ export function duelResultPayload(outcome: DuelOutcome): DuelPayload {
   // without deduping and one slot would render the other's picture.
   const lead = result === 'loss' ? squads.defender[0] : squads.challenger[0];
   const payload: DuelPayload = { embeds: [embed], components: [] };
-  attach(embed, payload, 'thumbnail', assetImage('dinos', `${lead.archetype}-${lead.diet}`));
+  attach(embed, payload, 'thumbnail', dinoImage(lead.speciesId, lead.archetype, lead.diet));
   return payload;
 }
 

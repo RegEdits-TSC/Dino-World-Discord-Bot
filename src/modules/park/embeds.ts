@@ -4,7 +4,7 @@ import { emojiTag } from '../../core/emojis.js';
 import { eventHeaderLine } from '../world/embeds.js';
 import type { LandmarkDef } from '../../data/landmarks.js';
 import type { LegacyTier } from './ranks.js';
-import { assetImage, attach } from '../../core/images.js';
+import { dinoImage, attach } from '../../core/images.js';
 import type { Featured } from './showcase.js';
 import { seasonNumberOf } from '../../core/world.js';
 import { ATTENDANCE_MAX } from '../../data/attendance.js';
@@ -99,8 +99,10 @@ export function dashboardPayload(
   } = { embeds: [embed], components: [row] };
   // The ternary guards on DOMAIN data (is anything featured), so it stays outside attach —
   // "nothing featured" is not an asset miss. Same shape as shop's `best ? … : null`.
+  // dinoImage, not assetImage: a hero species with its own committed portrait overrides the
+  // shared archetype art, and everything else falls back to exactly what shipped before.
   attach(embed, payload, 'thumbnail',
-    opts.featured ? assetImage('dinos', `${opts.featured.archetype}-${opts.featured.diet}`) : null);
+    opts.featured ? dinoImage(opts.featured.speciesId, opts.featured.archetype, opts.featured.diet) : null);
   return payload;
 }
 

@@ -97,7 +97,7 @@ describe('featuredFor', () => {
   it('resolves to the archetype and diet the art is keyed on', () => {
     const d = addDino();
     setFeaturedDino(ctx, 'u1', d.id);
-    expect(featuredFor(ctx, row())).toEqual({ name: 'Triceratops', archetype: 'tank', diet: 'herbivore' });
+    expect(featuredFor(ctx, row())).toEqual({ name: 'Triceratops', speciesId: 'triceratops', archetype: 'tank', diet: 'herbivore' });
   });
 
   it('prefers the nickname over the species name', () => {

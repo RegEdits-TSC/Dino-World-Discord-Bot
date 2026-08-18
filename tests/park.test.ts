@@ -946,7 +946,7 @@ describe('dashboard showcase', () => {
   it('names the featured dino and attaches its archetype art as the thumbnail', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
     const p = dashboardPayload(user, [], 0, 0, 0, {
-      featured: { name: 'Trixie', archetype: 'tank', diet: 'herbivore' },
+      featured: { name: 'Trixie', speciesId: 'triceratops', archetype: 'tank', diet: 'herbivore' },
     });
     expect(fieldsOf(p).find((f) => f.name === '🦖 Featured')!.value).toBe('Trixie');
     // assets/images/dinos/tank-herbivore.webp ships in the repo, so this exercises the

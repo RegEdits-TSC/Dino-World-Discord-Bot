@@ -3,7 +3,7 @@ import { Image, createCanvas } from '@napi-rs/canvas';
 import { EmbedBuilder, type AttachmentBuilder } from 'discord.js';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { assetImage, attach } from '../src/core/images.js';
+import { assetImage, attach, dinoImage } from '../src/core/images.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { WORLD_EVENTS } from '../src/data/world-events.js';
@@ -396,6 +396,41 @@ describe('dino archetype art', () => {
   it('every species resolves to a shipped archetype image', () => {
     for (const s of allSpecies()) {
       expect(assetImage('dinos', `${s.archetype}-${s.diet}`), s.id).not.toBeNull();
+    }
+  });
+});
+
+describe('dinoImage', () => {
+  // No mocking in this block. dinoImage calls assetImage from inside the same module,
+  // so vi.mock on src/core/images.js would replace what importers see and leave both of
+  // dinoImage's own lookups untouched — the branches have to be proved against committed
+  // files instead. Nothing is ever staged or deleted under assets/images: vitest runs
+  // test files in parallel forks and another file can observe the write mid-run.
+  it('falls back to the archetype×diet file when no species file is committed', () => {
+    // A synthetic id that can never gain committed art, so this stays true when the
+    // hero-species portraits ship.
+    const ref = dinoImage('no-such-species', 'bruiser', 'carnivore');
+    expect(ref).not.toBeNull();
+    expect(ref!.url).toBe('attachment://bruiser-carnivore.webp');
+    expect(ref!.file.name).toBe('bruiser-carnivore.webp');
+  });
+
+  it('prefers the species file when one is committed', () => {
+    // The override branch, exercised with a name that IS committed under
+    // assets/images/dinos. The archetype arguments name a DIFFERENT, equally committed
+    // file, so a fallback-only implementation returns tank-herbivore.webp and fails.
+    const ref = dinoImage('bruiser-carnivore', 'tank', 'herbivore');
+    expect(ref).not.toBeNull();
+    expect(ref!.url).toBe('attachment://bruiser-carnivore.webp');
+  });
+
+  it('returns null when neither the species nor the archetype file exists', () => {
+    expect(dinoImage('no-such-species', 'no-such-archetype', 'carnivore')).toBeNull();
+  });
+
+  it('resolves every species in the live roster — adding a species still needs no art', () => {
+    for (const s of allSpecies()) {
+      expect(dinoImage(s.id, s.archetype, s.diet), s.id).not.toBeNull();
     }
   });
 });
