@@ -62,6 +62,21 @@ describe('harness', () => {
     await b2.deferUpdate();
     await expect(b2.update({ content: 'x' })).rejects.toMatchObject({ code: 'InteractionAlreadyReplied' });
   });
+  // Load-bearing since the router-level component guard shipped (src/core/router.ts):
+  // 87 fakeButton sites call execute directly and never state componentIds, so this
+  // default is what models "the button you clicked is one the message actually carries"
+  // for all of them. A fixture opts out with [] (or somebody else's ids) to model a
+  // forged customId emitted straight at the gateway.
+  it('fakeButton defaults componentIds to the clicked id, and [] mints a message with none', () => {
+    const idsOn = (fb: ReturnType<typeof fakeButton>) =>
+      (fb.asInteraction() as unknown as {
+        message: { components: Array<{ components: Array<{ customId: string }> }> };
+      }).message.components.flatMap((r) => r.components.map((c) => c.customId));
+    expect(idsOn(fakeButton({ customId: 'x:y:1', user: 'u1' }))).toEqual(['x:y:1']);
+    expect(idsOn(fakeButton({ customId: 'x:y:1', user: 'u1', componentIds: [] }))).toEqual([]);
+    expect(idsOn(fakeButton({ customId: 'x:y:1', user: 'u1', componentIds: ['a:b', 'c:d'] })))
+      .toEqual(['a:b', 'c:d']);
+  });
   it('recorded payloads are validated against Discord limits', async () => {
     const i = fakeCommand({ name: 'zzz-test', user: 'u1' }).asChatInput();
     await expect(i.reply({ content: 'x'.repeat(2001) })).rejects.toThrow(/content/);
