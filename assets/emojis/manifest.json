@@ -51,5 +51,9 @@
   "dw_event_heat_wave": "35d148a699bcfc8d922c920c169f03950fa109e320def03e15a0ed8aa3b66a81",
   "dw_event_market_panic": "89de3fe3aefad4836ab5295f25751b8d1fc3623c1717f916943f19d40f47cd9a",
   "dw_event_migration_season": "b88b4bc5b5f2b0896a46916d47075ee13d9b20b41ac0459702757873090ec6a9",
-  "dw_site_founders_park": "2d14659c4a461b915b51296f65ad8a61011d30544a1930c9f3c2bee3f31e6674"
+  "dw_site_founders_park": "2d14659c4a461b915b51296f65ad8a61011d30544a1930c9f3c2bee3f31e6674",
+  "dw_duel": "78f28d441ebc138f957b01bf6164e485283961854f79af5b9c995fdaebc64caf",
+  "dw_guest": "b0cc1cfeed2d570321cd4d2b7db5b2b73108dc56c7e13d3385e42ee1fef55135",
+  "dw_landmark": "fefc75f55172f1377372bf3c13f1753e27ac62dbee6c06db62852b588a7cde8b",
+  "dw_season": "b31bdce4fb9b72f6faec68f171b78a994413b669856e6baa81f695ad9257db32"
 }
