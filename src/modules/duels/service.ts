@@ -175,7 +175,16 @@ function challengeAlreadyResolved(
     // own duel lands at exactly `expiresAtMs - TTL`. An exclusive `>` would miss the
     // duel it is meant to detect — and at ctx.now() === 0, which is where the tests
     // live, it misses every one of them.
-    .some((r) => r.createdAt >= expiresAtMs - DUEL_CHALLENGE_TTL_MS && r.createdAt <= expiresAtMs);
+    //
+    // Upper bound is ctx.now(), never expiresAtMs: a prior duel row is always already
+    // committed by the time this runs, so createdAt <= ctx.now() always, and pinning
+    // the window's far edge to the SERVER clock (rather than the caller-supplied
+    // expiresAtMs) is what stops an attacker opening a window with nothing in it by
+    // picking an ever-larger anchor. The lower bound still derives from expiresAtMs,
+    // which is safe now that the button handler binds challengerId to the message's
+    // own interactionMetadata: expiresAtMs only ever reaches here as a value the bot
+    // itself wrote into a real challenge card.
+    .some((r) => r.createdAt >= expiresAtMs - DUEL_CHALLENGE_TTL_MS && r.createdAt <= ctx.now());
 }
 
 /**

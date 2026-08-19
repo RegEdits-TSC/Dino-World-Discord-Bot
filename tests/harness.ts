@@ -205,7 +205,7 @@ export function fakeAutocomplete(opts: {
   };
 }
 
-export function fakeButton(opts: { customId: string; user: string; guild?: string }): FakeInteraction {
+export function fakeButton(opts: { customId: string; user: string; guild?: string; posterId?: string }): FakeInteraction {
   const replies: unknown[] = [];
   const deferOpts: unknown[] = [];
   const label = `button ${opts.customId}`;
@@ -213,7 +213,11 @@ export function fakeButton(opts: { customId: string; user: string; guild?: strin
     customId: opts.customId,
     user: { id: opts.user, displayName: opts.user },
     guildId: opts.guild ?? null,
-    message: { id: 'fake-message' },
+    // posterId mirrors Message#interactionMetadata.user.id — who actually ran the
+    // slash command that produced this message, as recorded by Discord itself and
+    // never client-forgeable. Omitted (null) unless a caller opts in, so every
+    // pre-existing fixture that never inspects it is unaffected.
+    message: { id: 'fake-message', interactionMetadata: opts.posterId ? { user: { id: opts.posterId } } : null },
     deferred: false, replied: false,
     isChatInputCommand: () => false, isButton: () => true, isAutocomplete: () => false,
     reply: async (payload: unknown) => {

@@ -35,6 +35,8 @@ Attacker `B` emits a component interaction with `custom_id = "duel:accept:A:B:<n
 
 **Gate:** `no` — closable in code by binding the challenger segment to the message that carries the button (reject any `challengerId` that is not the originating interaction's user), plus anchoring the replay scan to the pair rather than the client-supplied window. A stored-challenge redesign would need a migration but is not required to close it.
 
+**Status:** fixed by this commit
+
 ### S2 — `park:collect` is the only customId with no id segment, and its handler creates no user row
 
 **File:** `src/modules/park/index.ts:405` (button minted at `src/modules/park/embeds.ts:93`; crash at `src/modules/park/service.ts:150` / `:172`)

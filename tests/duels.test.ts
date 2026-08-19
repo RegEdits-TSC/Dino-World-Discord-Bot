@@ -569,8 +569,12 @@ describe('/duel challenge', () => {
     await duelsModule.commands[0].execute(ctx, i.asChatInput());
     return i;
   };
-  const click = async (customId: string, user: string) => {
-    const b = fakeButton({ customId, user, guild: 'g1' });
+  // posterId defaults to the customId's own challenger segment: every genuine flow in
+  // this file builds customId from a real preceding challenge() call, so that segment
+  // IS the real poster. The S1 regression test below overrides it to simulate a forged
+  // customId whose message poster does not match its own challengerId segment.
+  const click = async (customId: string, user: string, posterId?: string) => {
+    const b = fakeButton({ customId, user, guild: 'g1', posterId: posterId ?? customId.split(':')[2] });
     await duelsModule.components[0].execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
     return b;
   };
@@ -649,6 +653,23 @@ describe('/duel challenge', () => {
     await challenge('a', 'b');
     const b = await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'a');
     expect(replyText(b.replies[0])).toMatch(/not for you/i);
+  });
+
+  // S1 finding: duel:accept trusted the challengerId customId segment on faith and
+  // passed it straight to resolveDuel, which mutates THAT player's rating. Here 'a'
+  // never ran /duel challenge against 'b' at all — no real message exists whose
+  // poster is 'a' — yet the forged customId 'duel:accept:a:b:<future>' passes every
+  // OTHER gate: defenderId ('b') matches the clicker, and the expiry is in the
+  // future. Pre-fix this silently resolved the duel and moved both ratings on a
+  // fight 'a' never agreed to. posterId 'nobody' stands in for "no real /duel
+  // challenge from 'a' produced this message."
+  it('refuses a forged customId whose challenger never posted a real challenge', async () => {
+    pairWithDinos();
+    const forged = `duel:accept:a:b:${ctx.now() + 1}`;
+    const b = await click(forged, 'b', 'nobody');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'a')).get()!.duelRating).toBe(1000);
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'b')).get()!.duelRating).toBe(1000);
+    expect(ctx.db.select().from(schema.duels).all()).toEqual([]);
   });
 
   it('refuses an expired challenge', async () => {

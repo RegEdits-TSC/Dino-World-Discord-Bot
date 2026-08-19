@@ -173,6 +173,19 @@ export const duelsModule: ModuleManifest = {
           await i.update({ content: `⚔️ Challenge declined by ${i.user.displayName}.`, embeds: [], components: [] });
           return;
         }
+        // challengerId is the one customId segment nothing else here validates, and
+        // resolveDuel takes it on faith and mutates THAT player's rating. The only
+        // thing that can prove it is genuine is the real message this button lives
+        // on: interactionMetadata.user is Discord's own record of who ran the
+        // /duel challenge that produced the message, and a client cannot forge that
+        // field the way it can forge customId segments. A forged challengerId naming
+        // an uninvolved player — one who never ran /duel challenge against this
+        // defender at all — always fails here, because no real message exists whose
+        // poster matches the forged claim.
+        if (i.message.interactionMetadata?.user.id !== challengerId) {
+          await i.reply({ content: 'That challenge is no longer valid — run `/duel challenge` again.', flags: MessageFlags.Ephemeral });
+          return;
+        }
         settleEscapes(ctx, i.user.id);   // the accepting player is the one clicking
         try {
           const outcome = resolveDuel(ctx, challengerId, defenderId, 'live', expiresAtMs);
