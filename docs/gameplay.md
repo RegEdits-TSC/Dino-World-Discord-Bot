@@ -505,8 +505,22 @@ Leave the food option blank on `/feed one` and the game automatically picks
 the cheapest food of the right diet that you own enough of. `/feed all`
 feeds every dino whose current (already-decayed) hunger is under 100,
 skips escaped dinos, and works through the hungriest dinos first — if it
-runs out of matching food partway through, it reports which dinos it had to
-skip and keeps going for the rest.
+runs out of matching food partway through, it keeps going for the rest and
+then tells you exactly what went unfed. That report groups the skipped dinos
+by diet, because the fix is one purchase per diet: each line gives the total
+units that diet still needs, the largest stack of it you actually hold, and
+the dinos themselves with their individual costs.
+
+That distinction matters more than it sounds. A dino is skipped whenever no
+single food of its diet has enough units to cover its feed cost on its own —
+which happens just as often because you hold *some* of the right food but not
+enough (a Mythic eats 160 units in one sitting) as because your pantry is
+empty. The report says which of the two you are looking at, so you never go
+hunting for food that is already sitting in your inventory.
+
+The same report appears on the **Feed all** button of the park alert, and
+`/feed one` names the shortfall the same way when the dino you picked is the
+one you cannot currently afford to feed.
 
 ## 9. Expeditions
 
