@@ -2,7 +2,7 @@
 
 **Release:** `2026-08-18-art-polish-5a`
 **Baseline:** `fd61ebe` on `main` (17 modules, 29 commands, 109 test files / ~1794 tests, 53 custom emoji)
-**This branch:** `worktree-art-polish-5a`, 32 commits ahead of `fd61ebe`, working tree clean
+**This branch:** `worktree-art-polish-5a`, branched from `fd61ebe`, working tree clean
 **Verification performed:** local gate only (typecheck, full suite, build) and a byte/count audit of every claim below. **No live or irreversible step was run to produce this document** — every command below is written for the operator to run by hand, on the host, after reading it.
 
 ---
