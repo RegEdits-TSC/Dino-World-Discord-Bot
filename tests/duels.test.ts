@@ -689,6 +689,23 @@ describe('/duel challenge', () => {
     expect(ctx.db.select().from(schema.duels).all()).toEqual([]);
   });
 
+  // S5 finding: challengePayload has shipped a duel.webp banner (attach()'d as `image`)
+  // since the challenge card landed, but the decline i.update carried no `attachments`
+  // key at all. discord.js's MessagePayload only resolves `attachments` from `files`,
+  // so omitting both leaves Discord's PATCH body without the key entirely — and when
+  // `attachments` is omitted, Discord RETAINS the message's existing attachment set.
+  // Pre-fix the declined card kept duel.webp hanging on the message as a bare
+  // attachment card no embed references, exactly the state fightFrames' own contract
+  // forbids. The sibling accept path already spends an explicit attachments: [] for
+  // the same reason.
+  it('sheds the challenge card banner on decline instead of leaving it as an orphan attachment', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    const b = await click(`duel:decline:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    const payload = b.replies[0] as { attachments?: unknown[] };
+    expect(payload.attachments).toEqual([]);
+  });
+
   it('absorbs an unknown duel action instead of erroring', async () => {
     const b = await click('duel:nonsense:a:b:1', 'b');
     expect(b.deferOpts).toHaveLength(1);

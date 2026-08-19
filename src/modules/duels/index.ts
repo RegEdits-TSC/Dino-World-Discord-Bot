@@ -170,7 +170,12 @@ export const duelsModule: ModuleManifest = {
           return;
         }
         if (action === 'decline') {
-          await i.update({ content: `⚔️ Challenge declined by ${i.user.displayName}.`, embeds: [], components: [] });
+          // attachments: [] sheds the challenge card's own duel.webp banner. Without it,
+          // discord.js's MessagePayload resolves no `attachments` key at all (there are
+          // no `files` here either), and Discord retains the message's EXISTING
+          // attachment set on an update that omits the key — leaving the banner hanging
+          // as a bare attachment card no embed references, once the embeds are cleared.
+          await i.update({ content: `⚔️ Challenge declined by ${i.user.displayName}.`, embeds: [], components: [], attachments: [] });
           return;
         }
         // challengerId is the one customId segment nothing else here validates, and

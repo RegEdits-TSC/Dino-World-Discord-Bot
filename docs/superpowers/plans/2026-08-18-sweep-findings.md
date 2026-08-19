@@ -109,6 +109,8 @@ A player with `alertsEnabled` true and a Visitor Center L1 park (`capHours` 8) c
 
 **Gate:** `no`.
 
+**Status:** fixed by this commit
+
 ## Classes that produced nothing
 
 Two of the eight classes finished the sweep with zero surviving findings. Both are recorded here as results, not omissions:
