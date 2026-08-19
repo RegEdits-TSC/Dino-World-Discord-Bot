@@ -401,6 +401,15 @@ export const parkModule: ModuleManifest = {
       prefix: 'park',
       async execute(ctx, i) {
         if (i.customId === 'park:collect') {
+          // This customId carries no owner segment by design — a viewer clicking it on
+          // someone else's park card collects their OWN income, not the card owner's —
+          // so there is no id to owner-check, and unlike every other component handler
+          // this one never called getOrCreateUser either. A clicker who has never run
+          // any command holds no users row at all, and collectIncome's toClockDinos
+          // assumed one existed, crashing with a TypeError instead of replying.
+          // getOrCreateUser mints the row first, same as mythic:confirm, so a
+          // first-time clicker collects a clean $0 rather than crashing.
+          getOrCreateUser(ctx, i.user.id, i.user.displayName);
           settleEscapes(ctx, i.user.id);
           const { amount } = collectIncome(ctx, i.user.id);
           await i.reply(collectPayload(amount));

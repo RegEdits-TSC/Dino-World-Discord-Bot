@@ -55,6 +55,8 @@ Because the customId carries no owner id, the handler has no uid to check — an
 
 **Gate:** `no`.
 
+**Status:** fixed by this commit
+
 ### S3 — `adminFastForward` shifts `dinos.lastFedAt` but not `dinos.escapedAt`, so an escaped dino resumes earning
 
 **File:** `src/modules/admin/service.ts:169-170`
