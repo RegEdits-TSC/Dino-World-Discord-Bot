@@ -836,8 +836,11 @@
   `expiresAtMs <= ctx.now() + DUEL_CHALLENGE_TTL_MS` clamp is what makes the original
   bound sound: it forces `expiresAtMs - TTL <=` the click that wrote the first row, so a
   later click of the SAME id recomputes the SAME window and provably finds that row
-  inside it. Keep the clamp and the bound together; relaxing either alone reopens the
-  bypass the other cannot see.
+  inside it. Only the clamp is load-bearing: relaxing it reopens the incrementing-anchor
+  bypass the bound alone cannot see. The bound (`<= expiresAtMs` rather than
+  `<= ctx.now()`) is defence-in-depth, not a second lock — under the clamp the two are
+  provably equivalent, and reverting the bound to `ctx.now()` with the clamp still in
+  place leaves all 88 duel tests green.
 - Legacy rank (`legacyPoints`/`legacyRank`, `src/modules/park/ranks.ts`) is DERIVED,
   same philosophy as escrow locks and quest progress documented above, and must NEVER
   be rebuilt on top of `user_stats`. Migration `0006_daily_loop.sql` backfilled only 6

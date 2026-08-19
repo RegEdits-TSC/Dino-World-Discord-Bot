@@ -50,4 +50,20 @@ describe('clickedIdIsOnMessage', () => {
     expect(clickedIdIsOnMessage(click('', [{ type: 1, components: [{ type: 2, url: 'https://x' }] }])))
       .toBe(false);
   });
+
+  // A nullish clicked id must never match a component that also lacks one: an unset
+  // `customId` property and a nullish `i.customId` both read back `undefined`, so a bare
+  // `===` would treat that coincidence as a match and fail OPEN. Unreachable through the
+  // router today (ModuleRegistry.findComponent splits the customId before dispatch, so a
+  // nullish id throws there first), but this helper stands as a general-purpose guard and
+  // must hold on its own terms.
+  it('rejects a nullish clicked id even against a component that also has none', () => {
+    const linkOnly = [{ type: 1, components: [{ type: 2, url: 'https://x' }] }];
+    expect(clickedIdIsOnMessage(
+      { customId: undefined, message: { components: linkOnly } } as unknown as ButtonInteraction,
+    )).toBe(false);
+    expect(clickedIdIsOnMessage(
+      { customId: null, message: { components: linkOnly } } as unknown as ButtonInteraction,
+    )).toBe(false);
+  });
 });

@@ -34,10 +34,15 @@ interface ComponentLike {
  * Exact equality, never a prefix match: the id's every segment — an owner, a page, a
  * ladder rung, an expiry anchor — is only trustworthy if the whole string came back.
  *
- * Fails CLOSED: a message with no components, or one whose components Discord did not
- * send, authorises nothing.
+ * Fails CLOSED: a nullish or empty clicked id, a message with no components, or one
+ * whose components Discord did not send, authorises nothing. The clicked-id guard
+ * matters on its own terms, not just defensively — without it, an absent `i.customId`
+ * would satisfy `undefined === undefined` against a component that likewise carries no
+ * `customId` (an unset property reads back `undefined`, same as a nullish clicked id),
+ * matching by coincidence rather than by the bot's own record.
  */
 export function clickedIdIsOnMessage(i: MessageComponentInteraction): boolean {
+  if (typeof i.customId !== 'string' || i.customId.length === 0) return false;
   const rows = (i.message?.components ?? []) as readonly ComponentLike[];
   const found = (list: readonly ComponentLike[]): boolean => list.some((c) =>
     c.customId === i.customId || (c.components !== undefined && found(c.components)));
