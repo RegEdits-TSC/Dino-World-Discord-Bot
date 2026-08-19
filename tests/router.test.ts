@@ -292,6 +292,11 @@ describe('router component guard', () => {
     // Acknowledged, never a bare return — a bare return paints "This interaction failed"
     // after 3 seconds on every rejected click, including an innocent double-click.
     expect(b.deferOpts).toHaveLength(1);
+    // And acknowledged the right WAY: deferReply() also satisfies the length-1 check
+    // above but posts a public "thinking…" placeholder that never resolves — exactly the
+    // UX the rejection ruling exists to prevent on an innocent pager double-click. Only
+    // deferUpdate() is a silent, correct no-op.
+    expect(b.deferOpts[0]).toMatchObject({ kind: 'update' });
   });
 
   it('rejects when the message carries a DIFFERENT id — exact equality, never a prefix match', async () => {

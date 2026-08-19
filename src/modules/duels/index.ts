@@ -188,11 +188,16 @@ export const duelsModule: ModuleManifest = {
         // component before any handler is reached, so in production this branch is
         // unreachable and the reply below never ships. It stays deliberately: callers
         // that invoke comp.execute directly bypass the router entirely — scripts/
-        // test-live.ts does, and so do the four S1 regression fixtures in
-        // tests/duels.test.ts, which would keep passing while asserting nothing if this
-        // were deleted. It is also the one site where the check is not purely
-        // structural: resolveDuel mutates the CHALLENGER's rating off a segment nothing
-        // else validates.
+        // test-live.ts does, and so do four S1 regression fixtures in
+        // tests/duels.test.ts. Those fixtures dispatch via
+        // duelsModule.components[0].execute, not through routeInteraction, which is
+        // exactly why deleting this call makes them FAIL LOUDLY rather than pass while
+        // asserting nothing: "refuses an accept when no message carries that Accept
+        // button", "…anchored on the challenger's own unrelated message", "…forged from
+        // the challenger's genuine card for a third player", and "refuses a forged
+        // decline instead of blanking an unrelated message". It is also the one site
+        // where the check is not purely structural: resolveDuel mutates the
+        // CHALLENGER's rating off a segment nothing else validates.
         if (!clickedIdIsOnMessage(i)) {
           await i.reply({ content: 'That challenge is no longer valid — run `/duel challenge` again.', flags: MessageFlags.Ephemeral });
           return;

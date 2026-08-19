@@ -72,7 +72,7 @@ Import `clickedIdIsOnMessage` from `./components.js`; no cycle, and `ButtonInter
 
 Do not add `componentIds` to the 87 direct-execute sites; they test handler logic and the default already models the truth.
 
-**Keep the duel handler's own call.** Deleting it makes four regression fixtures (`tests/duels.test.ts:678, 695, 711, 753`) vacuous while green — they dispatch via `execute` at line 587, not the router. It is also the one handler where the check is not purely structural (`resolveDuel` mutates the *challenger's* rating off a segment nothing else validates), and `comp.execute` has a sanctioned second caller in `scripts/test-live.ts:319`. Cost: one production-unreachable reply string. Annotate both sites — a line in `router.ts` saying module-level checks are now defence in depth, and a line at `duels/index.ts:186` saying the router preempts this in production and the branch survives for direct-execute callers and its own fixtures.
+**Keep the duel handler's own call.** Deleting it makes four regression fixtures (`tests/duels.test.ts:678, 695, 711, 753`) FAIL LOUDLY, not pass vacuously — they dispatch via `execute` at line 587, not the router, which is exactly what makes them detect the deletion instead of going vacuous. It is also the one handler where the check is not purely structural (`resolveDuel` mutates the *challenger's* rating off a segment nothing else validates), and `comp.execute` has a sanctioned second caller in `scripts/test-live.ts:319`. Cost: one production-unreachable reply string. Annotate both sites — a line in `router.ts` saying module-level checks are now defence in depth, and a line at `duels/index.ts:186` saying the router preempts this in production and the branch survives for direct-execute callers and its own fixtures.
 
 **One seam to record:** if select menus or modals are ever routed, the guard must be extended in the same change, and a component type whose state rides in its *value* rather than its `custom_id` needs the premise re-checked. If a button is ever minted onto a message the bot does not own, add an explicit greppable flag on `ComponentDef` — never a prefix exception list inside the router.
 
@@ -84,7 +84,7 @@ Do not add `componentIds` to the 87 direct-execute sites; they test handler logi
 
 **Someone "simplifies" the guard above `findComponent`.** Symptom: the router starts acknowledging every unclaimed prefix, changing behaviour pinned since the router was written. Detection: test 6.
 
-**The duel handler's call is deleted as redundant.** Symptom: four S1 regression fixtures keep passing while asserting nothing. Detection: none automated — this is what the comment at both sites is for.
+**The duel handler's call is deleted as redundant.** Symptom: none in production — the router guard already preempts the branch, so nothing user-visible changes. Detection: automated — `tests/duels.test.ts` dispatches via `execute` directly, bypassing the router, so all four S1 regression fixtures fail loudly the moment the call is removed; the comment at both sites explains why the call must stay, not how the deletion would be caught.
 
 **Coverage illusion.** The suite will be green the moment the guard lands, before any of the nine tests exist. Treat "1910 tests pass" as zero evidence for this change; the only evidence is the router tests listed above, each of which must be watched to fail first.
 

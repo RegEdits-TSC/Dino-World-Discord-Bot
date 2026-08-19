@@ -258,13 +258,19 @@ export function fakeButton(opts: {
       validateMessagePayload(payload, `${label} update`);
       raw.replied = true; replies.push(payload);
     },
+    // Both push into the same deferOpts array (existing `.toHaveLength(n)` assertions
+    // don't care which), but each entry now carries `kind` — 'update' vs 'reply' —
+    // because the two are not interchangeable in production: deferReply() posts a public
+    // "thinking…" placeholder that never resolves if the handler goes on to do nothing,
+    // where deferUpdate() is a silent, correct no-op. A test that only counts deferOpts
+    // cannot tell a swapped defer from a correct one; a test that reads `kind` can.
     deferUpdate: async (o?: unknown) => {
       if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
-      raw.deferred = true; deferOpts.push(o ?? {});
+      raw.deferred = true; deferOpts.push({ kind: 'update', ...(o as Record<string, unknown> ?? {}) });
     },
     deferReply: async (o?: unknown) => {
       if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
-      raw.deferred = true; deferOpts.push(o ?? {});
+      raw.deferred = true; deferOpts.push({ kind: 'reply', ...(o as Record<string, unknown> ?? {}) });
     },
   };
   return {

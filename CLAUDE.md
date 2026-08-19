@@ -842,9 +842,15 @@
   `try`, so a `deferUpdate()` that throws on an expired interaction is caught rather
   than becoming an unhandled rejection. Module-level `clickedIdIsOnMessage` calls are
   DEFENCE IN DEPTH from here on — the duel one stays because callers that invoke
-  `comp.execute` directly bypass the router entirely (`scripts/test-live.ts`, and four
-  S1 regression fixtures in `tests/duels.test.ts` that would keep passing while
-  asserting nothing if it were deleted).
+  `comp.execute` directly bypass the router entirely: `scripts/test-live.ts`, and four
+  S1 regression fixtures in `tests/duels.test.ts` that dispatch the same way (via
+  `duelsModule.components[0].execute`, not through the router) and therefore FAIL
+  LOUDLY — not pass vacuously — if the duel handler's own call is deleted.
+  Nearly every rejected click is a harmless repeat of the action that just ran — a
+  repaint race bounded to milliseconds — with one exception worth knowing: `alertPayload`
+  (`src/modules/park/alert-embeds.ts`) puts Feed all / Collect / Mute on ONE row and any
+  one of them wipes all three, so a click rejected there can be a DIFFERENT real action
+  the user wanted, not merely a repeat of the one that just ran.
   **This closes CROSS-MESSAGE anchoring only, and misreading that is the most likely way
   the guard causes harm.** It does NOT protect against stale-same-message replay — the
   class that already cost real money on `park:landmark:buy`, whose stale buttons sat on
@@ -856,16 +862,20 @@
   the premise re-checked), and if a button is ever minted onto a message the bot does
   not own, add an explicit greppable flag on `ComponentDef` — never a prefix exception
   list inside the router.
-  The guard's tests are its only evidence, and that is not a figure of speech: 92
-  `fakeButton` sites exist and only a handful dispatch through `routeInteraction` — the
-  other 87 call `execute` directly, and `npm run test:live` bypasses the router by its
+  The guard's tests are its only evidence, and that is not a figure of speech: 101
+  `fakeButton` sites exist and only 11 dispatch through `routeInteraction` — the
+  other 90 call `execute` directly, and `npm run test:live` bypasses the router by its
   own design — so both existing gates are blind to this seam and a simulated version of
   the guard ran the whole suite green. The nine cases live in `tests/router.test.ts`
   ("router component guard", plus the real-payload sweep that reads every minted id out
   of the builder JSON rather than hand-typing it) and `tests/harness.test.ts` (the
-  `fakeButton` default `componentIds: [customId]`, now load-bearing for those 87 sites).
-  Do NOT add `componentIds` to the 87 direct-execute sites: they test handler logic and
-  the default already models the truth.
+  `fakeButton` default `componentIds: [customId]`, now load-bearing for those 90 sites).
+  Do NOT add `componentIds` to the 90 direct-execute sites: they test handler logic and
+  the default already models the truth. Re-run the grep rather than trusting these
+  figures — `grep -rc 'fakeButton(' tests/` minus the one declaration site in
+  `tests/harness.ts` gives the total, and `grep -n 'fakeButton(' <file>` cross-referenced
+  against the same file's `routeInteraction(` calls gives the router-dispatching count;
+  a future test file adding either kind of site will move both numbers again.
   The duel handler pairs it with a second rule worth copying: a client-supplied INSTANT
   needs clamping from ABOVE as well as below. `expiresAtMs` was bounded only as
   "finite and in the future", and `challengeAlreadyResolved`
