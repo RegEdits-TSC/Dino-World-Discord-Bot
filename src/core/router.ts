@@ -5,6 +5,7 @@ import type { Ctx } from './context.js';
 import type { ModuleRegistry } from './modules.js';
 import { schema } from './db/index.js';
 import { logger } from './logger.js';
+import { clickedIdIsOnMessage } from './components.js';
 
 function touchPresence(ctx: Ctx, userId: string, displayName: string, guildId: string | null): void {
   ctx.db.update(schema.users).set({ displayName }).where(eq(schema.users.discordId, userId)).run();
@@ -54,7 +55,49 @@ export async function routeInteraction(
       if (cmd) await cmd.execute(ctx, interaction as ChatInputCommandInteraction);
     } else {
       const comp = registry.findComponent((interaction as ButtonInteraction).customId);
-      if (comp) await comp.execute(ctx, interaction as ButtonInteraction);
+      if (comp) {
+        const b = interaction as ButtonInteraction;
+        // Every clicked customId must actually be on the message it was clicked from.
+        // A component interaction can be emitted straight at the gateway with any
+        // custom_id, anchored on any message the client can address, and the dispatch
+        // above resolves a handler from the PREFIX alone — nothing binds the message to
+        // the module, the id, or the clicker. Message#components is Discord's own record
+        // of the buttons the BOT minted, so checking against it is what turns "these
+        // segments parse" into "the bot minted exactly this id, on this message". See
+        // src/core/components.ts for why exact equality, and why it fails closed.
+        //
+        // Module-level clickedIdIsOnMessage calls are DEFENCE IN DEPTH from here on: the
+        // one at src/modules/duels/index.ts is preempted by this guard in production and
+        // stays for callers that invoke comp.execute directly (scripts/test-live.ts, and
+        // the S1 regression fixtures in tests/duels.test.ts).
+        //
+        // This closes CROSS-MESSAGE anchoring only. It does nothing about stale-
+        // same-message replay — the class that cost real money on park:landmark:buy —
+        // so per-rung, per-page, per-season state in customIds stays mandatory.
+        if (!clickedIdIsOnMessage(b)) {
+          // Logged before the ack, so a deferUpdate that throws on an expired
+          // interaction still leaves the rejection in the log — this warn is the only
+          // signal a legitimate flow was rejected in a shape nobody anticipated. Two
+          // benign shapes are expected: pager double-clicks and a late battle:skip.
+          logger.warn(
+            { customId: b.customId, userId: b.user.id, messageId: b.message?.id },
+            'component id not present on its message',
+          );
+          // deferUpdate, never a bare return: a bare return paints "This interaction
+          // failed" after 3 seconds on every rejected click, an innocent double-click
+          // included. And never a distinct text reply — that is an oracle telling an
+          // attacker the GUARD stopped him rather than the handler. Same house idiom as
+          // the unknown-action arms in battles/park/dex/ach/alert/top.
+          await b.deferUpdate();
+          // Returns BEFORE postDispatch, and that is load-bearing: deferUpdate sets
+          // i.deferred = true and daily/hooks.ts gates its hint on
+          // `!i.deferred && !i.replied`, so falling through would emit a real quest or
+          // season followUp for a forged click AND burn the one-shot notifiedAt /
+          // hintedRung stamps for a message nobody asked for.
+          return;
+        }
+        await comp.execute(ctx, b);
+      }
     }
     try {
       const source = isCommand
