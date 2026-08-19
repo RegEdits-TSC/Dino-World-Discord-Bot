@@ -2209,7 +2209,7 @@ the light studio rim must be peeled, and all border pixels must end transparent.
 
 ## Emoji icons
 
-The 53 application emojis in `assets/emojis/` are **not** generated — they are
+The 57 application emojis in `assets/emojis/` are **not** generated — they are
 hand-authored SVG rendered by `npm run build-emojis`. That set includes the six
 `dw_dino_<rarity>` chips and the six `dw_lot_*` icons the park renderer reads
 as SVG at draw time, plus the four `dw_trait_<domain>` icons (income, care,
@@ -2245,6 +2245,15 @@ bullets in the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.
 | `dw_event_market_panic.svg` | A dusty-red alarm badge with three descending cream bars and a dark diagonal arrow cutting down through them | 📉 |
 | `dw_event_blood_moon.svg` | A near-black night-sky badge with a red crescent moon — a dark occluding circle overlapping a red disc — and a scatter of small white stars | 🩸 |
 | `dw_event_migration_season.svg` | A blue-violet badge with a wide double-helix strand, evoking both wandering bloodlines and the trait odds the event reshuffles | 🧬 |
+
+**Utility icons** — four hand-authored icons for the attendance, season, duel and landmark surfaces:
+
+| File | Design intent | Unicode fallback |
+| --- | --- | --- |
+| `dw_guest.svg` | Two park visitors on transparency, near figure teal and far figure gold, each a domed-shoulder torso path with its head circle drawn over it so the two shapes read as one silhouette; a single flat white gloss on the near head | 👥 |
+| `dw_season.svg` | A violet medal disc on two blue ribbon tails, its face carrying three stacked gold chevrons — the season ladder's rungs. Ribbons are drawn first so the disc overlaps them | 🏅 |
+| `dw_duel.svg` | A disc split blue on the left and red on the right for the two duellists, with a gold clash bolt struck through it overshooting the rim top and bottom. Distinct from `dw_event_amber_storm`'s amber bolt, which sits on a single-tone storm-blue badge behind a cloud | ⚔️ |
+| `dw_landmark.svg` | A grey stone obelisk with a gold capstone and a gold plaque, standing on a two-step plinth — the prestige ladder's monument, matching the `park/landmark-a\|b\|c.webp` tile family | 🗿 |
 
 ## Bot branding (animated avatar and banner)
 

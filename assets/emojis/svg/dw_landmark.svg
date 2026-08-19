@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="gshaft" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#dcd6c8"/><stop offset="1" stop-color="#7d766a"/></linearGradient>
+    <linearGradient id="gbase" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b9b2a2"/><stop offset="1" stop-color="#5f594e"/></linearGradient>
+  </defs>
+  <polygon points="32,3 41,20 23,20" fill="#ffdf7e" stroke="#7a5a10" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="24,20 40,20 43,47 21,47" fill="url(#gshaft)" stroke="#3f3a32" stroke-width="3" stroke-linejoin="round"/>
+  <rect x="16" y="47" width="32" height="7" rx="1.5" fill="url(#gbase)" stroke="#3f3a32" stroke-width="3"/>
+  <rect x="9" y="54" width="46" height="7" rx="2" fill="url(#gbase)" stroke="#3f3a32" stroke-width="3"/>
+  <rect x="28.5" y="27" width="7" height="14" rx="2" fill="#ffdf7e" stroke="#7a5a10" stroke-width="2"/>
+  <rect x="26.5" y="24" width="3" height="16" rx="1.5" fill="#ffffff" opacity="0.3"/>
+</svg>

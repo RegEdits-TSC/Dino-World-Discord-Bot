@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Every gradient here sits on a circle or a path. Under the bundled resvg an
+       objectBoundingBox gradient on an <ellipse> renders solid black, so the only
+       ellipse in this file is the flat white gloss. -->
+  <defs>
+    <linearGradient id="gback" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd48a"/><stop offset="1" stop-color="#d1892b"/></linearGradient>
+    <linearGradient id="gfront" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fd6ea"/><stop offset="1" stop-color="#2f7fa8"/></linearGradient>
+  </defs>
+  <path d="M34 59 V50 a 12 13 0 0 1 24 0 V59 Z" fill="url(#gback)" stroke="#6b430a" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="46" cy="28" r="8" fill="url(#gback)" stroke="#6b430a" stroke-width="3"/>
+  <path d="M6 59 V48 a 17 19 0 0 1 34 0 V59 Z" fill="url(#gfront)" stroke="#0f4a63" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="23" cy="20" r="10.5" fill="url(#gfront)" stroke="#0f4a63" stroke-width="3"/>
+  <ellipse cx="19" cy="16" rx="4.5" ry="2.6" fill="#ffffff" opacity="0.4" transform="rotate(-25 19 16)"/>
+</svg>
