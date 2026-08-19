@@ -121,3 +121,35 @@ Two of the eight classes finished the sweep with zero surviving findings. Both a
 - **Event-scaled price and cost routing.** Every quote, autocomplete label and charge still reaches one helper — `eggPriceAt`, `foodPriceAt`, `roundCharge`, `sellCashAt`, `roundPayout`, `feedCostFor`, `energyCostFor` — with no re-multiplied table value at any call site, and the required-`now` parameters that prevent a call site silently keeping an unmodified rate are all still required. Nothing in this class reached a skeptic.
 
 Note that S1 was the only finding to draw a dissenting skeptic (it survived 2–1); the other four were unanimous.
+## Follow-up: the same class is open on every other component handler
+
+Raised by the whole-branch review after S1 was closed, and recorded here because
+a per-finding sweep could not ask it: `clickedIdIsOnMessage` closed one instance
+of a codebase-wide class.
+
+The **state** half is genuinely duels-only. Every other component handler
+re-validates the parsed id against `i.user.id`, so none of them can move another
+player's state.
+
+The **message-vandalism** half is still open. `routeInteraction`
+(`src/core/router.ts`) dispatches on the customId prefix alone and never checks
+that the message belongs to the module handling it. So an attacker forges a
+customId naming their *own* id, anchors it on any bot message they can address,
+and the handler edits that message: `alert:mute:<selfId>`
+(`src/modules/park/index.ts`) blanks it to a mute confirmation, `park:tour`
+replaces it with an arbitrary park card, and `battle:chapter`, `park:dinos`,
+`hatch:eggs`, `trade:list`, `dex:page`, `ach:page`, `guests:claim`,
+`season:claim`, `breed:claim`, `splice:confirm` and `daily:claim` all reach
+`i.update` on a message the attacker chose. `top:visit` is safe — it uses
+`deferReply` + `editReply`, which writes a new interaction response rather than
+editing the source message.
+
+The cheap fix is one call at the router rather than sixteen at the call sites:
+gate `comp.execute` on `clickedIdIsOnMessage(interaction)`. Every button this bot
+mints is on the message it is clicked from, so a central guard is a strict
+improvement, and it would make the duel handler's own call redundant — keep that
+one anyway as defence in depth.
+
+Deliberately not done in this release: it is pre-existing, its impact ceiling is
+cosmetic vandalism rather than state, and a router-level guard touches every
+component path in the bot, which deserves its own change and its own review.
