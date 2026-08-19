@@ -166,8 +166,16 @@ export function adminFastForward(ctx: Ctx, targetId: string, hours: number): num
     ctx.db.update(schema.users)
       .set({ lastQuestClaimAt: sql`${schema.users.lastQuestClaimAt} - ${shift}` })
       .where(and(eq(schema.users.discordId, targetId), gt(schema.users.lastQuestClaimAt, 0))).run();
-    ctx.db.update(schema.dinos).set({ lastFedAt: sql`${schema.dinos.lastFedAt} - ${shift}` })
-      .where(eq(schema.dinos.userId, targetId)).run();
+    // escapedAt rides along with lastFedAt: accruedIncome clamps a dino's accrual
+    // window at its stamped escapedAt, and shifting lastCollectAt/lastFedAt without
+    // it pulls that stamped instant back INSIDE the window, letting an already-settled,
+    // already-paid escaped dino resume earning. SQL NULL arithmetic keeps a
+    // never-escaped dino's NULL exactly NULL, so this is safe to apply unconditionally
+    // alongside lastFedAt rather than needing its own escapedAt IS NOT NULL filter.
+    ctx.db.update(schema.dinos).set({
+      lastFedAt: sql`${schema.dinos.lastFedAt} - ${shift}`,
+      escapedAt: sql`${schema.dinos.escapedAt} - ${shift}`,
+    }).where(eq(schema.dinos.userId, targetId)).run();
     ctx.db.update(schema.eggs).set({
       incubationStartedAt: sql`${schema.eggs.incubationStartedAt} - ${shift}`,
       hatchesAt: sql`${schema.eggs.hatchesAt} - ${shift}`,

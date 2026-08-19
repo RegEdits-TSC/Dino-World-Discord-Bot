@@ -73,6 +73,8 @@ Verified against the real `accruedIncome`, `getSpecies` and `PADDOCKS`: a tricer
 
 **Gate:** `no`.
 
+**Status:** fixed by this commit
+
 ### S4 — `pruneAlertRecords` re-arms the income-cap DM every 30 days for an idle park
 
 **File:** `src/modules/park/alert-record.ts:87` (justifying comment at `:85-86`)
