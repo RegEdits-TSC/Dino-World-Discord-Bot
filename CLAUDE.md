@@ -1132,6 +1132,31 @@
   sites and no risk of the two drifting apart. `/guests view` and `/guests claim`
   (`src/modules/guests/embeds.ts`, via `attendanceOf` → `toClockDinos`) are two surfaces
   that render attendance without calling `settleEscapes` first, unlike the park card
-  (own or visited), which always settles before rendering it. The gap is bounded, not a
-  defect: an escaped-but-unsettled dino can still count toward the variety term until
-  some other command or a visit settles it — the same lag `/top` already accepted.
+  (own or visited), which always settles before rendering it. This is safe, not merely
+  tolerated, because `attendanceOf`'s own dino predicate is TIME-AWARE: it filters on
+  `escapeMoment(d, now) === null` (`src/modules/park/attendance.ts`), not the stored
+  `escapedAt` column, so a live-escaped-but-unsettled dino stops counting toward the
+  variety term the instant it crosses, with no settle call needed. The board-wide twin,
+  `attendanceScores` (`src/modules/leaderboards/service.ts`), is DELIBERATELY LAXER — it
+  matches `recomputeRating`'s `assigned` filter and checks only the stored `escapedAt`,
+  so a board row can read higher than that player's own `/guests view` for a park no
+  command has touched since an escape. That gap is bounded and self-correcting: it
+  converges the next time anything settles the row, the same standing lag `/top`
+  already accepts elsewhere on this board. Never filter `attendanceOf` on the stored
+  column instead of `escapeMoment` — that was the pre-fix behaviour (defect F2), and it
+  let `attendanceHighWater` — monotone, with no path back down — bank guests from dinos
+  that were long gone, since neither `/guests build` nor `/build` nor `/upgrade` calls
+  `settleEscapes` and nothing else had settled them.
+- `recomputeRating` must never be hoisted back above `/guests`' subcommand switch
+  (`src/modules/guests/index.ts`). It used to run unconditionally for every subcommand,
+  to stamp the attendance high-water before anything read it — but it writes three
+  columns in one `UPDATE`, and one of them is `parkRating`, the LIVE value, which falls
+  freely as comfort decays. `liveRating` (`src/modules/trading/service.ts`) is a plain
+  `SELECT` of that same column, checked against `TRADE_MIN_RATING` at both `createTrade`
+  and `acceptTrade`, so opening `/guests view` after a few hours of hunger drain could
+  have dropped a park below the trade gate and killed a pending offer — a state change
+  caused by reading a screen. `view` is a pure read and deliberately never recomputes;
+  `build` and `claim` still call it, because each reads the high-water as its own unlock
+  gate and each mutates regardless, so the `parkRating` write riding along carries no
+  surprise. The high-water still advances on every build, claim, feed, assign, upgrade
+  and decorate, so nothing becomes unreachable.

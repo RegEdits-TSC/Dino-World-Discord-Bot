@@ -1,8 +1,8 @@
 # Art polish 5a — operator runbook
 
 **Release:** `2026-08-18-art-polish-5a`
-**Baseline:** `fd61ebe` on `main` (17 modules, 29 commands, 111 test files / ~1794 tests, 53 custom emoji)
-**This branch:** `worktree-art-polish-5a`, 40 commits ahead of `fd61ebe`, working tree clean
+**Baseline:** `fd61ebe` on `main` (17 modules, 29 commands, 109 test files / ~1794 tests, 53 custom emoji)
+**This branch:** `worktree-art-polish-5a`, 32 commits ahead of `fd61ebe`, working tree clean
 **Verification performed:** local gate only (typecheck, full suite, build) and a byte/count audit of every claim below. **No live or irreversible step was run to produce this document** — every command below is written for the operator to run by hand, on the host, after reading it.
 
 ---
@@ -11,13 +11,13 @@
 
 **No new commands, no new gameplay systems, no migration.** This is an art-and-hardening pass:
 
-- **6 new banners** (`assets/images/banners/`, 1536×1024) closing ten previously-bare surfaces and three that were borrowing another feature's art: `guests`, `season`, `duel`, `dex`, `landmark`, `battles`.
+- **6 new banners** (`assets/images/banners/`, 1536×1024) closing ten previously-bare surfaces and four that were borrowing another feature's art: `guests`, `season`, `duel`, `dex`, `landmark`, `battles`.
 - **6 new attraction art bands** (`assets/images/park/attraction-*.webp`, 270×150) — the park map now draws real art for the six guest attractions instead of a flat fill and a text label.
 - **8 hero species portraits** (`assets/images/dinos/<speciesId>.webp`, 1024² transparent cutouts) — the five legendary and three mythic species that used to share three archetype images (a Mythic Indominus rendered as the same red Tyrannosaurus bust as a common bruiser) now get their own art with a rarity rim light, via an optional override (`dinoImage`) that falls back to archetype art when a species file is absent.
 - **4 new emoji** (`dw_guest`, `dw_season`, `dw_duel`, `dw_landmark`) — SVG and PNG are committed (53 → 57 on disk); **the live Discord application still has only 53** until an operator runs `deploy-emojis` (step 5 below). `assets/emojis/manifest.json` still has 53 entries as of this writing — confirmed by inspection, not a claim.
 - **A 17-module adversarial hardening sweep** found five confirmed defects, all fixed and regression-tested in this branch (see below).
 
-**Test movement:** 111 → 112 test files, ~1794 → 1910 tests. Command count is unchanged at 29 (17 modules).
+**Test movement:** 109 → 112 test files, ~1794 → 1910 tests. Command count is unchanged at 29 (17 modules).
 
 ### The five defects the sweep fixed
 
@@ -75,7 +75,7 @@ Do these **in order**, on the deployment host, with your own hands. Nothing in t
 
 **Why `deploy-commands` is not on this list:** no task in this release changes a command builder. `tests/contract.test.ts` pins the serialized builder body at exactly 29 entries and it is green in the gate above — that is the mechanical proof, not a promise. `HELP_TOPICS` gained `art` on five existing topic values but no new topic **key** (a new key would change `/help`'s own choices and force a redeploy; a new field on an existing value does not). Running `deploy-commands` anyway is not free — it re-PUTs the guild's command set live — so skip it.
 
-**Why assets can never be hot-added, once for all of the ordering below:** `assetImage` (`src/core/images.ts`) caches `existsSync` per path for the process lifetime. A running bot that already resolved a banner's path as missing will never see the file appear without a restart. This is the reason step 8 is mandatory, not advisory, and why it must come after every write below it.
+**Why assets can never be hot-added, once for all of the ordering below:** `assetImage` (`src/core/images.ts`) caches `existsSync` per path for the process lifetime. A running bot that already resolved a banner's path as missing will never see the file appear without a restart. This is the reason step 7 (the restart) is mandatory, not advisory, and why it must come after every write below it.
 
 ### Step 1 — render the emoji PNGs
 
@@ -159,7 +159,7 @@ Run **exactly one** bot process per token. Duplicate instances race each other a
 npm run test:live
 ```
 
-Expected: `~59 ok, 0 failed. Cosmetic review: check <#TEST_CHANNEL_ID> in the dev guild.`
+Expected: `~60 ok, 0 failed. Cosmetic review: check <#TEST_CHANNEL_ID> in the dev guild.`
 
 Needs all six of these set in `.env` — the script exits 1 naming the first one that's missing:
 
@@ -174,11 +174,11 @@ TEST_CHANNEL_ID
 
 **Why it must run last and not any earlier:** it parity-asserts `assets/emojis/manifest.json` against the *live* Discord application-emoji list. Run it before step 5 and every one of the four new emoji reports as `manifest emoji 'dw_guest' missing on Discord` — a failure that means only "you ran this too early," not a real defect. It's REST-only (never calls `client.login`), so it's safe to run against a live bot process — but it does re-PUT the dev guild's command set with every module forced on, making it that guild's last command writer; anything that wants a different command set there has to run after it, not before.
 
-**This is the acceptance check for the whole release, and the only place a human eye lands on the new art.** Roughly 59 cases post their real embeds, components and attachments to `TEST_CHANNEL_ID`. Walk the channel and specifically confirm:
+**This is the acceptance check for the whole release, and the only place a human eye lands on the new art gallery-wide.** Roughly 60 cases post their real embeds, components and attachments to `TEST_CHANNEL_ID`, including a `/guests view` case (all six attractions built) and a `/park view` case carrying a hero-species featured-dino thumbnail. Walk the channel and specifically confirm:
 
-- Each of the six new banners renders **on its own embed**, not as a bare attachment card underneath one.
-- The six attraction bands **read against the lot plates** on the park map rather than fighting them for attention — this was called out as a real risk in the design (the map already carried one art band; this takes it to seven).
-- All eight hero portraits show their rarity rim light as a **hard specular edge**, with **no halo and no clipped glow**. A degraded portrait is worse than the shared archetype art it replaced — and the recovery is a no-code-change one: deleting the file restores the previous fallback behavior exactly, because the null-art path was preserved on purpose.
+- Each of the six new banners renders **on its own embed**, not as a bare attachment card underneath one — `banners/guests.webp` posts via the `/guests view` case, the other five via the cases that already existed.
+- The six attraction bands **read against the lot plates** on the park map rather than fighting them for attention — this was called out as a real risk in the design (the map already carried one art band; this takes it to seven). P1's `/park view` case builds all six attractions directly on the row (bypassing the cash cost and unlock gate — see that seed's own comment in `scripts/test-live.ts`) specifically so every band renders in one map, next to the landmark band and the lot plates, for this check.
+- The featured hero portrait — P1's `/park view` case features its seeded tyrannosaurus, one of the eight — shows its rarity rim light as a **hard specular edge**, with **no halo and no clipped glow**. **This checks only 1 of the 8 hero portraits**; `test:live` has no seed for the other seven (indominus, indoraptor, liopleurodon, mosasaurus, quetzalcoatlus, spinoraptor, ultimasaurus), and adding seven more legendary/mythic dinos merely to cycle a thumbnail was judged not worth the fixture weight. Those seven were eyeballed by hand, individually, during the hero-portrait art task, before this release's local gate ran — that verification is not re-run here. A degraded portrait is worse than the shared archetype art it replaced — and the recovery is a no-code-change one: deleting the file restores the previous fallback behavior exactly, because the null-art path was preserved on purpose.
 
 ### Step 9 — confirm the release is closed
 

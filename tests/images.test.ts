@@ -171,7 +171,7 @@ describe('banner art', () => {
 
   // Discord scales an embed image to the embed width, so an off-size banner
   // letterboxes or crops; 1536×1024 matches the site banners already shipping.
-  // Covers all 29 committed banners, not just the 20 the static scrape can see:
+  // Covers all 32 committed banners, not just the 23 the static scrape can see:
   // event-<id> names come from a template literal (world/embeds.ts) no scrape can
   // resolve, so they are appended here from WORLD_EVENTS directly — same
   // cross-check precedent as the CAMPAIGN/WORLD_EVENTS loops in "the committed
@@ -477,15 +477,11 @@ describe('dino archetype art', () => {
 describe('hero species art', () => {
   // it.each over an EMPTY array registers zero tests and goes dark with the suite
   // still green — the same failure mode the banner-scrape guard above exists for.
-  // This case is what makes a missing, short or misnamed set red, and it also
-  // classifies every file in the directory: a dinos/ raster that is neither an
-  // archetype-diet pair nor a real species id is referenced by nothing and renders
-  // nowhere, because dinoImage only ever asks for those two shapes.
-  it('ships exactly the hero portraits, and no unclassifiable dinos/ file', () => {
+  // This case is what makes a missing or short hero-portrait set red. The reverse
+  // direction — a dinos/ file that is neither an archetype-diet pair nor a real
+  // species id — is covered once, by 'dino art file names' below, not duplicated here.
+  it('ships exactly the hero portraits', () => {
     expect(SPECIES_ART_FILES, 'per-species override files on disk').toEqual(HERO_SPECIES);
-    const known = new Set([...DINO_ART_KEYS, ...SPECIES_IDS]);
-    const strays = DINO_ART_FILES.filter((n) => !known.has(n));
-    expect(strays, `neither an archetype-diet pair nor a species id: ${strays.join(', ')}`).toEqual([]);
   });
 
   // The gap this closes: expectTransparentCutout was reachable for the dinos kind
