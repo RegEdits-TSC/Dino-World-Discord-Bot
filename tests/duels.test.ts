@@ -10,7 +10,7 @@ import { allSpecies } from '../src/data/species/index.js';
 import { outcomeFor } from '../src/data/battle/duel.js';
 import type { BattleResult } from '../src/data/battle/resolve.js';
 import { DUEL_PAIR_COOLDOWN_MS, DUEL_CHALLENGE_TTL_MS } from '../src/data/battle/constants.js';
-import { duelResultPayload, challengePayload, DUEL_PREFIX } from '../src/modules/duels/embeds.js';
+import { duelResultPayload, challengePayload, recordPayload, DUEL_PREFIX } from '../src/modules/duels/embeds.js';
 import { duelsModule } from '../src/modules/duels/index.js';
 
 let ctx: ReturnType<typeof makeCtx>;
@@ -387,6 +387,16 @@ describe('duel embeds', () => {
   const strong = allSpecies().find((s) => s.rarity === 'legendary')!;
   const weak = allSpecies().find((s) => s.rarity === 'common')!;
 
+  // Mirrors dinoImage's override-vs-fallback precedence (src/core/images.ts) WITHOUT
+  // calling it: a legendary or mythic species ships a dedicated dinos/<speciesId>.webp
+  // portrait, every other species resolves the shared archetype×diet art. Derived from
+  // rarity rather than hand-typed against tests/images.test.ts's own HERO_SPECIES list —
+  // that list is deliberately hand-typed there, as a gate on exactly which 8 rasters are
+  // shipped, but this one only needs to track "does this species get an override",
+  // which rarity already answers and survives roster reordering without editing.
+  const HERO_SPECIES = new Set(
+    allSpecies().filter((s) => s.rarity === 'legendary' || s.rarity === 'mythic').map((s) => s.id));
+
   function outcome() {
     getOrCreateUser(ctx, 'a', 'A');
     getOrCreateUser(ctx, 'b', 'B');
@@ -419,25 +429,54 @@ describe('duel embeds', () => {
     expect(JSON.stringify(embed)).toContain(String(out.ratingAfter.challenger));
   });
 
-  // Two art refs could resolve to the SAME basename whenever both leads share an
-  // archetype×diet, and attach() appends without deduping — one embed slot would
-  // then render the wrong picture. Exactly one ref, always.
-  it('never attaches more than one image', () => {
-    const payload = duelResultPayload(outcome());
-    expect((payload.files ?? []).length).toBeLessThanOrEqual(1);
+  // Two DINO refs could resolve to the SAME basename whenever both leads share an
+  // archetype×diet, and attach() appends without deduping — one embed slot would then
+  // render the other's picture. Exactly one dino ref, always. The duel banner rides
+  // alongside it safely because `duel.webp` can never equal `<archetype>-<diet>.webp`;
+  // what matters is the basenames being distinct, not the count.
+  it('attaches exactly two images and no two share a basename', () => {
+    const names = duelResultPayload(outcome()).files!.map((f) => f.name);
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size, `colliding attachment names: ${names.join(', ')}`).toBe(2);
   });
 
-  // <= 1 above guards the collision hazard (two refs sharing one basename); this
-  // guards the opposite regression — an attach() that silently stopped firing would
-  // leave files undefined and pass every other assertion in this block.
-  it('attaches exactly one image, keyed on the winning lead archetype x diet', () => {
+  // The opposite regression to the collision guard above: an attach() that silently
+  // stopped firing would leave files undefined and pass every other assertion here.
+  // attach APPENDS and call order is upload order, so the order is pinned too.
+  //
+  // The expected name is derived from dinoImage's documented precedence (species
+  // override, else archetype fallback — see HERO_SPECIES above), NOT by calling
+  // dinoImage itself: duelResultPayload calls that exact function with these exact
+  // arguments, so computing the expectation the same way would make both sides move
+  // together if dinoImage's precedence ever inverted, and the test would stay green
+  // through the very regression it exists to catch. `strong` above is the roster's
+  // first legendary, so this only exercises the override arm; the fallback arm is
+  // covered by tests/images.test.ts's "every non-hero species still resolves to a
+  // shipped archetype image".
+  it('attaches the lead thumbnail first, then the duel banner', () => {
     const out = outcome();
     const payload = duelResultPayload(out);
     const lead = out.result === 'loss' ? out.squads.defender[0] : out.squads.challenger[0];
-    const expected = `${lead.archetype}-${lead.diet}.webp`;
-    expect(payload.files?.length).toBe(1);
-    expect(payload.files![0].name).toBe(expected);
-    expect(payload.embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${expected}`);
+    const expected = HERO_SPECIES.has(lead.speciesId)
+      ? `${lead.speciesId}.webp`
+      : `${lead.archetype}-${lead.diet}.webp`;
+    expect(payload.files!.map((f) => f.name)).toEqual([expected, 'duel.webp']);
+    const embed = payload.embeds[0].toJSON();
+    expect(embed.thumbnail?.url).toBe(`attachment://${expected}`);
+    expect(embed.image?.url).toBe('attachment://duel.webp');
+  });
+
+  it('dresses the challenge card with the duel banner', () => {
+    const payload = challengePayload('111', '222', 'A', 'B', 900_000);
+    expect(payload.files!.map((f) => f.name)).toEqual(['duel.webp']);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://duel.webp');
+  });
+
+  it('dresses the record card with the duel banner', () => {
+    getOrCreateUser(ctx, 'a', 'A');
+    const payload = recordPayload('A', duelRecord(ctx, 'a'));
+    expect(payload.files!.map((f) => f.name)).toEqual(['duel.webp']);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://duel.webp');
   });
 
   it('carries no buttons on a result', () => {
@@ -530,11 +569,27 @@ describe('/duel challenge', () => {
     await duelsModule.commands[0].execute(ctx, i.asChatInput());
     return i;
   };
-  const click = async (customId: string, user: string) => {
-    const b = fakeButton({ customId, user, guild: 'g1' });
+  // Both message facts default to a GENUINE card: the message carries the very button
+  // being clicked, and it was posted by the challenger the customId names. Every
+  // ordinary flow in this file builds its customId from a real preceding challenge()
+  // call, so those defaults are exactly what Discord would report. The S1 regression
+  // tests below override `componentIds` to model a forged customId emitted straight at
+  // the gateway, anchored on a message that carries no such button.
+  const click = async (
+    customId: string, user: string,
+    forge: { posterId?: string; componentIds?: string[] } = {},
+  ) => {
+    const b = fakeButton({
+      customId, user, guild: 'g1',
+      posterId: forge.posterId ?? customId.split(':')[2],
+      componentIds: forge.componentIds,
+    });
     await duelsModule.components[0].execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
     return b;
   };
+  const rating = (id: string) => ctx.db.select().from(schema.users)
+    .where(eq(schema.users.discordId, id)).get()!.duelRating;
+  const duelRows = () => ctx.db.select().from(schema.duels).all();
   function pairWithDinos(): void {
     getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
     addDino('a', weak.id, 0); addDino('b', weak.id, 0);
@@ -572,6 +627,19 @@ describe('/duel challenge', () => {
     expect(payload.components).toEqual([]);
   });
 
+  it('accepting uploads the result art while still shedding the challenge card attachment set', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    const b = await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    const payload = b.replies[0] as { files?: Array<{ name?: string | null }>; attachments?: unknown[] };
+    // i.update carrying files replaces the message's whole attachment set, and the
+    // explicit attachments: [] is what drops the challenge card's own duel.webp upload
+    // so the result's two files are the only ones left on the message.
+    expect(payload.attachments).toEqual([]);
+    expect(payload.files!.map((f) => f.name)).toContain('duel.webp');
+    expect(payload.files).toHaveLength(2);
+  });
+
   // The only test that can tell an ARMED double-accept guard from a disarmed one at the
   // handler level: drop the expiry argument in the handler and this goes green-to-red.
   it('refuses a second click of the same Accept button', async () => {
@@ -599,6 +667,131 @@ describe('/duel challenge', () => {
     expect(replyText(b.replies[0])).toMatch(/not for you/i);
   });
 
+  // S1 finding, round 1. This test shipped named 'refuses a forged customId whose
+  // challenger never posted a real challenge' — a property the code did not have and
+  // this fixture never exercised. All it varied was the message's POSTER, so all it
+  // ever asserted is the line below: with no card carrying this Accept button in
+  // existence, nothing may be resolved from it. Renamed to say so.
+  it('refuses an accept when no message carries that Accept button', async () => {
+    pairWithDinos();
+    const forged = `duel:accept:a:b:${ctx.now() + 1}`;
+    const b = await click(forged, 'b', { posterId: 'nobody', componentIds: [] });
+    expect(replyText(b.replies[0])).toMatch(/no longer valid/i);
+    expect(rating('a')).toBe(1000);
+    expect(rating('b')).toBe(1000);
+    expect(duelRows()).toEqual([]);
+  });
+
+  // The real property, and the exact reproduction that survived round 1's fix. Binding
+  // challengerId to the message's interactionMetadata proves only that SOME interaction
+  // of 'a''s produced the anchoring message — never that 'a' challenged 'b'. The router
+  // dispatches on the customId prefix alone and never checks that the message belongs to
+  // the module handling it, so an attacker anchors the forged id on any bot message 'a'
+  // caused: a public /park view card, say. Round 1 let this through and 'a''s rating
+  // fell 1000 → 984 on a duel 'a' never agreed to and was never told about.
+  it("refuses an accept anchored on the challenger's own unrelated message", async () => {
+    pairWithDinos();
+    const forged = `duel:accept:a:b:${ctx.now() + 1}`;
+    const b = await click(forged, 'b', { posterId: 'a', componentIds: ['park:collect'] });
+    expect(rating('a')).toBe(1000);
+    expect(rating('b')).toBe(1000);
+    expect(duelRows()).toEqual([]);
+    expect(replyText(b.replies[0])).toMatch(/no longer valid/i);
+  });
+
+  // The nastiest anchor of the class: a REAL duel challenge card, posted by 'a', with a
+  // live Accept button and 'a' as its genuine poster — addressed to somebody else. Only
+  // reading the button set off the message tells the two apart.
+  it("refuses an accept forged from the challenger's genuine card for a third player", async () => {
+    pairWithDinos();
+    getOrCreateUser(ctx, 'c', 'C'); addDino('c', weak.id, 0);
+    await challenge('a', 'c');
+    const b = await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b', {
+      posterId: 'a',
+      componentIds: [
+        `duel:accept:a:c:${DUEL_CHALLENGE_TTL_MS}`,
+        `duel:decline:a:c:${DUEL_CHALLENGE_TTL_MS}`,
+      ],
+    });
+    expect(rating('a')).toBe(1000);
+    expect(rating('b')).toBe(1000);
+    expect(duelRows()).toEqual([]);
+    expect(replyText(b.replies[0])).toMatch(/no longer valid/i);
+  });
+
+  // The replay half of S1. expiresAtMs was bounded only from BELOW, and round 1 narrowed
+  // challengeAlreadyResolved's window to [expiresAtMs - TTL, ctx.now()] — EMPTY for any
+  // anchor past now + TTL, so the guard returned false unconditionally and one fixed
+  // customId replayed forever (1 legitimate duel row became 4). The upper clamp is what
+  // makes the restored [expiresAtMs - TTL, expiresAtMs] window sound: the clamp forces
+  // expiresAtMs - TTL <= the click that created the first row, so that row is always
+  // inside the window a later click of the SAME id computes.
+  it('does not let an oversized expiry anchor replay a resolved duel', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    expect(duelRows()).toHaveLength(1);
+    const afterOne = { a: rating('a'), b: rating('b') };
+    const replies = [];
+    for (const mult of [2, 3, 4]) {
+      replies.push(await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS * mult}`, 'b'));
+    }
+    expect(duelRows()).toHaveLength(1);
+    expect(rating('a')).toBe(afterOne.a);
+    expect(rating('b')).toBe(afterOne.b);
+    for (const r of replies) expect(replyText(r.replies[0])).toMatch(/no longer valid/i);
+  });
+
+  // The decline half. A forged duel:decline reached i.update on ANY bot message the
+  // attacker could address, blanking its content, embeds and components and replacing
+  // them with 'Challenge declined by <them>'. A genuine decline is always on the
+  // challenger's own card, so the same button-set check protects it — and the rejection
+  // must stay an EPHEMERAL reply, never an update, or the vandalism lands anyway.
+  it('refuses a forged decline instead of blanking an unrelated message', async () => {
+    pairWithDinos();
+    const forged = `duel:decline:a:b:${ctx.now() + 1}`;
+    const b = await click(forged, 'b', { posterId: 'a', componentIds: ['park:collect'] });
+    expect(replyText(b.replies[0])).toMatch(/no longer valid/i);
+    expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect((b.replies[0] as { embeds?: unknown[] }).embeds).toBeUndefined();
+    expect((b.replies[0] as { components?: unknown[] }).components).toBeUndefined();
+  });
+
+  // Do-no-harm: the whole real path, end to end. One log row, and one conserved delta —
+  // whatever the coin flip decides, the two ratings still sum to their starting total.
+  it('resolves a legitimate accept end to end, conserving the rating total', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    const b = await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    const log = duelRows();
+    expect(log).toHaveLength(1);
+    expect(log[0].mode).toBe('live');
+    expect(log[0].challengerId).toBe('a');
+    expect(log[0].defenderId).toBe('b');
+    expect(rating('a')).toBe(1000 + log[0].eloDelta);
+    expect(rating('b')).toBe(1000 - log[0].eloDelta);
+    expect(rating('a') + rating('b')).toBe(2000);
+    expect((b.replies[0] as { embeds?: unknown[] }).embeds).toHaveLength(1);
+  });
+
+  // The clamp and the restored replay window must refuse a REPLAY without refusing a
+  // genuinely SECOND challenge. Two separate cards for the same ordered pair, posted a
+  // full TTL apart so their windows do not overlap, each accepted once: both resolve.
+  it('resolves two genuinely distinct challenges between the same pair', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    expect(duelRows()).toHaveLength(1);
+    ctx.setNow(DUEL_CHALLENGE_TTL_MS + 1);
+    await challenge('a', 'b');
+    const second = await click(`duel:accept:a:b:${2 * DUEL_CHALLENGE_TTL_MS + 1}`, 'b');
+    expect(replyText(second.replies[0])).not.toMatch(/already duelled|no longer valid/i);
+    const log = duelRows();
+    expect(log).toHaveLength(2);
+    expect(log.map((r) => r.mode)).toEqual(['live', 'live']);
+    expect(log.map((r) => r.createdAt)).toEqual([0, DUEL_CHALLENGE_TTL_MS + 1]);
+  });
+
   it('refuses an expired challenge', async () => {
     pairWithDinos();
     await challenge('a', 'b');
@@ -614,6 +807,23 @@ describe('/duel challenge', () => {
     const b = await click(`duel:decline:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
     expect(JSON.stringify(b.replies[0])).toMatch(/declined/i);
     expect(ctx.db.select().from(schema.duels).all()).toEqual([]);
+  });
+
+  // S5 finding: challengePayload has shipped a duel.webp banner (attach()'d as `image`)
+  // since the challenge card landed, but the decline i.update carried no `attachments`
+  // key at all. discord.js's MessagePayload only resolves `attachments` from `files`,
+  // so omitting both leaves Discord's PATCH body without the key entirely — and when
+  // `attachments` is omitted, Discord RETAINS the message's existing attachment set.
+  // Pre-fix the declined card kept duel.webp hanging on the message as a bare
+  // attachment card no embed references, exactly the state fightFrames' own contract
+  // forbids. The sibling accept path already spends an explicit attachments: [] for
+  // the same reason.
+  it('sheds the challenge card banner on decline instead of leaving it as an orphan attachment', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    const b = await click(`duel:decline:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    const payload = b.replies[0] as { attachments?: unknown[] };
+    expect(payload.attachments).toEqual([]);
   });
 
   it('absorbs an unknown duel action instead of erroring', async () => {

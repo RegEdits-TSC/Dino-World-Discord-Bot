@@ -295,4 +295,36 @@ describe('/park landmark', () => {
     expect(replyText(i.replies[0])).toContain(LANDMARKS[MAX_LANDMARK_TIER - 1].name);
     expect(replyText(i.replies[0])).toContain('nothing further to build');
   });
+
+  it('ships the landmark banner as the embed image with its file', async () => {
+    const i = await run();
+    const payload = i.replies[0] as {
+      embeds: Array<{ toJSON(): { image?: { url: string } } }>;
+      files?: Array<{ name?: string | null }>;
+    };
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://landmark.webp');
+    // toEqual on the whole list, not toContain: attach() appends, so a second slot wired
+    // later shows up here rather than hiding behind a membership check.
+    expect(payload.files!.map((f) => f.name)).toEqual(['landmark.webp']);
+  });
+
+  // The buy button answers with i.update, and an update carrying `files` replaces the
+  // message's whole attachment set. The success path spreads landmarkPayload's output, so
+  // the banner is re-attached and the set is replaced with an identical one — without
+  // this, the message the player just paid on would silently lose its image.
+  it('the buy button re-renders with the banner rather than blanking the message art', async () => {
+    ctx.db.update(schema.users).set({ cash: 5_000_000 }).where(eq(schema.users.discordId, 'u1')).run();
+    const i = await click('park:landmark:buy:u1:1');
+    const update = i.replies[0] as {
+      embeds: Array<{ toJSON(): { image?: { url: string } } }>;
+      files?: Array<{ name?: string | null }>;
+    };
+    expect(update.embeds[0].toJSON().image?.url).toBe('attachment://landmark.webp');
+    expect(update.files!.map((f) => f.name)).toEqual(['landmark.webp']);
+    // And no hand-set attachments key. The fightFrames rule (attachments: [] mandatory
+    // and unconditional) exists because one MessagePayload object reaches two send sites
+    // and each must shed the other's set; landmarkPayload builds a fresh object on every
+    // call and this spread is sent exactly once.
+    expect('attachments' in update).toBe(false);
+  });
 });

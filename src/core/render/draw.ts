@@ -175,16 +175,43 @@ function drawLandmark(c: SKRSContext2D, x: number, y: number, img: Image | null,
   c.fillText(trunc(c, landmarkFor(tier)!.name, TILE_W - 28), x + 14, y + TILE_H - 16);
 }
 
-// One guest attraction cell. No art family ships with this task — ParkArt, EMPTY_ART and
-// loadParkArt all stay untouched — so unlike drawTile/drawLandmark there is no image to guard
-// against: the flat fill plus a label IS the whole cell. attractionFor is a pure catalog
-// lookup, the same kind of call drawLandmark already makes through landmarkFor, so this stays
-// inside renderParkPng's clock-free, DB-free contract. An unrecognised or retired kind
-// degrades to the raw slug rather than throwing, the same tolerance attendanceOf and
+// One guest attraction cell. Structurally the same two-branch shape as drawLandmark: the art band
+// when one loaded, and otherwise the original flat fill plus its 3px stroke. The null branch draws
+// EXACTLY what this whole function drew before it gained art — same #2d4a63 rrect, same #7fb3d9
+// stroke, same label coordinates — which is what keeps tests/render-draw.test.ts's byte-identical
+// pins green and what makes the whole art family reversible: delete the rasters and today's map
+// comes back with no code change.
+//
+// `img` is typed `Image | null | undefined` and guarded with `if (img)`, NEVER `if (img !== null)`.
+// art.attractions is an OPEN Record<string, Image | null> — attraction slugs are not a closed union —
+// and tsconfig sets strict but not noUncheckedIndexedAccess, so a retired slug TYPES as Image | null
+// while RETURNING undefined. drawImage(undefined) throws the identical TypeError drawImage(null)
+// does, and that throw is not a degrade: it becomes { ok: false } from handleRenderRequest, rejects
+// in client.ts, and costs the user the entire park image. `npm run build` can't see the wrong guard —
+// the type checker reads Image | null either way regardless of what the record holds — but
+// tests/render-draw.test.ts's retired-kind tests do, and a populated record is not what makes them
+// able to: `{}['retired_kind']` and `{ gift_shop: img }['retired_kind']` both evaluate to the
+// identical `undefined`, so a `!== null` regression throws under an empty record exactly as it does
+// under a populated one.
+//
+// save()/clip()/restore() around the blit is mandatory, exactly as drawTile's plate branch above: an
+// opaque rectangular raster would otherwise square off the rounded corners, and a leaked clip would
+// corrupt the up-to-six sibling attraction cells drawn later in the same loop.
+//
+// attractionFor keeps its `?? kind` fallback — deliberately NOT drawLandmark's landmarkFor(tier)!
+// non-null assertion. A landmark tier cannot be retired; an attraction slug can, and an unrecognised
+// one degrades to the raw slug rather than throwing, the same tolerance attendanceOf and
 // matchedKindCount give an unknown kind elsewhere.
-function drawAttraction(c: SKRSContext2D, x: number, y: number, kind: string, level: number): void {
-  rrect(c, x, y, TILE_W, TILE_H, 12); c.fillStyle = '#2d4a63'; c.fill();
-  c.lineWidth = 3; c.strokeStyle = '#7fb3d9'; rrect(c, x, y, TILE_W, TILE_H, 12); c.stroke();
+function drawAttraction(c: SKRSContext2D, x: number, y: number, img: Image | null | undefined, kind: string, level: number): void {
+  if (img) {
+    c.save();
+    rrect(c, x, y, TILE_W, TILE_H, 12); c.clip();
+    c.drawImage(img, x, y, TILE_W, TILE_H);
+    c.restore();
+  } else {
+    rrect(c, x, y, TILE_W, TILE_H, 12); c.fillStyle = '#2d4a63'; c.fill();
+    c.lineWidth = 3; c.strokeStyle = '#7fb3d9'; rrect(c, x, y, TILE_W, TILE_H, 12); c.stroke();
+  }
 
   c.fillStyle = '#eaf4fb';
   c.font = `18px "${SANS}"`;
@@ -240,7 +267,7 @@ export function renderParkPng(snap: ParkSnapshot, art: ParkArt = EMPTY_ART): Buf
   for (let i = 0; i < attractions.length; i++) {
     const idx = attractionBase + i, col = idx % COLS, row = Math.floor(idx / COLS);
     drawAttraction(c, PAD + col * (TILE_W + GAP), HEADER_H + PAD + row * (TILE_H + GAP),
-      attractions[i].kind, attractions[i].level);
+      art.attractions[attractions[i].kind], attractions[i].kind, attractions[i].level);
   }
   return canvas.toBuffer('image/png');
 }

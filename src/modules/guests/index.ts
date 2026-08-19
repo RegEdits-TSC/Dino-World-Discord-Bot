@@ -25,22 +25,29 @@ export const guestsModule: ModuleManifest = {
         .addSubcommand((s) => s.setName('claim').setDescription('Claim a reached attendance milestone')),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
-        // Stamp the attendance high-water before any subcommand reads it — a WRITE
-        // context (the player's own command), the same precedent /park view's
-        // bumpLegacyBest call sets. recomputeRating is the gate column's only writer
-        // besides adminReset, and every account that existed before this column shipped
-        // starts at a stored 0: without this call, view/build/claim would all read a
-        // high-water frozen at 0 against a dashboard already showing live attendance —
-        // the "Attendance: 1,080 / 1,920" screen next to "not drawing enough guests yet".
-        recomputeRating(ctx, i.user.id);
         // A real switch with a default arm, never a fallthrough to the view: the /park
         // dispatch trap (a new subcommand silently rendering the dashboard and reporting
         // success for a command that did nothing) is what this shape exists to avoid.
         switch (i.options.getSubcommand()) {
+          // view is a PURE READ, and recomputeRating must never be hoisted back above this
+          // switch. It used to run for every subcommand, to stamp the attendance high-water
+          // before anything read it — but it writes three columns in one UPDATE, and one of
+          // them is parkRating, the LIVE value, which falls freely as comfort decays.
+          // liveRating (../trading/service.ts) is a plain SELECT of that column, checked
+          // against TRADE_MIN_RATING at both createTrade and acceptTrade, so opening this
+          // screen after a few hours of hunger drain could drop a park below the trade gate
+          // and kill a pending offer — a state change caused by reading a screen. /park view
+          // deliberately never recomputes either. The high-water still advances on every
+          // build, claim, feed, assign, upgrade and decorate, so nothing becomes unreachable.
           case 'view':
             await i.reply(guestsPayload(ctx, i.user.id));
             return;
           case 'build': {
+            // Stamped here because buildAttraction reads the high-water as its unlock gate:
+            // every account predating that column starts at a stored 0, so without this the
+            // catalog would refuse a kind the dashboard already shows as earned. This arm
+            // mutates regardless, so the parkRating write riding along carries no surprise.
+            recomputeRating(ctx, i.user.id);
             const kind = i.options.getString('attraction', true);
             // One subcommand for both: an unowned kind is built, an owned one is upgraded.
             // Two subcommands would have made the player track which state they are in.
@@ -66,6 +73,10 @@ export const guestsModule: ModuleManifest = {
             return;
           }
           case 'claim':
+            // Same reason as build: claimableMilestones gates on the stored high-water, so a
+            // pre-migration account would be offered nothing until some other command
+            // stamped it. This arm leads straight to a payout, so the write belongs here.
+            recomputeRating(ctx, i.user.id);
             await i.reply(milestonePayload(ctx, i.user.id));
             return;
           default:
@@ -106,9 +117,11 @@ export const guestsModule: ModuleManifest = {
         }
         // Re-render so the message that was just used advances — a second layer only.
         // The customId check above is what actually protects the claim. No attachments
-        // key: guestsPayload ships no art (the park:landmark:buy success path's own
-        // precedent for a payload that never carries files), so there is nothing stale
-        // for this update to shed.
+        // key by hand: guestsPayload attaches banners/guests on every render, so this
+        // update replaces the message's attachment set with an identical one. Setting
+        // `attachments: []` here would be the fightFrames rule misapplied — that rule
+        // exists because one MessagePayload object reaches two send sites and each must
+        // shed the other's set; this payload is built fresh and sent exactly once.
         await i.update(guestsPayload(ctx, i.user.id));
       },
     },

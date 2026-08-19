@@ -401,6 +401,15 @@ export const parkModule: ModuleManifest = {
       prefix: 'park',
       async execute(ctx, i) {
         if (i.customId === 'park:collect') {
+          // This customId carries no owner segment by design — a viewer clicking it on
+          // someone else's park card collects their OWN income, not the card owner's —
+          // so there is no id to owner-check, and unlike every other component handler
+          // this one never called getOrCreateUser either. A clicker who has never run
+          // any command holds no users row at all, and collectIncome's toClockDinos
+          // assumed one existed, crashing with a TypeError instead of replying.
+          // getOrCreateUser mints the row first, same as mythic:confirm, so a
+          // first-time clicker collects a clean $0 rather than crashing.
+          getOrCreateUser(ctx, i.user.id, i.user.displayName);
           settleEscapes(ctx, i.user.id);
           const { amount } = collectIncome(ctx, i.user.id);
           await i.reply(collectPayload(amount));
@@ -497,8 +506,12 @@ export const parkModule: ModuleManifest = {
             const def = buyLandmark(ctx, i.user.id);
             const fresh = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, i.user.id)).get()!;
             // i.update, not i.reply: the message the player just clicked must stop offering a
-            // rung it has already sold. No attachments key — landmarkPayload attaches no
-            // files, so this message has no attachment set for the update to shed.
+            // rung it has already sold. No attachments key by hand — landmarkPayload attaches
+            // banners/landmark on every call, so this update replaces the message's attachment
+            // set with an identical one. Setting `attachments: []` here would be the fightFrames
+            // rule misapplied: that rule exists because one MessagePayload object reaches two
+            // send sites and each must shed the other's set, and landmarkPayload builds a fresh
+            // object per call that is spread into exactly one send.
             await i.update({
               ...landmarkPayload(fresh, def, nextLandmark(ctx, i.user.id)),
               content: `🏛️ Built the **${def.name}**.`,

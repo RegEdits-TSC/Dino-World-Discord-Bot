@@ -291,4 +291,22 @@ describe('/dino unassign and park:collect execute', () => {
     expect(second.embeds[0].toJSON().description).toContain('Nothing to collect');
     expect(second.files!.map((f) => f.name)).toEqual(['collect.webp']);
   });
+
+  // S2 finding: park:collect is the only customId with no owner segment, so the
+  // handler never owner-checks it and, unlike every other component handler, never
+  // calls getOrCreateUser either. A clicker who has never run any command holds no
+  // users row at all, and collectIncome -> pendingIncome -> toClockDinos asserted one
+  // existed with a false `.get()!` non-null assertion. Pre-fix this threw
+  // "TypeError: Cannot read properties of undefined (reading 'lastCollectAt')" from
+  // inside toClockDinos, which the router's generic catch turned into a repeatable,
+  // misleading "Something went wrong — nothing was charged" for every click.
+  it('a clicker with no users row at all collects cleanly instead of crashing', async () => {
+    const ctx = makeCtx();   // nobody has ever run a command — no users row for 'stranger'
+    const comp = parkModule.components.find((c) => c.prefix === 'park')!;
+    const b = fakeButton({ customId: 'park:collect', user: 'stranger' });
+    await comp.execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
+    const reply = b.replies[0] as CollectPayload;
+    expect(reply.embeds[0].toJSON().description).toContain('Nothing to collect');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'stranger')).get()).toBeDefined();
+  });
 });

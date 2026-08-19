@@ -44,7 +44,7 @@ export function seasonPayload(view: SeasonView, userId: string): Payload {
         .setLabel('Claim').setStyle(ButtonStyle.Success),
     )],
   };
-  attach(embed, payload, 'image', assetImage('banners', 'daily'));
+  attach(embed, payload, 'image', assetImage('banners', 'season'));
   return payload;
 }
 
@@ -59,5 +59,7 @@ export function seasonClaimPayload(res: SeasonClaimResult): Payload {
   const embed = new EmbedBuilder().setColor(0x9b59b6)
     .setTitle(`🎖️ Claimed ${res.claimed.length} reward${res.claimed.length === 1 ? '' : 's'}`)
     .setDescription(parts.join('\n') || 'Nothing to claim.');
-  return { embeds: [embed] };
+  const payload: Payload = { embeds: [embed] };
+  attach(embed, payload, 'image', assetImage('banners', 'season'));
+  return payload;
 }

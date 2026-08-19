@@ -3,7 +3,7 @@ import { Image, createCanvas } from '@napi-rs/canvas';
 import { EmbedBuilder, type AttachmentBuilder } from 'discord.js';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { assetImage, attach } from '../src/core/images.js';
+import { assetImage, attach, dinoImage } from '../src/core/images.js';
 import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { WORLD_EVENTS } from '../src/data/world-events.js';
@@ -171,7 +171,7 @@ describe('banner art', () => {
 
   // Discord scales an embed image to the embed width, so an off-size banner
   // letterboxes or crops; 1536×1024 matches the site banners already shipping.
-  // Covers all 26 committed banners, not just the 17 the static scrape can see:
+  // Covers all 32 committed banners, not just the 23 the static scrape can see:
   // event-<id> names come from a template literal (world/embeds.ts) no scrape can
   // resolve, so they are appended here from WORLD_EVENTS directly — same
   // cross-check precedent as the CAMPAIGN/WORLD_EVENTS loops in "the committed
@@ -182,6 +182,46 @@ describe('banner art', () => {
   it.each(DIMENSION_CHECKED_BANNERS)('%s is 1536×1024', async (name) => {
     const img = new Image();
     img.src = readFileSync(resolve(process.cwd(), 'assets/images/banners', `${name}.webp`));
+    await img.decode();
+    expect(img.width).toBe(1536);
+    expect(img.height).toBe(1024);
+  });
+
+  // The dimension case for this banner is REGISTERED by the it.each above, not written
+  // by hand — DIMENSION_CHECKED_BANNERS is built from BANNERS, which is scraped from
+  // src/. That is exactly why this test exists: a wiring form scrapeBannerNames cannot
+  // read (a call wrapped across two lines, double quotes, a template literal) silently
+  // drops the name out of that loop, registering zero cases for it with the suite still
+  // green. Assert the name is IN the scrape, then read the file directly so a
+  // committed-but-unfitted banner fails here even if the loop is somehow starved.
+  it('guests is scrape-visible and ships at 1536×1024', async () => {
+    expect(BANNERS, 'banners/guests is not reachable by scrapeBannerNames').toContain('guests');
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/banners', 'guests.webp'));
+    await img.decode();
+    expect(img.width).toBe(1536);
+    expect(img.height).toBe(1024);
+  });
+
+  // Same reasoning as the guests case above: the it.each loop's case for this name is
+  // REGISTERED from the scrape, so a wiring form scrapeBannerNames cannot read would
+  // register zero cases for it and go dark with the suite green.
+  it('dex is scrape-visible and ships at 1536×1024', async () => {
+    expect(BANNERS, 'banners/dex is not reachable by scrapeBannerNames').toContain('dex');
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/banners', 'dex.webp'));
+    await img.decode();
+    expect(img.width).toBe(1536);
+    expect(img.height).toBe(1024);
+  });
+
+  // Same reasoning as the two cases above: the it.each loop's case for this name is
+  // registered from the scrape, so a wiring form scrapeBannerNames cannot read would
+  // register zero cases for it and go dark with the suite still green.
+  it('landmark is scrape-visible and ships at 1536×1024', async () => {
+    expect(BANNERS, 'banners/landmark is not reachable by scrapeBannerNames').toContain('landmark');
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/banners', 'landmark.webp'));
     await img.decode();
     expect(img.width).toBe(1536);
     expect(img.height).toBe(1024);
@@ -373,6 +413,30 @@ const ARCHETYPES = Object.keys(
 const DIETS = Object.keys({ herbivore: 0, carnivore: 0 } satisfies Record<Diet, 0>) as Diet[];
 const DINO_ART_KEYS = ARCHETYPES.flatMap((a) => DIETS.map((d) => `${a}-${d}`));
 
+// The 8 rarest species — the five legendaries and the three mythics — each ship a
+// per-species OVERRIDE portrait that dinoImage() prefers over the archetype×diet
+// art they used to share. HAND-TYPED on purpose: deriving this from rarity would
+// silently demand a new raster the moment a legendary or mythic species ships,
+// which is exactly the "adding a species is a data-only change" guarantee the
+// fixed 8-file archetype set exists to keep. Adding a ninth hero portrait is an
+// edit here, deliberately.
+const HERO_SPECIES = [
+  'indominus', 'indoraptor', 'liopleurodon', 'mosasaurus',
+  'quetzalcoatlus', 'spinoraptor', 'tyrannosaurus', 'ultimasaurus',
+].sort();
+
+// Enumerated from DISK, never from HERO_SPECIES: a hand-typed list can only prove
+// that what exists, exists (the same reason scrapeBannerNames above is a scrape).
+// Reading the directory is what makes a stray or misspelled file — dinos/t-rex.webp,
+// dinos/gift-shop.webp — visible, instead of it null-degrading into an imageless
+// embed forever with this suite green.
+const DINO_ART_FILES = readdirSync(resolve(process.cwd(), 'assets/images/dinos'))
+  .filter((f) => f.endsWith('.webp'))
+  .map((f) => f.replace(/\.webp$/, ''))
+  .sort();
+const SPECIES_IDS = new Set(allSpecies().map((s) => s.id));
+const SPECIES_ART_FILES = DINO_ART_FILES.filter((n) => SPECIES_IDS.has(n));
+
 describe('dino archetype prompts', () => {
   // Same precedent as tests/battle-content.test.ts's bossId cross-check:
   // prompts.md is the regeneration source of truth, so a shipped asset with no
@@ -383,6 +447,16 @@ describe('dino archetype prompts', () => {
     expect(prompts).toContain('## Dino archetypes');
     expect(prompts).toContain('assets/images/dinos/');
     for (const key of DINO_ART_KEYS) expect(prompts, key).toContain(`${key}.webp`);
+  });
+
+  // Same precedent as the archetype case above and tests/battle-content.test.ts's
+  // bossId cross-check: prompts.md is the regeneration source of truth, so a
+  // shipped raster with no prompt row is unreproducible.
+  it('documents a regeneration prompt for all 8 hero species portraits', () => {
+    const prompts = readFileSync(new URL('../docs/assets/prompts.md', import.meta.url), 'utf8');
+    expect(HERO_SPECIES).toHaveLength(8);
+    expect(prompts).toContain('## Hero species portraits');
+    for (const id of HERO_SPECIES) expect(prompts, id).toContain(`dinos/${id}.webp`);
   });
 });
 
@@ -397,5 +471,124 @@ describe('dino archetype art', () => {
     for (const s of allSpecies()) {
       expect(assetImage('dinos', `${s.archetype}-${s.diet}`), s.id).not.toBeNull();
     }
+  });
+});
+
+describe('hero species art', () => {
+  // it.each over an EMPTY array registers zero tests and goes dark with the suite
+  // still green — the same failure mode the banner-scrape guard above exists for.
+  // This case is what makes a missing or short hero-portrait set red. The reverse
+  // direction — a dinos/ file that is neither an archetype-diet pair nor a real
+  // species id — is covered once, by 'dino art file names' below, not duplicated here.
+  it('ships exactly the hero portraits', () => {
+    expect(SPECIES_ART_FILES, 'per-species override files on disk').toEqual(HERO_SPECIES);
+  });
+
+  // The gap this closes: expectTransparentCutout was reachable for the dinos kind
+  // ONLY through it.each(DINO_ART_KEYS) — an 8-name list derived from the Archetype
+  // and Diet type unions — so a per-species override file inherited NO dimension, no
+  // corner-transparency and NO margin checking at all. 31px here, matching the
+  // archetype set these render beside in the same embeds; never the boss portraits'
+  // 24px (expectTransparentCutout picks the number off `kind`).
+  it.each(SPECIES_ART_FILES)('%s is a 1024×1024 transparent cutout at the 31px margin',
+    (name) => expectTransparentCutout('dinos', name));
+
+  // The override must be an override, not a replacement: the other 44 species ship
+  // no file of their own and must keep resolving archetype art through dinoImage's
+  // fallback arm, or "adding a species is a data-only change" stops being true.
+  it('every non-hero species still resolves to a shipped archetype image', () => {
+    for (const s of allSpecies()) {
+      if (HERO_SPECIES.includes(s.id)) continue;
+      expect(assetImage('dinos', `${s.archetype}-${s.diet}`), s.id).not.toBeNull();
+      expect(assetImage('dinos', s.id), `${s.id} unexpectedly ships its own portrait`).toBeNull();
+    }
+  });
+});
+
+describe('dinoImage', () => {
+  // No mocking in this block. dinoImage calls assetImage from inside the same module,
+  // so vi.mock on src/core/images.js would replace what importers see and leave both of
+  // dinoImage's own lookups untouched — the branches have to be proved against committed
+  // files instead. Nothing is ever staged or deleted under assets/images: vitest runs
+  // test files in parallel forks and another file can observe the write mid-run.
+  it('falls back to the archetype×diet file when no species file is committed', () => {
+    // A synthetic id that can never gain committed art, so this stays true when the
+    // hero-species portraits ship.
+    const ref = dinoImage('no-such-species', 'bruiser', 'carnivore');
+    expect(ref).not.toBeNull();
+    expect(ref!.url).toBe('attachment://bruiser-carnivore.webp');
+    expect(ref!.file.name).toBe('bruiser-carnivore.webp');
+  });
+
+  it('prefers the species file when one is committed', () => {
+    // The override branch, exercised with a name that IS committed under
+    // assets/images/dinos. The archetype arguments name a DIFFERENT, equally committed
+    // file, so a fallback-only implementation returns tank-herbivore.webp and fails.
+    const ref = dinoImage('bruiser-carnivore', 'tank', 'herbivore');
+    expect(ref).not.toBeNull();
+    expect(ref!.url).toBe('attachment://bruiser-carnivore.webp');
+  });
+
+  it('returns null when neither the species nor the archetype file exists', () => {
+    expect(dinoImage('no-such-species', 'no-such-archetype', 'carnivore')).toBeNull();
+  });
+
+  it('resolves every species in the live roster — adding a species still needs no art', () => {
+    for (const s of allSpecies()) {
+      expect(dinoImage(s.id, s.archetype, s.diet), s.id).not.toBeNull();
+    }
+  });
+});
+
+// Attachment names are BASENAMES ONLY — assetImage builds `${name}.webp` with no
+// `kind` prefix — so two refs on ONE payload that resolve to the same basename
+// make `attachment://<name>.webp` ambiguous and one of the two embed slots
+// renders the wrong picture. attach() appends and can never clobber, but it
+// cannot DEDUPE, so nothing else in the suite can see this. Exhaustive by
+// construction: `satisfies Record<AssetKind, 0>` rejects a missing key and an
+// unknown one, so a seventh kind added to assetImage fails typecheck here before
+// it can ship uncovered. assets/images/park/ is deliberately absent — those
+// rasters are read by the park renderer directly and never become Discord
+// attachments, so they cannot collide with anything.
+type AssetKind = Parameters<typeof assetImage>[0];
+const ASSET_KINDS = Object.keys({
+  eggs: 0, sites: 0, banners: 0, battles: 0, hatch: 0, dinos: 0,
+} satisfies Record<AssetKind, 0>) as AssetKind[];
+
+describe('cross-kind basename collisions', () => {
+  it('no two committed assets share a basename across the six assetImage kinds', () => {
+    const owners = new Map<string, AssetKind[]>();
+    for (const kind of ASSET_KINDS) {
+      for (const file of readdirSync(resolve(process.cwd(), 'assets/images', kind))) {
+        if (!file.endsWith('.webp')) continue;   // battles/ ships a .gitkeep
+        const base = file.replace(/\.webp$/, '');
+        const owner = owners.get(base);
+        if (owner) owner.push(kind);
+        else owners.set(base, [kind]);
+      }
+    }
+    expect(owners.size, 'no assets found — wrong root?').toBeGreaterThan(0);
+    const collisions = [...owners]
+      .filter(([, kinds]) => kinds.length > 1)
+      .map(([base, kinds]) => `${base}.webp: ${kinds.join(' + ')}`);
+    expect(collisions, `rename one side — two payloads cannot both use these:\n${collisions.join('\n')}`).toEqual([]);
+  });
+});
+
+// The inverse of the banner orphan check above, for the one directory with TWO
+// naming families: `<archetype>-<diet>` (the fixed set of 8) and `<speciesId>`
+// (the optional per-species override). Both sides are derived — DINO_ART_KEYS
+// from the real Archetype/Diet unions, SPECIES_IDS (declared above, alongside
+// HERO_SPECIES) from allSpecies() — so a typo'd or retired name is caught here
+// rather than null-degrading to an imageless embed, which is silent everywhere
+// else.
+describe('dino art file names', () => {
+  it('every committed dinos/ file is an archetype-diet pair or a real species id', () => {
+    const names = readdirSync(resolve(process.cwd(), 'assets/images/dinos'))
+      .filter((f) => f.endsWith('.webp'))
+      .map((f) => f.replace(/\.webp$/, ''));
+    expect(names.length, 'no dino art found — wrong root?').toBeGreaterThan(0);
+    const strays = names.filter((n) => !DINO_ART_KEYS.includes(n) && !SPECIES_IDS.has(n));
+    expect(strays, `neither an archetype-diet pair nor a species id: ${strays.join(', ')}`).toEqual([]);
   });
 });

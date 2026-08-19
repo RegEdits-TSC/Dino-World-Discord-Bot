@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
 import { matches, respondRanked, emptyRow } from '../../core/autocomplete.js';
+import { clickedIdIsOnMessage } from '../../core/components.js';
 import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
 import {
@@ -165,12 +166,47 @@ export const duelsModule: ModuleManifest = {
           return;
         }
         const expiresAtMs = Number(expiresRaw);
+        // Both of the checks below must sit above the decline branch, not just the
+        // accept one. A forged `duel:decline:<anyone>:<self>:<future>` used to reach
+        // i.update on ANY bot message the attacker could address, blanking its content,
+        // embeds and components and replacing them with "Challenge declined by X" —
+        // vandalism with no rating change, but vandalism the same guard prevents, since
+        // a genuine decline only ever sits on the challenger's own card.
+        //
+        // challengerId is the segment nothing else validates and resolveDuel mutates
+        // THAT player's rating on faith. What proves it is the message's own button
+        // set: only a real `/duel challenge a → b` card carries a button whose custom_id
+        // is exactly this one, and Message#components is Discord's record, not the
+        // client's claim. Binding the segment to Message#interactionMetadata instead —
+        // the first attempt at this fix — proved only that the anchoring message came
+        // from SOME interaction of the named challenger's, which any public /park view,
+        // /duel record or genuine challenge card addressed to a THIRD player satisfies.
+        // The router dispatches on the customId prefix alone and never checks the
+        // message belongs to this module, so those anchors were all reachable.
+        if (!clickedIdIsOnMessage(i)) {
+          await i.reply({ content: 'That challenge is no longer valid — run `/duel challenge` again.', flags: MessageFlags.Ephemeral });
+          return;
+        }
         if (!Number.isFinite(expiresAtMs) || expiresAtMs <= ctx.now()) {
           await i.reply({ content: 'That challenge expired — start a new one with `/duel challenge`.', flags: MessageFlags.Ephemeral });
           return;
         }
+        // The anchor is clamped from ABOVE as well as below. The bot only ever mints
+        // `mintedAt + TTL`, so a genuine card always satisfies this — but without the
+        // clamp expiresAtMs is unbounded upward, and challengeAlreadyResolved derives
+        // its replay window's lower edge from it. See that function for why the clamp
+        // is what makes the window provably contain the duel it must detect.
+        if (expiresAtMs > ctx.now() + DUEL_CHALLENGE_TTL_MS) {
+          await i.reply({ content: 'That challenge is no longer valid — run `/duel challenge` again.', flags: MessageFlags.Ephemeral });
+          return;
+        }
         if (action === 'decline') {
-          await i.update({ content: `⚔️ Challenge declined by ${i.user.displayName}.`, embeds: [], components: [] });
+          // attachments: [] sheds the challenge card's own duel.webp banner. Without it,
+          // discord.js's MessagePayload resolves no `attachments` key at all (there are
+          // no `files` here either), and Discord retains the message's EXISTING
+          // attachment set on an update that omits the key — leaving the banner hanging
+          // as a bare attachment card no embed references, once the embeds are cleared.
+          await i.update({ content: `⚔️ Challenge declined by ${i.user.displayName}.`, embeds: [], components: [], attachments: [] });
           return;
         }
         settleEscapes(ctx, i.user.id);   // the accepting player is the one clicking

@@ -7,6 +7,7 @@ import { ALL_MODULES } from '../src/core/module-list.js';
 import { ModuleRegistry } from '../src/core/modules.js';
 import { setEmojiMap } from '../src/core/emojis.js';
 import { FOODS } from '../src/data/foods.js';
+import { ATTRACTIONS } from '../src/data/attractions.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
 import { RARITY } from '../src/data/rarity.js';
 import { allSpecies } from '../src/data/species/index.js';
@@ -197,11 +198,33 @@ track(ctx, P1, firstQuestDef.stat, dailyRows[0].target);
 // human's eyes on it.
 ctx.db.update(schema.users).set({ landmarkTier: 3 }).where(eq(schema.users.discordId, P1)).run();
 
+// Attraction seed: all six ATTRACTIONS kinds inserted DIRECTLY on the row, the same
+// bypass-the-service move landmarkTier makes just above — buildAttraction's cash charge
+// and unlockAt gate are irrelevant to a render fixture, and going through it would also
+// call recomputeRating, disturbing the parkRating-vs-TRADE_MIN_RATING restores several
+// later cases depend on (see /trade offer's own comment). This is what puts every one of
+// the six new 270×150 attraction-*.webp bands on the park map in the SAME render as the
+// landmark band and the lot plates, which is exactly what step 8's "read against the lot
+// plates" check needs side by side. It also changes the geometry again: P1 was already at
+// 4 cells / 2 rows after the landmark seed above (comment there), and six more cells makes
+// 10, wrapping to 4 rows.
+for (const kind of Object.keys(ATTRACTIONS)) {
+  ctx.db.insert(schema.attractions).values({ userId: P1, kind, level: 1, builtAt: ctx.now() }).run();
+}
+
 // The showcase makes the existing '/park view' case carry TWO files on one embed: the
-// featured dino's archetype thumbnail and the rendered park PNG. That pair is exactly what
-// the withParkImage append fix exists for, and nothing but looking at it proves it works.
+// featured dino's thumbnail and the rendered park PNG. That pair is exactly what the
+// withParkImage append fix exists for, and nothing but looking at it proves it works.
+// Featuring the tyrannosaurus (seeded above for the battle squad, and one of the eight
+// HERO_SPECIES) rather than the triceratops is what puts a hero portrait — not shared
+// archetype art — behind that thumbnail: dashboardPayload resolves the featured dino
+// through dinoImage (src/modules/park/embeds.ts), which prefers a committed per-species
+// override over the archetype×diet fallback. Only one of the eight hero portraits is
+// reachable this way (P1 owns only one hero species); the other seven were eyeballed by
+// hand during the hero-portrait task, not rechecked here.
 setMotto(ctx, P1, 'Where the big ones live');
-setFeaturedDino(ctx, P1, dino.id);
+const heroDino = ctx.db.select().from(schema.dinos).all().find((d) => d.userId === P1 && d.speciesId === 'tyrannosaurus')!;
+setFeaturedDino(ctx, P1, heroDino.id);
 
 // Dex fixture: its own player, credited via recordSpeciesSeen — never via the raw
 // dino/egg inserts P1 gets above. species_seen is a distinct side-effect record
@@ -347,8 +370,9 @@ const cases: Case[] = [
   { title: '/help topic:battles — chapter banner', run: () => slash('help', 'help', { name: 'help', user: P1, options: { topic: 'battles' } }) },
   { title: '/daily — hub, one quest complete', run: () => slash('daily', 'daily', { name: 'daily', user: P1 }) },
   { title: 'daily:claim — claim reply (ephemeral in production)', run: () => button('daily', `daily:claim:${P1}`, P1) },
-  { title: '/park view — showcase pair on one embed: featured-dino thumbnail + park map (landmark tile bumps the canvas to 2 rows)', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P1 }) },
+  { title: '/park view — showcase pair on one embed: hero-portrait featured-dino thumbnail + park map (landmark tile + all six attraction bands bump the canvas to 4 rows)', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P1 }) },
   { title: '/park landmark — Bronze Sentinel built, Amber Obelisk next (grouped price)', run: () => slash('park', 'park', { name: 'park', sub: 'landmark', user: P1 }) },
+  { title: '/guests view — attendance dashboard: variety/draw/VC terms, all six attractions built', run: () => slash('guests', 'guests', { name: 'guests', sub: 'view', user: P1 }) },
   { title: '/park view — P5, Legacy rank Keeper at 35 of 52 species discovered', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P5 }) },
   { title: '/top legacy — widened metric, Visit buttons on the board', run: () => slash('leaderboards', 'top', { name: 'top', user: P1, options: { metric: 'legacy', scope: 'global' } }) },
   { title: 'top:visit — P2 opens P1\'s park via the board button: check motto + featured thumbnail present, no Collect, Next park present', run: () => button('leaderboards', `top:visit:${P1}`, P2) },

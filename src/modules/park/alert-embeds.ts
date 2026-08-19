@@ -63,10 +63,17 @@ export function alertPayload(
     embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[];
   } = { embeds: [embed], components: [] };
 
-  // Domain-data ternary, deliberately OUTSIDE attach(): a park with no escapes is not
-  // a missing asset, it is a different banner.
+  // Domain-data ternary, deliberately OUTSIDE attach(): a park with no escapes is not a
+  // missing asset, it is a different banner. The three arms track the title chosen above —
+  // escapes lead, then income, and a season-ONLY alert gets the season banner so the
+  // picture agrees with the '🎖️ Season ending soon' framing. Reachability: the null guard
+  // at the top of this function means escapes.length === 0 && !income implies season !== null.
+  //
+  // Every name stays a literal ON THIS LINE. tests/images.test.ts scrapes banner names one
+  // source line at a time, taking every quoted string after `assetImage('banners'` — hoisting
+  // the choice into a `const banner` would silently drop all three names from that coverage.
   attach(embed, payload, 'image',
-    assetImage('banners', escapes.length > 0 ? 'care_neglect' : 'collect'));
+    assetImage('banners', escapes.length > 0 ? 'care_neglect' : income ? 'collect' : 'season'));
 
   const row = new ActionRowBuilder<ButtonBuilder>();
   if (escapes.length > 0) {

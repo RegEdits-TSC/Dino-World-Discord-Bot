@@ -53,7 +53,25 @@ describe('/help', () => {
     // fall to 0 alongside it and this test would pass with zero assertions run.
     // Naming every topic also fails a PARTIAL regression (art dropped from one).
     expect([...covered].sort()).toEqual(
-      ['battles', 'care', 'eggs', 'expeditions', 'genelab', 'getting-started', 'ranks', 'shop', 'trading']);
+      ['battles', 'care', 'daily', 'duel', 'eggs', 'expeditions', 'genelab', 'getting-started', 'guests', 'ranks', 'shop', 'trading']);
+  });
+  // The eggs topic borrowed eggs/rare — a single rarity's egg icon standing in for the
+  // whole hatchery screen. banners/eggs_incubator is the picture /eggs itself already
+  // uses. The daily topic shipped bare; banners/daily is what /daily itself uses.
+  it('points the daily and eggs topics at the banners their own screens use', () => {
+    expect(HELP_TOPICS.daily.art).toEqual({ kind: 'banners', name: 'daily' });
+    expect(HELP_TOPICS.eggs.art).toEqual({ kind: 'banners', name: 'eggs_incubator' });
+  });
+  // /help topic:battles and /help topic:expeditions shared sites/coastal_dig-banner
+  // VERBATIM — the whole campaign, seven chapters of it, illustrated with the picture
+  // of the tutorial dig site. The generic per-topic art test above cannot see that: it
+  // walks each topic in isolation and both borrows resolve fine.
+  it('gives every art-bearing topic a picture no other topic uses', () => {
+    expect(HELP_TOPICS.battles.art).toEqual({ kind: 'banners', name: 'battles' });
+    expect(HELP_TOPICS.expeditions.art).toEqual({ kind: 'sites', name: 'coastal_dig-banner' });
+    const keys = Object.values(HELP_TOPICS).flatMap((t) => (t.art ? [`${t.art.kind}/${t.art.name}`] : []));
+    expect(keys.length, 'no art-bearing topics found — did the descriptor shape change?').toBeGreaterThan(0);
+    expect(new Set(keys).size, `two topics share art: ${keys.join(', ')}`).toBe(keys.length);
   });
   it('carries a genelab topic', () => {
     expect(Object.keys(HELP_TOPICS)).toContain('genelab');
@@ -86,8 +104,9 @@ describe('/help', () => {
     for (const sub of ['ghost', 'challenge', 'squad', 'record']) {
       expect(body, `HELP_TOPICS.duel should mention /duel ${sub}`).toContain(`/duel ${sub}`);
     }
-    // No art descriptor: an art-bearing topic must also be added to the hard-coded
-    // sorted list in the art test above, and 3b ships no new image files.
-    expect(HELP_TOPICS.duel?.art).toBeUndefined();
+    // The duel topic shipped art-less in 3b because that branch added no image files.
+    // It has its own banner now, so it must also appear in the hard-coded sorted list
+    // in the art test above — that list is what fails a PARTIAL regression.
+    expect(HELP_TOPICS.duel?.art).toEqual({ kind: 'banners', name: 'duel' });
   });
 });

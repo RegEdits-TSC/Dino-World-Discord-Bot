@@ -288,8 +288,18 @@
   `eggs/<rarity>.webp`. `assets/images/dinos/<archetype>-<diet>.webp` is a fixed
   set of 8 (1024×1024 transparent cutouts, `fit-art.mjs cutout`, so a 31px
   margin against the boss portraits' 24px — deliberate, recorded in
-  `docs/assets/prompts.md`): **art is keyed on archetype×diet, never on species**,
-  which is what keeps adding a species a data-only change. `support-carnivore`
+  `docs/assets/prompts.md`): **art is keyed on archetype×diet, with a per-species file
+  as an OPTIONAL override** — `dinoImage(speciesId, archetype, diet)`
+  (`src/core/images.ts`) tries `dinos/<speciesId>.webp` first and falls back to
+  `dinos/<archetype>-<diet>.webp`, so a species with no file of its own costs no art and
+  adding a species stays a data-only change. All five dino-art call sites go through that
+  helper (`park/embeds.ts`, `duels/embeds.ts`, `dex/embeds.ts`, `hatchery/embeds.ts`,
+  `battles/embeds.ts`), never a bare `assetImage('dinos', …)`; `park/embeds.ts` needed
+  `Featured` (`park/showcase.ts`) to carry `speciesId` for it, a typecheck-only break that
+  `npm run build` and `npm test` both miss. Mocking `assetImage` can NOT intercept the two
+  lookups inside `dinoImage` — that call is module-internal — so a test that needs a
+  dino-art miss must mock `dinoImage` itself (`tests/hatchery.test.ts` and
+  `tests/battles-embeds.test.ts` both do). `support-carnivore`
   shipped with zero species using it for exactly that reason; Archelon (uncommon,
   support archetype, carnivore diet) now does, and it needed no new art at all —
   proof the guarantee holds. That fixed cost has
@@ -793,6 +803,44 @@
   literal. Any future button that spends money needs the same treatment: the rung, page
   or amount it was minted for belongs in the customId, because a Discord message is
   durable and its label is not re-derived.
+- Putting state in the customId (`park:landmark:buy:<uid>:<tier>`,
+  `dex:page:<uid>:<page>:<slugs>`) only helps if the handler also proves the bot MINTED
+  that id. A component interaction can be emitted straight at the gateway with any
+  `custom_id`, anchored on any message the attacker can address, and `routeInteraction`
+  (`src/core/router.ts`) dispatches on the customId PREFIX alone — it never checks that
+  the message belongs to the module handling it. So a handler that merely *parses* its
+  own segments is trusting the attacker's arithmetic. **A component handler must verify
+  the clicked customId is actually present on the message that carries it**:
+  `clickedIdIsOnMessage(i)` (`src/core/components.ts`) walks `Message#components` —
+  Discord's own record of the buttons the bot put there, unforgeable by the client —
+  and matches the whole id by exact equality, never a prefix. It fails CLOSED (no
+  components, no authority) and recurses into v2 containers, because failing to look
+  inside a nesting component would break a legitimate click rather than admit a forged
+  one. `duel:accept|decline` is the first caller and the reason the rule exists: without
+  it, any player could force a duel on any other and move their Elo, and a forged
+  `duel:decline` could blank an unrelated bot message via `i.update`.
+  **Message authorship is NOT a substitute** — the first fix bound the challenger
+  segment to `Message#interactionMetadata.user.id`, which proves only that the anchoring
+  message came from SOME interaction of that player's; a public `/park view`, a
+  `/duel record`, or their genuine challenge card addressed to a THIRD player all
+  satisfy it, and the original exploit reproduced unchanged against it. The button set
+  is the check; `interactionMetadata` is not read anywhere in `src/` any more.
+  The duel handler pairs it with a second rule worth copying: a client-supplied INSTANT
+  needs clamping from ABOVE as well as below. `expiresAtMs` was bounded only as
+  "finite and in the future", and `challengeAlreadyResolved`
+  (`src/modules/duels/service.ts`) derives its replay window's lower edge from it —
+  `[expiresAtMs - TTL, expiresAtMs]`. Narrowing that window's UPPER edge to `ctx.now()`
+  looks tighter and is the opposite: the window is then empty for any anchor past
+  `now + TTL`, the guard returns false unconditionally, and one fixed customId replays
+  forever (three replays turned 1 duel row into 4). The handler's
+  `expiresAtMs <= ctx.now() + DUEL_CHALLENGE_TTL_MS` clamp is what makes the original
+  bound sound: it forces `expiresAtMs - TTL <=` the click that wrote the first row, so a
+  later click of the SAME id recomputes the SAME window and provably finds that row
+  inside it. Only the clamp is load-bearing: relaxing it reopens the incrementing-anchor
+  bypass the bound alone cannot see. The bound (`<= expiresAtMs` rather than
+  `<= ctx.now()`) is defence-in-depth, not a second lock — under the clamp the two are
+  provably equivalent, and reverting the bound to `ctx.now()` with the clamp still in
+  place leaves all 88 duel tests green.
 - Legacy rank (`legacyPoints`/`legacyRank`, `src/modules/park/ranks.ts`) is DERIVED,
   same philosophy as escrow locks and quest progress documented above, and must NEVER
   be rebuilt on top of `user_stats`. Migration `0006_daily_loop.sql` backfilled only 6
@@ -1084,6 +1132,31 @@
   sites and no risk of the two drifting apart. `/guests view` and `/guests claim`
   (`src/modules/guests/embeds.ts`, via `attendanceOf` → `toClockDinos`) are two surfaces
   that render attendance without calling `settleEscapes` first, unlike the park card
-  (own or visited), which always settles before rendering it. The gap is bounded, not a
-  defect: an escaped-but-unsettled dino can still count toward the variety term until
-  some other command or a visit settles it — the same lag `/top` already accepted.
+  (own or visited), which always settles before rendering it. This is safe, not merely
+  tolerated, because `attendanceOf`'s own dino predicate is TIME-AWARE: it filters on
+  `escapeMoment(d, now) === null` (`src/modules/park/attendance.ts`), not the stored
+  `escapedAt` column, so a live-escaped-but-unsettled dino stops counting toward the
+  variety term the instant it crosses, with no settle call needed. The board-wide twin,
+  `attendanceScores` (`src/modules/leaderboards/service.ts`), is DELIBERATELY LAXER — it
+  matches `recomputeRating`'s `assigned` filter and checks only the stored `escapedAt`,
+  so a board row can read higher than that player's own `/guests view` for a park no
+  command has touched since an escape. That gap is bounded and self-correcting: it
+  converges the next time anything settles the row, the same standing lag `/top`
+  already accepts elsewhere on this board. Never filter `attendanceOf` on the stored
+  column instead of `escapeMoment` — that was the pre-fix behaviour (defect F2), and it
+  let `attendanceHighWater` — monotone, with no path back down — bank guests from dinos
+  that were long gone, since neither `/guests build` nor `/build` nor `/upgrade` calls
+  `settleEscapes` and nothing else had settled them.
+- `recomputeRating` must never be hoisted back above `/guests`' subcommand switch
+  (`src/modules/guests/index.ts`). It used to run unconditionally for every subcommand,
+  to stamp the attendance high-water before anything read it — but it writes three
+  columns in one `UPDATE`, and one of them is `parkRating`, the LIVE value, which falls
+  freely as comfort decays. `liveRating` (`src/modules/trading/service.ts`) is a plain
+  `SELECT` of that same column, checked against `TRADE_MIN_RATING` at both `createTrade`
+  and `acceptTrade`, so opening `/guests view` after a few hours of hunger drain could
+  have dropped a park below the trade gate and killed a pending offer — a state change
+  caused by reading a screen. `view` is a pure read and deliberately never recomputes;
+  `build` and `claim` still call it, because each reads the high-water as its own unlock
+  gate and each mutates regardless, so the `parkRating` write riding along carries no
+  surprise. The high-water still advances on every build, claim, feed, assign, upgrade
+  and decorate, so nothing becomes unreachable.

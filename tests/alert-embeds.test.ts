@@ -8,6 +8,11 @@ const seasonNudge = { endsAt: 3 * 86_400_000, unclaimed: 2 };
 // other test here supplies at least one condition, so a non-null assertion at the call site
 // is safe and keeps the assertions below unchanged.
 const json = (p: NonNullable<ReturnType<typeof alertPayload>>) => p.embeds[0].toJSON();
+// alertPayload's return type is `NotifyPayload & {…}`, and NotifyPayload is a UNION whose
+// other arm is `string` — so `.files` is not readable off the intersection the way
+// `.embeds` and `.components` are. One narrow cast here beats a cast in every test below.
+const fileNames = (p: NonNullable<ReturnType<typeof alertPayload>>): Array<string | null | undefined> =>
+  ((p as { files?: Array<{ name?: string | null }> }).files ?? []).map((f) => f.name);
 
 describe('alertPayload', () => {
   it('renders both conditions in one embed with one button row', () => {
@@ -72,6 +77,30 @@ describe('alertPayload', () => {
     expect(json(withEscape).title).toBe('🚨 Your park needs you');
     const withIncome = alertPayload('u1', [], { capAt: 0, pending: 500, capHours: 8 }, seasonNudge, 0)!;
     expect(json(withIncome).title).toBe('🚨 Your park needs you');
+  });
+
+  it('dresses a season-only alert with the season banner and STILL carries no attachments key', () => {
+    const p = alertPayload('u1', [], null, seasonNudge, 0)!;
+    expect(fileNames(p)).toEqual(['season.webp']);
+    expect(json(p).image?.url).toBe('attachment://season.webp');
+    // The banner may be added; the attachments key may NEVER be. deliverNotification hands
+    // ONE object to channelSend and then, on failure, to dmSend. MessagePayload.resolveBody
+    // pushes resolved files into an explicit attachments array and create() only
+    // shallow-copies it, so a pre-set key carries the first attempt's mutation into the
+    // second and the DM ships duplicate attachment ids. Omitting the key is the whole fix.
+    expect('attachments' in (p as Record<string, unknown>)).toBe(false);
+  });
+
+  it('keeps the escape and income banners when either condition rides alongside the season nudge', () => {
+    // The banner arms must track the title arms: escapes lead, then income, and only a
+    // season-ONLY alert gets the season banner — matching the '🎖️ Season ending soon' title.
+    const withEscape = alertPayload('u1', [esc()], null, seasonNudge, 0)!;
+    expect(fileNames(withEscape)).toEqual(['care_neglect.webp']);
+    const withIncome = alertPayload('u1', [], { capAt: 0, pending: 500, capHours: 8 }, seasonNudge, 0)!;
+    expect(fileNames(withIncome)).toEqual(['collect.webp']);
+    for (const p of [withEscape, withIncome]) {
+      expect('attachments' in (p as Record<string, unknown>)).toBe(false);
+    }
   });
 
   it('returns null when there is nothing to report', () => {

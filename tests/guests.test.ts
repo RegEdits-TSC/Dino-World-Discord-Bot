@@ -4,6 +4,7 @@ import type { EmbedBuilder, ButtonInteraction } from 'discord.js';
 import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
+import { recomputeRating } from '../src/modules/park/rating.js';
 import { attendanceOf } from '../src/modules/park/attendance.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
 import { readStat } from '../src/core/stats.js';
@@ -311,7 +312,45 @@ describe('/guests', () => {
     expect(JSON.stringify(embed)).toMatch(/attendance/i);
   });
 
-  it('view stamps the attendance high-water before it reads it, so a pre-migration account is not locked out of its own screen', async () => {
+  it('view never restamps the live park rating, so reading the screen cannot revoke /trade', async () => {
+    // No rich(): this fixture is about parkRating, not cash. Eight herbivore species in
+    // one L1 herbivore paddock, all fed at t=0 — parkRaw 1, collection weight 22/190,
+    // comfort 0.75 (correct diet, no decor).
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 500_000 }, 'test:seed', 0);
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    const species = [
+      'triceratops', 'stegosaurus', 'parasaurolophus', 'iguanodon',
+      'ankylosaurus', 'brachiosaurus', 'gallimimus', 'maiasaura',
+    ];
+    ctx.db.insert(schema.dinos).values(species.map((speciesId) => ({
+      userId: 'u1', lotId: lot.id, speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }))).run();
+    // Stamp the rating once at full comfort, exactly as a real build/feed/assign would.
+    recomputeRating(ctx, 'u1');
+    const before = ctx.db.select().from(schema.users).all()[0].parkRating;
+    expect(before).toBe(243);
+
+    // 20h of hunger drain: comfort has fallen to 58.33% of its fed value, but escapeAt
+    // for this fixture is 40h, so nothing has escaped and the ONLY term that moved is
+    // comfort. That isolates the defect from the escaped-dino one.
+    ctx.setNow(20 * 3_600_000);
+
+    const i = fakeCommand({ name: 'guests', sub: 'view', user: 'u1' });
+    await cmd().execute(ctx, i.asChatInput());
+
+    // The whole point: a read path may not move the column liveRating() checks against
+    // TRADE_MIN_RATING at both createTrade and acceptTrade.
+    expect(ctx.db.select().from(schema.users).all()[0].parkRating).toBe(before);
+    expect(i.replies).toHaveLength(1);   // and the screen still rendered
+
+    // Not vacuous: a recompute at this same instant genuinely lowers the stored value by
+    // 79 points (0.79 star). If this line ever stops dropping, the assertion above has
+    // stopped proving anything and the fixture needs rebuilding, not the assertion.
+    expect(recomputeRating(ctx, 'u1').rating).toBe(164);
+  });
+
+  it('claim stamps the attendance high-water before it reads it, so a pre-migration account is not locked out of its rewards — and view never does', async () => {
     // No rich() here — attendanceHighWater is left at its migration default of 0, the
     // same starting point as every account that existed before this column shipped.
     getOrCreateUser(ctx, 'u1', 'Reg');
@@ -331,7 +370,13 @@ describe('/guests', () => {
     expect(liveAttendance).toBeGreaterThanOrEqual(ATTENDANCE_MILESTONES[0].at);
     expect(ctx.db.select().from(schema.users).all()[0].attendanceHighWater).toBe(0);
 
-    const i = fakeCommand({ name: 'guests', sub: 'view', user: 'u1' });
+    // view writes nothing at all — not the rating, and not the high-water either.
+    const viewI = fakeCommand({ name: 'guests', sub: 'view', user: 'u1' });
+    await cmd().execute(ctx, viewI.asChatInput());
+    expect(ctx.db.select().from(schema.users).all()[0].attendanceHighWater).toBe(0);
+
+    // claim leads directly to a payout, so it stamps first and then reads.
+    const i = fakeCommand({ name: 'guests', sub: 'claim', user: 'u1' });
     await cmd().execute(ctx, i.asChatInput());
 
     expect(ctx.db.select().from(schema.users).all()[0].attendanceHighWater).toBe(liveAttendance);
@@ -339,5 +384,40 @@ describe('/guests', () => {
     expect(reply.components).toHaveLength(1);
     expect(reply.components![0].toJSON().components[0].custom_id)
       .toBe(`guests:claim:u1:${ATTENDANCE_MILESTONES[0].at}`);
+  });
+
+  it('every /guests surface ships the guests banner and its file together', async () => {
+    rich(ATTENDANCE_MILESTONES[0].at);
+    for (const sub of ['view', 'build', 'claim'] as const) {
+      const i = fakeCommand({
+        name: 'guests', sub, user: 'u1',
+        options: sub === 'build' ? { attraction: 'picnic_lawn' } : {},
+      });
+      await cmd().execute(ctx, i.asChatInput());
+      const payload = i.replies[0] as { embeds: EmbedBuilder[]; files?: Array<{ name?: string | null }> };
+      expect(payload.embeds[0].toJSON().image?.url, sub).toBe('attachment://guests.webp');
+      // toEqual on the whole list, not toContain: attach() APPENDS, so a second slot
+      // wired later would show up here rather than hiding behind a membership check.
+      expect(payload.files!.map((f) => f.name), sub).toEqual(['guests.webp']);
+    }
+  });
+
+  // An i.update carrying `files` REPLACES the message's whole attachment set. The claim
+  // handler re-renders through guestsPayload, so the banner has to be re-attached on the
+  // post-claim render or the message the player just used loses the image it had — a
+  // silent regression with no error anywhere, and one no existing test could see, since
+  // this module shipped no art before and nothing asserted files/attachments on this path.
+  it('the claim re-render carries the banner again rather than blanking the message art', async () => {
+    rich(ATTENDANCE_MILESTONES[0].at);
+    const i = fakeButton({ customId: `guests:claim:u1:${ATTENDANCE_MILESTONES[0].at}`, user: 'u1' });
+    await comp().execute(ctx, i.asInteraction() as unknown as ButtonInteraction);
+    const update = i.replies[0] as { embeds: EmbedBuilder[]; files?: Array<{ name?: string | null }> };
+    expect(update.embeds[0].toJSON().image?.url).toBe('attachment://guests.webp');
+    expect(update.files!.map((f) => f.name)).toEqual(['guests.webp']);
+    // And NEVER a hand-set attachments key. The fightFrames rule (attachments: []
+    // mandatory and unconditional) exists because one MessagePayload object reaches two
+    // send sites and each must shed the other's set; this payload is built fresh by
+    // guestsPayload and sent exactly once, so the replacement set is already identical.
+    expect('attachments' in update).toBe(false);
   });
 });

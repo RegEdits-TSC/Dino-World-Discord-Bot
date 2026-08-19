@@ -33,7 +33,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Income accrues while dinos are comfortable, up to your Visitor Center cap — collect often.',
     'Dinos in the wrong-diet paddock earn half comfort — the bot warns before you assign one.',
   ].join('\n') },
-  eggs: { title: '🥚 Eggs', art: { kind: 'eggs', name: 'rare' }, body: [
+  eggs: { title: '🥚 Eggs', art: { kind: 'banners', name: 'eggs_incubator' }, body: [
     '`/eggs` — your eggs and incubator status.',
     '`/incubate egg:<id>` — start the timer (slots grow with the Hatchery Lab).',
     '`/hatch egg:<id>` — crack a ready egg and meet your dino.',
@@ -71,7 +71,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Up to five Visit buttons sit under the board — click one to jump straight into that player\'s park.',
     'Rating grows with dinos, lots, and comfort; it gates expeditions, shop tiers, and Mythics.',
   ].join('\n') },
-  battles: { title: '⚔️ Battles', art: { kind: 'sites', name: 'coastal_dig-banner' }, body: [
+  battles: { title: '⚔️ Battles', art: { kind: 'banners', name: 'battles' }, body: [
     '`/battle chapters` — the campaign map: 7 chapters themed to the expedition sites, 5 stages each, the 5th a boss.',
     '`/battle fight stage:<stage> dino1:<id> [dino2] [dino3]` — send a squad of 1–3 dinos; the fight auto-resolves and plays back as a short cinematic (press Skip to jump to the result).',
     'Energy: every attempt costs ⚡ 1–3 by stage, win or lose. You hold up to 10 and regain 1 every 10 minutes.',
@@ -87,7 +87,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     'Bred eggs roll better trait odds than a wild hatch, and there\'s a small chance of a rarity upgrade (never past Legendary — breeding can never produce a Mythic).',
     `\`/splice dino:<id> slot:<1|2>\` — spend ${SPLICE_SHARD_COST} shards to re-roll one trait slot. The replacement is random and can be worse than what you had.`,
   ].join('\n') },
-  daily: { title: 'Daily quests', body: [
+  daily: { title: 'Daily quests', art: { kind: 'banners', name: 'daily' }, body: [
     '`/daily` — see today\'s 3 quests, your streak, and claim any that are complete.',
     'Quests reset every day at UTC midnight; anything left unclaimed is forfeited, not carried over.',
     'Claiming on consecutive days builds a streak — milestones at 3, 7, 14 days, then every 30 days after, pay a bonus chest of cash, shards, or an egg.',
@@ -95,13 +95,13 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '`/achievements` — lifetime progress across 12 tracks, each with 4 tiers (bronze/silver/gold/platinum) paying cash and shards as you cross them.',
     '`/season` — the current 30-day season track: points from nine capped sources, eight reward rungs, and a Claim button. Crossing the 800-point capstone earns a permanent badge on your park card; unclaimed rungs forfeit at rollover, the badge never does.',
   ].join('\n') },
-  guests: { title: '🎡 Guests', body: [
+  guests: { title: '🎡 Guests', art: { kind: 'banners', name: 'guests' }, body: [
     'Attendance measures how many visitors your park draws — a gate for the attraction catalog, not a currency.',
     '`/guests view` — your attendance and its three terms (species variety, attraction draw, Visitor Center level), the attractions you own, the next one still locked, and any milestone reward ready to claim.',
     '`/guests build attraction:<kind>` — build a new attraction, or upgrade one you already own to its next level. Priced in cash; each of the six kinds unlocks at its own attendance threshold.',
     '`/guests claim` — see and claim any attendance milestone your high-water has crossed. Milestones pay once each, permanently — cash, shards, food, or an egg.',
   ].join('\n') },
-  duel: { title: '⚔️ Duels', body: [
+  duel: { title: '⚔️ Duels', art: { kind: 'banners', name: 'duel' }, body: [
     'Duels are free exhibition fights against another player. They cost no energy and pay no cash, shards or XP — the only thing at stake is your duel rating.',
     '`/duel ghost opponent:<player>` — fight a snapshot of their squad right now. They do not need to be online; they are told afterwards.',
     '`/duel challenge opponent:<player>` — post a live challenge they can Accept or Decline. It expires after 15 minutes.',

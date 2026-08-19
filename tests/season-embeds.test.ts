@@ -40,6 +40,15 @@ describe('seasonPayload', () => {
     expect(text).toContain('Expeditions **15**/250');
     expect(text).toContain('30 days left');
   });
+
+  // Was a borrow: the season hub shipped with banners/daily, the same picture /daily
+  // already uses, so the two hubs were indistinguishable at a glance.
+  it('attaches its own season banner, not the daily hub borrow', () => {
+    rollSeason(ctx, 'p');
+    const payload = seasonPayload(seasonView(ctx, 'p')!, 'p');
+    expect(payload.files!.map((f) => f.name)).toEqual(['season.webp']);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://season.webp');
+  });
 });
 
 describe('seasonClaimPayload', () => {
@@ -50,5 +59,13 @@ describe('seasonClaimPayload', () => {
     expect(text).toContain('17,000');
     expect(text).toContain('15');
     expect(text).toContain('Royal Greens');
+  });
+
+  it('dresses the claim reply with the season banner', () => {
+    rollSeason(ctx, 'p');
+    track(ctx, 'p', 'expeditions_claimed', 45);   // 225 = rungs 1-3
+    const payload = seasonClaimPayload(claimSeason(ctx, 'p'));
+    expect(payload.files!.map((f) => f.name)).toEqual(['season.webp']);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://season.webp');
   });
 });

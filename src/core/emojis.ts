@@ -28,6 +28,7 @@ export const EMOJI_FALLBACK: Record<string, string> = {
   dw_event_cold_snap: '❄️', dw_event_bumper_harvest: '🌾',
   dw_event_market_panic: '📉', dw_event_blood_moon: '🩸',
   dw_event_migration_season: '🧬',
+  dw_guest: '👥', dw_season: '🏅', dw_duel: '⚔️', dw_landmark: '🗿',
 };
 
 let tags = new Map<string, string>();

@@ -42,8 +42,13 @@ export function setFeaturedDino(ctx: Ctx, userId: string, dinoId: number | null)
   return getSpecies(dino.speciesId);
 }
 
-/** What the card renders: a display name plus the archetype×diet key the art uses. */
-export interface Featured { name: string; archetype: string; diet: string }
+/**
+ * What the card renders: a display name, the species id (the art OVERRIDE key) and the
+ * archetype×diet pair its art falls back to. speciesId is required, not optional — every
+ * producer resolves a real dino row, and an optional field would let a call site silently
+ * skip the override and always render the shared archetype art.
+ */
+export interface Featured { name: string; speciesId: string; archetype: string; diet: string }
 
 /**
  * Resolve the stored id to something renderable, or null.
@@ -62,5 +67,5 @@ export function featuredFor(
     .where(and(eq(schema.dinos.id, user.featuredDinoId), eq(schema.dinos.userId, user.discordId))).get();
   if (!dino) return null;
   const species = getSpecies(dino.speciesId);
-  return { name: dino.nickname ?? species.name, archetype: species.archetype, diet: species.diet };
+  return { name: dino.nickname ?? species.name, speciesId: species.id, archetype: species.archetype, diet: species.diet };
 }

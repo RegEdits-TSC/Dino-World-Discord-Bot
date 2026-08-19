@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
+import { escapeMoment } from '../../core/clock.js';
 import { toClockDinos, facilityLevel, levelValue } from './service.js';
 import { attractionFor } from '../../data/attractions.js';
 import { attendanceFrom } from '../../data/attendance.js';
@@ -18,10 +19,18 @@ export interface Attendance {
  * recomputeRating, which only ever runs in a write context — the legacyRank / bumpLegacyBest
  * split (./ranks.ts) applied again.
  *
- * The dino predicate is byte-identical to recomputeRating's `assigned` filter (./rating.ts:18)
- * on purpose: it reads the STORED escapedAt column, never the computed escapeAt instant, so
- * every surface that settles escapes first sees a fresh value and no surface has to settle
- * just to render a number.
+ * The dino predicate is TIME-AWARE, via escapeMoment (../../core/clock.js): it resolves a
+ * stored escapedAt when one is set and otherwise computes the escape instant, so a dino that
+ * is live-escaped but never settled stops counting the moment it crosses. Reading the stored
+ * column alone let attendanceHighWater — monotone, and the column claimMilestone pays out on
+ * with no path back down — bank guests from dinos that were long gone, because neither
+ * /guests build nor /build nor /upgrade calls settleEscapes and nothing else had settled
+ * them. ratingHighWater was never exposed to this shape: baseComfortAt is time-aware, so a
+ * starving dino already contributes near-zero comfort there.
+ *
+ * This is a FILTER and never a settling call. escapeMoment is a pure read — the same reason
+ * duels' eligibleDinos (../duels/service.ts) uses it instead of settleEscapes when resolving
+ * a DEFENDER's squad from a command they never ran.
  *
  * Nothing here reads hunger, comfort, the world event or the season: attendance is a GATE,
  * and a gate that moves with the clock or the calendar has no stable threshold. It also never
@@ -31,7 +40,8 @@ export interface Attendance {
  */
 export function attendanceOf(ctx: Ctx, userId: string): Attendance {
   const { clockDinos, lots } = toClockDinos(ctx, userId);
-  const assigned = clockDinos.filter((d) => d.paddock !== null && d.escapedAt === null);
+  const now = ctx.now();
+  const assigned = clockDinos.filter((d) => d.paddock !== null && escapeMoment(d, now) === null);
   const distinctSpecies = new Set(assigned.map((d) => d.species.id)).size;
 
   const rows = ctx.db.select().from(schema.attractions)

@@ -34,22 +34,30 @@ describe('emojiTag', () => {
     expect(emojiTag('constructor')).toBe('');
     expect(emojiTag('toString')).toBe('');
   });
-  it('fallback table covers exactly the 53 spec names', () => {
+  it('fallback table covers exactly the 57 spec names', () => {
     expect(Object.keys(EMOJI_FALLBACK).sort()).toEqual([
       'dw_alert', 'dw_cash', 'dw_chest',
       'dw_dino_common', 'dw_dino_epic', 'dw_dino_legendary', 'dw_dino_mythic', 'dw_dino_rare', 'dw_dino_uncommon',
+      'dw_duel',
       'dw_event_amber_storm', 'dw_event_blood_moon', 'dw_event_bumper_harvest', 'dw_event_clear_skies',
       'dw_event_cold_snap', 'dw_event_fossil_rush', 'dw_event_heat_wave', 'dw_event_market_panic',
       'dw_event_migration_season',
-      'dw_ferns', 'dw_fish', 'dw_food', 'dw_fruit_basket', 'dw_goat', 'dw_hunger',
+      'dw_ferns', 'dw_fish', 'dw_food', 'dw_fruit_basket', 'dw_goat', 'dw_guest', 'dw_hunger',
+      'dw_landmark',
       'dw_lot_carnivore', 'dw_lot_food_court', 'dw_lot_genelab', 'dw_lot_hatchery', 'dw_lot_herbivore', 'dw_lot_visitor',
       'dw_prime_steak', 'dw_quest',
       'dw_rarity_common', 'dw_rarity_epic', 'dw_rarity_legendary', 'dw_rarity_mythic', 'dw_rarity_rare', 'dw_rarity_uncommon',
-      'dw_royal_greens', 'dw_shard', 'dw_site_abyssal_trench', 'dw_site_amber_ridge', 'dw_site_coastal_dig',
+      'dw_royal_greens', 'dw_season', 'dw_shard', 'dw_site_abyssal_trench', 'dw_site_amber_ridge', 'dw_site_coastal_dig',
       'dw_site_containment_site', 'dw_site_founders_park', 'dw_site_frozen_cliffs', 'dw_site_volcano_core',
       'dw_star', 'dw_streak',
       'dw_trait_care', 'dw_trait_combat', 'dw_trait_income', 'dw_trait_meta',
     ]);
+  });
+  it('the four utility icons fall back to unicode when no map is loaded', () => {
+    expect(emojiTag('dw_guest')).toBe('👥');
+    expect(emojiTag('dw_season')).toBe('🏅');
+    expect(emojiTag('dw_duel')).toBe('⚔️');
+    expect(emojiTag('dw_landmark')).toBe('🗿');
   });
 });
 

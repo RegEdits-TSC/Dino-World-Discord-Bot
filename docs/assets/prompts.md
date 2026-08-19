@@ -4,7 +4,7 @@ The volcano/frozen banners and volcano thumb were generated with ChatGPT image
 generation; the remaining coastal/amber banners and the coastal/amber/frozen
 thumbs were generated with Higgsfield Nano Banana Pro. The six egg rarities were
 generated with Higgsfield Nano Banana Pro as a reference chain (see the Egg
-rarities section). The 26 embed banners were generated with Higgsfield
+rarities section). The 32 embed banners were generated with Higgsfield
 Nano Banana Pro, `care_neglect` as a reference chain off `care` and
 `battle_defeat` off `battle_victory`. The six hatch cracks were generated as
 reference-chain edits of their own egg icons. These prompts are the source of
@@ -41,6 +41,12 @@ icons in `assets/images/eggs/` (glossy cartoon game style):
 | `assets/images/park/landmark-a.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 1–2 (Stone Marker, Fossil Plinth) |
 | `assets/images/park/landmark-b.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 3–4 (Bronze Sentinel, Amber Obelisk) |
 | `assets/images/park/landmark-c.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 5–6 (Grand Rotunda, Titan Monument) |
+| `assets/images/park/attraction-picnic_lawn.webp` | 270×150 | `/park view` attraction cell art, `picnic_lawn` |
+| `assets/images/park/attraction-gift_shop.webp` | 270×150 | `/park view` attraction cell art, `gift_shop` |
+| `assets/images/park/attraction-viewing_platform.webp` | 270×150 | `/park view` attraction cell art, `viewing_platform` |
+| `assets/images/park/attraction-amber_carousel.webp` | 270×150 | `/park view` attraction cell art, `amber_carousel` |
+| `assets/images/park/attraction-sky_gondola.webp` | 270×150 | `/park view` attraction cell art, `sky_gondola` |
+| `assets/images/park/attraction-grand_atrium.webp` | 270×150 | `/park view` attraction cell art, `grand_atrium` |
 
 \* Except the shipped `assets/images/sites/volcano_core-thumb.webp`, which is
 **1254×1254** — a discrepancy from the original PNG's IHDR that predates the
@@ -53,13 +59,30 @@ encoded through `@napi-rs/canvas`'s `canvas.toBuffer('image/webp', 95)`, and
 indistinguishable from PNG at the sizes Discord renders. The conversion pass that
 introduced it took the 40 files committed at the time from **63.4 MB of PNG to 8.9 MB
 of WebP** — about 86% smaller in aggregate.
-`scripts/fit-art.mjs` emits it directly, so both modes write the shipped format and no
+`scripts/fit-art.mjs` emits it directly, so every mode writes the shipped format and no
 separate conversion step is needed. Intermediates are exempt: a generator's output and
 the `remove_background` result in the walkthroughs below are whatever the tool produced
 (usually PNG), and only the final write is WebP. `assets/emojis/png/` is **not** WebP —
 Discord's application-emoji upload expects PNG and `manifest.json` hashes those exact
 bytes — and `assets/emojis/svg/` stays SVG because the park renderer decodes it
 synchronously.
+
+**Post-processing modes (`scripts/fit-art.mjs`).** Every mode writes WebP q95 and
+takes whatever the generator emitted (usually PNG) as its source.
+
+| Mode | Output | Fit | Used by |
+|---|---|---|---|
+| `node scripts/fit-art.mjs banner <src> <dest>` | 1536×1024 (3:2) | cover-scale, center-crop | `assets/images/sites/<id>-banner.webp`, `assets/images/banners/` |
+| `node scripts/fit-art.mjs ground <src> <dest>` | 1200×800 (3:2) | cover-scale, center-crop | `assets/images/park/ground{,-wet,-dry,-cold}.webp` |
+| `node scripts/fit-art.mjs band <src> <dest>` | 270×150 (1.8:1) | cover-scale, center-crop | `assets/images/park/attraction-<kind>.webp`, `assets/images/park/landmark-{a,b,c}.webp` — anything the park renderer draws 1:1 at `TILE_W`×`TILE_H` |
+| `node scripts/fit-art.mjs cutout <src> <dest>` | 1024×1024 transparent | defringe, then whole-bbox fit at a 31px margin | `assets/images/hatch/`, `assets/images/dinos/` |
+
+`band` exists because 270×150 is 1.8:1 and no generator offers that aspect ratio:
+generate at 16:9 and let the mode crop. It is the `ground` mode's arithmetic with
+different constants, nothing more. It is **not** a complete recipe for the two
+tile plates — those need a bounding-box crop first, described under Park map —
+and it is **not** interchangeable with `cutout`, which fits a transparent
+subject rather than cover-cropping an opaque frame.
 
 **Decode trap: Content Credentials (C2PA) in a source PNG.** *Symptom:*
 `scripts/fit-art.mjs` — or any other pass that hands a freshly generated PNG to
@@ -406,7 +429,7 @@ fixed it; keep that block verbatim on any future regeneration of this scene.
 
 ## Embed banners
 
-26 wide banners for the surfaces that have no site or egg art of their
+32 wide banners for the surfaces that have no site or egg art of their
 own. All generated with Higgsfield Nano Banana Pro at 3:2, then scaled to
 1536×1024 (the generator emits 1264×848; scaling to full width leaves ~6px of
 vertical excess, which is center-cropped).
@@ -424,12 +447,18 @@ vertical excess, which is center-cropped).
 | `assets/images/banners/collect.webp` | 1536×1024 | `park:collect` reply embed image |
 | `assets/images/banners/rescue.webp` | 1536×1024 | `/rescue` success embed image |
 | `assets/images/banners/dino_roster.webp` | 1536×1024 | `/dino list` embed image |
-| `assets/images/banners/eggs_incubator.webp` | 1536×1024 | `/eggs` embed image |
+| `assets/images/banners/eggs_incubator.webp` | 1536×1024 | `/eggs` embed image, `/help topic:eggs` |
 | `assets/images/banners/sell.webp` | 1536×1024 | `/sell` confirmation prompt embed image |
 | `assets/images/banners/gene_lab.webp` | 1536×1024 | `/breed` confirm/status/claim embed image |
 | `assets/images/banners/gene_splice.webp` | 1536×1024 | `/splice` preview/result embed image |
-| `assets/images/banners/daily.webp` | 1536×1024 | `/daily` hub embed image |
-| `assets/images/banners/achievements.webp` | 1536×1024 | `/achievements` embed image |
+| `assets/images/banners/daily.webp` | 1536×1024 | `/daily` hub + `daily:claim` embed image, `/help topic:daily` |
+| `assets/images/banners/achievements.webp` | 1536×1024 | `/achievements` + `ach:claimall` embed image |
+| `assets/images/banners/guests.webp` | 1536×1024 | `/guests view`, `/guests build`, `/guests claim` and `/help topic:guests` embed image |
+| `assets/images/banners/dex.webp` | 1536×1024 | `/dex list` embed image |
+| `assets/images/banners/landmark.webp` | 1536×1024 | `/park landmark` embed image |
+| `assets/images/banners/season.webp` | 1536×1024 | `/season` hub + `season:claim` embed image, and the season-ending alert DM |
+| `assets/images/banners/duel.webp` | 1536×1024 | `/duel challenge`, `/duel record` and the duel result embed image, `/help topic:duel` |
+| `assets/images/banners/battles.webp` | 1536×1024 | `/help topic:battles` embed image |
 | `assets/images/banners/event-clear_skies.webp` | 1536×1024 | `/world` hub embed image, Clear Skies |
 | `assets/images/banners/event-amber_storm.webp` | 1536×1024 | `/world` hub embed image, Amber Storm |
 | `assets/images/banners/event-fossil_rush.webp` | 1536×1024 | `/world` hub embed image, Fossil Rush |
@@ -656,6 +685,188 @@ pipeline as the rest of this section.
 > colors, strong glossy highlights, clean cel shading with smooth gradients,
 > polished game-asset look. No text, no lettering, no words, no numbers, no
 > signage writing anywhere in the scene, no human characters, no UI elements.
+
+**Guests (`guests.webp`):** generated with model `nano_banana_pro` (the API
+silently routes this to `nano_banana_2`) at aspect ratio `3:2`, source output
+1264×848, then `node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024
+WebP q95 — same pipeline as the rest of this section. Generated with
+`help.webp` **and** `leaderboards.webp` attached as `image` references: the
+first carries the warm park-entrance vocabulary, the second is the only
+existing banner with a crowd of cartoon dinosaurs and bunting, and the guests
+plaza has to read as the same park as both.
+
+**The no-human clause is doubled on this one prompt, and that is load-bearing.**
+Every banner in this section forbids human characters, but a scene whose whole
+subject is *visitors* is the one that will render people anyway; a single human
+figure makes the banner unusable beside the other 26, and no test can see it.
+Keep "no human characters, no people, no human visitors of any kind" verbatim on
+any regeneration. The visitors are cartoon dinosaurs, the same way `trading.webp`
+staffs its market stall.
+
+> A wide cartoon scene of a busy dinosaur park visitor plaza on a bright open
+> day: a paved central concourse running back from a timber entrance arch with
+> turnstile gates, a striped gift-shop awning on the left and a picnic lawn
+> with chequered blankets and benches on the right, a raised timber viewing
+> platform on stilts behind them, a cable gondola strung between two pylons
+> overhead, colourful bunting and balloons tied to the lamp posts, a crowd of
+> small friendly cartoon dinosaurs of assorted colours strolling the concourse
+> in ones and twos, lush palms and ferns beyond the fence line, warm cheerful
+> midday daylight. Glossy cartoon mobile-game art style, bold dark outlines,
+> vibrant saturated colors, strong glossy highlights, clean cel shading with
+> smooth gradients, polished game-asset look. No text, no lettering, no words,
+> no numbers, no signage writing anywhere in the scene, no human characters, no
+> people, no human visitors of any kind, no UI elements.
+
+**Dex (`dex.webp`):** generated with model `nano_banana_pro` (the API silently
+routes this to `nano_banana_2`) at aspect ratio `3:2`, source output 1264×848,
+then `node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024 WebP q95 —
+same pipeline as the rest of this section. Generated with `sell.webp` **and**
+`daily.webp` attached as `image` references: `sell.webp` is the closest existing
+composition (a warm timber bench of ledger, scale and props) and `daily.webp` is
+the banner that already solved this prompt's hardest problem.
+
+**The lettering risk here is the highest in this section**, because the subject
+is an open book on a desk pinned with index cards — three surfaces a model will
+happily letter. Two defences are load-bearing together, and neither is enough
+alone: the objects are described as *blank* and *unlettered* in the positive
+part of the prompt (the `daily.webp` "three blank scroll-shaped tags" trick, and
+the `collect.webp` "blank chalkboard" fix before it), and the negative clause is
+extended with "no handwriting" beyond the usual expanded form. `collect.webp`
+rendered a carved "PARK ENTRANCE" sign past a plain "No text" clause; assume the
+same of any regeneration that drops either defence.
+
+> A wide cartoon scene of a dinosaur park field-study desk: a heavy
+> leather-bound field guide lying open at the centre of a worn timber bench, its
+> blank unlettered pages carrying only hand-painted dinosaur portraits and empty
+> ruled lines, a brass magnifying glass resting across one page, a corkboard
+> behind it pinned with amber specimens, pressed ferns and small blank index
+> cards, a short stack of closed volumes and a cup of ink brushes beside the
+> guide, a lit brass desk lamp casting warm light from the upper left, jungle
+> foliage visible through a window beyond. Glossy cartoon mobile-game art style,
+> bold dark outlines, vibrant saturated colors, strong glossy highlights, clean
+> cel shading with smooth gradients, polished game-asset look. No text, no
+> lettering, no words, no numbers, no handwriting, no signage writing anywhere
+> in the scene, no human characters, no UI elements.
+
+**Landmark (`landmark.webp`):** generated with model `nano_banana_pro` (the API
+silently routes this to `nano_banana_2`) at aspect ratio `3:2`, source output
+1264×848, then `node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024
+WebP q95 — same pipeline as the rest of this section. Generated with
+`help.webp` **and** `leaderboards.webp` attached as `image` references:
+`help.webp` carries the carved-monument register and the golden-hour god rays,
+`leaderboards.webp` is the only existing banner built around a ceremonial plaza.
+
+**Do not confuse this with `park/landmark-{a,b,c}` further down this file.**
+Those three are 270×150 map tiles that `drawLandmark` paints a tier name over
+with no scrim, which is why each of them carries a hard contrast requirement and
+an explicit dark kerb band baked into the composition. This is a 1536×1024 embed
+image with no text drawn over it anywhere, so none of that applies — copying the
+"BOTTOM FIFTH is a solid dark slate kerb band" clause across would darken a fifth
+of the banner for nothing.
+
+**No inscriptions is the load-bearing clause.** A monument is the single object a
+model is most likely to letter — a dedication plaque on the plinth reads as
+deliberate and survives casual review. The negative clause names plaques,
+dedication inscriptions and carved writing explicitly, on top of the expanded
+no-text form used elsewhere in this section, and the column banners are
+specified as plain and colored rather than left open to interpretation.
+
+> A wide cartoon scene of a dinosaur park monument plaza at golden hour: a broad
+> paved circle ringed by low stone kerbs and clipped hedges, a tall tiered
+> pale-stone monument rising at its centre banded with glowing amber inlay and
+> topped with a gleaming verdigris-bronze dinosaur silhouette, a shallow
+> reflecting pool in front of it catching the light, flanking marble columns hung
+> with plain colored banners, a small friendly cartoon dinosaur standing at the
+> plaza edge for scale, lush park greenery and distant misty green hills behind,
+> warm golden evening light with long soft shadows and gentle god rays. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated colors,
+> strong glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no plaques, no
+> dedication inscriptions or carved writing anywhere on the monument or its base,
+> no signage writing anywhere in the scene, no human characters, no UI elements.
+
+**Season (`season.webp`):** generated with model `nano_banana_pro` (the API
+silently routes this to `nano_banana_2`) at aspect ratio `3:2`, source output
+1264×848, then `node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024
+WebP q95 — same pipeline as the rest of this section. The three cloth hangings
+stand in for the wet / dry / cold cycle deliberately: the season track rides
+the same 30-day rotation the park ground art already renders, so the banner
+has to read as "this season" rather than as a generic festival. Generated with
+`leaderboards.webp` **and** `achievements.webp` attached as `image`
+references: the first carries the ceremonial-plaza bunting and pennant
+vocabulary, the second the medal-on-ribbon vocabulary, and the season banner
+combines both into one scene.
+
+> **season.webp:** A wide cartoon scene of a dinosaur park season festival
+> ground: a tall carved timber totem post in the center hung with a large
+> gleaming gold medal on a deep purple ribbon, a row of four wooden reward
+> posts stepping up in height beside it, each topped with a small prize — a
+> plump coin sack, a glowing crystal shard, a bundle of fresh ferns, a
+> speckled egg in straw — strings of colorful triangular pennants running
+> between the posts, three large painted cloth hangings behind them showing a
+> rain-soaked paddock, a sun-baked golden plain, and a frost-dusted ridge, a
+> cheerful cartoon dinosaur looking up at the medal with its head raised, warm
+> late-afternoon light with petals drifting through the air. Glossy cartoon
+> mobile-game art style, bold dark outlines, vibrant saturated colors, strong
+> glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no human characters, no UI elements.
+
+A first attempt rendered a plain dollar sign on the coin sack — not signage,
+but the same class of stray glyph the `collect.webp` note above warns about.
+The prompt above is the intended, load-bearing version; the fix that actually
+shipped strengthened "a plump coin sack" to "a plump coin sack with no
+markings or symbols on it" and added "no dollar signs, no currency symbols" to
+the negative clause. Regenerating from the shorter version risks reproducing
+the glyph.
+
+**Duel (`duel.webp`):** generated with model `nano_banana_pro` (the API
+silently routes this to `nano_banana_2`) at aspect ratio `3:2`, source output
+1264×848, then `node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024
+WebP q95 — same pipeline as the rest of this section. The empty benches and
+the "sporting rather than violent" clause are deliberate and should survive
+any regeneration: `battle_victory.webp` and `battle_defeat.webp` already own
+the campaign arena, and a duel stakes nothing but a rating, so this has to
+read as an exhibition ground rather than a second war pit.
+
+> **duel.webp:** A wide cartoon scene of a dinosaur park exhibition duelling
+> ring at midday: a circular raked sand arena ringed by a low timber fence and
+> rows of empty tiered wooden benches, two cartoon dinosaurs squared off across
+> the sand facing each other mid-stare — a stocky horned ceratopsian on the
+> left digging in a front foot, a lean green theropod on the right crouched low
+> with its tail raised — a pair of crossed wooden practice poles planted at the
+> ring's edge and a rolled coil of rope beside them, a curl of dust drifting
+> between the two, lush palms and a clear blue sky behind, bright even daylight,
+> friendly and sporting rather than violent. Glossy cartoon mobile-game art
+> style, bold dark outlines, vibrant saturated colors, strong glossy highlights,
+> clean cel shading with smooth gradients, polished game-asset look. No text, no
+> lettering, no words, no numbers, no signage writing anywhere in the scene, no
+> human characters, no UI elements.
+
+**Battles (`battles.webp`):** generated with model `nano_banana_pro` (the API
+silently routes this to `nano_banana_2`) at aspect ratio `3:2`, source output
+1264×848, then `node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024
+WebP q95 — same pipeline as the rest of this section. Two constraints on any
+regeneration. It must read as the campaign as a WHOLE — a route with stages
+still ahead of it, hence the receding chain of cairns and the tiered ridges —
+because it replaces a borrow of `sites/coastal_dig-banner`, i.e. the tutorial
+site standing in for all seven chapters. And it must not converge on
+`battle_victory.webp` / `battle_defeat.webp`, which are single-moment arena
+scenes: this is the road to the arena, not the arena.
+
+> **battles.webp:** A wide cartoon scene of the campaign trail leading out of a
+> dinosaur park: a rocky canyon pass opening onto a chain of stacked stone
+> waypoint cairns marching away into the distance, each cairn topped with a
+> small carved dinosaur skull, a heavy timber gate standing open at the near end
+> with two crossed wooden shields lashed to its posts, a broad armored
+> spike-tailed dinosaur planted at the trailhead in a braced ready stance,
+> tiered ridges rising behind one another toward a smoking volcano on the far
+> horizon, dramatic late-afternoon light with long shadows and dust hanging in
+> the air. Glossy cartoon mobile-game art style, bold dark outlines, vibrant
+> saturated colors, strong glossy highlights, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no lettering, no words, no
+> numbers, no signage writing anywhere in the scene, no human characters, no UI
+> elements.
 
 **Gene Lab (`gene_lab.webp`) and Gene Splice (`gene_splice.webp`):** generated
 with model `nano_banana_pro` (the API silently routes this to `nano_banana_2`)
@@ -1096,6 +1307,386 @@ Egg rarities so it is a choice, not a third undocumented margin.
   head, a sharp predatory bite, wide watchful eyes, and violet-and-teal scales
   that read as a clever pack helper rather than a brute.
 
+## Hero species portraits
+
+Eight per-species portraits for the rarest species in the roster — the five
+legendaries and the three mythics — resolved by `dinoImage`
+(`src/core/images.ts`) ahead of the archetype art, and used at every surface
+that shows one dino: the `/dex view` entry thumbnail, the `hatch:crack` reveal
+thumbnail, the featured dino on the park card, the duel lead, and the non-boss
+battle thumbnail.
+
+| File | Size | Use |
+|---|---|---|
+| `assets/images/dinos/tyrannosaurus.webp` | 1024×1024, transparent | per-species override for `dinos/bruiser-carnivore.webp` |
+| `assets/images/dinos/spinoraptor.webp` | 1024×1024, transparent | per-species override for `dinos/bruiser-carnivore.webp` |
+| `assets/images/dinos/liopleurodon.webp` | 1024×1024, transparent | per-species override for `dinos/bruiser-carnivore.webp` |
+| `assets/images/dinos/indominus.webp` | 1024×1024, transparent | per-species override for `dinos/bruiser-carnivore.webp` |
+| `assets/images/dinos/mosasaurus.webp` | 1024×1024, transparent | per-species override for `dinos/tank-carnivore.webp` |
+| `assets/images/dinos/ultimasaurus.webp` | 1024×1024, transparent | per-species override for `dinos/tank-carnivore.webp` |
+| `assets/images/dinos/quetzalcoatlus.webp` | 1024×1024, transparent | per-species override for `dinos/swift-carnivore.webp` |
+| `assets/images/dinos/indoraptor.webp` | 1024×1024, transparent | per-species override for `dinos/swift-carnivore.webp` |
+
+**Override, never replacement.** `dinoImage(speciesId, archetype, diet)` tries
+`dinos/<speciesId>.webp` first and falls back to `dinos/<archetype>-<diet>.webp`,
+so the other 44 species keep the shared archetype art and adding a species stays
+a data-only change. Deleting any one of these eight files restores that species'
+archetype art with no code change and no error — the same null-degrade every
+family here relies on.
+
+**Rim light: a HARD SPECULAR EDGE on the silhouette, never a soft outer glow.**
+This is the one prompt constraint that can silently produce an asset *worse* than
+the stand-in it replaces. `remove_background` cuts on alpha: a soft outer glow is
+either eaten whole by the matte, leaving a portrait that reads as flatter than
+the archetype art beside it, or it survives as a pale halo ringing the animal on
+transparency — which reads as a rendering fault at 80px thumbnail size, in both
+Discord themes. The rim must sit ON the creature's own edge pixels, crisp, with
+no bloom, no feathering and no falloff into the background.
+
+- **Legendary rim: warm gold `#f1c40f`** — `tyrannosaurus`, `spinoraptor`,
+  `liopleurodon`, `mosasaurus`, `quetzalcoatlus`. This is exactly
+  `RARITY_COLOR.legendary` (`src/modules/hatchery/embeds.ts`), so the rim and the
+  reveal embed's side bar agree.
+- **Mythic rim: violet `#8e44ad`** — `indominus`, `indoraptor`, `ultimasaurus`.
+  Violet deliberately does **not** match `RARITY_COLOR.mythic` (`0xe74c3c`, red).
+  A red rim on Indominus' pale bone hide and on Indoraptor's black-and-gold reads
+  as blood or damage; violet reads as engineered, which is what the mythic tier
+  is. Do not "correct" this to the embed color.
+
+**Hard no-glow rule** (inherited verbatim from Dino archetypes, and it is not in
+tension with the rim light above — a rim is on-silhouette, a glow is off-it): no
+glow, rays, embers, sparkles, or light effects may extend beyond the dinosaur
+silhouette. Emissive detail is allowed only ON surfaces. Every prompt below
+carries both rules.
+
+**Margin: 31px — `node scripts/fit-art.mjs cutout`, never the boss portraits'
+one-off pass.** These render beside the archetype art in the same embeds, so they
+must match that family, not `assets/images/battles/`. The divergence between the
+two families is recorded in the table in Egg rarities; this set sits on the
+`fit-art.mjs` side of it. `tests/images.test.ts` asserts the fitted margin to
+±1px per file.
+
+**Facing right:** like all seven boss portraits and all eight archetype cutouts,
+snout pointing right. Two boss generations came back mirrored and had to be
+flipped in post — check every generation against its reference before shipping.
+
+**Workflow (reference chain):** each hero portrait is generated as an image-edit
+of **the archetype cutout that species currently shares** (Nano Banana Pro,
+`medias` role `image`) — the strongest available style lock, because the stand-in
+is precisely the image the new file replaces, so pose, camera, scale in frame and
+rendering all carry over for free. Post-process each with `remove_background`,
+then
+`node scripts/fit-art.mjs cutout <src> assets/images/dinos/<speciesId>.webp`.
+
+| Target | Reference attached as `image` |
+|---|---|
+| `dinos/tyrannosaurus.webp` | `assets/images/dinos/bruiser-carnivore.webp` |
+| `dinos/spinoraptor.webp` | `assets/images/dinos/bruiser-carnivore.webp` |
+| `dinos/liopleurodon.webp` | `assets/images/dinos/bruiser-carnivore.webp` |
+| `dinos/indominus.webp` | `assets/images/dinos/bruiser-carnivore.webp` |
+| `dinos/mosasaurus.webp` | `assets/images/dinos/tank-carnivore.webp` |
+| `dinos/ultimasaurus.webp` | `assets/images/dinos/tank-carnivore.webp` |
+| `dinos/quetzalcoatlus.webp` | `assets/images/dinos/swift-carnivore.webp` |
+| `dinos/indoraptor.webp` | `assets/images/dinos/swift-carnivore.webp` |
+
+**Species, not individual, and not a kind either.** The archetype set reads as a
+*kind* (clean, unblemished, flat); the boss portraits read as a named
+*individual* (scarred, chipped, damaged). These sit between: individuating
+species detail — a real skull shape, real coloring, real body plan — but no
+scars, no chipped teeth, no torn frills, no battle damage. Scarring stays
+reserved for `assets/images/battles/`.
+
+**Two stand-ins are anatomically wrong, and correcting them is a large part of
+why this set exists.** `liopleurodon` is a short-necked marine pliosaur currently
+rendered as a heavy toothy land theropod, and `quetzalcoatlus` is a toothless
+azhdarchid pterosaur currently rendered as a lean toothy land theropod. Their
+prompts below say so explicitly and instruct the model to replace the entire body
+plan rather than restyle the reference — an edit prompt that only adds color to a
+theropod will happily keep the theropod.
+
+**Silhouettes that grow past the reference: `spinoraptor`'s sail,
+`quetzalcoatlus`' crest and neck, `ultimasaurus`' shoulder plating.** These three
+read larger in frame than the archetype poses they edit from, and that is exactly
+how `boss-founders_park` came back cropped at the bottom and right edges on its
+first attempt. All three prompts below therefore carry the CRITICAL FRAMING block
+from Battle bosses. If a generation still touches an edge, regenerate rather than
+re-cropping.
+
+### tyrannosaurus (dinos/tyrannosaurus.webp)
+
+Reference: `assets/images/dinos/bruiser-carnivore.webp`. Rim: gold `#f1c40f`.
+
+> Keep the exact same head-and-shoulders three-quarter portrait framing as the
+> reference image: same camera angle, same scale in frame, same small even
+> margin, facing right with the snout pointing right, on a plain flat light-gray
+> studio background with no scenery and no ground shadow. Change the dinosaur to
+> a massive cartoon Tyrannosaurus rex with a deep boxy skull, heavy brow ridges
+> over small forward-set eyes, thick jaw muscles, banded teeth showing at the lip
+> line, a powerfully corded neck, tiny two-fingered forelimbs, and coarse pebbled
+> hide in deep crimson over charcoal with a paler bone-white throat. Render it as
+> a specific species with individuating detail, but with clean unblemished hide:
+> no scars, no chipped teeth, no battle damage. Add a hard specular rim light
+> along the silhouette edge only — a crisp warm gold #f1c40f highlight sitting
+> tight on the creature's outline, like a sharp light source directly behind it.
+> The rim must stay ON the animal's own edge; it must not bleed, feather, bloom
+> or halo outward into the background, and there must be no soft glow of any kind
+> around the silhouette. No glow, rays, embers, sparkles, or light effects
+> extending beyond the dinosaur silhouette; glowing details may appear only on
+> the surfaces themselves. Plain flat light-gray studio background, completely
+> empty, no drawn border, no frame, no panel edge, no letterboxing. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated colors,
+> strong glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no human characters, no UI elements.
+
+### spinoraptor (dinos/spinoraptor.webp)
+
+Reference: `assets/images/dinos/bruiser-carnivore.webp`. Rim: gold `#f1c40f`.
+Carries the CRITICAL FRAMING block — the sail runs well above the reference's
+shoulder line.
+
+> Keep the exact same head-and-shoulders three-quarter portrait camera angle and
+> facing as the reference image: facing right with the snout pointing right, on a
+> plain flat light-gray studio background with no scenery and no ground shadow.
+> Change the dinosaur to a cartoon hybrid theropod — a raptor's narrow alert head
+> and sickle-clawed forelimbs carried on a heavy spinosaur frame, with a long
+> crocodilian snout of interlocking conical teeth, a high forward-set eye, and a
+> tall ridged skin sail rising from the shoulders and back — coloured in olive
+> and rust striping with the sail membrane in warm translucent amber. Render it
+> as a specific species with individuating detail, but with clean unblemished
+> hide: no scars, no chipped teeth, no torn sail, no battle damage. Add a hard
+> specular rim light along the silhouette edge only — a crisp warm gold #f1c40f
+> highlight sitting tight on the creature's outline, including the top edge of
+> the sail, like a sharp light source directly behind it. The rim must stay ON
+> the animal's own edge; it must not bleed, feather, bloom or halo outward into
+> the background, and there must be no soft glow of any kind around the
+> silhouette. No glow, rays, embers, sparkles, or light effects extending beyond
+> the dinosaur silhouette; glowing details may appear only on the surfaces
+> themselves. CRITICAL FRAMING: zoom out so the ENTIRE creature — the whole head,
+> the full neck, the complete sail and both shoulders — sits well inside the
+> frame, small in the canvas, surrounded by a wide band of empty background on
+> all four sides. Nothing may touch, run off, or be cropped by any edge of the
+> image, especially the top and bottom edges. Plain flat light-gray studio
+> background, completely empty, no drawn border, no frame, no panel edge, no
+> letterboxing. Glossy cartoon mobile-game art style, bold dark outlines, vibrant
+> saturated colors, strong glossy highlights, clean cel shading with smooth
+> gradients, polished game-asset look. No text, no lettering, no words, no
+> numbers, no signage writing anywhere in the scene, no human characters, no UI
+> elements.
+
+### liopleurodon (dinos/liopleurodon.webp)
+
+Reference: `assets/images/dinos/bruiser-carnivore.webp`. Rim: gold `#f1c40f`.
+**Anatomy correction — the reference is the wrong animal.** Liopleurodon is a
+short-necked marine pliosaur: four broad paddle flippers, no hind legs, no
+upright bipedal stance, no theropod skull. The stand-in is a land theropod, so
+the prompt replaces the body plan outright rather than restyling it.
+
+> Keep only the camera angle, the scale in frame, the small even margin and the
+> facing of the reference image — head and forequarters in three-quarter view,
+> facing right with the snout pointing right, on a plain flat light-gray studio
+> background with no scenery and no ground shadow. The animal in the reference is
+> a land theropod and is the WRONG animal: replace the entire body plan. Do not
+> keep the hind legs, do not keep the upright bipedal stance, do not keep the
+> theropod skull. Draw instead a cartoon Liopleurodon — a short-necked marine
+> pliosaur with an enormous elongated crocodile-like skull that is nearly a
+> quarter of its whole body, a jaw of long interlocking fangs, a thick short
+> muscular neck running straight into a broad torpedo-shaped body, and four wide
+> flat paddle flippers with no toes and no claws, the leading front flipper
+> sweeping into frame. Smooth wet rubbery hide with no scales and no feathers,
+> countershaded deep marine blue over a pale silver belly, with a wet glossy
+> sheen. Render it as a specific species with individuating detail, but with
+> clean unblemished hide: no scars, no chipped teeth, no battle damage. Add a
+> hard specular rim light along the silhouette edge only — a crisp warm gold
+> #f1c40f highlight sitting tight on the creature's outline, like a sharp light
+> source directly behind it. The rim must stay ON the animal's own edge; it must
+> not bleed, feather, bloom or halo outward into the background, and there must
+> be no soft glow of any kind around the silhouette. No water, no waves, no
+> spray, no bubbles, no underwater caustics — the background stays an empty flat
+> studio gray. No glow, rays, embers, sparkles, or light effects extending beyond
+> the creature silhouette; glowing details may appear only on the surfaces
+> themselves. Plain flat light-gray studio background, completely empty, no drawn
+> border, no frame, no panel edge, no letterboxing. Glossy cartoon mobile-game
+> art style, bold dark outlines, vibrant saturated colors, strong glossy
+> highlights, clean cel shading with smooth gradients, polished game-asset look.
+> No text, no lettering, no words, no numbers, no signage writing anywhere in the
+> scene, no human characters, no UI elements.
+
+### mosasaurus (dinos/mosasaurus.webp)
+
+Reference: `assets/images/dinos/tank-carnivore.webp`. Rim: gold `#f1c40f`. The
+stand-in's broad blunt snout is already the right general read, so this is a
+restyle rather than a body-plan replacement — but the flippers are new and must
+be stated.
+
+> Keep the exact same head-and-shoulders three-quarter portrait framing as the
+> reference image: same camera angle, same scale in frame, same small even
+> margin, facing right with the snout pointing right, on a plain flat light-gray
+> studio background with no scenery and no ground shadow. Change the animal to a
+> cartoon Mosasaurus — a huge marine lizard with a long streamlined body, a broad
+> wedge-shaped skull, a heavy lower jaw and a double row of conical teeth, a
+> forked flicking tongue, small high-set eyes, keeled scales ridging the back of
+> the neck, and short broad paddle flippers rather than clawed legs, with the
+> leading flipper visible at the lower edge of the portrait. Slate and deep teal
+> countershading over a cream belly, with a wet glossy sheen. Render it as a
+> specific species with individuating detail, but with clean unblemished hide: no
+> scars, no chipped teeth, no battle damage. Add a hard specular rim light along
+> the silhouette edge only — a crisp warm gold #f1c40f highlight sitting tight on
+> the creature's outline, like a sharp light source directly behind it. The rim
+> must stay ON the animal's own edge; it must not bleed, feather, bloom or halo
+> outward into the background, and there must be no soft glow of any kind around
+> the silhouette. No water, no waves, no spray, no bubbles, no underwater
+> caustics — the background stays an empty flat studio gray. No glow, rays,
+> embers, sparkles, or light effects extending beyond the creature silhouette;
+> glowing details may appear only on the surfaces themselves. Plain flat
+> light-gray studio background, completely empty, no drawn border, no frame, no
+> panel edge, no letterboxing. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel shading
+> with smooth gradients, polished game-asset look. No text, no lettering, no
+> words, no numbers, no signage writing anywhere in the scene, no human
+> characters, no UI elements.
+
+### quetzalcoatlus (dinos/quetzalcoatlus.webp)
+
+Reference: `assets/images/dinos/swift-carnivore.webp`. Rim: gold `#f1c40f`.
+**Anatomy correction — the reference is the wrong animal.** Quetzalcoatlus is a
+toothless azhdarchid pterosaur; the stand-in is a lean toothy theropod, and
+`## Dino archetypes` above already records that mismatch as an accepted cost of
+the fixed set. This file is what pays it off. Carries the CRITICAL FRAMING block
+— the crest and the long neck both run past the reference's silhouette.
+
+> Keep only the camera angle, the scale in frame, the small even margin and the
+> facing of the reference image — head-and-shoulders three-quarter view, facing
+> right with the beak pointing right, on a plain flat light-gray studio
+> background with no scenery and no ground shadow. The animal in the reference is
+> a toothy land theropod and is the WRONG animal: replace the entire body plan.
+> Draw instead a cartoon Quetzalcoatlus, a giant azhdarchid pterosaur — a long
+> straight spear-like beak that is completely TOOTHLESS with smooth clean jaw
+> edges, a tall backswept blade-shaped head crest, a very long stiff upright
+> neck, a small compact body covered in short fuzzy pycnofibres rather than
+> scales, and a membranous wing folded at the shoulder with the wing finger
+> visible as a long spar. No teeth anywhere, no scaly theropod snout, no clawed
+> theropod forelimbs, no feathered wings. Pale bone-white and slate colouring
+> with a warm coral crest and a dark eye stripe. Render it as a specific species
+> with individuating detail, but with clean unblemished hide: no scars, no torn
+> wing membrane, no battle damage. Add a hard specular rim light along the
+> silhouette edge only — a crisp warm gold #f1c40f highlight sitting tight on the
+> creature's outline, including the crest and the beak, like a sharp light source
+> directly behind it. The rim must stay ON the animal's own edge; it must not
+> bleed, feather, bloom or halo outward into the background, and there must be no
+> soft glow of any kind around the silhouette. No glow, rays, embers, sparkles,
+> or light effects extending beyond the creature silhouette; glowing details may
+> appear only on the surfaces themselves. CRITICAL FRAMING: zoom out so the
+> ENTIRE creature — the whole beak, the full crest, the complete neck and both
+> shoulders — sits well inside the frame, small in the canvas, surrounded by a
+> wide band of empty background on all four sides. Nothing may touch, run off, or
+> be cropped by any edge of the image, especially the top and right edges. Plain
+> flat light-gray studio background, completely empty, no drawn border, no frame,
+> no panel edge, no letterboxing. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel shading
+> with smooth gradients, polished game-asset look. No text, no lettering, no
+> words, no numbers, no signage writing anywhere in the scene, no human
+> characters, no UI elements.
+
+### indominus (dinos/indominus.webp)
+
+Reference: `assets/images/dinos/bruiser-carnivore.webp`. Rim: violet `#8e44ad`.
+This is the file the release exists for: a player pulling a Mythic Indominus
+currently sees the same red bruiser bust as a common-tier roll.
+
+> Keep the exact same head-and-shoulders three-quarter portrait framing as the
+> reference image: same camera angle, same scale in frame, same small even
+> margin, facing right with the snout pointing right, on a plain flat light-gray
+> studio background with no scenery and no ground shadow. Change the dinosaur to
+> a cartoon Indominus rex — a large engineered hybrid theropod with pale
+> bone-white hide, knobbly osteoderm ridges running along the skull and down the
+> neck, a heavy elongated jaw with irregular oversized teeth, long clawed
+> three-fingered forelimbs, and cold amber-red eyes with narrow slit pupils, with
+> faint darker grey mottling breaking up the white. It must read as calm,
+> intelligent and unnatural rather than raging. Render it as a specific species
+> with individuating detail, but with clean unblemished hide: no scars, no
+> chipped teeth, no battle damage. Add a hard specular rim light along the
+> silhouette edge only — a crisp violet #8e44ad highlight sitting tight on the
+> creature's outline, like a sharp light source directly behind it. The rim must
+> stay ON the animal's own edge; it must not bleed, feather, bloom or halo
+> outward into the background, and there must be no soft glow of any kind around
+> the silhouette. No glow, rays, embers, sparkles, or light effects extending
+> beyond the dinosaur silhouette; glowing details may appear only on the surfaces
+> themselves. Plain flat light-gray studio background, completely empty, no drawn
+> border, no frame, no panel edge, no letterboxing. Glossy cartoon mobile-game
+> art style, bold dark outlines, vibrant saturated colors, strong glossy
+> highlights, clean cel shading with smooth gradients, polished game-asset look.
+> No text, no lettering, no words, no numbers, no signage writing anywhere in the
+> scene, no human characters, no UI elements.
+
+### indoraptor (dinos/indoraptor.webp)
+
+Reference: `assets/images/dinos/swift-carnivore.webp`. Rim: violet `#8e44ad`.
+
+> Keep the exact same head-and-shoulders three-quarter portrait framing as the
+> reference image: same camera angle, same scale in frame, same small even
+> margin, facing right with the snout pointing right, on a plain flat light-gray
+> studio background with no scenery and no ground shadow. Change the dinosaur to
+> a cartoon Indoraptor — a lean engineered raptor-form hybrid with glossy jet
+> black hide, a single sharp gold stripe running from behind the eye down the
+> neck and flank, a narrow elongated skull with a low brow, a high forward-set
+> eye with a pale yellow iris and a slit pupil, hooked forelimb claws, and a
+> low-slung sinuous predatory posture. It must read as sly and malicious rather
+> than brutish. Render it as a specific species with individuating detail, but
+> with clean unblemished hide: no scars, no chipped teeth, no battle damage. Add
+> a hard specular rim light along the silhouette edge only — a crisp violet
+> #8e44ad highlight sitting tight on the creature's outline, like a sharp light
+> source directly behind it. The rim must stay ON the animal's own edge; it must
+> not bleed, feather, bloom or halo outward into the background, and there must
+> be no soft glow of any kind around the silhouette. The rim is the only thing
+> separating a black animal from the background — keep it crisp and unbroken
+> along the whole outline. No glow, rays, embers, sparkles, or light effects
+> extending beyond the dinosaur silhouette; glowing details may appear only on
+> the surfaces themselves. Plain flat light-gray studio background, completely
+> empty, no drawn border, no frame, no panel edge, no letterboxing. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated colors,
+> strong glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no human characters, no UI elements.
+
+### ultimasaurus (dinos/ultimasaurus.webp)
+
+Reference: `assets/images/dinos/tank-carnivore.webp`. Rim: violet `#8e44ad`.
+Carries the CRITICAL FRAMING block — this is the same design that cropped at the
+bottom and right on `boss-founders_park`'s first attempt. Note this is the
+*species* portrait, distinct from the chapter-7 boss portrait
+`assets/images/battles/boss-founders_park-portrait.webp`, which stays scarred,
+tagged and fitted at 24px; the two must not be confused or reused for each other.
+
+> Keep the exact same head-and-shoulders three-quarter portrait camera angle and
+> facing as the reference image: facing right with the snout pointing right, on a
+> plain flat light-gray studio background with no scenery and no ground shadow.
+> Change the dinosaur to a cartoon Ultimasaurus — a composite armoured apex
+> hybrid with a tyrannosaur's broad heavy skull, a pair of forward-curving brow
+> horns, overlapping ankylosaur-style armour plates running across the shoulders
+> and down the back, blunt bony knuckles ridging the jawline, and hooked sickle
+> claws on the forelimbs. Deep burnished bronze and obsidian plating, with thin
+> molten-orange seams glowing between the plates — the glow must be painted only
+> ON the plate surfaces themselves and must not spill off the animal. Render it
+> as a specific species with individuating detail, but with clean unblemished
+> plating: no scars, no chipped plates, no battle damage, no metal tag. Add a
+> hard specular rim light along the silhouette edge only — a crisp violet #8e44ad
+> highlight sitting tight on the creature's outline, like a sharp light source
+> directly behind it. The rim must stay ON the animal's own edge; it must not
+> bleed, feather, bloom or halo outward into the background, and there must be no
+> soft glow of any kind around the silhouette. No glow, rays, embers, sparkles,
+> or light effects extending beyond the creature silhouette. CRITICAL FRAMING:
+> zoom out so the ENTIRE creature — the whole head, both horns, the full neck and
+> both complete armoured shoulders — sits well inside the frame, small in the
+> canvas, surrounded by a wide band of empty background on all four sides.
+> Nothing may touch, run off, or be cropped by any edge of the image, especially
+> the bottom and right edges. Plain flat light-gray studio background, completely
+> empty, no drawn border, no frame, no panel edge, no letterboxing. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated colors,
+> strong glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no human characters, no UI elements.
+
 ## Park map
 
 Three opaque rasters drawn by the park renderer (`src/core/render/draw.ts`)
@@ -1119,7 +1710,10 @@ generation's aspect ratio (16:9) is already close to the tile's (270:150 =
 margin survives almost unchanged into the shipped tile as a stray border
 outside the plate's own frame. Crop tight to the plate object's own bounding
 box first, then cover-fit that crop to 270×150 — do not cover-fit the raw
-generation directly.
+generation directly. `fit-art.mjs band` performs that second step only, so a
+plate regeneration still needs the bounding-box crop by hand before the mode is
+run. Art that already fills its frame edge to edge — the landmark bands, the
+attraction bands — goes straight through `band` with no pre-crop.
 
 **Contrast requirement (hard gate, not a style preference):** `drawTile`
 (`draw.ts`) paints the lot name and `Lv N` in the tile's fixed palette text
@@ -1284,10 +1878,11 @@ Sentinel, Amber Obelisk), band `c` tiers 5–6 (Grand Rotunda, Titan Monument) �
 three bands rather than six rasters, so the monument visibly grows twice.
 Generated with model `nano_banana_pro` (the API silently routes this to
 `nano_banana_2`) at aspect ratio `16:9`, source output 1376×768, cover-scaled
-and center-cropped to 270×150 WebP q95 — the same cover-and-crop idea as
-`fit-art.mjs`'s `ground`/`banner` modes, but 270×150 has no committed mode of
-its own; these three were fitted with a one-off pass rather than a new
-`fit-art.mjs` mode.
+and center-cropped to 270×150 WebP q95. These three predate `fit-art.mjs`'s
+`band` mode and were fitted with a one-off pass; `band` now does exactly that
+cover-and-crop at exactly that size, so a regeneration runs
+`node scripts/fit-art.mjs band <src> assets/images/park/landmark-a.webp`
+rather than repeating the one-off.
 
 **Contrast requirement (hard gate, not a style preference):** same reasoning
 as the two plates above — `drawLandmark` paints the tier name in
@@ -1355,6 +1950,211 @@ contrast in the failed first pass was a healthy 5.53:1 while its WORST pixel
 was 1.14:1 — judging by eye, or by an average rather than the worst pixel, on
 the final WebP would have shipped an illegible label.
 
+**park/attraction-{picnic_lawn,gift_shop,viewing_platform,amber_carousel,sky_gondola,grand_atrium}**
+— the guest attraction cell (`drawAttraction`, `draw.ts`), one raster per
+`ATTRACTIONS` kind (`src/data/attractions.ts`). The basename after
+`attraction-` is the catalog slug **verbatim, underscores and all**:
+`attraction-gift-shop.webp` against the slug `gift_shop` is not a near miss,
+it is a silent flat-fill degrade that looks exactly like art nobody has
+shipped yet, which is why `tests/park-art-assets.test.ts` enumerates this
+directory and requires set equality with `Object.keys(ATTRACTIONS)` rather
+than trusting a hand-typed list alone. Generated with model
+`nano_banana_pro` (the API silently routes this to `nano_banana_2`) at
+aspect ratio `16:9`, source output 1376×768, then
+`node scripts/fit-art.mjs band <src> assets/images/park/attraction-<kind>.webp`
+— cover-scaled and center-cropped to 270×150 WebP q95. The three landmark
+bands above predate that mode and were fitted by a one-off pass; this family
+is the reason the mode exists, and nothing at 270×150 should be hand-fitted
+again.
+
+**Workflow (reference chain):** each is an image-edit of a committed landmark
+band, never of another attraction and never from a bare text prompt, so the
+two families share light direction, outline weight, ground treatment and
+palette temperature — they sit in the same grid, on the same ground raster,
+one cell apart. `picnic_lawn`, `gift_shop` and `viewing_platform` reference
+`landmark-a` (the modest ground-level scene); `amber_carousel` and
+`sky_gondola` reference `landmark-b` (the mid-scale monument pair);
+`grand_atrium` references `landmark-c` (the only grand architectural
+interior in either family). The catalog's unlock order is also its power
+order, so the set escalates the same way the landmark bands do: turf and
+trestle tables, then a kiosk, then built timber, then a fairground ride,
+then engineering, then architecture.
+
+**No guest figures in any of the six.** The shared style block's "no
+characters" clause applies unchanged: a crowd is unreadable at 270×150, and
+attendance is a number on the card, not something the tile depicts.
+
+**Contrast requirement (hard gate, not a style preference) — the dark band
+sits at the TOP here, not the bottom.** `drawAttraction` paints the kind
+name in `#eaf4fb` at tile-local `(14, 34)` (18px) and `Lv N` at `(14, 54)`
+(13px), both directly over the art with no scrim — the mirror image of
+`drawLandmark`, which paints its single line at `(14, TILE_H - 16)`.
+Copying a landmark prompt's "BOTTOM FIFTH … dark kerb band" clause verbatim
+therefore puts the dark band where no text is and strands both labels over
+open sky. Sample the committed WebP over the label rectangle x 14–250,
+y 14–58 and take the **worst** pixel, never the mean: band a of the landmark
+pass measured a healthy 5.53:1 mean against a 1.14:1 worst, and judging by
+average would have shipped an illegible label. The flat `#2d4a63` fill these
+rasters replace measures 8.29:1 against `#eaf4fb`; treat ~6:1 as the target,
+matching what the plates and the landmark bands settled on, with 4.5:1 as a
+floor rather than a goal.
+
+**park/attraction-picnic_lawn — Picnic Lawn:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the
+> ENTIRE frame edge to edge with no border, no plain background margin and
+> no framing device: a mown green picnic lawn scene occupying only the
+> LOWER HALF of the frame, with two long wooden trestle tables and benches
+> at the centre, a red-and-white checked blanket spread on the grass beside
+> a wicker hamper, and a single SHORT furled cream parasol on a low pole
+> that stays entirely below the vertical centre of the frame, low hedges
+> and a few ferns visible only near the bottom edge — nothing pale or
+> light-coloured may cross into the top half. The TOP HALF of the frame,
+> from the very top edge down to the exact vertical centre, is rendered as
+> a single perfectly flat, completely uniform solid dark green colour
+> swatch — absolutely no leaf shapes, no grain, no highlights, no darker or
+> lighter patches, no texture of any kind, no visible sky — with a single
+> hard straight horizontal lower edge, clearly darker than everything below
+> it, so pale text can sit on it legibly anywhere in that band. Even flat
+> lighting, no cast shadows. Glossy cartoon mobile-game art style, bold
+> dark outlines, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no characters, no UI elements.
+
+**park/attraction-gift_shop — Gift Shop:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the
+> ENTIRE frame edge to edge with no border, no plain background margin and
+> no framing device: a small timber-and-glass souvenir kiosk occupying only
+> the LOWER HALF of the frame, its window shelves stacked with plush toy
+> dinosaurs, painted eggs and souvenir mugs, a paved forecourt with potted
+> ferns at the very bottom edge. The TOP HALF of the frame, from the very
+> top edge down to the exact vertical centre, is rendered as a single
+> perfectly flat, completely uniform solid dark green colour swatch —
+> absolutely no leaf shapes, no grain, no highlights, no darker or lighter
+> patches, no texture of any kind, no scalloped trim, no striped awning —
+> with a single hard straight horizontal lower edge, clearly darker than
+> everything below it, so pale text can sit on it legibly anywhere in that
+> band; any striped awning or scalloped edge must sit entirely below the
+> vertical centre of the frame. Even flat lighting, no cast shadows. Glossy
+> cartoon mobile-game art style, bold dark outlines, clean cel shading with
+> smooth gradients, polished game-asset look. No text, no characters, no UI
+> elements.
+
+**park/attraction-viewing_platform — Viewing Platform:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the
+> ENTIRE frame edge to edge with no border, no plain background margin and
+> no framing device: a raised wooden observation deck occupying only the
+> LOWER HALF of the frame, built on sturdy support posts with a plank
+> staircase leading up to it, a waist-high safety railing along its edge
+> and a brass viewing telescope mounted on a post at the railing, a jungle
+> valley glimpsed only near the bottom edge. The TOP HALF of the frame,
+> from the very top edge down to the exact vertical centre, is a solid flat
+> dark timber roof-beam band running the full width with a single hard
+> straight horizontal lower edge — no gradient fade, no visible sky or
+> foliage crossing it — clearly darker than everything below it, so pale
+> text can sit on it legibly anywhere in that band. Even flat lighting, no
+> cast shadows. Glossy cartoon mobile-game art style, bold dark outlines,
+> clean cel shading with smooth gradients, polished game-asset look. No
+> text, no characters, no UI elements.
+
+**park/attraction-amber_carousel — Amber Carousel:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the
+> ENTIRE frame edge to edge with no border, no plain background margin and
+> no framing device: a fairground carousel occupying only the LOWER HALF of
+> the frame, carved dinosaur mounts on polished brass poles, glowing
+> translucent amber panels casting warm gold light, low hedges visible only
+> near the bottom edge. The TOP HALF of the frame, from the very top edge
+> down to the exact vertical centre, is a solid flat deep maroon canopy
+> band running the full width with a single hard straight horizontal lower
+> edge — no scalloped trim, no gradient fade, no texture crossing it —
+> clearly darker than everything below it, so pale text can sit on it
+> legibly anywhere in that band; the scalloped canopy trim must sit
+> entirely below the vertical centre of the frame. Even flat lighting, no
+> cast shadows. Glossy cartoon mobile-game art style, bold dark outlines,
+> clean cel shading with smooth gradients, polished game-asset look. No
+> text, no characters, no UI elements.
+
+**park/attraction-sky_gondola — Sky Gondola:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the
+> ENTIRE frame edge to edge with no border, no plain background margin and
+> no framing device: a cable-car station occupying only the LOWER HALF of
+> the frame, two rounded gondola cabins hanging from a taut steel cable, a
+> lattice pylon tower, a jungle valley glimpsed only near the bottom edge.
+> The TOP HALF of the frame, from the very top edge down to the exact
+> vertical centre, is a solid flat dark slate storm-sky band running the
+> full width with a single hard straight horizontal lower edge — no
+> gradient fade, no visible cable, cabin or pylon crossing it — clearly
+> darker than everything below it, so pale text can sit on it legibly
+> anywhere in that band. Even flat lighting, no cast shadows. Glossy
+> cartoon mobile-game art style, bold dark outlines, clean cel shading with
+> smooth gradients, polished game-asset look. No text, no characters, no UI
+> elements.
+
+**park/attraction-grand_atrium — Grand Atrium:**
+
+> Wide landscape ground-level view inside a dinosaur park, filling the
+> ENTIRE frame edge to edge with no border, no plain background margin and
+> no framing device: a vast domed glass atrium, small and low, occupying
+> only the LOWER 40% of the frame, tall palms and tree ferns visible
+> through its panes with a small mounted dinosaur skeleton on a plinth
+> inside, a paved approach at the very bottom edge. There must be a clear
+> gap of plain green foliage or ground between the top of the dome and the
+> middle of the frame — the dome's curved roofline must not approach the
+> vertical centre. The TOP 60% of the frame, from the very top edge down
+> well past the vertical centre, is rendered as a single perfectly flat,
+> completely uniform VERY DARK matte brown-black colour swatch, almost
+> black — absolutely no gold trim line, no gradient, no lighter patch, no
+> highlight of any kind, no glass or dome detail, no texture of any kind —
+> with a single hard straight horizontal lower edge, clearly and
+> dramatically darker than everything below it, so pale text can sit on it
+> legibly anywhere in that band. Even flat lighting, no cast shadows.
+> Glossy cartoon mobile-game art style, bold dark outlines, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no
+> characters, no UI elements.
+
+**Lesson — a fractional band height ("TOP THIRD") renders shorter in
+practice than the fraction says, and the failure only shows up at the
+worst pixel.** The first attempt at all six used the same "TOP THIRD"
+phrasing that the shared style guidance above suggests by analogy with the
+landmark bottom-fifth band, sized to nominally cover 256 of the 768 source
+pixels. Measured worst-pixel contrast on that pass was **1.00–1.66:1
+across all six** — a near-total failure — because the model's actual dark
+region ended well short of even that fraction (as little as 28px of 150
+committed pixels, versus roughly 50px needed to clear the label
+rectangle's y 14–58), the same optimistic-fraction gap the landmark pass's
+own Lesson above records for portrait-framed objects. Widening the
+fraction to "TOP HALF" (or "TOP 60%" for grand_atrium) with an explicit
+hard straight lower edge and "no gradient/scallop/texture crossing it"
+fixed four of six outright (viewing_platform 12.70:1, amber_carousel
+12.99:1, sky_gondola 9.49:1 on the first retry; grand_atrium eventually
+16.24:1 after two more rounds). The remaining two failure modes were
+narrower and easy to miss by eye at full size: picnic_lawn's furled
+parasol finial and grand_atrium's mounted skeleton's skull were each tall
+enough to poke a pale, near-text-coloured pixel just across the band
+boundary — invisible at a glance, decisive at the worst-pixel sample.
+Both needed the foreground element explicitly bounded ("stays entirely
+below the vertical centre," "nothing pale may cross into the top half")
+before they cleared. picnic_lawn and gift_shop separately needed the band
+material itself re-described as "a single perfectly flat, completely
+uniform … colour swatch" rather than a scene element ("tree-canopy",
+"shop-awning") — describing the band AS an object again let the model add
+leaf/grain texture with occasional lighter flecks, the same object-vs-flat-
+color trap the landmark Lesson names for composition, recurring here for
+material instead. Total: six kinds, twenty generation calls across five
+rounds, eighteen of which produced usable output — the other two were the
+SAME kind (viewing_platform) hitting an unrelated NSFW false positive once
+in round one and once in round two, each cleared by an immediate retry of
+the identical prompt. By round: round one, six initial submissions plus
+the first viewing_platform retry (seven calls); round two, six TOP-HALF
+rewrites plus the second viewing_platform retry (seven calls); round
+three, two calls fixing picnic_lawn and grand_atrium; round four, three
+calls fixing picnic_lawn, gift_shop and grand_atrium again; round five,
+one call fixing grand_atrium alone — before all six cleared the ~6:1
+target with margin.
+
 ## Hatch cracks
 
 Six mid-burst variants of the egg icons, shown on the `hatch:crack` reveal so
@@ -1409,7 +2209,7 @@ the light studio rim must be peeled, and all border pixels must end transparent.
 
 ## Emoji icons
 
-The 53 application emojis in `assets/emojis/` are **not** generated — they are
+The 57 application emojis in `assets/emojis/` are **not** generated — they are
 hand-authored SVG rendered by `npm run build-emojis`. That set includes the six
 `dw_dino_<rarity>` chips and the six `dw_lot_*` icons the park renderer reads
 as SVG at draw time, plus the four `dw_trait_<domain>` icons (income, care,
@@ -1445,6 +2245,15 @@ bullets in the repo `CLAUDE.md` for the pipeline and its two rendering gotchas.
 | `dw_event_market_panic.svg` | A dusty-red alarm badge with three descending cream bars and a dark diagonal arrow cutting down through them | 📉 |
 | `dw_event_blood_moon.svg` | A near-black night-sky badge with a red crescent moon — a dark occluding circle overlapping a red disc — and a scatter of small white stars | 🩸 |
 | `dw_event_migration_season.svg` | A blue-violet badge with a wide double-helix strand, evoking both wandering bloodlines and the trait odds the event reshuffles | 🧬 |
+
+**Utility icons** — four hand-authored icons for the attendance, season, duel and landmark surfaces:
+
+| File | Design intent | Unicode fallback |
+| --- | --- | --- |
+| `dw_guest.svg` | Two park visitors on transparency, near figure teal and far figure gold, each a domed-shoulder torso path with its head circle drawn over it so the two shapes read as one silhouette; a single flat white gloss on the near head | 👥 |
+| `dw_season.svg` | A violet medal disc on two blue ribbon tails, its face carrying three stacked gold chevrons — the season ladder's rungs. Ribbons are drawn first so the disc overlaps them | 🏅 |
+| `dw_duel.svg` | A disc split blue on the left and red on the right for the two duellists, with a gold clash bolt struck through it overshooting the rim top and bottom. Distinct from `dw_event_amber_storm`'s amber bolt, which sits on a single-tone storm-blue badge behind a cloud | ⚔️ |
+| `dw_landmark.svg` | A grey stone obelisk with a gold capstone and a gold plaque, standing on a two-step plinth — the prestige ladder's monument, matching the `park/landmark-a\|b\|c.webp` tile family | 🗿 |
 
 ## Bot branding (animated avatar and banner)
 

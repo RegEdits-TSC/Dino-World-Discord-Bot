@@ -205,7 +205,9 @@ export function fakeAutocomplete(opts: {
   };
 }
 
-export function fakeButton(opts: { customId: string; user: string; guild?: string }): FakeInteraction {
+export function fakeButton(opts: {
+  customId: string; user: string; guild?: string; posterId?: string; componentIds?: string[];
+}): FakeInteraction {
   const replies: unknown[] = [];
   const deferOpts: unknown[] = [];
   const label = `button ${opts.customId}`;
@@ -213,7 +215,27 @@ export function fakeButton(opts: { customId: string; user: string; guild?: strin
     customId: opts.customId,
     user: { id: opts.user, displayName: opts.user },
     guildId: opts.guild ?? null,
-    message: { id: 'fake-message' },
+    // Two server-supplied facts about the message the button lives on, both of which
+    // a client can observe but never forge.
+    //
+    // componentIds mirrors Message#components — the button set Discord itself stores
+    // on the message. It DEFAULTS to the clicked id, because in a real client the only
+    // button you can click is one the message actually carries; a fixture opts out
+    // (`componentIds: []`, or somebody else's ids) to model a forged customId emitted
+    // straight at the gateway against a message that carries no such button.
+    //
+    // posterId mirrors Message#interactionMetadata.user.id — who ran the slash command
+    // that produced the message. No production code reads it any more (see
+    // src/core/components.ts for why message authorship proves nothing about a
+    // customId's contents); it survives so the S1 regression fixtures can anchor a
+    // forged id on a message genuinely authored by the player it names, which is
+    // exactly the shape the exploit used.
+    message: {
+      id: 'fake-message',
+      interactionMetadata: opts.posterId ? { user: { id: opts.posterId } } : null,
+      components: (opts.componentIds ?? [opts.customId])
+        .map((id) => ({ type: 1, components: [{ type: 2, customId: id }] })),
+    },
     deferred: false, replied: false,
     isChatInputCommand: () => false, isButton: () => true, isAutocomplete: () => false,
     reply: async (payload: unknown) => {

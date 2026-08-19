@@ -3,7 +3,8 @@ import { MessageFlags } from 'discord.js';
 import { eq, and } from 'drizzle-orm';
 import { makeCtx, fakeCommand, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
-import { getOrCreateUser, pendingIncome, buildLot } from '../src/modules/park/service.js';
+import { getOrCreateUser, pendingIncome, collectIncome, buildLot } from '../src/modules/park/service.js';
+import { settleEscapes } from '../src/modules/park/escapes.js';
 import { startBreeding, claimBreeding } from '../src/modules/genelab/service.js';
 import { BREED_MS } from '../src/data/breeding.js';
 import { requireOwner } from '../src/modules/admin/guard.js';
@@ -170,6 +171,38 @@ describe('adminFastForward', () => {
   it('rejects hours outside 1..720', () => {
     expect(() => adminFastForward(ctx, 'p', 0)).toThrow(AdminError);
     expect(() => adminFastForward(ctx, 'p', 721)).toThrow(AdminError);
+  });
+
+  // S3 finding: the dinos update shifted lastFedAt but not escapedAt, so a dino that
+  // was already settled as escaped BEFORE the fast-forward could resume earning: the
+  // shift moves lastCollectAt/hungerZero back while the stamped escapedAt stays put,
+  // pulling it back inside the accrual window. Scenario verbatim from the finding: a
+  // triceratops fed at t=0 in an undecored herbivore paddock escapes at 40h; the owner
+  // collects at t=41h (settleEscapes stamps escapedAt=40h, Collect pays through 40h and
+  // a second Collect correctly pays 0); a 24h fast-forward then shifts lastCollectAt
+  // 41h->17h and lastFedAt 0h->-24h while escapedAt stays at 40h, so the next Collect's
+  // window [17h, min(41h, 40h, 24h)] = [17h, 24h] pays for hours already both escaped
+  // AND already collected — a double-pay on top of a dead dino earning at all.
+  it('shifts escapedAt along with lastFedAt so a settled-escaped dino cannot resume earning', () => {
+    const H = 3_600_000;
+    getOrCreateUser(ctx, 'p', 'P');   // lastCollectAt = now = 0
+    const lot = ctx.db.insert(schema.lots).values({ userId: 'p', type: 'paddock', kind: 'herbivore_paddock', name: 'Pen' }).returning().get();
+    ctx.db.insert(schema.dinos).values({ userId: 'p', lotId: lot.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 }).run();
+
+    ctx.setNow(41 * H);
+    settleEscapes(ctx, 'p');
+    const dinoRow = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, 'p')).get()!;
+    expect(dinoRow.escapedAt).toBe(40 * H);          // sanity: matches the finding's own scenario
+    expect(collectIncome(ctx, 'p').amount).toBeGreaterThan(0);   // pays through the escape
+    expect(collectIncome(ctx, 'p').amount).toBe(0);              // idempotent — nothing left pending
+
+    adminFastForward(ctx, 'p', 24);   // 24h back
+
+    // The wrong outcome, pre-fix: escapedAt stayed at 40h while lastFedAt/lastCollectAt
+    // moved back 24h, reopening a window an already-escaped, already-paid dino could
+    // earn against. Fixed: escapedAt shifts by the same amount, so the dino is exactly
+    // as escaped (and exactly as fully paid) as it was before the fast-forward.
+    expect(collectIncome(ctx, 'p').amount).toBe(0);
   });
 });
 

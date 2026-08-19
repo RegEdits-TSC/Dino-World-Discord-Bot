@@ -146,6 +146,7 @@ describe('renderParkPng', () => {
     lotIcons: { carnivore_paddock: svgStub('#00ffff', 64, 64), hatchery_lab: svgStub('#00ffff', 64, 64) },
     dinoChips: { common: null, uncommon: null, rare: null, epic: null, legendary: svgStub('#ffff00', 64, 64), mythic: null },
     landmarks: { a: null, b: null, c: null },
+    attractions: {},
   };
 
   async function sampler(png: Buffer): Promise<(x: number, y: number) => number[]> {
@@ -333,6 +334,48 @@ describe('renderParkPng', () => {
 
     it('renders an attraction of an unknown or retired kind without throwing', () => {
       expect(() => renderParkPng({ ...sample, attractions: [{ kind: 'retired_kind', level: 1 }] })).not.toThrow();
+    });
+
+    // The reason the draw site must guard `if (img)` and never `if (img !== null)`. ParkArt.attractions
+    // is an OPEN Record<string, Image | null>, and tsconfig sets strict but not
+    // noUncheckedIndexedAccess — so indexing it with a retired slug TYPES as Image | null while
+    // RETURNING undefined, and drawImage(undefined) throws the identical TypeError drawImage(null)
+    // does. That throw is not a degrade: it becomes { ok: false } from handleRenderRequest, rejects in
+    // client.ts and costs the user the whole park image. `npm run build` can't see the wrong guard on
+    // its own — the type checker reads Image | null either way — so this has to be caught at runtime.
+    //
+    // A populated record is NOT what makes that possible: `{}['retired_kind']` and
+    // `{ gift_shop: img }['retired_kind']` both evaluate to the identical `undefined`, so the
+    // EMPTY_ART-backed retired-slug test above already catches a `!== null` regression on its own —
+    // confirmed by reverting the guard and watching both tests fail together. This test is kept as a
+    // second confirmation under a mixed-population park (some attraction art loaded, one slug
+    // retired), the shape a live deploy actually reaches, not because the empty case is insufficient.
+    it('renders a retired kind without throwing even when other attraction art is loaded', () => {
+      const artWithSome: ParkArt = {
+        ...EMPTY_ART,
+        attractions: { gift_shop: svgStub('#00ffff', 270, 150) },
+      };
+      expect(() => renderParkPng(
+        { ...sample, attractions: [{ kind: 'retired_kind', level: 1 }] },
+        artWithSome,
+      )).not.toThrow();
+    });
+
+    // ParkArt gained an `attractions` family with no rasters committed yet, so every entry is null and
+    // an attraction cell must still render exactly what it rendered before the field existed. Both
+    // directions are pinned: an art object that CARRIES the record must agree with EMPTY_ART, and
+    // EMPTY_ART must agree with the no-art call — the same fallback pin the top-level
+    // "an all-null ParkArt renders byte-for-byte what the no-art call renders" test makes for a park
+    // with no attractions at all, restated for a park that has some. Task 14 gives drawAttraction an
+    // art path; this is what proves its null branch did not drift.
+    it('an attractions record of all-null entries renders byte-identically to no art at all', () => {
+      const snap: ParkSnapshot = {
+        ...sample,
+        attractions: [{ kind: 'gift_shop', level: 2 }, { kind: 'picnic_lawn', level: 1 }],
+      };
+      const nulledArt: ParkArt = { ...EMPTY_ART, attractions: { gift_shop: null, picnic_lawn: null } };
+      expect(renderParkPng(snap, nulledArt).equals(renderParkPng(snap, EMPTY_ART))).toBe(true);
+      expect(renderParkPng(snap, EMPTY_ART).equals(renderParkPng(snap))).toBe(true);
     });
   });
 });
