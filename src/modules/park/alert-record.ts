@@ -1,4 +1,4 @@
-import { and, eq, lt } from 'drizzle-orm';
+import { and, eq, lt, ne } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { ESCAPE_WARN_MS } from '../../core/clock.js';
@@ -83,8 +83,20 @@ export function recordEscapeSent(
 }
 
 /** Bound the table. A pruned row can only re-fire for an instant TTL-old, which the
- *  `escapeAt > now` and `pending > 0` conjuncts in alert-detect already exclude. */
+ *  `escapeAt > now` and `pending > 0` conjuncts in alert-detect already exclude for
+ *  `escape` and `season_end` — but NOT for `income_cap`. incomeCapAlertFor's `pending`
+ *  is frozen the instant a park hits its cap (accruedIncome clamps the window at
+ *  capAt), so an idle park's capAt never ages out on its own the way an escape instant
+ *  or a season boundary does. Pruning that row would let alreadySent find nothing and
+ *  re-send the identical DM every TTL, forever, for a player who never plays again —
+ *  income_cap rows are therefore exempt from this sweep and retained indefinitely.
+ *  The table cost is bounded regardless: (userId, kind, refId, tier) is unique, and
+ *  income_cap always uses refId 0 and tier '', so this is at most one extra row per
+ *  idle user. */
 export function pruneAlertRecords(ctx: Ctx): void {
   ctx.db.delete(schema.alertsSent)
-    .where(lt(schema.alertsSent.sentAt, ctx.now() - ALERT_RECORD_TTL_MS)).run();
+    .where(and(
+      lt(schema.alertsSent.sentAt, ctx.now() - ALERT_RECORD_TTL_MS),
+      ne(schema.alertsSent.kind, 'income_cap'),
+    )).run();
 }

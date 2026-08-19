@@ -87,4 +87,29 @@ describe('alert record', () => {
     const left = ctx.db.select().from(schema.alertsSent).all();
     expect(left.map((r) => r.refId)).toEqual([2]);
   });
+
+  // S4 finding: incomeCapAlertFor's pending is FROZEN the moment the cap is reached
+  // (accruedIncome clamps the window at capAt), so an idle park's capAt never moves —
+  // unlike escape, where escapeAt > now already excludes a pruned row from re-firing.
+  // A player who is capped and never plays again would, pre-fix, get the identical
+  // income-cap DM every ALERT_RECORD_TTL_MS forever: the prune deletes the record at
+  // T+30d, and the next sweep's alreadySent finds nothing even though incomeCapAlertFor
+  // still returns the exact same {capAt, pending} it always has.
+  it('never prunes an income_cap record — its instant is frozen while idle and would re-fire forever', () => {
+    const ctx = makeCtx(); seed(ctx);
+    const capAt = 8 * 3_600_000;   // a Visitor Center L1 park, capped 8h after collect
+    recordSent(ctx, 'u1', 'income_cap', 0, '', capAt);
+    ctx.setNow(ALERT_RECORD_TTL_MS + 1);   // 30 days later, park never touched again
+    pruneAlertRecords(ctx);
+    expect(alreadySent(ctx, 'u1', 'income_cap', 0, '', capAt)).toBe(true);
+  });
+
+  it('still prunes escape and season_end records past the TTL', () => {
+    const ctx = makeCtx(); seed(ctx);
+    recordSent(ctx, 'u1', 'escape', 7, 'heads_up', 5000);
+    recordSent(ctx, 'u1', 'season_end', 0, '', 5000);
+    ctx.setNow(ALERT_RECORD_TTL_MS + 1);
+    pruneAlertRecords(ctx);
+    expect(ctx.db.select().from(schema.alertsSent).all()).toEqual([]);
+  });
 });

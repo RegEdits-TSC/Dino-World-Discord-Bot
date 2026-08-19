@@ -93,6 +93,8 @@ A player with `alertsEnabled` true and a Visitor Center L1 park (`capHours` 8) c
 
 **Gate:** `no` — `alerts_sent` already stores both `sentAt` and `firedForMs`, so the fix is a retention rule change (exempt `income_cap`, or retain by `firedForMs` rather than `sentAt`) with no schema change.
 
+**Status:** fixed by this commit
+
 ### S5 — Declining a duel challenge leaves the duel banner attached as an orphan image
 
 **File:** `src/modules/duels/index.ts:173`
