@@ -435,7 +435,7 @@ A ~5-minute manual test to run in a development Discord server after each releas
 
    **o) Assign a dino to a paddock** (via `/dino assign dino:<id> lot:<paddock id>`, if not already done in step 3j) and let its hunger fall over time.
    - `/feed one dino:<id>` — should restore the dino's hunger and charge food.
-   - `/feed all` — should feed every hungry dino, hungriest first, and report how many were fed (and how many were skipped for lack of food).
+   - `/feed all` — should feed every hungry dino, hungriest first, and report how many were fed. Any dino it could not feed should be named in a per-diet breakdown giving the units that diet needs and the stock actually held.
 
    **p) Trigger an escape, catching the proactive alert on the way, then clear it**
    - Leave a dino unfed long enough that its comfort drops below 25% and stays there past the 8-hour grace period.

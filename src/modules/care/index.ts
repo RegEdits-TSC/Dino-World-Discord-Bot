@@ -5,7 +5,7 @@ import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
-import { feedDino, feedAll, rescueDino, feedCostFor, CareError } from './service.js';
+import { feedDino, feedAll, feedSkipReport, rescueDino, feedCostFor, CareError } from './service.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { hungerAt, drainMsFor } from '../../core/clock.js';
 import { getSpecies } from '../../data/species/index.js';
@@ -62,8 +62,8 @@ export const careModule: ModuleManifest = {
             const spentText = Object.entries(spent)
               .map(([id, q]) => `−${q} ${FOODS[id as FoodId].name}`).join(', ');
             const msg = fed.length ? `Fed ${fed.length} dino(s) (${spentText}).` : 'Nothing needed feeding.';
-            await i.reply(carePayload(ctx, i.user.id, skipped.length
-              ? `${msg} Skipped ${skipped.length} (no matching food — /shop food).` : msg));
+            const report = feedSkipReport(ctx, i.user.id, skipped);
+            await i.reply(carePayload(ctx, i.user.id, report ? `${msg}\n\n${report}` : msg));
           } else {
             const { species, food, cost } = feedDino(ctx, i.user.id,
               i.options.getInteger('dino', true), i.options.getString('food') ?? undefined);

@@ -3,7 +3,7 @@ import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
 import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, toClockDinos } from './service.js';
-import { feedAll } from '../care/service.js';
+import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { earnedTierCount } from '../daily/service.js';
 import { seasonBadges } from '../daily/season.js';
@@ -568,12 +568,18 @@ export const parkModule: ModuleManifest = {
         // feedall
         settleEscapes(ctx, i.user.id);
         const { fed, skipped } = feedAll(ctx, i.user.id);
-        const line = fed.length === 0
+        // The bare count stranded the player: feedSkipReport names each skipped dino and
+        // the food it is short of, so the next step is a purchase rather than a hunt.
+        const report = feedSkipReport(ctx, i.user.id, skipped);
+        const head = fed.length === 0
           ? (skipped.length > 0
-              ? '🍖 No matching food — buy some with `/shop food`.'
+              ? '🍖 Nothing could be fed.'
               : '🍖 Nothing to feed — every dino is already full.')
-          : `🍖 Fed **${fed.length}** ${fed.length === 1 ? 'dino' : 'dinos'}${skipped.length ? ` — ${skipped.length} skipped for lack of matching food.` : '.'}`;
-        await i.update({ content: line, embeds: [], components: [], attachments: [] });
+          : `🍖 Fed **${fed.length}** ${fed.length === 1 ? 'dino' : 'dinos'}.`;
+        await i.update({
+          content: report ? `${head}\n\n${report}` : head,
+          embeds: [], components: [], attachments: [],
+        });
       },
     },
   ],
