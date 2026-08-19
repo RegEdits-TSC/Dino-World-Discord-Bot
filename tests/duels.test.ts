@@ -569,15 +569,27 @@ describe('/duel challenge', () => {
     await duelsModule.commands[0].execute(ctx, i.asChatInput());
     return i;
   };
-  // posterId defaults to the customId's own challenger segment: every genuine flow in
-  // this file builds customId from a real preceding challenge() call, so that segment
-  // IS the real poster. The S1 regression test below overrides it to simulate a forged
-  // customId whose message poster does not match its own challengerId segment.
-  const click = async (customId: string, user: string, posterId?: string) => {
-    const b = fakeButton({ customId, user, guild: 'g1', posterId: posterId ?? customId.split(':')[2] });
+  // Both message facts default to a GENUINE card: the message carries the very button
+  // being clicked, and it was posted by the challenger the customId names. Every
+  // ordinary flow in this file builds its customId from a real preceding challenge()
+  // call, so those defaults are exactly what Discord would report. The S1 regression
+  // tests below override `componentIds` to model a forged customId emitted straight at
+  // the gateway, anchored on a message that carries no such button.
+  const click = async (
+    customId: string, user: string,
+    forge: { posterId?: string; componentIds?: string[] } = {},
+  ) => {
+    const b = fakeButton({
+      customId, user, guild: 'g1',
+      posterId: forge.posterId ?? customId.split(':')[2],
+      componentIds: forge.componentIds,
+    });
     await duelsModule.components[0].execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
     return b;
   };
+  const rating = (id: string) => ctx.db.select().from(schema.users)
+    .where(eq(schema.users.discordId, id)).get()!.duelRating;
+  const duelRows = () => ctx.db.select().from(schema.duels).all();
   function pairWithDinos(): void {
     getOrCreateUser(ctx, 'a', 'A'); getOrCreateUser(ctx, 'b', 'B');
     addDino('a', weak.id, 0); addDino('b', weak.id, 0);
@@ -655,21 +667,129 @@ describe('/duel challenge', () => {
     expect(replyText(b.replies[0])).toMatch(/not for you/i);
   });
 
-  // S1 finding: duel:accept trusted the challengerId customId segment on faith and
-  // passed it straight to resolveDuel, which mutates THAT player's rating. Here 'a'
-  // never ran /duel challenge against 'b' at all — no real message exists whose
-  // poster is 'a' — yet the forged customId 'duel:accept:a:b:<future>' passes every
-  // OTHER gate: defenderId ('b') matches the clicker, and the expiry is in the
-  // future. Pre-fix this silently resolved the duel and moved both ratings on a
-  // fight 'a' never agreed to. posterId 'nobody' stands in for "no real /duel
-  // challenge from 'a' produced this message."
-  it('refuses a forged customId whose challenger never posted a real challenge', async () => {
+  // S1 finding, round 1. This test shipped named 'refuses a forged customId whose
+  // challenger never posted a real challenge' — a property the code did not have and
+  // this fixture never exercised. All it varied was the message's POSTER, so all it
+  // ever asserted is the line below: with no card carrying this Accept button in
+  // existence, nothing may be resolved from it. Renamed to say so.
+  it('refuses an accept when no message carries that Accept button', async () => {
     pairWithDinos();
     const forged = `duel:accept:a:b:${ctx.now() + 1}`;
-    const b = await click(forged, 'b', 'nobody');
-    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'a')).get()!.duelRating).toBe(1000);
-    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'b')).get()!.duelRating).toBe(1000);
-    expect(ctx.db.select().from(schema.duels).all()).toEqual([]);
+    const b = await click(forged, 'b', { posterId: 'nobody', componentIds: [] });
+    expect(replyText(b.replies[0])).toMatch(/no longer valid/i);
+    expect(rating('a')).toBe(1000);
+    expect(rating('b')).toBe(1000);
+    expect(duelRows()).toEqual([]);
+  });
+
+  // The real property, and the exact reproduction that survived round 1's fix. Binding
+  // challengerId to the message's interactionMetadata proves only that SOME interaction
+  // of 'a''s produced the anchoring message — never that 'a' challenged 'b'. The router
+  // dispatches on the customId prefix alone and never checks that the message belongs to
+  // the module handling it, so an attacker anchors the forged id on any bot message 'a'
+  // caused: a public /park view card, say. Round 1 let this through and 'a''s rating
+  // fell 1000 → 984 on a duel 'a' never agreed to and was never told about.
+  it("refuses an accept anchored on the challenger's own unrelated message", async () => {
+    pairWithDinos();
+    const forged = `duel:accept:a:b:${ctx.now() + 1}`;
+    const b = await click(forged, 'b', { posterId: 'a', componentIds: ['park:collect'] });
+    expect(rating('a')).toBe(1000);
+    expect(rating('b')).toBe(1000);
+    expect(duelRows()).toEqual([]);
+    expect(replyText(b.replies[0])).toMatch(/no longer valid/i);
+  });
+
+  // The nastiest anchor of the class: a REAL duel challenge card, posted by 'a', with a
+  // live Accept button and 'a' as its genuine poster — addressed to somebody else. Only
+  // reading the button set off the message tells the two apart.
+  it("refuses an accept forged from the challenger's genuine card for a third player", async () => {
+    pairWithDinos();
+    getOrCreateUser(ctx, 'c', 'C'); addDino('c', weak.id, 0);
+    await challenge('a', 'c');
+    const b = await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b', {
+      posterId: 'a',
+      componentIds: [
+        `duel:accept:a:c:${DUEL_CHALLENGE_TTL_MS}`,
+        `duel:decline:a:c:${DUEL_CHALLENGE_TTL_MS}`,
+      ],
+    });
+    expect(rating('a')).toBe(1000);
+    expect(rating('b')).toBe(1000);
+    expect(duelRows()).toEqual([]);
+    expect(replyText(b.replies[0])).toMatch(/no longer valid/i);
+  });
+
+  // The replay half of S1. expiresAtMs was bounded only from BELOW, and round 1 narrowed
+  // challengeAlreadyResolved's window to [expiresAtMs - TTL, ctx.now()] — EMPTY for any
+  // anchor past now + TTL, so the guard returned false unconditionally and one fixed
+  // customId replayed forever (1 legitimate duel row became 4). The upper clamp is what
+  // makes the restored [expiresAtMs - TTL, expiresAtMs] window sound: the clamp forces
+  // expiresAtMs - TTL <= the click that created the first row, so that row is always
+  // inside the window a later click of the SAME id computes.
+  it('does not let an oversized expiry anchor replay a resolved duel', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    expect(duelRows()).toHaveLength(1);
+    const afterOne = { a: rating('a'), b: rating('b') };
+    const replies = [];
+    for (const mult of [2, 3, 4]) {
+      replies.push(await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS * mult}`, 'b'));
+    }
+    expect(duelRows()).toHaveLength(1);
+    expect(rating('a')).toBe(afterOne.a);
+    expect(rating('b')).toBe(afterOne.b);
+    for (const r of replies) expect(replyText(r.replies[0])).toMatch(/no longer valid/i);
+  });
+
+  // The decline half. A forged duel:decline reached i.update on ANY bot message the
+  // attacker could address, blanking its content, embeds and components and replacing
+  // them with 'Challenge declined by <them>'. A genuine decline is always on the
+  // challenger's own card, so the same button-set check protects it — and the rejection
+  // must stay an EPHEMERAL reply, never an update, or the vandalism lands anyway.
+  it('refuses a forged decline instead of blanking an unrelated message', async () => {
+    pairWithDinos();
+    const forged = `duel:decline:a:b:${ctx.now() + 1}`;
+    const b = await click(forged, 'b', { posterId: 'a', componentIds: ['park:collect'] });
+    expect(replyText(b.replies[0])).toMatch(/no longer valid/i);
+    expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect((b.replies[0] as { embeds?: unknown[] }).embeds).toBeUndefined();
+    expect((b.replies[0] as { components?: unknown[] }).components).toBeUndefined();
+  });
+
+  // Do-no-harm: the whole real path, end to end. One log row, and one conserved delta —
+  // whatever the coin flip decides, the two ratings still sum to their starting total.
+  it('resolves a legitimate accept end to end, conserving the rating total', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    const b = await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    const log = duelRows();
+    expect(log).toHaveLength(1);
+    expect(log[0].mode).toBe('live');
+    expect(log[0].challengerId).toBe('a');
+    expect(log[0].defenderId).toBe('b');
+    expect(rating('a')).toBe(1000 + log[0].eloDelta);
+    expect(rating('b')).toBe(1000 - log[0].eloDelta);
+    expect(rating('a') + rating('b')).toBe(2000);
+    expect((b.replies[0] as { embeds?: unknown[] }).embeds).toHaveLength(1);
+  });
+
+  // The clamp and the restored replay window must refuse a REPLAY without refusing a
+  // genuinely SECOND challenge. Two separate cards for the same ordered pair, posted a
+  // full TTL apart so their windows do not overlap, each accepted once: both resolve.
+  it('resolves two genuinely distinct challenges between the same pair', async () => {
+    pairWithDinos();
+    await challenge('a', 'b');
+    await click(`duel:accept:a:b:${DUEL_CHALLENGE_TTL_MS}`, 'b');
+    expect(duelRows()).toHaveLength(1);
+    ctx.setNow(DUEL_CHALLENGE_TTL_MS + 1);
+    await challenge('a', 'b');
+    const second = await click(`duel:accept:a:b:${2 * DUEL_CHALLENGE_TTL_MS + 1}`, 'b');
+    expect(replyText(second.replies[0])).not.toMatch(/already duelled|no longer valid/i);
+    const log = duelRows();
+    expect(log).toHaveLength(2);
+    expect(log.map((r) => r.mode)).toEqual(['live', 'live']);
+    expect(log.map((r) => r.createdAt)).toEqual([0, DUEL_CHALLENGE_TTL_MS + 1]);
   });
 
   it('refuses an expired challenge', async () => {

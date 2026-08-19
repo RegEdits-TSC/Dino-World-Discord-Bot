@@ -35,7 +35,9 @@ Attacker `B` emits a component interaction with `custom_id = "duel:accept:A:B:<n
 
 **Gate:** `no` — closable in code by binding the challenger segment to the message that carries the button (reject any `challengerId` that is not the originating interaction's user), plus anchoring the replay scan to the pair rather than the client-supplied window. A stored-challenge redesign would need a migration but is not required to close it.
 
-**Status:** fixed by this commit
+**Correction to that gate:** the first half of it, as written, does not close the defect and was implemented and reverted. "The originating interaction's user" (`Message#interactionMetadata.user.id`) proves only that the anchoring message came from SOME interaction of the named challenger's — not that they ever challenged this defender. `routeInteraction` dispatches on the customId prefix alone and never checks the message belongs to the module handling it, so the forged id can be anchored on any interaction-authored bot message of theirs: a public `/park view`, a `/duel record`, or their genuine challenge card addressed to a THIRD player. The check that does close it is the message's own BUTTON SET (`Message#components`): only a real `A → B` card carries a button whose custom_id is exactly `duel:accept:A:B:<exp>`. The second half also needs care — narrowing the replay window's upper bound to `ctx.now()` makes it `[expiresAtMs - TTL, ctx.now()]`, empty for any anchor past `now + TTL`, so the guard returns false unconditionally and one fixed customId replays forever. Clamping `expiresAtMs` from ABOVE and keeping the original `expiresAtMs` upper bound is what actually closes the replay half.
+
+**Status:** fixed — round 1 (`450dfa7`) did not close it; round 2 (this commit) does.
 
 ### S2 — `park:collect` is the only customId with no id segment, and its handler creates no user row
 

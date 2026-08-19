@@ -803,6 +803,41 @@
   literal. Any future button that spends money needs the same treatment: the rung, page
   or amount it was minted for belongs in the customId, because a Discord message is
   durable and its label is not re-derived.
+- Putting state in the customId (`park:landmark:buy:<uid>:<tier>`,
+  `dex:page:<uid>:<page>:<slugs>`) only helps if the handler also proves the bot MINTED
+  that id. A component interaction can be emitted straight at the gateway with any
+  `custom_id`, anchored on any message the attacker can address, and `routeInteraction`
+  (`src/core/router.ts`) dispatches on the customId PREFIX alone — it never checks that
+  the message belongs to the module handling it. So a handler that merely *parses* its
+  own segments is trusting the attacker's arithmetic. **A component handler must verify
+  the clicked customId is actually present on the message that carries it**:
+  `clickedIdIsOnMessage(i)` (`src/core/components.ts`) walks `Message#components` —
+  Discord's own record of the buttons the bot put there, unforgeable by the client —
+  and matches the whole id by exact equality, never a prefix. It fails CLOSED (no
+  components, no authority) and recurses into v2 containers, because failing to look
+  inside a nesting component would break a legitimate click rather than admit a forged
+  one. `duel:accept|decline` is the first caller and the reason the rule exists: without
+  it, any player could force a duel on any other and move their Elo, and a forged
+  `duel:decline` could blank an unrelated bot message via `i.update`.
+  **Message authorship is NOT a substitute** — the first fix bound the challenger
+  segment to `Message#interactionMetadata.user.id`, which proves only that the anchoring
+  message came from SOME interaction of that player's; a public `/park view`, a
+  `/duel record`, or their genuine challenge card addressed to a THIRD player all
+  satisfy it, and the original exploit reproduced unchanged against it. The button set
+  is the check; `interactionMetadata` is not read anywhere in `src/` any more.
+  The duel handler pairs it with a second rule worth copying: a client-supplied INSTANT
+  needs clamping from ABOVE as well as below. `expiresAtMs` was bounded only as
+  "finite and in the future", and `challengeAlreadyResolved`
+  (`src/modules/duels/service.ts`) derives its replay window's lower edge from it —
+  `[expiresAtMs - TTL, expiresAtMs]`. Narrowing that window's UPPER edge to `ctx.now()`
+  looks tighter and is the opposite: the window is then empty for any anchor past
+  `now + TTL`, the guard returns false unconditionally, and one fixed customId replays
+  forever (three replays turned 1 duel row into 4). The handler's
+  `expiresAtMs <= ctx.now() + DUEL_CHALLENGE_TTL_MS` clamp is what makes the original
+  bound sound: it forces `expiresAtMs - TTL <=` the click that wrote the first row, so a
+  later click of the SAME id recomputes the SAME window and provably finds that row
+  inside it. Keep the clamp and the bound together; relaxing either alone reopens the
+  bypass the other cannot see.
 - Legacy rank (`legacyPoints`/`legacyRank`, `src/modules/park/ranks.ts`) is DERIVED,
   same philosophy as escrow locks and quest progress documented above, and must NEVER
   be rebuilt on top of `user_stats`. Migration `0006_daily_loop.sql` backfilled only 6

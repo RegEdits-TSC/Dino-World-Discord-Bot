@@ -176,15 +176,20 @@ function challengeAlreadyResolved(
     // duel it is meant to detect — and at ctx.now() === 0, which is where the tests
     // live, it misses every one of them.
     //
-    // Upper bound is ctx.now(), never expiresAtMs: a prior duel row is always already
-    // committed by the time this runs, so createdAt <= ctx.now() always, and pinning
-    // the window's far edge to the SERVER clock (rather than the caller-supplied
-    // expiresAtMs) is what stops an attacker opening a window with nothing in it by
-    // picking an ever-larger anchor. The lower bound still derives from expiresAtMs,
-    // which is safe now that the button handler binds challengerId to the message's
-    // own interactionMetadata: expiresAtMs only ever reaches here as a value the bot
-    // itself wrote into a real challenge card.
-    .some((r) => r.createdAt >= expiresAtMs - DUEL_CHALLENGE_TTL_MS && r.createdAt <= ctx.now());
+    // Upper bound is expiresAtMs, so the window is exactly the card's own lifetime
+    // [mintedAt, mintedAt + TTL]. Narrowing it to ctx.now() looks tighter and is the
+    // opposite: the window becomes [expiresAtMs - TTL, ctx.now()], which is EMPTY for
+    // any anchor past now + TTL, so the guard returns false unconditionally and one
+    // fixed customId replays forever. That is what shipped briefly, and three replays
+    // of one card turned 1 duel row into 4.
+    //
+    // What makes this bound sound is the handler's clamp, not the bound itself. The
+    // caller rejects any expiresAtMs above ctx.now() + DUEL_CHALLENGE_TTL_MS, so at the
+    // click that first resolved this pair, expiresAtMs - TTL <= that click's own instant
+    // = the row's createdAt <= expiresAtMs. A later click of the SAME id recomputes the
+    // SAME window, so that row is provably inside it. Keep the two together: relaxing
+    // the clamp reopens the incrementing-anchor bypass this bound cannot see.
+    .some((r) => r.createdAt >= expiresAtMs - DUEL_CHALLENGE_TTL_MS && r.createdAt <= expiresAtMs);
 }
 
 /**
