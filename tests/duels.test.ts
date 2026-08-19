@@ -12,7 +12,6 @@ import type { BattleResult } from '../src/data/battle/resolve.js';
 import { DUEL_PAIR_COOLDOWN_MS, DUEL_CHALLENGE_TTL_MS } from '../src/data/battle/constants.js';
 import { duelResultPayload, challengePayload, recordPayload, DUEL_PREFIX } from '../src/modules/duels/embeds.js';
 import { duelsModule } from '../src/modules/duels/index.js';
-import { dinoImage } from '../src/core/images.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx(); });
@@ -388,6 +387,16 @@ describe('duel embeds', () => {
   const strong = allSpecies().find((s) => s.rarity === 'legendary')!;
   const weak = allSpecies().find((s) => s.rarity === 'common')!;
 
+  // Mirrors dinoImage's override-vs-fallback precedence (src/core/images.ts) WITHOUT
+  // calling it: a legendary or mythic species ships a dedicated dinos/<speciesId>.webp
+  // portrait, every other species resolves the shared archetype×diet art. Derived from
+  // rarity rather than hand-typed against tests/images.test.ts's own HERO_SPECIES list —
+  // that list is deliberately hand-typed there, as a gate on exactly which 8 rasters are
+  // shipped, but this one only needs to track "does this species get an override",
+  // which rarity already answers and survives roster reordering without editing.
+  const HERO_SPECIES = new Set(
+    allSpecies().filter((s) => s.rarity === 'legendary' || s.rarity === 'mythic').map((s) => s.id));
+
   function outcome() {
     getOrCreateUser(ctx, 'a', 'A');
     getOrCreateUser(ctx, 'b', 'B');
@@ -435,17 +444,22 @@ describe('duel embeds', () => {
   // stopped firing would leave files undefined and pass every other assertion here.
   // attach APPENDS and call order is upload order, so the order is pinned too.
   //
-  // The expected name is resolved through dinoImage — the same call duelResultPayload
-  // makes — rather than hand-built from archetype/diet: `strong` above is the roster's
-  // first legendary, and since the hero-species portraits shipped, a legendary or
-  // mythic lead now resolves to its own dinos/<speciesId>.webp ahead of the shared
-  // archetype art. Hardcoding `${archetype}-${diet}.webp` here would silently stop
-  // matching the moment a species that fixture picks gains an override file.
+  // The expected name is derived from dinoImage's documented precedence (species
+  // override, else archetype fallback — see HERO_SPECIES above), NOT by calling
+  // dinoImage itself: duelResultPayload calls that exact function with these exact
+  // arguments, so computing the expectation the same way would make both sides move
+  // together if dinoImage's precedence ever inverted, and the test would stay green
+  // through the very regression it exists to catch. `strong` above is the roster's
+  // first legendary, so this only exercises the override arm; the fallback arm is
+  // covered by tests/images.test.ts's "every non-hero species still resolves to a
+  // shipped archetype image".
   it('attaches the lead thumbnail first, then the duel banner', () => {
     const out = outcome();
     const payload = duelResultPayload(out);
     const lead = out.result === 'loss' ? out.squads.defender[0] : out.squads.challenger[0];
-    const expected = dinoImage(lead.speciesId, lead.archetype, lead.diet)!.file.name;
+    const expected = HERO_SPECIES.has(lead.speciesId)
+      ? `${lead.speciesId}.webp`
+      : `${lead.archetype}-${lead.diet}.webp`;
     expect(payload.files!.map((f) => f.name)).toEqual([expected, 'duel.webp']);
     const embed = payload.embeds[0].toJSON();
     expect(embed.thumbnail?.url).toBe(`attachment://${expected}`);
