@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { PARK_TABS, isParkTab, tabRow, dashboardPayload, animalsPayload, lotsPayload } from '../src/modules/park/embeds.js';
+import { PARK_TABS, isParkTab, tabRow, dashboardPayload, animalsPayload, lotsPayload, prestigePayload } from '../src/modules/park/embeds.js';
 import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
+import { tierForPoints } from '../src/modules/park/ranks.js';
 
 const fieldsOf = (p: { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }) =>
   p.embeds[0].toJSON().fields ?? [];
@@ -149,5 +150,40 @@ describe('Lots tab', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
     const p = lotsPayload(user, [], 3);
     expect(p.files!.map((f) => f.name)).toEqual(['lots.webp']);
+  });
+});
+
+describe('Prestige tab', () => {
+  it('gathers every standing number onto one screen', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = prestigePayload(user, {
+      attendance: 18420, earnedTiers: 31, legacyRank: tierForPoints(120),
+      seasonBadges: { count: 3, latest: 690 },
+    });
+    const names = fieldsOf(p).map((f) => f.name);
+    expect(names.some((n) => n.includes('Attendance'))).toBe(true);
+    expect(names.some((n) => n.includes('Achievements'))).toBe(true);
+    expect(names.some((n) => n.includes('Legacy'))).toBe(true);
+    expect(names.some((n) => n.includes('Seasons'))).toBe(true);
+  });
+
+  it('omits Achievements and Seasons at zero rather than printing a 0', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = prestigePayload(user, { earnedTiers: 0, seasonBadges: { count: 0, latest: null } });
+    const names = fieldsOf(p).map((f) => f.name);
+    expect(names.some((n) => n.includes('Achievements'))).toBe(false);
+    expect(names.some((n) => n.includes('Seasons'))).toBe(false);
+  });
+
+  it('offers Landmark and Guests on your own card and neither on a visit', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const mine = JSON.stringify(prestigePayload(user, {}));
+    expect(mine).toContain('park:goto:landmark');
+    expect(mine).toContain('park:goto:guests');
+    const theirs = JSON.stringify(prestigePayload(user, { visit: true }));
+    expect(theirs).not.toContain('park:goto:');
   });
 });

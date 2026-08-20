@@ -5,6 +5,9 @@ import { eventHeaderLine } from '../world/embeds.js';
 import type { LandmarkDef } from '../../data/landmarks.js';
 import { assetImage, attach, dinoImage } from '../../core/images.js';
 import type { Featured } from './showcase.js';
+import type { LegacyTier } from './ranks.js';
+import { ATTENDANCE_MAX } from '../../data/attendance.js';
+import { seasonNumberOf } from '../../core/world.js';
 
 const LOT_EMOJI: Record<string, string> = {
   carnivore_paddock: 'dw_lot_carnivore', herbivore_paddock: 'dw_lot_herbivore',
@@ -151,6 +154,63 @@ export function lotsPayload(
     embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[];
   } = { embeds: [embed], components: [tabRow(user.discordId, 'lots', opts.visit)] };
   attach(embed, payload, 'image', assetImage('banners', 'lots'));
+  return payload;
+}
+
+/**
+ * The PRESTIGE tab. Takes `legacyRank` as a VALUE — the caller decides whether to read it
+ * with the pure `legacyRank()` or to latch the high-water with `bumpLegacyBest()`. This
+ * builder must never call either: it renders other players' cards too.
+ */
+export function prestigePayload(
+  user: User,
+  opts: { attendance?: number; earnedTiers?: number; legacyRank?: LegacyTier | null;
+          seasonBadges?: { count: number; latest: number | null }; landmark?: LandmarkDef | null;
+          visit?: boolean } = {},
+) {
+  const embed = new EmbedBuilder()
+    .setTitle(`🏛️ ${user.parkName} — Prestige`)
+    .setColor(0xc9a227)
+    .addFields(
+      { name: `${emojiTag('dw_star')} Rating`, value: (user.parkRating / 100).toFixed(1), inline: true },
+      { name: '🎡 Attendance', value: `${(opts.attendance ?? 0).toLocaleString()} / ${ATTENDANCE_MAX.toLocaleString()}`, inline: true },
+    );
+  const earnedTiers = opts.earnedTiers ?? 0;
+  if (earnedTiers > 0) {
+    embed.addFields({ name: '🏆 Achievements', value: `${earnedTiers} tier${earnedTiers === 1 ? '' : 's'} earned`, inline: true });
+  }
+  if (opts.legacyRank) {
+    embed.addFields({ name: '🏛️ Legacy', value: `${opts.legacyRank.title} (rank ${opts.legacyRank.rank})`, inline: true });
+  }
+  if (opts.seasonBadges && opts.seasonBadges.count > 0) {
+    const { count, latest } = opts.seasonBadges;
+    embed.addFields({
+      name: '🎖️ Seasons',
+      value: `${count} badge${count === 1 ? '' : 's'}${latest === null ? '' : ` · latest Season ${seasonNumberOf(latest)}`}`,
+      inline: true,
+    });
+  }
+  embed.addFields({
+    name: '🏛️ Landmark',
+    value: opts.landmark ? `Tier ${opts.landmark.tier} — ${opts.landmark.name}` : 'None yet',
+    inline: true,
+  });
+  const components: ActionRowBuilder<ButtonBuilder>[] = [];
+  // park:goto:landmark and park:goto:guests are minted here but have no handler until
+  // Task 7 — absorbed by the park component handler's default arm until then.
+  if (!opts.visit) {
+    components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`park:goto:landmark:${user.discordId}`)
+        .setLabel('🏛️ Landmark').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`park:goto:guests:${user.discordId}`)
+        .setLabel('🎡 Guests').setStyle(ButtonStyle.Secondary),
+    ));
+  }
+  components.push(tabRow(user.discordId, 'prestige', opts.visit));
+  const payload: {
+    embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[];
+  } = { embeds: [embed], components };
+  attach(embed, payload, 'image', assetImage('banners', 'landmark'));
   return payload;
 }
 
