@@ -8,7 +8,7 @@ import { renameDino } from '../src/modules/park/dinos.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
-import { dashboardPayload, PARK_HEADER_KEYS } from '../src/modules/park/embeds.js';
+import { dashboardPayload, animalsPayload, PARK_HEADER_KEYS } from '../src/modules/park/embeds.js';
 import { visitPayload } from '../src/modules/park/visit.js';
 import { attendanceOf } from '../src/modules/park/attendance.js';
 import { eventHeaderLine } from '../src/modules/world/embeds.js';
@@ -217,29 +217,7 @@ describe('Collect button', () => {
   });
 });
 
-// The itemised at-risk/mismatch/escaped breakdown this block used to pin was retired by
-// the Park tab rewrite: dashboardPayload now renders a single caller-supplied `attention`
-// sum (see tests/park-tabs.test.ts, 'Park tab' > 'shows a compact attention marker').
-// Splitting the reasons back out is Task 3's animalsPayload job — the two cases below are
-// skipped and retargeted there rather than deleted, since the itemised breakdown they pin
-// still exists, just relocated.
 describe('dashboard warnings', () => {
-  // Retargeted to animalsPayload in Task 3 — un-skip there.
-  it.skip('shows the at-risk count in the dino field', () => {
-    const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    // atRiskCount: 2 moves onto animalsPayload's own opts in Task 3 — dashboardPayload no
-    // longer accepts it.
-    const p = dashboardPayload(user, 0, {});
-    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🦕 Dinos')!;
-    expect(field.value).toContain('⚠ 2 at risk');
-  });
-  // Retargeted to animalsPayload in Task 3 — un-skip there.
-  it.skip('omits the warning at zero', () => {
-    const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, 0, {});
-    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🦕 Dinos')!;
-    expect(field.value).toBe('3');
-  });
   it('adds a capped field when capped', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
     const p = dashboardPayload(user, 480, { capped: true, dinoCount: 1 });
@@ -251,6 +229,26 @@ describe('dashboard warnings', () => {
     const p = dashboardPayload(user, 480, { dinoCount: 1 });
     const names = p.embeds[0].toJSON().fields!.map((f) => f.name);
     expect(names).not.toContain('⛔ Income capped');
+  });
+});
+
+// The itemised at-risk/mismatch/escaped breakdown this block used to pin against
+// dashboardPayload was retired by the Park tab rewrite: dashboardPayload now renders a
+// single caller-supplied `attention` sum (see tests/park-tabs.test.ts, 'Park tab' >
+// 'shows a compact attention marker'). The breakdown itself still exists — it moved onto
+// animalsPayload's own "Needs attention" field, which lists issues as separate lines
+// rather than folding a count into the Dinos field the way the old dashboard row did.
+describe('animalsPayload attention breakdown', () => {
+  it('shows the at-risk count in the needs-attention field', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = animalsPayload(user, 3, { atRisk: 2 });
+    const field = p.embeds[0].toJSON().fields!.find((f) => f.name.includes('Needs attention'))!;
+    expect(field.value).toContain('2 at risk');
+  });
+  it('omits the warning at zero', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = animalsPayload(user, 3, {});
+    expect(p.embeds[0].toJSON().fields!.some((f) => f.name.includes('Needs attention'))).toBe(false);
   });
 });
 
@@ -506,18 +504,18 @@ describe('/dino list escape countdown', () => {
   });
 });
 
-// Retargeted to animalsPayload in Task 3 — un-skip there.
-describe.skip('dashboard food line', () => {
-  it('/park view lists held food items grouped after cash', async () => {
-    getOrCreateUser(ctx, 'u1', 'Reg');
-    const parkCmd = parkModule.commands.find((c) => c.data.name === 'park')!;
-    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
-    await parkCmd.execute(ctx, i.asChatInput());
-    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> })
-      .embeds[0].toJSON().fields!;
-    const food = fields.find((f) => f.name.includes('Food'))!;
-    expect(food.value).toContain('🌿 Ferns ×10');               // starter pantry
-    expect(food.value).toContain('🐟 Fish ×10');
+// The food line moved off dashboardPayload's DB-driven render onto animalsPayload's own
+// caller-supplied `foodLine` string — no call site builds that string from food_inventory
+// yet (that wiring belongs to whichever task threads animalsPayload into /park view's own
+// execute path), so what animalsPayload itself can be held to is that it renders whatever
+// line it is given in the Food field, not the DB read that used to produce one.
+describe('animalsPayload food line', () => {
+  it('renders the caller-supplied food line in the Food field', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = animalsPayload(user, 0, { foodLine: '🌿 Ferns ×10\n🐟 Fish ×10' });
+    const field = p.embeds[0].toJSON().fields!.find((f) => f.name.includes('Food'))!;
+    expect(field.value).toContain('🌿 Ferns ×10');
+    expect(field.value).toContain('🐟 Fish ×10');
   });
 });
 
@@ -1027,27 +1025,26 @@ describe('dashboard showcase', () => {
     expect(lines[0]).toBe(eventHeaderLine(0, PARK_HEADER_KEYS));
   });
 
-  // Retargeted to animalsPayload in Task 3 — un-skip there.
-  it.skip('names the featured dino and attaches its archetype art as the thumbnail', () => {
+  it('names the featured dino and attaches its archetype art as the thumbnail', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    // featured: { name: 'Trixie', speciesId: 'triceratops', archetype: 'tank', diet: 'herbivore' }
-    // moves onto animalsPayload's own opts in Task 3 — dashboardPayload no longer accepts it.
-    const p = dashboardPayload(user, 0, {});
+    const p = animalsPayload(user, 1, {
+      featured: { name: 'Trixie', speciesId: 'triceratops', archetype: 'tank', diet: 'herbivore' },
+    });
     expect(fieldsOf(p).find((f) => f.name === '🦖 Featured')!.value).toBe('Trixie');
-    // assets/images/dinos/tank-herbivore.webp ships in the repo, so this exercises the
-    // real attach path — the URL without the file (or vice versa) is the broken-image bug.
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://tank-herbivore.webp');
-    expect(p.files).toHaveLength(1);
+    // Two files now: the roster banner plus the featured dino. Was 1 when this field
+    // lived on the single dashboard card.
+    expect(p.files).toHaveLength(2);
   });
 
-  // Retargeted to animalsPayload in Task 3 — un-skip there.
-  it.skip('ships no files and no Featured field when nothing is featured', () => {
+  it('ships only the roster banner and no Featured field when nothing is featured', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, 0, {});
+    const p = animalsPayload(user, 1, {});
     expect(fieldsOf(p).some((f) => f.name === '🦖 Featured')).toBe(false);
-    // Not [] — attach() on a null ref never creates the array at all, and two other test
-    // files pin exactly this distinction elsewhere in the suite.
-    expect(p.files).toBeUndefined();
+    // attach() on a null ref is a total no-op, so the banner is the only entry — the
+    // "never an empty array" distinction other test files pin still holds.
+    expect(p.files).toHaveLength(1);
+    expect(p.files![0].name).toBe('dino_roster.webp');
   });
 });
 

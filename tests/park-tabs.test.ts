@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PARK_TABS, isParkTab, tabRow, dashboardPayload } from '../src/modules/park/embeds.js';
+import { PARK_TABS, isParkTab, tabRow, dashboardPayload, animalsPayload } from '../src/modules/park/embeds.js';
 import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 
@@ -80,5 +80,43 @@ describe('Park tab', () => {
     const p = dashboardPayload(user, 999, { visit: true });
     expect(JSON.stringify(p)).not.toContain('park:collect');
     expect(p.components[0].toJSON().components).toHaveLength(4);
+  });
+});
+
+describe('Animals tab', () => {
+  it('itemises what the Park tab only summarised', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = animalsPayload(user, 9, { escaped: 1, atRisk: 3, mismatch: 2 });
+    const v = fieldsOf(p).find((f) => f.name.includes('Needs attention'))!.value;
+    expect(v).toContain('1 escaped');
+    expect(v).toContain('3 at risk');
+    expect(v).toContain('2 wrong habitat');
+  });
+
+  it('omits the attention field entirely when nothing is wrong', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = animalsPayload(user, 9, {});
+    expect(fieldsOf(p).some((f) => f.name.includes('Needs attention'))).toBe(false);
+  });
+
+  it('carries the roster banner, and the featured dino art second', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = animalsPayload(user, 1, {
+      featured: { name: 'Trixie', speciesId: 'triceratops', archetype: 'tank', diet: 'herbivore' },
+    });
+    // Call order is upload order, and several tests across the suite pin files by name.
+    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster.webp', 'tank-herbivore.webp']);
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://tank-herbivore.webp');
+  });
+
+  it('drops the action buttons on a visited card but keeps the tab row', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = animalsPayload(user, 1, { visit: true });
+    expect(JSON.stringify(p)).not.toContain('park:feedall');
+    expect(p.components).toHaveLength(1);
   });
 });
