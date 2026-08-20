@@ -42,15 +42,16 @@ export function nextInRing(ctx: Ctx, afterUserId: string): string | null {
 }
 
 /**
- * Somebody else's park, read-only. Null when they have no park row at all.
+ * Somebody else's park, read-only — the Park tab, rendered with `visit: true`. Null when
+ * they have no park row at all.
  *
- * Builds its OWN components rather than filtering dashboardPayload's, because the two
- * things that must happen here pull in opposite directions: `components` must be dropped
- * (park:collect carries no user id, so a viewer clicking it would collect the CLICKER's
- * income from a message about another player) while `files` must be KEPT (the featured
- * dino's upload, or the embed holds a dangling attachment:// URL). The old
- * `const base = { embeds: payload.embeds }` in /park view did both — correctly for one,
- * silently wrong for the other.
+ * Renders via dashboardPayload directly rather than hand-building a payload, because
+ * `visit: true` already resolves both things that must happen here: it suppresses
+ * park:collect at the source (that button carries no user id, so a viewer clicking it
+ * would collect the CLICKER's income from a message about another player) while still
+ * minting the tab row under the `park:vtab:<targetUserId>:<tab>` family, so a visitor can
+ * navigate to the other three tabs. The old hand-built `components: []` dropped both —
+ * correctly for Collect, silently wrong for the tab row.
  *
  * Settles the TARGET's escapes, which is what makes the rendered park accurate. It writes
  * nothing for the viewer — no getOrCreateUser, no row minted for a passer-by.
@@ -64,18 +65,14 @@ export async function visitPayload(ctx: Ctx, targetUserId: string): Promise<Visi
     .where(eq(schema.users.discordId, targetUserId)).get()!;
   const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, targetUserId)).all();
   const escaped = dinos.filter((d) => d.escapedAt !== null).length;
-  // Minimal fixup for the Task 2 signature change only — this call renders the Park tab
-  // alone and drops the Food/Attendance/Achievements/Legacy/Seasons/Featured content this
-  // function used to assemble. Task 8 rewrites visitPayload to walk all four tabs; do not
-  // expand this further in the meantime.
   const built = dashboardPayload(user, 0, {
-    attention: escaped,
-    motto: user.motto,
-    now: ctx.now(),
-    dinoCount: dinos.length,
-    visit: true,
+    motto: user.motto, now: ctx.now(), dinoCount: dinos.length,
+    attention: escaped, visit: true,
   });
-  const payload: VisitPayload = { embeds: built.embeds, components: [] };
+  // components come straight from the builder now: `visit: true` suppresses park:collect
+  // at the source rather than filtering it out here, and the tab row must survive so a
+  // visitor can navigate. The old hand-built `components: []` would strip both.
+  const payload: VisitPayload = { embeds: built.embeds, components: built.components };
   if (built.files) payload.files = built.files;
   const next = nextInRing(ctx, targetUserId);
   if (next) {

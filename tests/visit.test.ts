@@ -72,27 +72,10 @@ describe('visitPayload', () => {
     expect(JSON.stringify(p)).not.toContain('park:collect');
   });
 
-  // visitPayload's own Featured/thumbnail wiring is a KNOWN, temporary regression from the
-  // Task 2 dashboardPayload signature change — Featured moved to the Animals tab and
-  // visitPayload was given only the minimal fixup needed to compile (see the comment at
-  // its call site in src/modules/park/visit.ts). Task 8 rewrites visitPayload to render the
-  // Park tab (visit: true) plus the other three vtab renders — Featured lives on Animals,
-  // reached via park:vtab:<target>:animals, not on the Park-tab render this test builds.
-  // Simply un-skipping this test in place will still fail: the assertion below has to MOVE
-  // onto whatever exercises the vtab Animals render in Task 8, not stay pointed at
-  // visitPayload's Park-tab output.
-  it.skip('keeps the featured dino\'s file — the drop the old branch made', async () => {
-    player('a', 300);
-    const d = ctx.db.insert(schema.dinos)
-      .values({ userId: 'a', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 })
-      .returning().get();
-    setFeaturedDino(ctx, 'a', d.id);
-    const p = (await visitPayload(ctx, 'a'))!;
-    // The embed points at attachment://<archetype>-<diet>.webp; without the file it is a
-    // dangling URL, which renders as a broken image and throws nothing.
-    expect(p.embeds[0].toJSON().thumbnail?.url).toBeDefined();
-    expect(p.files!.some((f) => f.name === p.embeds[0].toJSON().thumbnail!.url.replace('attachment://', ''))).toBe(true);
-  });
+  // visitPayload itself only ever renders the Park tab, which carries no Featured content —
+  // Featured lives on the Animals tab. The equivalent assertion now lives in the
+  // 'park:vtab animals tab' describe block below, driven through park:vtab:<target>:animals
+  // rather than visitPayload directly.
 
   it('mints a Next park button for the next ring member', async () => {
     player('a', 300); player('b', 200);
@@ -100,10 +83,14 @@ describe('visitPayload', () => {
     expect(JSON.stringify(p)).toContain('park:tour:b');
   });
 
-  it('mints no button when the ring is empty', async () => {
+  it('mints no Next park button when the ring is empty, but keeps the tab row', async () => {
     getOrCreateUser(ctx, 'a', 'A');   // rating 0 — has a row, not in the ring
     const p = (await visitPayload(ctx, 'a'))!;
-    expect(p.components).toEqual([]);
+    // components now come straight from dashboardPayload(visit: true), which always mints
+    // the tab row — only the second row (Next park) is conditional on the ring having a
+    // next member, so an empty ring leaves exactly one row, not zero.
+    expect(p.components).toHaveLength(1);
+    expect(JSON.stringify(p.components)).not.toContain('park:tour:');
     // No featured dino here, so attach() never ran and dashboardPayload's `files` stayed
     // undefined — the forwarding line must not turn that into an empty array. attach()
     // deliberately never creates one (see the repo CLAUDE.md note on the three attachment
@@ -155,5 +142,33 @@ describe('park:tour', () => {
     // The existence check runs ahead of the acknowledgement precisely so this answer can
     // stay ephemeral — deferUpdate first would have committed it to the public message.
     expect(i.deferOpts).toHaveLength(0);
+  });
+});
+
+describe('park:vtab animals tab', () => {
+  const click = async (customId: string, user = 'viewer') => {
+    const i = fakeButton({ customId, user });
+    await parkModule.components.find((c) => c.prefix === 'park')!.execute(ctx, i.asInteraction() as never);
+    return i;
+  };
+
+  // Moved from visitPayload's own (formerly skipped) test above: visitPayload only ever
+  // renders the Park tab, which carries no Featured content — Featured lives on the
+  // Animals tab, reached via park:vtab:<target>:animals.
+  it('keeps the featured dino\'s file — the drop the old branch made', async () => {
+    player('a', 300);
+    const d = ctx.db.insert(schema.dinos)
+      .values({ userId: 'a', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 })
+      .returning().get();
+    setFeaturedDino(ctx, 'a', d.id);
+    const i = await click('park:vtab:a:animals');
+    const sent = i.replies[0] as {
+      embeds: Array<{ toJSON(): { thumbnail?: { url: string } } }>;
+      files?: Array<{ name: string }>;
+    };
+    // The embed points at attachment://<archetype>-<diet>.webp; without the file it is a
+    // dangling URL, which renders as a broken image and throws nothing.
+    expect(sent.embeds[0].toJSON().thumbnail?.url).toBeDefined();
+    expect(sent.files!.some((f) => f.name === sent.embeds[0].toJSON().thumbnail!.url.replace('attachment://', ''))).toBe(true);
   });
 });

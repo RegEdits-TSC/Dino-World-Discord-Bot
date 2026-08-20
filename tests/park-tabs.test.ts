@@ -341,3 +341,38 @@ describe('tab action buttons', () => {
     expect(sent.embeds).toBeUndefined();
   });
 });
+
+describe('visited park tabs', () => {
+  it('lets anyone drive a visited card — the id is a target, not an owner', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    getOrCreateUser(ctx, 'u2', 'Other');
+    const b = fakeButton({ customId: 'park:vtab:u1:lots', user: 'u2' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(JSON.stringify(b.replies[0])).not.toContain('Not your park');
+    expect((b.replies[0] as { embeds: Array<{ toJSON(): { title: string } }> })
+      .embeds[0].toJSON().title).toContain('Lots');
+  });
+
+  it('never mints a Collect or Feed all button on a visited card', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    getOrCreateUser(ctx, 'u2', 'Other');
+    for (const tab of ['park', 'animals', 'lots', 'prestige']) {
+      const b = fakeButton({ customId: `park:vtab:u1:${tab}`, user: 'u2' });
+      await parkComp().execute(ctx, b.asInteraction() as never);
+      const json = JSON.stringify(b.replies[0]);
+      expect(json, tab).not.toContain('park:collect');
+      expect(json, tab).not.toContain('park:feedall');
+      expect(json, tab).not.toContain('park:goto:');
+    }
+  });
+
+  it('answers a visit to a player with no park without acknowledging publicly', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u2', 'Other');
+    const b = fakeButton({ customId: 'park:vtab:nobody:park', user: 'u2' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(JSON.stringify(b.replies[0])).toContain('no park yet');
+  });
+});

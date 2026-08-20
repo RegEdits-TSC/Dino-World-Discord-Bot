@@ -382,12 +382,10 @@ describe('prestige achievements badge wiring', () => {
   // mis-resolved the owner id would either make both replies agree or throw on the `!`
   // assertion below, the same way the original discriminator worked.
   //
-  // OWED: the visited-card claim this test used to carry — that park:vtab:<target>:prestige
-  // renders the TARGET's earnedTierCount, never the viewer's own — is asserted nowhere on
-  // this branch. `case 'vtab'` does not exist yet, so no test here can reach it; Task 8
-  // must add that data-level assertion when it lands (e.g. u2 clicking
-  // park:vtab:u1:prestige must render u1's Achievements field, not u2's), not just check
-  // the embed title or the absence of the owner-only buttons.
+  // The visited-card claim this test used to carry — that park:vtab:<target>:prestige
+  // renders the TARGET's earnedTierCount, never the viewer's own — is now paid by the
+  // "renders the TARGET's earnedTierCount on a visited card" test below, once case 'vtab'
+  // exists (Task 8).
   it('threads each clicking user\'s own earnedTierCount into their Prestige tab', async () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
     getOrCreateUser(ctx, 'other', 'Other');
@@ -407,6 +405,33 @@ describe('prestige achievements badge wiring', () => {
     const field = theirsFields.find((f) => f.name === '🏆 Achievements')!;
     expect(field.value).toContain('1');
   });
+
+  // Pays the OWED assertion above: park:vtab:<target>:prestige must render the TARGET's
+  // earnedTierCount, never the VIEWER's own. u1 (the target) and u2 (the clicking viewer)
+  // are seeded with genuinely different counts — 1 vs 3 — so a renderTab that read
+  // i.user.id anywhere it should read the target id would either show 3 (the viewer's own
+  // count) or throw when '3 tiers' collides with the `not.toContain` assertion.
+  it('renders the TARGET\'s earnedTierCount on a visited card, never the viewer\'s own', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    getOrCreateUser(ctx, 'u2', 'Other');
+    ctx.db.insert(schema.achievementClaims).values([
+      { userId: 'u1', trackId: 'eggs_hatched', tier: 0, claimedAt: 0 },
+    ]).run();
+    ctx.db.insert(schema.achievementClaims).values([
+      { userId: 'u2', trackId: 'eggs_hatched', tier: 0, claimedAt: 0 },
+      { userId: 'u2', trackId: 'eggs_hatched', tier: 1, claimedAt: 0 },
+      { userId: 'u2', trackId: 'dinos_fed', tier: 0, claimedAt: 0 },
+    ]).run();
+    const parkComp = () => parkModule.components.find((c) => c.prefix === 'park')!;
+
+    // u2 (the viewer, holding 3 claims) visits u1's park (the target, holding 1).
+    const b = fakeButton({ customId: 'park:vtab:u1:prestige', user: 'u2' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const fields = (b.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field = fields.find((f) => f.name === '🏆 Achievements')!;
+    expect(field.value).toContain('1 tier');       // u1's own count, the TARGET
+    expect(field.value).not.toContain('3 tier');   // never u2's count, the VIEWER
+  });
 });
 
 // Attendance lives on the Prestige tab, not Animals — prestigePayload takes
@@ -423,11 +448,9 @@ describe('prestige achievements badge wiring', () => {
 // DIFFERENT distinct-species counts (1 vs 2) on purpose — equal values would prove nothing
 // below.
 //
-// OWED: the visited-card claim this test used to carry — that park:vtab:<target>:prestige
-// renders the TARGET's attendance, never the viewer's own — is asserted nowhere on this
-// branch. `case 'vtab'` does not exist yet; Task 8 must add that data-level assertion when
-// it lands (e.g. u2 clicking park:vtab:u1:prestige must render u1's Attendance value, not
-// u2's), not just check the embed title or the absence of the owner-only buttons.
+// The visited-card claim this test used to carry — that park:vtab:<target>:prestige
+// renders the TARGET's attendance, never the viewer's own — is now paid by the vtab
+// assertion appended to the test below, once case 'vtab' exists (Task 8).
 describe('prestige attendance wiring', () => {
   it('keys the attendance field to the clicking user\'s own park, never another\'s', async () => {
     for (const id of ['u1', 'u2']) getOrCreateUser(ctx, id, id);
@@ -464,6 +487,16 @@ describe('prestige attendance wiring', () => {
     const otherField = attendanceField(other.replies);
     expect(otherField.value).toContain(u2Attendance.toLocaleString());
     expect(otherField.value).not.toContain(u1Attendance.toLocaleString());
+
+    // Pays the OWED assertion for this field: u2 (the viewer) visits u1's park (the
+    // target) via park:vtab:u1:prestige. The rendered field must carry u1's attendance,
+    // never u2's own — a renderTab that read i.user.id anywhere it should read the target
+    // id would render u2Attendance here instead.
+    const visit = fakeButton({ customId: 'park:vtab:u1:prestige', user: 'u2' });
+    await parkComp().execute(ctx, visit.asInteraction() as never);
+    const visitField = attendanceField(visit.replies);
+    expect(visitField.value).toContain(u1Attendance.toLocaleString());       // u1's, the TARGET
+    expect(visitField.value).not.toContain(u2Attendance.toLocaleString());   // never u2's, the VIEWER
   });
 });
 
@@ -512,12 +545,10 @@ describe('prestige legacy rank wiring', () => {
   // DIFFERENT titles — a title mismatch fails louder than a missing-vs-present field
   // would if a dispatcher bug ever resolved the wrong id.
   //
-  // OWED: the visited-card claim this test used to carry — that park:vtab:<target>:prestige
-  // renders the TARGET's legacy rank, never the viewer's own — is asserted nowhere on this
-  // branch. `case 'vtab'` does not exist yet; Task 8 must add that data-level assertion when
-  // it lands (e.g. u2 clicking park:vtab:u1:prestige must render u1's Legacy field, titled
-  // Groundskeeper, and never u2's Keeper), not just check the embed title or the absence of
-  // the owner-only buttons.
+  // The visited-card claim this test used to carry — that park:vtab:<target>:prestige
+  // renders the TARGET's legacy rank, never the viewer's own — is now paid by the
+  // "renders the TARGET's legacy rank on a visited card" test below, once case 'vtab'
+  // exists (Task 8).
   it('shows each clicking user\'s own legacy rank, not another\'s', async () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
     getOrCreateUser(ctx, 'u2', 'Other');
@@ -540,6 +571,28 @@ describe('prestige legacy rank wiring', () => {
     expect(field2).toBeTruthy();
     expect(field2!.value).toContain('Keeper');       // u2's rank
     expect(field2!.value).not.toContain('Groundskeeper');   // never u1's rank
+  });
+
+  // Pays the OWED assertion above: park:vtab:<target>:prestige must render the TARGET's
+  // legacy rank, never the VIEWER's own. u1 (the target) is Groundskeeper, u2 (the
+  // clicking viewer) is Keeper — genuinely different titles, so a renderTab that read
+  // i.user.id anywhere it should read the target id would render "Keeper" on u1's own
+  // visited card instead of "Groundskeeper".
+  it('renders the TARGET\'s legacy rank on a visited card, never the viewer\'s own', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    getOrCreateUser(ctx, 'u2', 'Other');
+    for (const s of allSpecies().slice(0, 15)) recordSpeciesSeen(ctx, 'u1', s.id);   // Groundskeeper (rank 1)
+    for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u2', s.id);   // Keeper (rank 2)
+    const parkComp = () => parkModule.components.find((c) => c.prefix === 'park')!;
+
+    // u2 (Keeper) visits u1's park (Groundskeeper).
+    const b = fakeButton({ customId: 'park:vtab:u1:prestige', user: 'u2' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const fields = (b.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field = fields.find((f) => f.name === '🏛️ Legacy');
+    expect(field).toBeTruthy();
+    expect(field!.value).toContain('Groundskeeper');   // u1's rank, the TARGET
+    expect(field!.value).not.toContain('Keeper');       // never u2's rank, the VIEWER
   });
 });
 
