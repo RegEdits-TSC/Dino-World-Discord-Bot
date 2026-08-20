@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { makeCtx, fakeCommand, fakeAutocomplete, fakeButton, fakeSelect, mulberry32, replyText } from './harness.js';
+import { validateMessagePayload } from './lib/discord-limits.js';
 
 describe('harness', () => {
   it('ctx time is controllable and rng deterministic', () => {
@@ -166,5 +167,48 @@ describe('fakeSelect', () => {
       .asInteraction() as unknown as { isButton(): boolean; isStringSelectMenu(): boolean };
     expect(raw.isButton()).toBe(false);
     expect(raw.isStringSelectMenu()).toBe(true);
+  });
+});
+
+describe('select menu payload limits', () => {
+  const row = (components: unknown[]) => ({ components: [{ type: 1, components }] });
+  const select = (over: Record<string, unknown> = {}) => ({
+    type: 3, custom_id: 'm:pick',
+    options: [{ label: 'a', value: 'a' }],
+    ...over,
+  });
+
+  it('accepts a legal select row', () => {
+    expect(() => validateMessagePayload(row([select()]), 'ok')).not.toThrow();
+  });
+
+  it('rejects more than 25 options', () => {
+    const options = Array.from({ length: 26 }, (_, n) => ({ label: `o${n}`, value: `o${n}` }));
+    expect(() => validateMessagePayload(row([select({ options })]), 'x')).toThrow(/options > 25/);
+  });
+
+  it('rejects a select sharing its row with anything else', () => {
+    expect(() => validateMessagePayload(row([select(), { type: 2, custom_id: 'm:b' }]), 'x'))
+      .toThrow(/select must be alone in its row/);
+  });
+
+  it('rejects an over-long option label and an over-long value', () => {
+    expect(() => validateMessagePayload(
+      row([select({ options: [{ label: 'x'.repeat(101), value: 'a' }] })]), 'x')).toThrow(/label > 100/);
+    expect(() => validateMessagePayload(
+      row([select({ options: [{ label: 'a', value: 'x'.repeat(101) }] })]), 'x')).toThrow(/value > 100/);
+  });
+
+  it('still enforces the five-button cap on ordinary rows', () => {
+    const six = Array.from({ length: 6 }, (_, n) => ({ type: 2, custom_id: `m:${n}` }));
+    expect(() => validateMessagePayload(row(six), 'x')).toThrow(/buttons per row > 5/);
+  });
+
+  it('rejects an over-long option description and an over-long placeholder', () => {
+    expect(() => validateMessagePayload(
+      row([select({ options: [{ label: 'a', value: 'a', description: 'x'.repeat(101) }] })]), 'x'))
+      .toThrow(/description > 100/);
+    expect(() => validateMessagePayload(
+      row([select({ placeholder: 'x'.repeat(151) })]), 'x')).toThrow(/placeholder > 150/);
   });
 });
