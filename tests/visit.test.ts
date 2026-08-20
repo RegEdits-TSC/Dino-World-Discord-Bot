@@ -75,8 +75,8 @@ describe('visitPayload', () => {
   // visitPayload's own Featured/thumbnail wiring is a KNOWN, temporary regression from the
   // Task 2 dashboardPayload signature change — Featured moved to the Animals tab and
   // visitPayload was given only the minimal fixup needed to compile (see the comment at
-  // its call site in src/modules/park/visit.ts). Task 8 rewrites visitPayload to walk all
-  // four tabs and restores this. Un-skip there.
+  // its call site in src/modules/park/visit.ts). Retargeted to visitPayload in Task 8 —
+  // un-skip there.
   it.skip('keeps the featured dino\'s file — the drop the old branch made', async () => {
     player('a', 300);
     const d = ctx.db.insert(schema.dinos)
