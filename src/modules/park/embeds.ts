@@ -158,3 +158,45 @@ export function landmarkPayload(user: User, current: LandmarkDef | null, next: L
   attach(embed, payload, 'image', assetImage('banners', 'landmark'));
   return payload;
 }
+
+export type ParkTab = 'park' | 'animals' | 'lots' | 'prestige';
+
+// Order is display order AND the order tabRow mints buttons in; tests pin it.
+export const PARK_TABS: readonly ParkTab[] = ['park', 'animals', 'lots', 'prestige'];
+
+const TAB_LABEL: Record<ParkTab, { label: string; emoji: string }> = {
+  park: { label: 'Park', emoji: '🏞️' },
+  animals: { label: 'Animals', emoji: '🦕' },
+  lots: { label: 'Lots', emoji: '🏗️' },
+  prestige: { label: 'Prestige', emoji: '🏛️' },
+};
+
+// The tab segment is CLIENT-supplied, so it is validated against the real union rather
+// than cast — the parseDexFilters rule. `__proto__` and `constructor` are the reason this
+// is an array membership test and not a lookup into TAB_LABEL: a prototype key reads back
+// truthy from a plain object, which is exactly the hole buildLot has.
+export function isParkTab(s: string): s is ParkTab {
+  return (PARK_TABS as readonly string[]).includes(s);
+}
+
+/**
+ * The navigation row. `id` is the OWNER's id for the own-park family and the TARGET's id
+ * for the visit family — the visit tabs deliberately carry a target and are not owner
+ * checked, the same shape park:tour already uses.
+ *
+ * Unicode glyphs in the label, never emojiTag/setEmoji: the app-emoji map returns '' when
+ * unloaded and setEmoji throws on that rather than degrading.
+ */
+export function tabRow(id: string, active: ParkTab, visit = false): ActionRowBuilder<ButtonBuilder> {
+  const action = visit ? 'vtab' : 'tab';
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    ...PARK_TABS.map((t) => new ButtonBuilder()
+      .setCustomId(`park:${action}:${id}:${t}`)
+      .setLabel(`${TAB_LABEL[t].emoji} ${TAB_LABEL[t].label}`)
+      .setStyle(t === active ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      // The active tab is disabled so a click cannot re-render the screen already shown —
+      // and this is a UX affordance ONLY, never a lock: the router guard does not read
+      // `disabled`, so every handler still validates for itself.
+      .setDisabled(t === active)),
+  );
+}
