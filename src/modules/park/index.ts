@@ -655,17 +655,20 @@ async function renderTab(
     const { clockDinos } = toClockDinos(ctx, ownerId);
     const nowMs = ctx.now();
     const escaped = dinos.filter((d) => d.escapedAt !== null).length;
-    const atRisk = clockDinos.filter((c) => {
+    // A single pass over DISTINCT dinos, matching /park view's own execute path (below):
+    // at-risk and mismatch are independent predicates over the same non-escaped dinos, so
+    // one dino can trip both, and summing them separately double-counts it.
+    const needsAttention = clockDinos.filter((c) => {
       if (c.escapedAt !== null) return false;
       const e = escapeAt(c);
-      return e !== null && e - nowMs <= ESCAPE_WARN_MS;
+      const atRisk = e !== null && e - nowMs <= ESCAPE_WARN_MS;
+      const mismatch = c.paddock !== null && c.paddock.diet !== c.species.diet;
+      return atRisk || mismatch;
     }).length;
-    const mismatch = clockDinos.filter((c) =>
-      c.paddock !== null && c.escapedAt === null && c.paddock.diet !== c.species.diet).length;
     const pending = visit ? 0 : pendingIncome(ctx, ownerId);
     const capped = pending > 0 && ctx.now() - user.lastCollectAt >= capHours(lots) * 3_600_000;
     const base = dashboardPayload(user, pending, {
-      attention: escaped + atRisk + mismatch, capped, now: nowMs,
+      attention: escaped + needsAttention, capped, now: nowMs,
       motto: user.motto, dinoCount: dinos.length, visit,
     });
     let png: Buffer | undefined;

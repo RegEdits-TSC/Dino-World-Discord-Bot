@@ -283,6 +283,28 @@ describe('/park view attention marker', () => {
     // branch, so this is genuinely "1 need attention", not "1 needs attention".
     expect(field.value).toBe('1 · ⚠️ 1 need attention');
   });
+
+  // The dispatcher twin of the regression above: Task 6's renderTab re-introduced the same
+  // sum-of-three-filters bug in its own Park-tab branch (a separate snippet from /park
+  // view's execute path, so the earlier fix did not carry over automatically). Same
+  // fixture, driven through park:tab:<uid>:park instead of the /park view command, and the
+  // marker must read identically — clicking Park re-renders the very screen /park view just
+  // drew, so the two must never disagree.
+  it('the Park tab click reads the same "1 need attention", never 2', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'test:seed', 0);
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    ctx.setNow(100 * H);
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'quetzalcoatlus', lotId: lot.id, hunger: 100,
+      lastFedAt: ctx.now() - 25 * H, hatchedAt: 0,
+    }).run();
+    const b = fakeButton({ customId: 'park:tab:u1:park', user: 'u1' });
+    await parkModule.components.find((c) => c.prefix === 'park')!.execute(ctx, b.asInteraction() as never);
+    const fields = (b.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field = fields.find((f) => f.name === '🦕 Dinos')!;
+    expect(field.value).toBe('1 · ⚠️ 1 need attention');
+  });
 });
 
 // Achievements, Attendance and Legacy all left the Park tab for good — all three move to
@@ -359,6 +381,13 @@ describe('prestige achievements badge wiring', () => {
   // claims and 'other' holds one — a dispatcher bug that hardcoded, cached, or otherwise
   // mis-resolved the owner id would either make both replies agree or throw on the `!`
   // assertion below, the same way the original discriminator worked.
+  //
+  // OWED: the visited-card claim this test used to carry — that park:vtab:<target>:prestige
+  // renders the TARGET's earnedTierCount, never the viewer's own — is asserted nowhere on
+  // this branch. `case 'vtab'` does not exist yet, so no test here can reach it; Task 8
+  // must add that data-level assertion when it lands (e.g. u2 clicking
+  // park:vtab:u1:prestige must render u1's Achievements field, not u2's), not just check
+  // the embed title or the absence of the owner-only buttons.
   it('threads each clicking user\'s own earnedTierCount into their Prestige tab', async () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
     getOrCreateUser(ctx, 'other', 'Other');
@@ -393,6 +422,12 @@ describe('prestige achievements badge wiring', () => {
 // see their OWN number, never the other's or a stale/shared one. u1 and u2 still get
 // DIFFERENT distinct-species counts (1 vs 2) on purpose — equal values would prove nothing
 // below.
+//
+// OWED: the visited-card claim this test used to carry — that park:vtab:<target>:prestige
+// renders the TARGET's attendance, never the viewer's own — is asserted nowhere on this
+// branch. `case 'vtab'` does not exist yet; Task 8 must add that data-level assertion when
+// it lands (e.g. u2 clicking park:vtab:u1:prestige must render u1's Attendance value, not
+// u2's), not just check the embed title or the absence of the owner-only buttons.
 describe('prestige attendance wiring', () => {
   it('keys the attendance field to the clicking user\'s own park, never another\'s', async () => {
     for (const id of ['u1', 'u2']) getOrCreateUser(ctx, id, id);
@@ -476,6 +511,13 @@ describe('prestige legacy rank wiring', () => {
   // discriminator moves to: two different users, each clicking their OWN button, land on
   // DIFFERENT titles — a title mismatch fails louder than a missing-vs-present field
   // would if a dispatcher bug ever resolved the wrong id.
+  //
+  // OWED: the visited-card claim this test used to carry — that park:vtab:<target>:prestige
+  // renders the TARGET's legacy rank, never the viewer's own — is asserted nowhere on this
+  // branch. `case 'vtab'` does not exist yet; Task 8 must add that data-level assertion when
+  // it lands (e.g. u2 clicking park:vtab:u1:prestige must render u1's Legacy field, titled
+  // Groundskeeper, and never u2's Keeper), not just check the embed title or the absence of
+  // the owner-only buttons.
   it('shows each clicking user\'s own legacy rank, not another\'s', async () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
     getOrCreateUser(ctx, 'u2', 'Other');
