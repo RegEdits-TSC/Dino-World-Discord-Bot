@@ -93,6 +93,26 @@ describe('assetImage', () => {
       expect(img!.url).toBe(`attachment://${name}.webp`);
     }
   });
+  // PENDING_BANNERS is a temporary escape hatch, not a permanent exemption: the two
+  // checks it loosens (the exists/URL assertion above, and the dimension it.each below)
+  // have no other way to notice an entry going stale. Once an asset ships, those two
+  // would keep silently passing it by forever — the exists check `continue`s past it and
+  // the dimension loop never registers a case for it at all — so a wrong-sized or
+  // malformed file could ship under a pending name and stay wrong indefinitely with the
+  // whole suite green. This is the tripwire: it asserts the INVERSE, that no pending name
+  // has a file yet, so the moment one ships this goes red and names exactly which entry
+  // to delete. It only guards against the allowlist outliving its asset — an entry whose
+  // file genuinely is not committed yet must keep passing this.
+  it('never lets a PENDING_BANNERS entry sit forgotten past its own asset shipping', () => {
+    for (const name of PENDING_BANNERS) {
+      expect(
+        assetImage('banners', name),
+        `PENDING_BANNERS still lists '${name}', but assets/images/banners/${name}.webp now ` +
+        `exists — remove '${name}' from PENDING_BANNERS in tests/images.test.ts so the real ` +
+        'exists/dimension checks cover it again.',
+      ).toBeNull();
+    }
+  });
   it('accepts the battles kind and null-degrades when absent', () => {
     expect(assetImage('battles', 'no-such-portrait')).toBeNull();
   });
