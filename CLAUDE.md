@@ -64,28 +64,26 @@
   `fightFrames` (`src/modules/battles/embeds.ts`) is the one exception: every ref
   it builds is dressed onto several embeds and the files are then split across two
   payloads by the F1/F4 contract — do not convert any of them, however many there
-  are. Separately, `withParkImage` (`src/modules/park/embeds.ts`) now
-  **appends** to `files` rather than assigning — `dashboardPayload`
-  (`src/modules/park/embeds.ts`) now calls `attach()` of its own (the
-  featured dino's thumbnail), and the old assigning version would have
-  silently dropped that upload at every call site that reached it. Of the
-  three call sites, `/park view` on your own park
-  (`src/modules/park/index.ts`) wraps `dashboardPayload`'s output directly,
-  so it's the plainest beneficiary: a featured dino's thumbnail and
-  `park.png` now both survive in the same reply. `/help topic:park`
-  (`src/modules/help/index.ts`) wraps the shared help-topic payload, which
-  calls `attach()` only when `HELP_TOPICS[topic].art` is set, and
-  `HELP_TOPICS.park` declares no `art`, so append vs. assign is moot there
-  regardless. The live hazard sits at the third: the read-only other-player
-  view, built by `visitPayload` (`src/modules/park/visit.ts`), which does
-  NOT reuse `dashboardPayload`'s `components`/`files` wholesale — it builds
-  its own `components: []`, dropping `park:collect` (that button carries no
-  user id, so a viewer clicking it on someone else's park card would collect
-  the CLICKER's own income), while explicitly forwarding `dashboardPayload`'s
-  `files` (the featured dino's upload — dropping *that* would leave the
-  embed's `attachment://` URL dangling with no image behind it). The two
-  drops pull in opposite directions, and `visit.ts` is the one place in the
-  codebase that has to get both right at the same time.
+  are. Separately, `withParkImage` (`src/modules/park/embeds.ts`) still
+  **appends** to `files` rather than assigning, so `park.png` can stack onto
+  whatever a payload already carries without clobbering it. `dashboardPayload`
+  (the Park tab, `src/modules/park/embeds.ts`) calls no `attach()` of its
+  own, though — it ships no art beyond whatever `withParkImage` adds, at all
+  three call sites that wrap it: `/park view` on your own park and
+  `renderTab`'s `park` branch (both `src/modules/park/index.ts`), plus
+  `visitPayload` (`src/modules/park/visit.ts`). The featured dino's
+  thumbnail lives on the ANIMALS tab instead (`animalsPayload`), attached
+  alongside the roster banner via two `attach()` calls of its own — a
+  different builder for a different tab, never wrapped by `withParkImage`.
+  `visitPayload` no longer hand-builds `components: []` the way an earlier
+  version did: it calls `dashboardPayload(user, 0, { …, visit: true })`
+  directly and takes ITS `components` (and, defensively, its `files`, though
+  `dashboardPayload` never sets that key today) — `visit: true` already
+  suppresses `park:collect` at the source (that button carries no user id,
+  so a viewer clicking it on someone else's park card would collect the
+  CLICKER's own income) while still minting the tab row, so there is neither
+  a components array to hand-build nor a featured-dino upload to forward: a
+  visited Park tab never carries one.
 - Passive notifications carry a `NotifyPayload` (`src/core/notify.ts`):
   `string | { content?, embeds?, files?, components?, allowedMentions? }`.
   `Ctx.notify`'s third argument stays `message: string` on purpose — a string
@@ -1216,3 +1214,41 @@
   gate and each mutates regardless, so the `parkRating` write riding along carries no
   surprise. The high-water still advances on every build, claim, feed, assign, upgrade
   and decorate, so nothing becomes unreachable.
+- `/park view` renders one of four tabs — `park | animals | lots | prestige`
+  (`ParkTab`, `src/modules/park/embeds.ts`) — swapped in place. `dashboardPayload` keeps
+  its name and IS the Park tab; `animalsPayload`, `lotsPayload` and `prestigePayload` are
+  the others. Two customId families: `park:tab:<uid>:<tab>` is owner-checked, and
+  `park:vtab:<targetId>:<tab>` carries a TARGET and deliberately is not — the `park:tour`
+  precedent. Never merge them into one shape with a flag.
+  **Every tab switch sends an explicit `attachments: []`.** `landmarkPayload` and the
+  guests view get away with the omit-idiom because they always `attach()` on every call,
+  so their `files` key alone already replaces the message's whole attachment set
+  (discord.js `MessagePayload` — see the `fightFrames` bullet above); an explicit
+  `attachments: []` there would be redundant, not wrong. A tab switch can't rely on that
+  shortcut: the Park tab's own payload carries no `files` key at all when `renderPark`
+  fails (its `RENDER_TIMEOUT_MS` is 3000, Discord's whole initial-response window, so a
+  slow render is a real case, not a theoretical one), and without `attachments: []` the
+  PREVIOUS tab's uploads — worst case the Animals tab's roster banner plus a
+  featured-dino thumbnail, two files — would survive as orphan attachment cards under the
+  failed render's embed.
+  The Park tab `deferUpdate()`s BEFORE rendering and then `editReply`s, for that same
+  timeout reason — renders serialize process-wide, so rendering before acknowledging can
+  lose the interaction to 10062. The other three tabs are synchronous and `i.update`
+  directly.
+  `settleEscapes` runs ONCE per interaction in `renderTab`, never per builder: it is
+  write-bearing and `buildParkSnapshot` settles again internally.
+  `bumpLegacyBest` fires once per `/park view` COMMAND invocation — coupled to the fact
+  that the Park tab is always the first screen a fresh `/park view` renders, not to the
+  Park tab itself. `renderTab`'s `park` branch (a `park:tab`/`park:vtab` click navigating
+  to or back to that tab) never calls it; every tab builder and the whole visit path read
+  the pure `legacyRank` instead, so a navigation click never mutates a row.
+  **Collect must stay the first button of the first row** — `tests/park.test.ts:208-218`
+  indexes `components[0].toJSON().components[0]` positionally.
+  Routed surfaces (`park:goto:landmark`, `park:goto:guests`) reply EPHEMERALLY and never
+  `i.update`: a routed payload mints components under a foreign prefix, and those handlers
+  re-render their own message with no tab row, so updating in place would strand the
+  player one click from losing navigation.
+  Tabs are a UI win, not a performance win: `/park view` costs dozens of `SELECT`s against
+  a schema with exactly one index (`daily_quests_user_day_slot`), so a tab switch re-pays
+  the same unindexed scans. `user_id` indexes on `lots`/`dinos`/`attractions` are the
+  higher-leverage change and were left out of this work deliberately.

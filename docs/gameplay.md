@@ -30,11 +30,11 @@ only inventory you start with.
 
 ## 2. Currencies
 
-Dino World runs on four resources. Cash, Food, and Rating appear on the
-`/park view` dashboard — Food shown per-item with counts, not as a single
-number. Battle energy is visible on `/battle chapters` and on the
-fight-result screen, not on the dashboard. Shards are the odd one out — see
-the note below.
+Dino World runs on four resources. Cash and Rating appear on the Park tab of
+`/park view`; Food appears on the Animals tab, shown per-item with counts,
+not as a single number (see Park view: four tabs, above). Battle energy is
+visible on `/battle chapters` and on the fight-result screen, not anywhere
+on `/park view`. Shards are the odd one out — see the note below.
 
 | Currency | What it is | How you earn it | What it's for |
 | --- | --- | --- | --- |
@@ -43,16 +43,55 @@ the note below.
 | Food | Six named items, not a single number | Bought with cash, dropped by expeditions and battles, tradeable | Feeding your dinos to keep their hunger up |
 | Battle energy | Regenerates on its own, not really a currency | Regenerates over time (capped at 10) | Entering battle stages; cannot be bought, gifted, or refilled by any item |
 
-**There is no player-facing screen that shows your shard balance.** The park
-dashboard has six fields — Cash, Food, Rating, Dinos, Attendance, Lots — and
-none of them is shards. Attendance is a count of park guests, not a currency
-— see Park guests, below. Your shard total surfaces only in passing: the confirmation
+**There is no player-facing screen that shows your shard balance.** `/park
+view`'s four tabs cover six fields between them — Cash and Rating (Park),
+Food and Dinos (Animals), Lots (Lots), Attendance (Prestige) — and none of
+them is shards. Attendance is a count of park guests, not a currency — see
+Park guests, below. Your shard total surfaces only in passing: the confirmation
 message you get right after selling a dino, and — if you try to `/splice` a
 dino without enough shards to cover the fee — the error that names your
 current balance alongside the cost. Do not go looking for a running shard
-count on `/park view`; it isn't there.
+count anywhere on `/park view`; it isn't there.
 
 ## 3. Your park
+
+### Park view: four tabs
+
+`/park view` is one message with four tabs — **Park**, **Animals**, **Lots**,
+**Prestige** — switched by a row of buttons at the bottom. Clicking a tab
+edits the same message in place; nothing new gets posted, and the tab you're
+currently on renders as a disabled button so you always know where you are.
+
+- **Park** — Cash, Rating, your dino count with a compact attention marker,
+  a warning when pending income has sat long enough to hit its cap, the
+  rendered map of your lots (see The park map, below), and the Collect
+  button. This is the tab `/park view` opens on.
+- **Animals** — your dino count again, Food (per-item, with counts), your
+  featured dino if you've set one (see Showcase and visiting parks, below),
+  and an itemised breakdown of anything that needs attention: escaped, at
+  risk of escaping, and in the wrong habitat. Feed all and Full roster live
+  here.
+- **Lots** — the lots you've built, how many of your slots are in use, and a
+  pointer at `/build` and `/upgrade` for anything actionable — this tab has
+  no build buttons of its own yet.
+- **Prestige** — Rating again, Attendance, Achievement tiers earned, your
+  Legacy rank, Season badges, and your landmark tier, with buttons that jump
+  to `/park landmark` and `/guests`.
+
+**An escaping dino reads differently depending on which tab you're on.** The
+Park tab's attention marker counts *distinct dinos* that need something — a
+dino that's both off-diet and about to escape counts once there. The
+Animals tab's breakdown counts *issues* instead — that same dino shows up
+on both the escaped/at-risk line and the wrong-habitat line. Check the Park
+tab for "is anything wrong," and the Animals tab for "what, exactly, and how
+many separate problems."
+
+Visiting another player's park (`/park view user:<player>`, or a **Visit**
+button on `/top`) shows the same four tabs, but read-only: there's no
+Collect, Feed all, Full roster, Landmark, or Guests button, since none of
+those act on your own park. A **Next park ▶** button walks you to the next
+park in the ranked list and survives every tab switch, so you can look
+around before moving on — see Showcase and visiting parks, below.
 
 ### Lot slots
 
@@ -194,11 +233,11 @@ bought.
 
 ### The park map
 
-`/park view` doesn't just show numbers — it renders an image of your park as
-a grid of tiles, one per lot, showing each lot's icon, name, level, and the
-dinos assigned to it. If the image ever fails to render, the dashboard still
-replies with the same information as plain text, so the map is never required
-to play.
+The Park tab of `/park view` doesn't just show numbers — it renders an image
+of your park as a grid of tiles, one per lot, showing each lot's icon, name,
+level, and the dinos assigned to it. If the image ever fails to render, the
+Park tab still replies with the same information as plain text, so the map
+is never required to play.
 
 ### Landmarks
 
@@ -253,7 +292,7 @@ Income only accumulates within a capped window measured from your last
 collection — 8 hours by default, or longer with a higher-level Visitor
 Center (whose level also raises your attendance — see Park guests, below).
 Time beyond that cap earns nothing, so collecting regularly matters;
-pressing Collect resets the window and starts the clock over. The dashboard
+pressing Collect resets the window and starts the clock over. The Park tab
 warns you when pending income has been sitting long enough to be capped. Once
 totalled, your facility income bonuses are added on top and the result is
 rounded down to a whole number of cash.
@@ -426,10 +465,16 @@ less hunger to keep comfort above that line. Roughly, from a fresh feed:
 | Correct diet, no matching decor (fit 0.75) | 40 h | 52 h | 64 h |
 | Wrong-diet paddock (fit 0.50) | 32 h | 44 h | 56 h |
 
-The dashboard flags a dino as "at risk" once its projected escape is within
-12 hours, and `/dino list` shows the same countdown per dino — but only for
-an assigned dino with a projected escape time; an unassigned dino never
-shows this warning (it also never escapes). Separately, the food pickers tag
+A dino is flagged "at risk" once its projected escape is within 12 hours.
+**`/park view` shows this two different ways depending on the tab**: the
+Park tab folds it into its single attention marker alongside escaped and
+wrong-habitat dinos — counting distinct dinos, not distinct problems, so a
+dino that's both at risk and in the wrong habitat counts once there — while
+the Animals tab spells it out as its own line in an itemised breakdown,
+where that same dino appears on both lines (see Park view: four tabs,
+above). `/dino list` shows the same countdown per dino — but only for an
+assigned dino with a projected escape time; an unassigned dino never shows
+this warning (it also never escapes). Separately, the food pickers tag
 a dino "VERY HUNGRY" once 36 hours have passed since it was last fed — that
 tag is based purely on time since feeding, not on actual hunger, so a dino
 fed Royal Greens can be flagged VERY HUNGRY while its real hunger — and its
@@ -902,10 +947,11 @@ dino, decorate, build, upgrade a lot, feed, rescue, or complete a trade.
 
 **It is not recalculated by viewing your park, by collecting income, or
 simply by time passing** — even though the comfort component would
-technically change continuously as hunger drains. The number shown on your
-dashboard, on `/top`, and checked at the trade gate stays exactly where it
-was after your last rating-changing action until you do one of the things
-above again. Battle results don't feed rating directly either — winning
+technically change continuously as hunger drains. The number shown on the
+Park and Prestige tabs of `/park view`, on `/top`, and checked at the trade
+gate stays exactly where it was after your last rating-changing action until
+you do one of the things above again. Battle results don't feed rating
+directly either — winning
 fights and earning stars never touches it. The one indirect link is a boss's
 trophy egg: hatching it can add a new species to your collection and raise
 that component.
@@ -957,26 +1003,26 @@ achievement tiers you've claimed (up to 48), and stars earned across the
 battle campaign (up to 105) — 205 points in total. Nothing is spent or
 consumed to earn a rank, and nothing can ever be lost — it's simply
 recalculated from what you've already done, each time it's shown. The
-highest rank you've reached also sticks: the next time your `/park view`
-dashboard or `/dex list` shows your rank, it won't be lower than a rank you
-already earned, even if the way points are counted changes in a later
+highest rank you've reached also sticks: the next time the Prestige tab of
+`/park view` or `/dex list` shows your rank, it won't be lower than a rank
+you already earned, even if the way points are counted changes in a later
 update. Below 15 points you haven't reached Groundskeeper yet and show no
-rank at all. Your Legacy rank appears on your `/park view` dashboard and in
-the footer of `/dex list`.
+rank at all. Your Legacy rank appears on the Prestige tab of `/park view`
+and in the footer of `/dex list`.
 
 ### Showcase and visiting parks
 
-`/park motto [text]` sets a short line — up to 80 characters — shown on your
-park card under its name; leave the option blank to clear it. `/park feature
-[dino]` picks one of your dinos to display by name and art on that same
-card; leave it blank to clear the pick. Both are purely cosmetic — neither
-touches income, comfort, escapes, habitat fit, or park rating. A motto — like a
-dino nickname — can't carry a hidden link: the `](` in Discord's
-`[text](url)` link syntax is split with a space when it's stored, so the
-address stays visible instead of hiding behind friendly-looking text. If a featured
-dino is later sold or traded away, its card simply stops showing a feature;
-nothing breaks and there's nothing to re-set — pick a new one whenever you
-like.
+`/park motto [text]` sets a short line — up to 80 characters — shown under
+your park's name on the Park tab; leave the option blank to clear it.
+`/park feature [dino]` picks one of your dinos to display by name and art
+on the Animals tab instead; leave it blank to clear the pick. Both are
+purely cosmetic — neither touches income, comfort, escapes, habitat fit, or
+park rating. A motto — like a dino nickname — can't carry a hidden link:
+the `](` in Discord's `[text](url)` link syntax is split with a space when
+it's stored, so the address stays visible instead of hiding behind
+friendly-looking text. If a featured dino is later sold or traded away, the
+Animals tab simply stops showing a feature; nothing breaks and there's
+nothing to re-set — pick a new one whenever you like.
 
 Visiting another player's park is read-only: nothing you do there changes
 anything, and looking at someone else's park never creates a park for you.
@@ -1036,8 +1082,9 @@ they always arrive by DM — never routed to a server's notification channel
 
 - **Escape warning** — a dino projected to escape within 12 hours gets a
   heads-up; inside 1 hour, that's replaced by a last call. (`/dino list`
-  and the `/park view` dashboard show the same countdown — see Escapes,
-  above.)
+  shows the same countdown per dino, and the Park and Animals tabs of
+  `/park view` show it too, summarised and itemised respectively — see
+  Escapes, above.)
 - **Income cap** — your park has stopped earning because pending income
   hit its cap (see Income, above) and cash is still sitting uncollected.
 - **Season ending** — the current season track (see The season track,
@@ -1489,9 +1536,9 @@ is still there, but nothing will DM you about it. Crossing the capstone
 works differently: the instant your points reach 800 you're awarded the
 badge outright, whether or not you ever press Claim, and it's yours
 permanently. Cash, shards, food and eggs all come back next season; the
-badge does not, so it was never made to answer to the same deadline. Your
-park card shows how many badges you've earned and the most recent one, once
-you have at least one.
+badge does not, so it was never made to answer to the same deadline. The
+Prestige tab of `/park view` shows how many badges you've earned and the
+most recent one, once you have at least one.
 
 ### The veteran head start
 
@@ -1739,8 +1786,8 @@ cheapest way to shards in the game.
 
 ### On your park card and the leaderboard
 
-`/park view` shows your attendance alongside your other dashboard fields.
-Unlike shards, it's deliberately public — attendance is a prestige number,
+The Prestige tab of `/park view` shows your attendance alongside your other
+prestige fields. Unlike shards, it's deliberately public — attendance is a prestige number,
 `/top` ranks on it, and a visited park is meant to show it off.
 `/top metric:attendance` ranks every player by it: the first leaderboard a
 wide, varied collection can win outright and a narrow, cash-maximal one
