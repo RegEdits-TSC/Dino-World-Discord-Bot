@@ -254,10 +254,43 @@ describe('dashboard warnings', () => {
   });
 });
 
-// Achievements, Attendance and Legacy all left the Park tab for good — Achievements and
-// Legacy move to the Prestige tab (Task 5), Attendance to the Animals tab (Task 3), each
-// a different payload builder with its own test coverage. The blocks below are skipped
-// and retargeted rather than deleted: the behaviour they pin still exists, it relocated.
+describe('/park view attention marker', () => {
+  // Regression test: index.ts used to sum escapedCount + atRiskCount + mismatchCount, but
+  // at-risk and mismatch are independent predicates over the same non-escaped dinos, so one
+  // dino can trip both — an off-diet paddock is paddockFit 0.5, which is exactly what drives
+  // comfort down and pulls escapeAt into the warning window, so mismatched dinos are
+  // disproportionately the at-risk ones. That summed three counts into "2 need attention"
+  // for a park holding exactly one dino. attention must count DISTINCT dinos, never more
+  // than dinoCount. The Animals tab's own itemised breakdown (Task 3) is a different,
+  // correct use of summing separate counts — it lists issues, not dinos.
+  it('a single mismatched, at-risk dino reads "1 need attention", never 2', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'test:seed', 0);
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    ctx.setNow(100 * H);
+    // quetzalcoatlus is carnivore, placed in a herbivore paddock: paddockFit's off-diet
+    // branch (0.5) applies regardless of decor. Fed to 100 and last fed 25h ago, with the
+    // default drain rate, that paddockFit puts escapeAt exactly 7h out — inside the 12h
+    // ESCAPE_WARN_MS window (at risk) and not yet escaped (escapedAt stays null).
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'quetzalcoatlus', lotId: lot.id, hunger: 100,
+      lastFedAt: ctx.now() - 25 * H, hatchedAt: 0,
+    }).run();
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
+    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
+    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field = fields.find((f) => f.name === '🦕 Dinos')!;
+    // The exact string the builder emits today for count 1 — it has no singular/plural
+    // branch, so this is genuinely "1 need attention", not "1 needs attention".
+    expect(field.value).toBe('1 · ⚠️ 1 need attention');
+  });
+});
+
+// Achievements, Attendance and Legacy all left the Park tab for good — all three move to
+// the Prestige tab (Task 5): prestigePayload takes attendance?: number and renders the
+// 🎡 Attendance field, same as it does for Achievements and Legacy. The blocks below are
+// skipped and retargeted rather than deleted: the behaviour they pin still exists, it
+// relocated.
 //
 // bumpLegacyBest's SIDE EFFECT is the one piece of this that still runs on THIS command
 // path (see the comment at its call site in src/modules/park/index.ts), so that survives
@@ -328,7 +361,9 @@ describe.skip('/park view achievements badge wiring', () => {
   });
 });
 
-// Retargeted to animalsPayload in Task 3 — un-skip there.
+// Attendance lives on the Prestige tab, not Animals — prestigePayload takes
+// attendance?: number and renders 🎡 Attendance; animalsPayload has no attendance option.
+// Retargeted to prestigePayload in Task 5 — un-skip there.
 describe.skip('/park view attendance wiring', () => {
   it('keys the attendance field to the right park on your own card and on a visited one', async () => {
     for (const id of ['u1', 'u2']) getOrCreateUser(ctx, id, id);
@@ -1005,6 +1040,7 @@ describe('dashboard showcase', () => {
     expect(p.files).toHaveLength(1);
   });
 
+  // Retargeted to animalsPayload in Task 3 — un-skip there.
   it.skip('ships no files and no Featured field when nothing is featured', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
     const p = dashboardPayload(user, 0, {});

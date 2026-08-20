@@ -182,21 +182,29 @@ export const parkModule: ModuleManifest = {
         const escapedCount = dinos.filter((d) => d.escapedAt !== null).length;
         const { clockDinos } = toClockDinos(ctx, i.user.id);
         const nowMs = ctx.now();
-        const atRiskCount = clockDinos.filter((c) => {
-          if (c.escapedAt !== null) return false;
-          const e = escapeAt(c);
-          return e !== null && e - nowMs <= ESCAPE_WARN_MS;
-        }).length;
         const pending = pendingIncome(ctx, i.user.id);
         const capped = pending > 0 && ctx.now() - user.lastCollectAt >= capHours(lots) * 3_600_000;
-        const mismatchCount = clockDinos.filter((c) =>
-          c.paddock !== null && c.escapedAt === null && c.paddock.diet !== c.species.diet).length;
+        // Counts DISTINCT dinos, not distinct problems: at-risk and mismatch are independent
+        // predicates over the same non-escaped dinos, so one dino can trip both (an off-diet
+        // paddock is paddockFit 0.5, which is exactly what drives comfort down and pulls
+        // escapeAt into the warning window — mismatched dinos are disproportionately the
+        // at-risk ones). Summing three separate counts here double-counted that dino, which
+        // could render more "need attention" than the park actually holds. The Animals tab's
+        // itemised breakdown is unaffected by this — it lists issues, not dinos, so summing
+        // there is correct.
+        const needsAttentionCount = clockDinos.filter((c) => {
+          if (c.escapedAt !== null) return false;
+          const e = escapeAt(c);
+          const atRisk = e !== null && e - nowMs <= ESCAPE_WARN_MS;
+          const mismatch = c.paddock !== null && c.paddock.diet !== c.species.diet;
+          return atRisk || mismatch;
+        }).length;
         // bumpLegacyBest stays on this path even though its result is no longer displayed
         // here: the Park tab is the first thing every /park view renders, so the legacy
         // high-water still latches on every view. The Legacy display itself moves to the
         // Prestige tab.
         bumpLegacyBest(ctx, i.user.id);
-        const attention = escapedCount + atRiskCount + mismatchCount;
+        const attention = escapedCount + needsAttentionCount;
         const base = dashboardPayload(user, pending, {
           attention, capped, now: nowMs, motto: user.motto, dinoCount: dinos.length,
         });

@@ -180,7 +180,9 @@ git commit -m "Add the park view tab row and tab-id validation"
              dinoCount?: number; visit?: boolean },
   ): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[] }
   ```
-  `attention` is the **summed** count of escaped + at-risk + wrong-habitat dinos. Callers compute it; the builder only renders it.
+  `attention` is the count of **distinct dinos** needing attention — `escapedCount` plus the number of non-escaped dinos matching (at-risk OR wrong-habitat). Callers compute it; the builder only renders it.
+
+  **Corrected during execution.** This originally read "the summed count of escaped + at-risk + wrong-habitat". That was wrong: at-risk and wrong-habitat are independent predicates over the same non-escaped rows, so one dino satisfies both freely and the marker could report more dinos needing attention than the park contains — `1 · ⚠️ 2 need attention` for a single off-diet dino inside the escape window. Not an edge case either, since an off-diet paddock is `paddockFit` 0.5, which is what drives comfort down and pulls `escapeAt` into the warning window. The Animals tab's itemised breakdown is unaffected and stays a sum: that tab lists *issues*, not dinos.
 
 - [ ] **Step 1: Write the failing test**
 
