@@ -688,6 +688,13 @@ export const parkModule: ModuleManifest = {
  * Every branch sends attachments: [] — a tab switch is a different-banner render, and
  * without it the outgoing tab's uploads survive alongside the incoming one as orphan
  * attachment cards. This is the opposite of the omit-idiom landmarkPayload uses.
+ *
+ * `content` is an optional trailing result line — today only park:feedall's "Fed N
+ * dinos" / skip report, spread onto the Animals tab it re-renders. It is spread FIRST
+ * in every branch's payload object: none of the four tab builders set a `content` key
+ * themselves today, so the order is cosmetic right now, but a future builder that does
+ * set one must win over a stale caller-supplied value — reordering the spread would
+ * silently let this parameter clobber a builder's own content instead.
  */
 async function renderTab(
   ctx: Ctx, i: ButtonInteraction, ownerId: string, tab: ParkTab, visit: boolean, content?: string,

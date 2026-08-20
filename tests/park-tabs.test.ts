@@ -325,4 +325,19 @@ describe('tab action buttons', () => {
     await parkComp().execute(ctx, b.asInteraction() as never);
     expect(JSON.stringify(b.replies[0])).toContain('Not your park');
   });
+
+  it('refuses a stranger opening a routed surface on somebody else park', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    getOrCreateUser(ctx, 'u2', 'Other');
+    const b = fakeButton({ customId: 'park:goto:landmark:u1', user: 'u2' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    // Both halves matter: the refusal happened, AND no landmark payload came back —
+    // a handler that replied twice (refusal, then the payload anyway) would still pass
+    // a content-only assertion, since i.reply only records the first call's payload.
+    expect(b.replies).toHaveLength(1);
+    const sent = b.replies[0] as { content?: string; embeds?: unknown[] };
+    expect(sent.content).toContain('Not your park');
+    expect(sent.embeds).toBeUndefined();
+  });
 });
