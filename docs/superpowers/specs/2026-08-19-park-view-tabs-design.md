@@ -382,9 +382,19 @@ rather than smuggled in as a side effect of a UI change.
 
 | Pin | Asserts | Cause |
 |---|---|---|
-| `tests/park-view-image.test.ts:31` | `files.map(f => f.name)` equals `['tank-herbivore.webp','park.png']` | Featured moves to the Animals tab; Park ships `park.png` alone |
-| `tests/park-view-image.test.ts:17` | `files` has length 1 | same |
-| `tests/park.test.ts:955` / `:964` | `files` length 1 / `undefined` | `dashboardPayload`'s output shape becomes per-tab |
+| `tests/park.test.ts:947-956` | Featured field named, thumbnail is `attachment://tank-herbivore.webp`, `files` length 1 | Featured moves to the Animals tab, so this must target the Animals builder |
+| `tests/park.test.ts:959-966` | no Featured field, `files` is `undefined` (not `[]`) | same |
+
+**Two pins an earlier draft listed here do NOT break**, and the difference is worth
+recording so nobody "fixes" them: `tests/park-view-image.test.ts:17` and `:31` exercise
+`withParkImage` against **hand-built** payloads — `:17` calls
+`dashboardPayload(u, [], 0, 0, 0)` with no featured dino, which produces no `files` at all,
+and `:31` supplies its own `files: [existing]`. `withParkImage` itself is unchanged, so both
+keep passing exactly as they are.
+
+`tests/park.test.ts:205-216` (the Collect button label) reads
+`components[0].toJSON().components[0]` and **keeps passing** provided Collect stays the first
+button of the first row — see the action-row budget above.
 
 ## 7. Test work
 
