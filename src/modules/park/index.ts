@@ -602,6 +602,16 @@ export const parkModule: ModuleManifest = {
               await i.reply({ ...guestsPayload(ctx, i.user.id), flags: MessageFlags.Ephemeral });
               return;
             }
+            if (target === 'roster') {
+              // Same ephemeral-reply shape as landmark/guests above — the Animals tab's
+              // Full roster button mints this id rather than the pre-existing
+              // park:dinos:<uid>:<page> so an i.update here never destroys the tab card's
+              // own navigation. settleEscapes first, matching the (still-live)
+              // park:dinos:<page> handler below and /dino list's own execute path.
+              settleEscapes(ctx, i.user.id);
+              await i.reply({ ...dinoListPayload(ctx, i.user.id, 1), flags: MessageFlags.Ephemeral });
+              return;
+            }
             await i.deferUpdate();
             return;
           }
@@ -703,11 +713,18 @@ export const parkModule: ModuleManifest = {
  * attachment cards. This is the opposite of the omit-idiom landmarkPayload uses.
  *
  * `content` is an optional trailing result line — today only park:feedall's "Fed N
- * dinos" / skip report, spread onto the Animals tab it re-renders. It is spread FIRST
- * in every branch's payload object: none of the four tab builders set a `content` key
- * themselves today, so the order is cosmetic right now, but a future builder that does
- * set one must win over a stale caller-supplied value — reordering the spread would
- * silently let this parameter clobber a builder's own content instead.
+ * dinos" / skip report, spread onto the Animals tab it re-renders. It is sent as
+ * `content: content ?? ''` — an explicit empty string when absent, NEVER an omitted key
+ * — in every branch's payload object. discord.js's MessagePayload drops an omitted
+ * `content` key from the request body entirely, and Discord then leaves the message's
+ * EXISTING content unchanged rather than clearing it: an omitted-when-absent version of
+ * this parameter left a feed-all result line pinned above every tab the player switched
+ * to afterwards, until the next full /park view. `content` is set FIRST in every
+ * branch's payload object for the same reason it always was: none of the four tab
+ * builders set a `content` key themselves today, so the order is cosmetic right now, but
+ * a future builder that does set one must win over a stale caller-supplied value —
+ * reordering the spread would silently let this parameter clobber a builder's own
+ * content instead.
  *
  * `tourRow` (visit only) is re-minted here and pushed onto every branch's components,
  * never just the Park tab's: each of the four tab builders returns a fresh components
@@ -740,7 +757,7 @@ async function renderTab(
     if (tourRow) base.components.push(tourRow);
     let png: Buffer | undefined;
     try { png = await renderPark(buildParkSnapshot(ctx, ownerId)); } catch { png = undefined; }
-    await i.editReply({ ...(content ? { content } : {}), ...(png ? withParkImage(base, png) : base), attachments: [] });
+    await i.editReply({ content: content ?? '', ...(png ? withParkImage(base, png) : base), attachments: [] });
     return;
   }
   if (tab === 'animals') {
@@ -761,13 +778,13 @@ async function renderTab(
       foodLine, featured: featuredFor(ctx, user), visit,
     });
     if (tourRow) built.components.push(tourRow);
-    await i.update({ ...(content ? { content } : {}), ...built, attachments: [] });
+    await i.update({ content: content ?? '', ...built, attachments: [] });
     return;
   }
   if (tab === 'lots') {
     const built = lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit });
     if (tourRow) built.components.push(tourRow);
-    await i.update({ ...(content ? { content } : {}), ...built, attachments: [] });
+    await i.update({ content: content ?? '', ...built, attachments: [] });
     return;
   }
   // prestige — legacyRank (pure), never bumpLegacyBest: the high-water latches on the
@@ -781,5 +798,5 @@ async function renderTab(
     visit,
   });
   if (tourRow) built.components.push(tourRow);
-  await i.update({ ...(content ? { content } : {}), ...built, attachments: [] });
+  await i.update({ content: content ?? '', ...built, attachments: [] });
 }

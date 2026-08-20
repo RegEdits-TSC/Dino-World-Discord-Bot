@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { MessageFlags } from 'discord.js';
+import { eq } from 'drizzle-orm';
 import { PARK_TABS, isParkTab, tabRow, dashboardPayload, animalsPayload, lotsPayload, prestigePayload } from '../src/modules/park/embeds.js';
 import { makeCtx, fakeButton } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { tierForPoints } from '../src/modules/park/ranks.js';
 import { ATTENDANCE_MAX } from '../src/data/attendance.js';
 import { parkModule } from '../src/modules/park/index.js';
+import { schema } from '../src/core/db/index.js';
+import { rollSeason } from '../src/modules/daily/season.js';
 
 const fieldsOf = (p: { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }) =>
   p.embeds[0].toJSON().fields ?? [];
@@ -214,15 +217,33 @@ describe('Prestige tab', () => {
 const parkComp = () => parkModule.components.find((c) => c.prefix === 'park')!;
 
 describe('tab dispatcher', () => {
-  it('renders another tab in place, shedding the previous tab uploads', async () => {
+  it('renders another tab in place, shedding the previous tab uploads, with seasonBadges and landmark threaded through', async () => {
     const ctx = makeCtx();
+    ctx.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690, so this stamps as Season 1
     getOrCreateUser(ctx, 'u1', 'Reg');
+    rollSeason(ctx, 'u1');
+    ctx.db.update(schema.seasonProgress).set({ badgeAt: ctx.now() })
+      .where(eq(schema.seasonProgress.userId, 'u1')).run();
+    ctx.db.update(schema.users).set({ landmarkTier: 2 }).where(eq(schema.users.discordId, 'u1')).run();
     const b = fakeButton({ customId: 'park:tab:u1:prestige', user: 'u1' });
     await parkComp().execute(ctx, b.asInteraction() as never);
-    const sent = b.replies[0] as { attachments: unknown[]; embeds: Array<{ toJSON(): { title: string } }> };
+    const sent = b.replies[0] as {
+      attachments: unknown[];
+      embeds: Array<{ toJSON(): { title: string; fields?: Array<{ name: string; value: string }> } }>;
+    };
     // Without attachments: [] the outgoing tab's uploads survive as orphan cards.
     expect(sent.attachments).toEqual([]);
-    expect(sent.embeds[0].toJSON().title).toContain('Prestige');
+    const json = sent.embeds[0].toJSON();
+    expect(json.title).toContain('Prestige');
+    // renderTab's prestige branch (src/modules/park/index.ts) threads
+    // `seasonBadges: seasonBadges(ctx, ownerId)` and `landmark: landmarkFor(user.landmarkTier)`
+    // through from a REAL dispatch. Every other Seasons/Landmark assertion in the suite calls
+    // prestigePayload directly and would stay green even if either line above were deleted —
+    // this is the one test that actually exercises the wiring rather than the builder alone.
+    const seasons = json.fields!.find((f) => f.name === '🎖️ Seasons');
+    expect(seasons?.value).toContain('Season 1');
+    const landmark = json.fields!.find((f) => f.name === '🏛️ Landmark');
+    expect(landmark?.value).toContain('Tier 2');
   });
 
   it('defers before rendering the Park tab, because renderPark can eat the whole window', async () => {
@@ -307,6 +328,27 @@ describe('tab action buttons', () => {
     expect(sent.embeds[0].toJSON().title).toContain('Animals');
   });
 
+  it('clears the feed-all result line on the next tab switch — every tab, not just some', async () => {
+    // A loop over all four, not one hardcoded target: renderTab sends the `content` key
+    // from four separate call sites (one per tab), and an early version of this fix
+    // missed the Prestige one — its i.update sits at a different indent level than the
+    // other three, outside their shared `if` blocks, which broke a naive find/replace.
+    // A single-tab test would not have caught that; this one would.
+    for (const tab of ['park', 'animals', 'lots', 'prestige'] as const) {
+      const ctx = makeCtx();
+      getOrCreateUser(ctx, 'u1', 'Reg');
+      const feed = fakeButton({ customId: 'park:feedall:u1', user: 'u1' });
+      await parkComp().execute(ctx, feed.asInteraction() as never);
+      expect((feed.replies[0] as { content: string }).content, tab).toContain('🍖');
+      // A second, independent click — discord.js's MessagePayload drops an OMITTED
+      // `content` key entirely, and Discord then leaves the message's existing content
+      // (the feed-all line above) unchanged. An explicit '' is what actually clears it.
+      const b = fakeButton({ customId: `park:tab:u1:${tab}`, user: 'u1' });
+      await parkComp().execute(ctx, b.asInteraction() as never);
+      expect((b.replies[0] as { content: string }).content, tab).toBe('');
+    }
+  });
+
   it('opens a routed surface ephemerally so the tab card is left intact', async () => {
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'Reg');
@@ -314,6 +356,20 @@ describe('tab action buttons', () => {
     await parkComp().execute(ctx, b.asInteraction() as never);
     const sent = b.replies[0] as { flags?: number };
     expect(sent.flags).toBe(MessageFlags.Ephemeral);
+    expect(b.deferOpts).toEqual([]);
+  });
+
+  it('opens the Full roster ephemerally too, rather than i.update-ing the tab card away', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'park:goto:roster:u1', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const sent = b.replies[0] as { flags?: number; embeds: Array<{ toJSON(): { title: string } }> };
+    // i.reply, never i.update: dinoListPayload's own components (pageRow, once paginated)
+    // would otherwise replace the tab row wholesale, and with ten or fewer dinos that
+    // leaves zero buttons on the card the player is standing on.
+    expect(sent.flags).toBe(MessageFlags.Ephemeral);
+    expect(sent.embeds[0].toJSON().title).toContain('Your dinos');
     expect(b.deferOpts).toEqual([]);
   });
 
@@ -374,5 +430,9 @@ describe('visited park tabs', () => {
     const b = fakeButton({ customId: 'park:vtab:nobody:park', user: 'u2' });
     await parkComp().execute(ctx, b.asInteraction() as never);
     expect(JSON.stringify(b.replies[0])).toContain('no park yet');
+    // The park:tour twin of this case (tests/visit.test.ts's 'answers ephemerally for a
+    // target with no park') asserts both the content and the flag; this one only checked
+    // the content.
+    expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
 });

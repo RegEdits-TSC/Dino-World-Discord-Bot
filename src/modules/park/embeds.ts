@@ -101,13 +101,22 @@ export function animalsPayload(
     embed.addFields({ name: '⚠️ Needs attention', value: parts.join('\n') });
   }
   const components: ActionRowBuilder<ButtonBuilder>[] = [];
-  // park:feedall and park:dinos are minted here but have no handler yet — absorbed by the
-  // park component handler's default arm until a later task wires them up.
+  // park:feedall re-renders THIS tab in place with a result line (the 'feedall' case in
+  // the park component handler). Full roster deliberately does NOT reuse the pre-existing
+  // park:dinos:<uid>:<page> id — that id's handler (case 'dinos') does an i.update that
+  // replaces the tab card's own components with dinoListPayload's, which drop to zero
+  // buttons once the roster fits on one page, destroying the navigation the player is
+  // standing in. park:goto:roster:<uid> instead routes through the 'goto' case's own
+  // `roster` branch, which opens dinoListPayload as a NEW ephemeral reply and leaves this
+  // card untouched — the same pattern goto already uses for Landmark and Guests. Paging
+  // inside that ephemeral reply still uses park:dinos under the hood (pageRow mints it),
+  // which is correct there: i.update on an ephemeral roster message only ever touches that
+  // message, never this one.
   if (!opts.visit) {
     components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId(`park:feedall:${user.discordId}`)
         .setLabel('🍖 Feed all').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`park:dinos:${user.discordId}:1`)
+      new ButtonBuilder().setCustomId(`park:goto:roster:${user.discordId}`)
         .setLabel('📋 Full roster').setStyle(ButtonStyle.Secondary),
     ));
   }
@@ -196,8 +205,10 @@ export function prestigePayload(
     inline: true,
   });
   const components: ActionRowBuilder<ButtonBuilder>[] = [];
-  // park:goto:landmark and park:goto:guests are minted here but have no handler until
-  // Task 7 — absorbed by the park component handler's default arm until then.
+  // park:goto:landmark and park:goto:guests both route through the 'goto' case of the
+  // park component handler, which replies ephemerally with the routed payload and leaves
+  // this tab card untouched — the same pattern the Animals tab's Full roster button uses
+  // via park:goto:roster.
   if (!opts.visit) {
     components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId(`park:goto:landmark:${user.discordId}`)
@@ -217,11 +228,14 @@ export function prestigePayload(
 // Set a rendered PNG as the embed's image and attach it. Mutates the (freshly built)
 // embed in place and preserves components (e.g. the Collect button).
 //
-// APPENDS to `files` rather than assigning. dashboardPayload now calls attach() for the
-// featured dino's thumbnail, and the old assignment would have silently dropped that
-// upload at both /park view call sites and at /help topic:park, leaving a dangling
-// attachment:// URL in the embed with no error and no failing test. park.png goes last,
-// so call order stays upload order.
+// APPENDS to `files` rather than assigning. Every call site hands this a dashboardPayload-
+// derived payload — the Park tab, at all three of its call sites: /park view's own execute,
+// renderTab's park branch, and visitPayload — and dashboardPayload itself attaches nothing
+// today (the featured dino's thumbnail moved to the Animals tab, via animalsPayload's own
+// attach() calls), so `files` is always undefined going in. Kept as an append rather than an
+// assignment anyway: a hand assignment would silently drop any upload a future Park-tab
+// feature adds, the same class of defect that shipped three attachment bugs in round 2 (see
+// the repo CLAUDE.md note). park.png goes last, so call order stays upload order.
 export function withParkImage<T extends { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] }>(
   payload: T, png: Buffer,
 ): T & { files: AttachmentBuilder[] } {

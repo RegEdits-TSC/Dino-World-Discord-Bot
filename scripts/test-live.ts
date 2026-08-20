@@ -370,13 +370,17 @@ const cases: Case[] = [
   { title: '/help topic:battles — chapter banner', run: () => slash('help', 'help', { name: 'help', user: P1, options: { topic: 'battles' } }) },
   { title: '/daily — hub, one quest complete', run: () => slash('daily', 'daily', { name: 'daily', user: P1 }) },
   { title: 'daily:claim — claim reply (ephemeral in production)', run: () => button('daily', `daily:claim:${P1}`, P1) },
-  { title: '/park view — showcase pair on one embed: hero-portrait featured-dino thumbnail + park map (landmark tile + all six attraction bands bump the canvas to 4 rows)', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P1 }) },
+  { title: '/park view — the Park tab only now: dashboard + park map (landmark tile + all six attraction bands bump the canvas to 4 rows). The featured-dino thumbnail moved to the Animals tab — see park:tab:animals below.', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P1 }) },
   { title: '/park landmark — Bronze Sentinel built, Amber Obelisk next (grouped price)', run: () => slash('park', 'park', { name: 'park', sub: 'landmark', user: P1 }) },
   { title: '/guests view — attendance dashboard: variety/draw/VC terms, all six attractions built', run: () => slash('guests', 'guests', { name: 'guests', sub: 'view', user: P1 }) },
-  { title: '/park view — P5, Legacy rank Keeper at 35 of 52 species discovered', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P5 }) },
+  { title: '/park view — P5, a bare park with no lots or dinos: seeded here for park:tab:prestige below, which is where Legacy rank Keeper (35 of 52 species discovered) actually renders now — the dashboard itself no longer shows it', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P5 }) },
   { title: '/top legacy — widened metric, Visit buttons on the board', run: () => slash('leaderboards', 'top', { name: 'top', user: P1, options: { metric: 'legacy', scope: 'global' } }) },
-  { title: 'top:visit — P2 opens P1\'s park via the board button: check motto + featured thumbnail present, no Collect, Next park present', run: () => button('leaderboards', `top:visit:${P1}`, P2) },
-  { title: '/park view user:P1 (as P2) — visiting via the command: check motto + featured thumbnail present, no Collect, Next park present', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P2, options: { user: P1 } }) },
+  { title: 'top:visit — P2 opens P1\'s park via the board button: check motto present, no Collect, Next park present (the featured thumbnail now lives on the Animals tab, not this one)', run: () => button('leaderboards', `top:visit:${P1}`, P2) },
+  { title: '/park view user:P1 (as P2) — visiting via the command: check motto present, no Collect, Next park present (featured thumbnail moved to the Animals tab)', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P2, options: { user: P1 } }) },
+  { title: 'park:tab:park — the Park tab reached via a tab click rather than /park view: same dashboard + park map, exercising renderTab\'s own code path', run: () => button('park', `park:tab:${P1}:park`, P1) },
+  { title: 'park:tab:animals — Animals tab: dino_roster banner + hero-portrait featured-dino thumbnail', run: () => button('park', `park:tab:${P1}:animals`, P1) },
+  { title: 'park:tab:lots — Lots tab: lots banner (new asset), built lots and slot usage', run: () => button('park', `park:tab:${P1}:lots`, P1) },
+  { title: 'park:tab:prestige — P5, Legacy rank Keeper at 35 of 52 species discovered: landmark banner', run: () => button('park', `park:tab:${P5}:prestige`, P5) },
   { title: '/eggs — list', run: () => slash('hatchery', 'eggs', { name: 'eggs', user: P1 }) },
   { title: '/hatch — pre-hatch embed', run: () => slash('hatchery', 'hatch', { name: 'hatch', user: P1, options: { egg: readyEgg.id } }) },
   { title: 'hatch:crack — reveal', run: () => button('hatchery', `hatch:crack:${readyEgg.id}`, P1) },
@@ -543,7 +547,7 @@ const cases: Case[] = [
   // freshly-seeded zero board.
   { title: '/achievements — page 1', run: () => slash('daily', 'achievements', { name: 'achievements', user: P1 }) },
   { title: '/season — P6, mid-season: 3 rungs claimed, a 4th freshly unlocked, the rest locked', run: () => slash('daily', 'season', { name: 'season', user: P6 }) },
-  { title: '/park view — P6, capstone crossed: earned badge field on the dashboard', run: () => {
+  { title: '/park view — P6, capstone crossed: stamps the season badge for the park:vtab:prestige case below (the dashboard itself no longer shows a badge field — that moved to the Prestige tab)', run: () => {
       // Campaign and Expeditions both clamp at their 250-point caps, pushing P6 from
       // 410 (the state the /season case above renders) to 910 — comfortably past the
       // 800-point capstone. stampSeasonBadge normally runs from
@@ -555,6 +559,7 @@ const cases: Case[] = [
       stampSeasonBadge(ctx, P6);
       return slash('park', 'park', { name: 'park', sub: 'view', user: P6 });
     } },
+  { title: 'park:vtab:prestige — P1 visits P6\'s Prestige tab: the season capstone badge stamped above, landmark banner, no Landmark/Guests buttons (read-only)', run: () => button('park', `park:vtab:${P6}:prestige`, P1) },
   // Run last of all: sweepCapture mutates lastFedAt (every P1 dino) and lastCollectAt,
   // which several cases above read or rely on staying untouched (feed all, the breed
   // hunger gate, park:collect, every battle case's squad). Nothing below this point

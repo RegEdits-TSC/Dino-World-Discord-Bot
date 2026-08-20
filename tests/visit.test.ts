@@ -91,8 +91,12 @@ describe('visitPayload', () => {
     // next member, so an empty ring leaves exactly one row, not zero.
     expect(p.components).toHaveLength(1);
     expect(JSON.stringify(p.components)).not.toContain('park:tour:');
-    // No featured dino here, so attach() never ran and dashboardPayload's `files` stayed
-    // undefined — the forwarding line must not turn that into an empty array. attach()
+    // dashboardPayload calls attach() for nothing at all any more (the featured dino's
+    // thumbnail moved to the Animals tab), so `built.files` is undefined regardless of
+    // whether a dino is featured — and renderPark also fails in this test environment (no
+    // worker), so withParkImage never runs either. Either fact alone would leave `p.files`
+    // unset; the forwarding line (`if (built.files) payload.files = built.files;` in
+    // visit.ts) must still not turn an absent value into an empty array. attach()
     // deliberately never creates one (see the repo CLAUDE.md note on the three attachment
     // defects an empty-array substitution shipped); tests/hatchery.test.ts and
     // tests/notify-handlers.test.ts pin the same undefined-not-[] shape at their own
