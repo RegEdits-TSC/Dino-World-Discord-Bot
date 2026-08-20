@@ -609,6 +609,23 @@ export const parkModule: ModuleManifest = {
             await i.deferUpdate();
             return;
           }
+          case 'vtab': {
+            // NO owner check, deliberately: `uid` here is the TARGET park, not an owner,
+            // exactly like park:tour. An ownership check would make visiting work only for
+            // the player whose park happens to be on screen.
+            const tab = parts[3];
+            if (!isParkTab(tab)) { await i.deferUpdate(); return; }
+            // The existence check stays AHEAD of any acknowledgement so "no park yet" can
+            // still be ephemeral — the /park view user: ordering exactly.
+            const exists = ctx.db.select().from(schema.users)
+              .where(eq(schema.users.discordId, uid)).get();
+            if (!exists) {
+              await i.reply({ content: 'That player has no park yet.', flags: MessageFlags.Ephemeral });
+              return;
+            }
+            await renderTab(ctx, i, uid, tab, true);
+            return;
+          }
           default:
             await i.deferUpdate();
             return;
