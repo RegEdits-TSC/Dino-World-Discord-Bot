@@ -1,5 +1,5 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } from 'discord.js';
-import type { User } from './service.js';
+import type { Lot, User } from './service.js';
 import { emojiTag } from '../../core/emojis.js';
 import { eventHeaderLine } from '../world/embeds.js';
 import type { LandmarkDef } from '../../data/landmarks.js';
@@ -121,6 +121,36 @@ export function animalsPayload(
   attach(embed, payload, 'image', assetImage('banners', 'dino_roster'));
   attach(embed, payload, 'thumbnail',
     opts.featured ? dinoImage(opts.featured.speciesId, opts.featured.archetype, opts.featured.diet) : null);
+  return payload;
+}
+
+/**
+ * The LOTS tab. Build and Upgrade arrive as select menus in a later PR; until then this
+ * tab points at the existing slash commands rather than pretending to be actionable.
+ */
+export function lotsPayload(
+  user: User, lots: Lot[], slots: number, opts: { visit?: boolean } = {},
+) {
+  const embed = new EmbedBuilder()
+    .setTitle(`🏗️ ${user.parkName} — Lots`)
+    .setColor(0x3ba55c)
+    .addFields(
+      { name: '🏗️ Built', value: lots.map((l) => {
+        const e = emojiTag(LOT_EMOJI[l.kind] ?? '');
+        return `#${l.id} ${e ? `${e} ` : ''}${l.name} (lvl ${l.level})`;
+      }).join('\n') || 'Nothing built yet — `/build` to start.', inline: false },
+      { name: 'Slots', value: `${lots.length} / ${slots} used`, inline: true },
+    );
+  if (!opts.visit) {
+    embed.addFields({
+      name: 'Building', value: 'Use `/build kind:` for a new lot and `/upgrade lot:` to level one up.',
+      inline: false,
+    });
+  }
+  const payload: {
+    embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[];
+  } = { embeds: [embed], components: [tabRow(user.discordId, 'lots', opts.visit)] };
+  attach(embed, payload, 'image', assetImage('banners', 'lots'));
   return payload;
 }
 

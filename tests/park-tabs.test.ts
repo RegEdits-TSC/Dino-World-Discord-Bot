@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PARK_TABS, isParkTab, tabRow, dashboardPayload, animalsPayload } from '../src/modules/park/embeds.js';
+import { PARK_TABS, isParkTab, tabRow, dashboardPayload, animalsPayload, lotsPayload } from '../src/modules/park/embeds.js';
 import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 
@@ -118,5 +118,38 @@ describe('Animals tab', () => {
     const p = animalsPayload(user, 1, { visit: true });
     expect(JSON.stringify(p)).not.toContain('park:feedall');
     expect(p.components).toHaveLength(1);
+  });
+});
+
+describe('Lots tab', () => {
+  it('lists each lot with its level and shows slot usage', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const lots = [
+      { id: 1, userId: 'u1', type: 'paddock', kind: 'carnivore_paddock', name: 'Carnivore Paddock', level: 4 },
+      { id: 2, userId: 'u1', type: 'facility', kind: 'gene_lab', name: 'Gene Lab', level: 2 },
+    ] as never;
+    const p = lotsPayload(user, lots, 6);
+    const built = fieldsOf(p).find((f) => f.name.includes('Built'))!.value;
+    expect(built).toContain('#1');
+    expect(built).toContain('Carnivore Paddock');
+    expect(built).toContain('lvl 4');
+    expect(fieldsOf(p).find((f) => f.name.includes('Slots'))!.value).toBe('2 / 6 used');
+  });
+
+  it('tells an empty park what to do instead of rendering a blank field', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = lotsPayload(user, [], 3);
+    expect(fieldsOf(p).find((f) => f.name.includes('Built'))!.value).toContain('/build');
+  });
+
+  // Un-skip in Task 9, which adds assets/images/banners/lots.webp. assetImage returns
+  // null for a missing file and attach() no-ops on null, so this cannot pass before then.
+  it.skip('carries the lots banner', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = lotsPayload(user, [], 3);
+    expect(p.files!.map((f) => f.name)).toEqual(['lots.webp']);
   });
 });
