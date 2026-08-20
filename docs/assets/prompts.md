@@ -4,7 +4,7 @@ The volcano/frozen banners and volcano thumb were generated with ChatGPT image
 generation; the remaining coastal/amber banners and the coastal/amber/frozen
 thumbs were generated with Higgsfield Nano Banana Pro. The six egg rarities were
 generated with Higgsfield Nano Banana Pro as a reference chain (see the Egg
-rarities section). The 32 embed banners were generated with Higgsfield
+rarities section). The 33 embed banners were generated with Higgsfield
 Nano Banana Pro, `care_neglect` as a reference chain off `care` and
 `battle_defeat` off `battle_victory`. The six hatch cracks were generated as
 reference-chain edits of their own egg icons. These prompts are the source of
@@ -429,7 +429,7 @@ fixed it; keep that block verbatim on any future regeneration of this scene.
 
 ## Embed banners
 
-32 wide banners for the surfaces that have no site or egg art of their
+33 wide banners for the surfaces that have no site or egg art of their
 own. All generated with Higgsfield Nano Banana Pro at 3:2, then scaled to
 1536×1024 (the generator emits 1264×848; scaling to full width leaves ~6px of
 vertical excess, which is center-cropped).
@@ -468,6 +468,7 @@ vertical excess, which is center-cropped).
 | `assets/images/banners/event-market_panic.webp` | 1536×1024 | `/world` hub embed image, Market Panic |
 | `assets/images/banners/event-blood_moon.webp` | 1536×1024 | `/world` hub embed image, Blood Moon |
 | `assets/images/banners/event-migration_season.webp` | 1536×1024 | `/world` hub embed image, Migration Season |
+| `assets/images/banners/lots.webp` | 1536×1024 | `/park view` Lots tab embed image |
 
 These are the only prompts in this file whose subject is dinosaurs rather than
 scenery, so they drop the shared block's "no characters" clause and forbid only
@@ -995,6 +996,55 @@ style block plus the expanded no-text clause used elsewhere in this section.
 > strong glossy highlights, clean cel shading with smooth gradients,
 > polished game-asset look. No text, no lettering, no words, no numbers, no
 > signage writing anywhere in the scene, no human characters, no UI elements.
+
+**Lots (`lots.webp`):** generated with model `nano_banana_pro` (the API
+silently routes this to `nano_banana_2`) at aspect ratio `3:2`, source output
+2528×1696, then `node scripts/fit-art.mjs banner <src> <dest>` to 1536×1024
+WebP q95 — same pipeline as the rest of this section. Generated from a
+text-only prompt with no image references, unlike most recent entries in
+this section: two referenced variants were attempted, with `landmark.webp`
+and `guests.webp` attached — one came back flagged by the safety filter as a
+false positive, and the other was not needed once the text-only pair below
+proved good — so the shipped image uses no references.
+
+Two candidates were generated from the same prompt; the brighter,
+higher-contrast one was chosen. The other skewed orange-purple and read
+muddier at embed size.
+
+**The load-bearing negative clause here is construction signage.** A build
+site is the scene a model is most likely to letter: site hoardings, safety
+signs, notice boards, blueprints with numerals, measurement graduations,
+painted numbers on machinery. The prompt names each of those explicitly on
+top of the usual no-text form, and requires any board, sign, flag or panel
+that appears to be blank or plain-coloured.
+
+The prompt's own "same warm storybook style as the reference images" clause
+is vestigial — no references were in fact attached to the shipped
+generation. Kept verbatim below rather than tidied out, so a future
+regeneration knows the shipped image came from this exact prompt run without
+references.
+
+> A wide cartoon scene of a dinosaur park under construction at golden hour,
+> painted in the same warm storybook style as the reference images: in the
+> foreground a broad dirt build site with surveyor stakes trailing bright
+> ribbon, neat stacks of timber and pale stone blocks, a cement mixer and a
+> small yellow crane; in the midground two fenced enclosure plots
+> part-finished, their heavy timber posts and wire mesh going up, one already
+> turfed green with a shallow watering pool; behind them the half-built shell
+> of a visitor pavilion in scaffolding, its curved roof beams exposed against
+> the sky, canvas tarps lashed to the frame; distant rolling hills and a few
+> conifers on the horizon, warm low sun throwing long soft shadows and dusty
+> golden light across the whole scene. Friendly, optimistic, hand-painted
+> look with soft rounded forms and rich saturated colour. Wide establishing
+> composition with clear depth, nothing centred on a single subject.
+>
+> Absolutely no text of any kind anywhere in the image: no site hoardings, no
+> safety signage, no notice boards, no banners with writing, no blueprints or
+> plans with visible drawing or numerals, no measurement markings or ruler
+> graduations, no painted numbers on machinery, no lettering on crates or
+> tarps, no logos, no watermarks, no signatures, no captions, no letters or
+> characters of any script. Any board, sign, plan, flag or panel that appears
+> must be blank or plain coloured. No people, no human figures.
 
 ---
 

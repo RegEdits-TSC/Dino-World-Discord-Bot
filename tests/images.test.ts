@@ -54,19 +54,6 @@ function scrapeBannerNames(): string[] {
 
 const BANNERS = scrapeBannerNames();
 
-// Referenced in src/ but deliberately not yet shipped, each with a task pointer. The
-// park-view-tabs plan wires lotsPayload's assetImage('banners', 'lots') call in Task 4,
-// ahead of Task 9's asset — a temporary gap the plan's pre-flight review explicitly
-// accepted for tests/park-tabs.test.ts's own skipped banner assertion, but the scrape
-// below has no such escape hatch on its own. This does not weaken BANNERS itself (the
-// scrape, the "found at least one" sanity check and the reverse "every committed file is
-// referenced" check are all untouched) — it only excuses each already-known-pending name
-// from the "the file exists and is sized right" assertions below. Remove the 'lots' entry
-// the moment Task 9 ships assets/images/banners/lots.webp.
-const PENDING_BANNERS = new Set<string>([
-  'lots', // Task 9 ships assets/images/banners/lots.webp
-]);
-
 describe('assetImage', () => {
   it('returns an attachment ref for a present file', () => {
     const img = assetImage('eggs', 'common');
@@ -87,30 +74,9 @@ describe('assetImage', () => {
   });
   it('ships every banner image listed in BANNERS', () => {
     for (const name of BANNERS) {
-      if (PENDING_BANNERS.has(name)) continue;
       const img = assetImage('banners', name);
       expect(img, name).not.toBeNull();
       expect(img!.url).toBe(`attachment://${name}.webp`);
-    }
-  });
-  // PENDING_BANNERS is a temporary escape hatch, not a permanent exemption: the two
-  // checks it loosens (the exists/URL assertion above, and the dimension it.each below)
-  // have no other way to notice an entry going stale. Once an asset ships, those two
-  // would keep silently passing it by forever — the exists check `continue`s past it and
-  // the dimension loop never registers a case for it at all — so a wrong-sized or
-  // malformed file could ship under a pending name and stay wrong indefinitely with the
-  // whole suite green. This is the tripwire: it asserts the INVERSE, that no pending name
-  // has a file yet, so the moment one ships this goes red and names exactly which entry
-  // to delete. It only guards against the allowlist outliving its asset — an entry whose
-  // file genuinely is not committed yet must keep passing this.
-  it('never lets a PENDING_BANNERS entry sit forgotten past its own asset shipping', () => {
-    for (const name of PENDING_BANNERS) {
-      expect(
-        assetImage('banners', name),
-        `PENDING_BANNERS still lists '${name}', but assets/images/banners/${name}.webp now ` +
-        `exists — remove '${name}' from PENDING_BANNERS in tests/images.test.ts so the real ` +
-        'exists/dimension checks cover it again.',
-      ).toBeNull();
     }
   });
   it('accepts the battles kind and null-degrades when absent', () => {
@@ -213,7 +179,7 @@ describe('banner art', () => {
   // generator's native output is 1264×848) would letterbox on the /world hub with
   // this suite green.
   const DIMENSION_CHECKED_BANNERS = [
-    ...BANNERS.filter((n) => !PENDING_BANNERS.has(n)), ...WORLD_EVENTS.map((e) => `event-${e.id}`),
+    ...BANNERS, ...WORLD_EVENTS.map((e) => `event-${e.id}`),
   ];
   it.each(DIMENSION_CHECKED_BANNERS)('%s is 1536×1024', async (name) => {
     const img = new Image();
