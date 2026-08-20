@@ -650,6 +650,11 @@
   now errors visibly instead of silently doing nothing. The switch's own comment records
   why it exists. Any future `/park` subcommand MUST be added as its own `case`; there is
   no longer a fallthrough to lean on, and none should be reintroduced.
+  The park COMPONENT handler had the same hole and got the same fix: its `action` chain is
+  now a `switch` with a `default` arm that `deferUpdate()`s, because an unrecognised
+  `park:*` action previously returned without acknowledging and Discord painted "This
+  interaction failed" after 3 seconds. A stale id from an older deploy lands there. Any
+  future park component action MUST be added as its own `case`.
   A payload reaching `deliverNotification` must never carry an `attachments` key — the
   inverse of the `i.update` rule the battles bullet above documents. `fightFrames`'s F1/F4
   sends need an explicit `attachments: []` on every call because two send sites reuse one
