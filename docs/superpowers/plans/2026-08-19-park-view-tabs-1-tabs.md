@@ -982,17 +982,23 @@ async function renderTab(
     const { clockDinos } = toClockDinos(ctx, ownerId);
     const nowMs = ctx.now();
     const escaped = dinos.filter((d) => d.escapedAt !== null).length;
-    const atRisk = clockDinos.filter((c) => {
+    // ONE filter over the non-escaped rows, never three summed. at-risk and
+    // wrong-habitat are independent predicates over the same dinos, so summing them
+    // counts a dino that is both twice and can report more dinos needing attention than
+    // the park holds. This MUST match the identical computation on the /park view
+    // command path — clicking the Park tab re-renders the very screen the command just
+    // drew, so a disagreement is a visibly changing number on the primary screen.
+    const needsAttention = clockDinos.filter((c) => {
       if (c.escapedAt !== null) return false;
       const e = escapeAt(c);
-      return e !== null && e - nowMs <= ESCAPE_WARN_MS;
+      const atRisk = e !== null && e - nowMs <= ESCAPE_WARN_MS;
+      const mismatch = c.paddock !== null && c.paddock.diet !== c.species.diet;
+      return atRisk || mismatch;
     }).length;
-    const mismatch = clockDinos.filter((c) =>
-      c.paddock !== null && c.escapedAt === null && c.paddock.diet !== c.species.diet).length;
     const pending = visit ? 0 : pendingIncome(ctx, ownerId);
     const capped = pending > 0 && ctx.now() - user.lastCollectAt >= capHours(lots) * 3_600_000;
     const base = dashboardPayload(user, pending, {
-      attention: escaped + atRisk + mismatch, capped, now: nowMs,
+      attention: escaped + needsAttention, capped, now: nowMs,
       motto: user.motto, dinoCount: dinos.length, visit,
     });
     let png: Buffer | undefined;
