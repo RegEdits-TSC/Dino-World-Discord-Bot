@@ -221,10 +221,22 @@ describe('the owner sees their own showcase', () => {
 
   // Featured left /park view's default reply along with the rest of the Park tab split —
   // it now only renders on the Animals tab (Task 3), reachable by clicking that tab, not
-  // by /park view itself. tests/park.test.ts and tests/dino-image.test.ts each carry a
-  // skipped, retargeted version of this exact fixture (Trixie/triceratops) to un-skip once
-  // animalsPayload exists; this integration-level copy has no equivalent to retarget to
-  // yet, since Task 6 is what wires a tab click through the command module at all.
+  // by /park view itself. Retargeted to animalsPayload in Task 3 — un-skip there.
+  it.skip('renders the featured dino and its art on your own park view', async () => {
+    const d = addDino();
+    setFeaturedDino(ctx, 'u1', d.id);
+    const p = await view();
+    expect(p.embeds[0].toJSON().fields!.find((f) => f.name === '🦖 Featured')!.value)
+      .toBe('Triceratops');
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://tank-herbivore.webp');
+    // The park PNG cannot render under vitest: renderPark spawns a real worker thread that
+    // fails to resolve its module graph in-process, so `png` is undefined and withParkImage
+    // never runs. Offline, the meaningful property is that the featured dino's file IS
+    // attached and matches the embed's thumbnail URL. The two-files-on-one-embed pairing
+    // (thumbnail then park.png) is a live-gallery check — see the /park view case in
+    // scripts/test-live.ts.
+    expect(p.files!.map((f) => f.name)).toEqual(['tank-herbivore.webp']);
+  });
 
   it('carries no Next park button — that belongs to the visitor branch only', async () => {
     // The spec lists both halves of this ("own /park view carries no Next park button, the
