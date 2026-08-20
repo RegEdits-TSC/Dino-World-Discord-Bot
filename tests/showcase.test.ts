@@ -219,6 +219,8 @@ describe('the owner sees their own showcase', () => {
     expect(p.embeds[0].toJSON().description).toContain('Where the big ones live');
   });
 
+  // Retargeted to the tab dispatcher in Task 6 — un-skip there.
+  //
   // Featured left /park view's default reply along with the rest of the Park tab split —
   // it now only renders on the Animals tab, reachable by clicking that tab. Task 3 added
   // animalsPayload (tests/park-tabs.test.ts, tests/park.test.ts's 'dashboard showcase' and
@@ -227,8 +229,16 @@ describe('the owner sees their own showcase', () => {
   // separate, later wiring task. Retargeting THIS test to call animalsPayload directly
   // would only duplicate those three byte-for-byte; what it actually pins — the full
   // /park view command rendering the Featured field — genuinely doesn't hold anymore and
-  // has no home yet. Stays skipped until the click-through wiring lands, then this should
-  // assert against the real command path, not against animalsPayload.
+  // has no home yet. Stays skipped until Task 6's tab dispatcher can render the command and
+  // dispatch a real park:tab:<uid>:animals click through fakeButton, which is what this
+  // test's premise needs — then it should assert against that real dispatch path, not
+  // against animalsPayload directly.
+  //
+  // When un-skipped: the `files` assertion below is ALREADY WRONG for animalsPayload and
+  // must become `['dino_roster.webp', 'tank-herbivore.webp']`, not just have `.skip`
+  // dropped. animalsPayload always attaches the roster banner first (call order is upload
+  // order), which dashboardPayload never did — do not "fix" that ordering to match this
+  // stale single-file expectation.
   it.skip('renders the featured dino and its art on your own park view', async () => {
     const d = addDino();
     setFeaturedDino(ctx, 'u1', d.id);
