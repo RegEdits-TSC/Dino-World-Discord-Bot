@@ -230,6 +230,10 @@ describe('tab dispatcher', () => {
     const b = fakeButton({ customId: 'park:tab:u1:park', user: 'u1' });
     await parkComp().execute(ctx, b.asInteraction() as never);
     expect(b.deferOpts).toEqual([{ kind: 'update' }]);
+    // The Park branch is the one exit that reaches editReply rather than update — its own
+    // attachments: [] contract (named requirement of this task) was otherwise unpinned,
+    // since nothing above read b.replies[0] on this branch.
+    expect((b.replies[0] as { attachments: unknown[] }).attachments).toEqual([]);
   });
 
   it('refuses a stranger driving somebody else own-park tabs', async () => {
