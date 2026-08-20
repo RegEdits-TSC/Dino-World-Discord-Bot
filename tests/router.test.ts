@@ -16,7 +16,7 @@ import { rollSeason, seasonView } from '../src/modules/daily/season.js';
 import { rollDailyQuests } from '../src/modules/daily/service.js';
 import { hubPayload } from '../src/modules/daily/embeds.js';
 import { seasonPayload } from '../src/modules/daily/season-embeds.js';
-import { dashboardPayload } from '../src/modules/park/embeds.js';
+import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload } from '../src/modules/park/embeds.js';
 import { alertPayload } from '../src/modules/park/alert-embeds.js';
 import { dexPageRow } from '../src/modules/dex/embeds.js';
 import { chaptersPayload, type ChaptersView } from '../src/modules/battles/embeds.js';
@@ -410,7 +410,11 @@ describe('router component guard — every live button surface still routes', ()
     const topRows = (top.replies[0] as { components: Array<{ toJSON(): unknown }> }).components;
 
     const surfaces: Array<[string, string[]]> = [
-      ['/park view dashboard', idsOf(dashboardPayload(user, [], 0, 1234, 0, { now: ctx.now() }).components)],
+      ['/park view dashboard', idsOf(dashboardPayload(user, 1234, { now: ctx.now() }).components)],
+      ['/park view Animals tab', idsOf(animalsPayload(user, 3, {}).components)],
+      ['/park view Lots tab', idsOf(lotsPayload(user, [], 3).components)],
+      ['/park view Prestige tab', idsOf(prestigePayload(user, {}).components)],
+      ['/park view visited card', idsOf(dashboardPayload(user, 0, { visit: true }).components)],
       ['/dex list pager', idsOf([dexPageRow('u1', {}, 2, 5)])],
       ['/battle chapters', idsOf(chaptersPayload('u1', 0, chapters).components)],
       ['/hatch eggs pager', idsOf(eggListPayload(eggRows, ctx.now(), 'u1').components)],

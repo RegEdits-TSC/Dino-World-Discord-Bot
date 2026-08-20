@@ -13,12 +13,12 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/park view` | Your park dashboard, with a rendered map of your lots | Falls back to a text-only embed if the map cannot be rendered. Add `user:` to visit another player's park, read-only, with a **Next park ▶** button to keep walking the ranked list |
+| `/park view` | Your park dashboard, across four tabs — Park, Animals, Lots, Prestige | Tab buttons switch the same message in place (nothing new gets posted); the tab you're on shows as a disabled button. The Park tab opens by default and renders a map of your lots, falling back to a text-only embed if the map can't render. Add `user:` to visit another player's park: the same four tabs, read-only (no Collect, Feed all, or other action buttons), with a **Next park ▶** button that survives tab switches to keep walking the ranked list |
 | `/park rename` | Rename your park | Up to 60 characters |
 | `/park alerts` | Turn proactive park alerts on or off | DM-only warnings before a dino escapes and when your park's income hits its cap. On by default; also turned off by the 🔕 Mute button on an alert itself |
-| `/park landmark` | Your park's prestige monument — the six-rung cash-sink ladder | Shows the built and next rungs with a Build button. Purely cosmetic |
-| `/park motto` | The line visitors see on your park card | Up to 80 characters. Leave the option blank to clear it |
-| `/park feature` | Feature one of your dinos on your park card | Autocomplete: dino. Shows its name and art to anyone visiting. Leave the option blank to clear it. An escaped dino is still a valid choice |
+| `/park landmark` | Your park's prestige monument — the six-rung cash-sink ladder | Shows the built and next rungs with a Build button. Purely cosmetic. Also reachable from the Prestige tab of `/park view` |
+| `/park motto` | The line visitors see on the Park tab of your park card | Up to 80 characters. Leave the option blank to clear it |
+| `/park feature` | Feature one of your dinos on the Animals tab of your park card | Autocomplete: dino. Shows its name and art to anyone visiting. Leave the option blank to clear it. An escaped dino is still a valid choice |
 | `/build` | Build on an empty lot | |
 | `/upgrade` | Upgrade a lot to the next level | Autocomplete: lot, and the suggestion quotes the price. Costs are also quoted in the insufficient-funds reply |
 | `/decorate` | Add decor to a paddock | Autocomplete: lot, item |
@@ -98,7 +98,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/season` | Your season track — points from nine capped sources, eight reward rungs, and a Claim button | Crossing the 800-point capstone earns a permanent badge on your park card, whether or not you've claimed a rung. Unclaimed rungs forfeit when the season rolls over |
+| `/season` | Your season track — points from nine capped sources, eight reward rungs, and a Claim button | Crossing the 800-point capstone earns a permanent badge, shown on the Prestige tab of `/park view`, whether or not you've claimed a rung. Unclaimed rungs forfeit when the season rolls over |
 
 ## 🌍 World
 
@@ -126,7 +126,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/guests view` | Your attendance, its three terms (species variety, attraction draw, Visitor Center level), the attractions you own, and any milestone ready to claim | Attendance is derived fresh every time, never stored |
+| `/guests view` | Your attendance, its three terms (species variety, attraction draw, Visitor Center level), the attractions you own, and any milestone ready to claim | Attendance is derived fresh every time, never stored. Also reachable from the Prestige tab of `/park view` |
 | `/guests build` | Build a new attraction, or upgrade one you already own to its next level | Priced in cash. Each of six kinds unlocks at its own attendance high-water threshold |
 | `/guests claim` | Claim any attendance milestone your high-water has crossed | Pays cash, food, shards, or an egg — each milestone once, permanently |
 

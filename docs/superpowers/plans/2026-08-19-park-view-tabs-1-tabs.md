@@ -180,7 +180,9 @@ git commit -m "Add the park view tab row and tab-id validation"
              dinoCount?: number; visit?: boolean },
   ): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[] }
   ```
-  `attention` is the **summed** count of escaped + at-risk + wrong-habitat dinos. Callers compute it; the builder only renders it.
+  `attention` is the count of **distinct dinos** needing attention — `escapedCount` plus the number of non-escaped dinos matching (at-risk OR wrong-habitat). Callers compute it; the builder only renders it.
+
+  **Corrected during execution.** This originally read "the summed count of escaped + at-risk + wrong-habitat". That was wrong: at-risk and wrong-habitat are independent predicates over the same non-escaped rows, so one dino satisfies both freely and the marker could report more dinos needing attention than the park contains — `1 · ⚠️ 2 need attention` for a single off-diet dino inside the escape window. Not an edge case either, since an off-diet paddock is `paddockFit` 0.5, which is what drives comfort down and pulls `escapeAt` into the warning window. The Animals tab's itemised breakdown is unaffected and stays a sum: that tab lists *issues*, not dinos.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -880,8 +882,46 @@ describe('tab dispatcher', () => {
     expect(b.deferOpts).toEqual([{ kind: 'update' }]);
     expect(b.replies).toEqual([]);
   });
+
+  // ADDED DURING EXECUTION — recovers coverage this plan would otherwise have lost.
+  // Task 2 deleted the /park view `foodLine` local and Task 3's animalsPayload takes
+  // `foodLine?: string` as an opaque value, so between them nothing tested the
+  // DB-to-string formatting any more: the food-line test retargeted in Task 3 now only
+  // asserts that the Food field echoes a hardcoded string. This task is where that
+  // formatting is reintroduced (the getFoodInventory / FOODS / foodEmoji join in
+  // renderTab's animals branch), so this is where it has to be tested again.
+  it('formats the food line from real inventory rows, not a passed-in string', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.addFood('u1', 'fern_bale', 10);
+    ctx.economy.addFood('u1', 'prime_cut', 2);
+    const b = fakeButton({ customId: 'park:tab:u1:animals', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const sent = b.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
+    const food = (sent.embeds[0].toJSON().fields ?? []).find((f) => f.name.includes('Food'))!.value;
+    // Both items present, joined — the grouping and separator are the thing under test.
+    expect(food).toContain('×10');
+    expect(food).toContain('×2');
+    expect(food).toContain(' · ');
+  });
+
+  it('falls back to the shop hint when the player holds no food at all', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'park:tab:u1:animals', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const sent = b.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
+    const food = (sent.embeds[0].toJSON().fields ?? []).find((f) => f.name.includes('Food'))!.value;
+    expect(food).toContain('/shop food');
+  });
 });
 ```
+
+**Note on the two food-line cases above:** `getOrCreateUser` grants `STARTER_FOOD`, so the
+"no food at all" case may need that inventory cleared first — check what a fresh user
+actually holds and adjust the fixture rather than the assertion. Confirm the real helper
+name for granting food (`ctx.economy.addFood` is the assumed name) against
+`src/core/economy.ts` before writing these; use whatever the codebase actually exposes.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -942,17 +982,23 @@ async function renderTab(
     const { clockDinos } = toClockDinos(ctx, ownerId);
     const nowMs = ctx.now();
     const escaped = dinos.filter((d) => d.escapedAt !== null).length;
-    const atRisk = clockDinos.filter((c) => {
+    // ONE filter over the non-escaped rows, never three summed. at-risk and
+    // wrong-habitat are independent predicates over the same dinos, so summing them
+    // counts a dino that is both twice and can report more dinos needing attention than
+    // the park holds. This MUST match the identical computation on the /park view
+    // command path — clicking the Park tab re-renders the very screen the command just
+    // drew, so a disagreement is a visibly changing number on the primary screen.
+    const needsAttention = clockDinos.filter((c) => {
       if (c.escapedAt !== null) return false;
       const e = escapeAt(c);
-      return e !== null && e - nowMs <= ESCAPE_WARN_MS;
+      const atRisk = e !== null && e - nowMs <= ESCAPE_WARN_MS;
+      const mismatch = c.paddock !== null && c.paddock.diet !== c.species.diet;
+      return atRisk || mismatch;
     }).length;
-    const mismatch = clockDinos.filter((c) =>
-      c.paddock !== null && c.escapedAt === null && c.paddock.diet !== c.species.diet).length;
     const pending = visit ? 0 : pendingIncome(ctx, ownerId);
     const capped = pending > 0 && ctx.now() - user.lastCollectAt >= capHours(lots) * 3_600_000;
     const base = dashboardPayload(user, pending, {
-      attention: escaped + atRisk + mismatch, capped, now: nowMs,
+      attention: escaped + needsAttention, capped, now: nowMs,
       motto: user.motto, dinoCount: dinos.length, visit,
     });
     let png: Buffer | undefined;
@@ -1376,6 +1422,20 @@ In `tests/park-tabs.test.ts`, remove `.skip` and the "Un-skip in Task 9" comment
 Run: `npx vitest run tests/park-tabs.test.ts -t "carries the lots banner"`
 
 Expected: PASS.
+
+- [ ] **Step 4b: Empty the pending-banner allowlist**
+
+**ADDED DURING EXECUTION — this step did not exist when the plan was written, and skipping it silently re-opens a machine gate.**
+
+Task 4 wires `assetImage('banners', 'lots')` before this asset exists. That tripped a guard the plan's pre-flight never examined: `tests/images.test.ts` scrapes `src/` for banner references and asserts each has a committed, correctly-sized file. Task 4 added a narrowly-scoped `PENDING_BANNERS` allowlist to excuse `'lots'` from the exists-and-dimensions assertions only — the scrape itself, the "found at least one" sanity check, and the reverse "every committed file is referenced" check were all left intact.
+
+Now that the asset exists, delete the `'lots'` entry. The set must end up **empty**, and the `PENDING_BANNERS` declaration and both its use sites should go with it — an empty allowlist left in place is an invitation to add the next entry.
+
+Run: `npx vitest run tests/images.test.ts`
+
+Expected: PASS, with `lots.webp` now covered by the same exists-and-1536×1024 assertions every other banner gets.
+
+**This task is deliberately executed immediately after Task 4, out of numeric order**, so the allowlist lives for exactly one task rather than six. Tasks 5–8 renumber nothing; they simply run after this one.
 
 - [ ] **Step 5: Record the prompt**
 

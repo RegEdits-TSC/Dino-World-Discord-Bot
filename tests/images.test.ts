@@ -171,14 +171,16 @@ describe('banner art', () => {
 
   // Discord scales an embed image to the embed width, so an off-size banner
   // letterboxes or crops; 1536×1024 matches the site banners already shipping.
-  // Covers all 32 committed banners, not just the 23 the static scrape can see:
+  // Covers all 33 committed banners, not just the 24 the static scrape can see:
   // event-<id> names come from a template literal (world/embeds.ts) no scrape can
   // resolve, so they are appended here from WORLD_EVENTS directly — same
   // cross-check precedent as the CAMPAIGN/WORLD_EVENTS loops in "the committed
   // asset set" below. Without this, a future event banner committed unfitted (the
   // generator's native output is 1264×848) would letterbox on the /world hub with
   // this suite green.
-  const DIMENSION_CHECKED_BANNERS = [...BANNERS, ...WORLD_EVENTS.map((e) => `event-${e.id}`)];
+  const DIMENSION_CHECKED_BANNERS = [
+    ...BANNERS, ...WORLD_EVENTS.map((e) => `event-${e.id}`),
+  ];
   it.each(DIMENSION_CHECKED_BANNERS)('%s is 1536×1024', async (name) => {
     const img = new Image();
     img.src = readFileSync(resolve(process.cwd(), 'assets/images/banners', `${name}.webp`));

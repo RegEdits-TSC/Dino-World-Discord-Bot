@@ -4,7 +4,7 @@ import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { dinoImage } from '../src/core/images.js';
-import { dashboardPayload } from '../src/modules/park/embeds.js';
+import { animalsPayload } from '../src/modules/park/embeds.js';
 import { duelResultPayload } from '../src/modules/duels/embeds.js';
 import { resolveDuel } from '../src/modules/duels/service.js';
 import { dexViewPayload } from '../src/modules/dex/embeds.js';
@@ -46,23 +46,29 @@ function addDino(user: string, speciesId: string, battleXp = 0): number {
     .returning().get().id;
 }
 
-describe('dashboardPayload routes the featured dino through dinoImage', () => {
+// Featured left dashboardPayload for the Animals tab in the same task that split the
+// Park tab out of the old /park view card (see tests/park.test.ts's identical
+// Trixie/triceratops fixture, retargeted the same way).
+describe('animalsPayload routes the featured dino through dinoImage', () => {
   it('passes the featured species id, not just its archetype and diet', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 0, 0, 0, {
+    const p = animalsPayload(user, 0, {
       featured: { name: 'Trixie', speciesId: 'triceratops', archetype: 'tank', diet: 'herbivore' },
     });
     expect(vi.mocked(dinoImage).mock.calls).toEqual([['triceratops', 'tank', 'herbivore']]);
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://triceratops.webp');
-    expect(p.files!.map((f) => f.name)).toEqual(['triceratops.webp']);
+    // Two files now, not one: animalsPayload always attaches the roster banner first
+    // (call order is upload order), then the featured dino's art second.
+    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster.webp', 'triceratops.webp']);
   });
 
   it('never calls dinoImage when nothing is featured — that ternary guards domain data', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 0, 0, 0, {});
+    const p = animalsPayload(user, 0, {});
     expect(dinoImage).not.toHaveBeenCalled();
-    // Not [] — attach() on a null ref never creates the array at all.
-    expect(p.files).toBeUndefined();
+    // Not undefined: unlike the old single-card dashboard, animalsPayload always attaches
+    // the roster banner regardless of whether anything is featured.
+    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster.webp']);
   });
 });
 
