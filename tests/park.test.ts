@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { MessageFlags } from 'discord.js';
-import { makeCtx, fakeCommand, replyText, testRegistry } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, replyText, testRegistry } from './harness.js';
 import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, upgradeCostFor, BASE_LOT_SLOTS, breedingSlots } from '../src/modules/park/service.js';
 import { incubatorSlots } from '../src/modules/hatchery/service.js';
 import { renameDino } from '../src/modules/park/dinos.js';
@@ -1059,5 +1059,27 @@ describe('season badge wiring', () => {
     // And rendering another player's card must not have stamped anything for them.
     expect(ctx.db.select().from(schema.seasonProgress)
       .where(eq(schema.seasonProgress.userId, 'u1')).all()).toHaveLength(0);
+  });
+});
+
+describe('park component handler default arm', () => {
+  it('acknowledges an unrecognised park action instead of timing out', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'park:notathing:u1', user: 'u1' });
+    const comp = parkModule.components.find((c) => c.prefix === 'park')!;
+    await comp.execute(ctx, b.asInteraction() as never);
+    // deferUpdate, not deferReply: deferReply posts a public "thinking…" placeholder
+    // that never resolves when the handler goes on to do nothing.
+    expect(b.deferOpts).toEqual([{ kind: 'update' }]);
+    expect(b.replies).toEqual([]);
+  });
+
+  it('still dispatches the actions it does know', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'park:collect', user: 'u1' });
+    const comp = parkModule.components.find((c) => c.prefix === 'park')!;
+    await comp.execute(ctx, b.asInteraction() as never);
+    expect(b.replies).toHaveLength(1);
+    expect(b.deferOpts).toEqual([]);
   });
 });

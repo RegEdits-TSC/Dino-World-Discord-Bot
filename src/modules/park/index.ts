@@ -417,114 +417,128 @@ export const parkModule: ModuleManifest = {
         }
         const parts = i.customId.split(':');
         const [, action, uid, pageStr] = parts;
-        if (action === 'assignyes' || action === 'assignno') {
-          if (i.user.id !== uid) { await i.reply({ content: 'Not your assignment.', flags: MessageFlags.Ephemeral }); return; }
-          if (action === 'assignno') { await i.update({ content: 'Assignment cancelled.', components: [] }); return; }
-          settleEscapes(ctx, i.user.id);
-          try {
-            assignDino(ctx, i.user.id, Number(parts[3]), Number(parts[4]), { allowMismatch: true });
-            await i.update({ content: '🦕 Assigned — wrong habitat, comfort halved.', components: [] });
-          } catch (e) {
-            if (e instanceof AssignError) await i.update({ content: e.message, components: [] });
-            else throw e;
-          }
-          return;
-        }
-        if (action === 'dinos') {
-          if (i.user.id !== uid) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
-          settleEscapes(ctx, i.user.id);
-          await i.update({ ...dinoListPayload(ctx, i.user.id, Number(pageStr)), attachments: [] });
-          return;
-        }
-        if (action === 'tour') {
-          // NO owner check on purpose: a park visit is public and read-only, and `uid`
-          // here is the TARGET park, not an owner. Turning this into an ownership check
-          // would make Next park work only for the player whose park is on screen.
-          //
-          // The existence check stays AHEAD of the acknowledgement so "no park yet" can
-          // still be an ephemeral reply — the /park view user: ordering exactly.
-          const exists = ctx.db.select().from(schema.users)
-            .where(eq(schema.users.discordId, uid)).get();
-          if (!exists) { await i.reply({ content: 'That player has no park yet.', flags: MessageFlags.Ephemeral }); return; }
-          // Acknowledge BEFORE rendering: visitPayload awaits renderPark, whose own
-          // RENDER_TIMEOUT_MS is already 3000 — Discord's entire initial-response window —
-          // and renders serialize process-wide, so queue wait stacks on top of it. Rendering
-          // first meant a slow render lost the interaction to 10062 and the user saw "This
-          // interaction failed" with no park, which is also the one case visitPayload's
-          // render-failure degrade could never be delivered for.
-          //
-          // deferUpdate + editReply, never deferReply: a tour advances ONE message rather
-          // than accumulating a new one per hop.
-          await i.deferUpdate();
-          const payload = await visitPayload(ctx, uid);
-          // attachments: [] — the message being replaced carries the previous park's
-          // uploads, and this payload brings its own.
-          await i.editReply({ ...payload!, attachments: [] });
-          return;
-        }
-        if (action === 'landmark') {
-          // customId is park:landmark:buy:<userId>:<tier> — five parts, so the owner id sits
-          // at index 3 (not the outer destructure's `uid`, which caught 'buy' there) and the
-          // rung the button OFFERED at index 4.
-          //
-          // The tier is checked, not trusted, and that check is the actual guard against a
-          // stale button: a /park landmark message is never refreshed by anything else, so its
-          // label stays frozen on the rung it was minted for while buyLandmark re-derives
-          // current+1 fresh on every click. Four clicks of one button labelled "Build Stone
-          // Marker" charged 5,000,000, 10,000,000, 20,000,000 and 40,000,000 — 32x its own
-          // label, and there is no refund path. The i.update on success is a second layer
-          // only: another open message still holds a stale button.
-          const [, , , landmarkUid, tierStr] = parts;
-          if (i.user.id !== landmarkUid) { await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral }); return; }
-          // tierStr is CLIENT-supplied. Number('') is 0 and Number(undefined) is NaN, so a
-          // truncated or forged customId is rejected here rather than reaching buyLandmark.
-          const offered = Number(tierStr);
-          if (!Number.isInteger(offered) || offered < 1 || offered > MAX_LANDMARK_TIER) {
-            await i.reply({ content: 'That landmark button is no longer valid — run `/park landmark` again.', flags: MessageFlags.Ephemeral });
+        // A real switch with a default arm, not a chain of equality checks that falls off
+        // the end. An action nobody wrote a branch for — a stale id from an older deploy,
+        // or a tab name that was renamed — used to return without acknowledging, and
+        // Discord paints "This interaction failed" after 3 seconds. The default answers
+        // with deferUpdate for the same reason the router's guard rejection does: a silent
+        // ack is correct where a bare return is visibly broken, and a distinct text reply
+        // would be an oracle. Any future park action MUST be added as its own case.
+        switch (action) {
+          case 'assignyes':
+          case 'assignno': {
+            if (i.user.id !== uid) { await i.reply({ content: 'Not your assignment.', flags: MessageFlags.Ephemeral }); return; }
+            if (action === 'assignno') { await i.update({ content: 'Assignment cancelled.', components: [] }); return; }
+            settleEscapes(ctx, i.user.id);
+            try {
+              assignDino(ctx, i.user.id, Number(parts[3]), Number(parts[4]), { allowMismatch: true });
+              await i.update({ content: '🦕 Assigned — wrong habitat, comfort halved.', components: [] });
+            } catch (e) {
+              if (e instanceof AssignError) await i.update({ content: e.message, components: [] });
+              else throw e;
+            }
             return;
           }
-          const rung = landmarkFor(offered)!;
-          const current = landmarkTierOf(ctx, i.user.id);
-          // At the top of the ladder there is no next rung at all, so every button is stale
-          // in the same way and buyLandmark's LandmarkMaxedError names the reason better than
-          // this branch could — only a below-the-top mismatch is answered here.
-          if (current < MAX_LANDMARK_TIER && offered !== current + 1) {
-            // A genuinely stale button always offers a rung at or below the current tier, but
-            // offered > current + 1 is reachable two ways — a forged customId, and an old
-            // higher-rung message still live after adminReset zeroed the tier — so the two
-            // directions get their own wording rather than one claiming a rung is built when
-            // it is actually still ahead of the player.
-            await i.reply({
-              content: offered <= current
-                ? `Tier ${offered} — the ${rung.name} — is already built. Run \`/park landmark\` again for the rung you can buy now.`
-                : `Tier ${offered} — the ${rung.name} — isn't next: you can buy tier ${current + 1}. Run \`/park landmark\` again.`,
-              flags: MessageFlags.Ephemeral,
-            });
+          case 'dinos': {
+            if (i.user.id !== uid) { await i.reply({ content: 'Not your list.', flags: MessageFlags.Ephemeral }); return; }
+            settleEscapes(ctx, i.user.id);
+            await i.update({ ...dinoListPayload(ctx, i.user.id, Number(pageStr)), attachments: [] });
             return;
           }
-          try {
-            const def = buyLandmark(ctx, i.user.id);
-            const fresh = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, i.user.id)).get()!;
-            // i.update, not i.reply: the message the player just clicked must stop offering a
-            // rung it has already sold. No attachments key by hand — landmarkPayload attaches
-            // banners/landmark on every call, so this update replaces the message's attachment
-            // set with an identical one. Setting `attachments: []` here would be the fightFrames
-            // rule misapplied: that rule exists because one MessagePayload object reaches two
-            // send sites and each must shed the other's set, and landmarkPayload builds a fresh
-            // object per call that is spread into exactly one send.
-            await i.update({
-              ...landmarkPayload(fresh, def, nextLandmark(ctx, i.user.id)),
-              content: `🏛️ Built the **${def.name}**.`,
-            });
-          } catch (e) {
-            if (e instanceof LandmarkMaxedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-            else if (e instanceof InsufficientFundsError) {
+          case 'tour': {
+            // NO owner check on purpose: a park visit is public and read-only, and `uid`
+            // here is the TARGET park, not an owner. Turning this into an ownership check
+            // would make Next park work only for the player whose park is on screen.
+            //
+            // The existence check stays AHEAD of the acknowledgement so "no park yet" can
+            // still be an ephemeral reply — the /park view user: ordering exactly.
+            const exists = ctx.db.select().from(schema.users)
+              .where(eq(schema.users.discordId, uid)).get();
+            if (!exists) { await i.reply({ content: 'That player has no park yet.', flags: MessageFlags.Ephemeral }); return; }
+            // Acknowledge BEFORE rendering: visitPayload awaits renderPark, whose own
+            // RENDER_TIMEOUT_MS is already 3000 — Discord's entire initial-response window —
+            // and renders serialize process-wide, so queue wait stacks on top of it. Rendering
+            // first meant a slow render lost the interaction to 10062 and the user saw "This
+            // interaction failed" with no park, which is also the one case visitPayload's
+            // render-failure degrade could never be delivered for.
+            //
+            // deferUpdate + editReply, never deferReply: a tour advances ONE message rather
+            // than accumulating a new one per hop.
+            await i.deferUpdate();
+            const payload = await visitPayload(ctx, uid);
+            // attachments: [] — the message being replaced carries the previous park's
+            // uploads, and this payload brings its own.
+            await i.editReply({ ...payload!, attachments: [] });
+            return;
+          }
+          case 'landmark': {
+            // customId is park:landmark:buy:<userId>:<tier> — five parts, so the owner id sits
+            // at index 3 (not the outer destructure's `uid`, which caught 'buy' there) and the
+            // rung the button OFFERED at index 4.
+            //
+            // The tier is checked, not trusted, and that check is the actual guard against a
+            // stale button: a /park landmark message is never refreshed by anything else, so its
+            // label stays frozen on the rung it was minted for while buyLandmark re-derives
+            // current+1 fresh on every click. Four clicks of one button labelled "Build Stone
+            // Marker" charged 5,000,000, 10,000,000, 20,000,000 and 40,000,000 — 32x its own
+            // label, and there is no refund path. The i.update on success is a second layer
+            // only: another open message still holds a stale button.
+            const [, , , landmarkUid, tierStr] = parts;
+            if (i.user.id !== landmarkUid) { await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral }); return; }
+            // tierStr is CLIENT-supplied. Number('') is 0 and Number(undefined) is NaN, so a
+            // truncated or forged customId is rejected here rather than reaching buyLandmark.
+            const offered = Number(tierStr);
+            if (!Number.isInteger(offered) || offered < 1 || offered > MAX_LANDMARK_TIER) {
+              await i.reply({ content: 'That landmark button is no longer valid — run `/park landmark` again.', flags: MessageFlags.Ephemeral });
+              return;
+            }
+            const rung = landmarkFor(offered)!;
+            const current = landmarkTierOf(ctx, i.user.id);
+            // At the top of the ladder there is no next rung at all, so every button is stale
+            // in the same way and buyLandmark's LandmarkMaxedError names the reason better than
+            // this branch could — only a below-the-top mismatch is answered here.
+            if (current < MAX_LANDMARK_TIER && offered !== current + 1) {
+              // A genuinely stale button always offers a rung at or below the current tier, but
+              // offered > current + 1 is reachable two ways — a forged customId, and an old
+              // higher-rung message still live after adminReset zeroed the tier — so the two
+              // directions get their own wording rather than one claiming a rung is built when
+              // it is actually still ahead of the player.
               await i.reply({
-                content: `Not enough cash — the ${rung.name} costs ${rung.cost.toLocaleString('en-US')}.`,
+                content: offered <= current
+                  ? `Tier ${offered} — the ${rung.name} — is already built. Run \`/park landmark\` again for the rung you can buy now.`
+                  : `Tier ${offered} — the ${rung.name} — isn't next: you can buy tier ${current + 1}. Run \`/park landmark\` again.`,
                 flags: MessageFlags.Ephemeral,
               });
-            } else throw e;
+              return;
+            }
+            try {
+              const def = buyLandmark(ctx, i.user.id);
+              const fresh = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, i.user.id)).get()!;
+              // i.update, not i.reply: the message the player just clicked must stop offering a
+              // rung it has already sold. No attachments key by hand — landmarkPayload attaches
+              // banners/landmark on every call, so this update replaces the message's attachment
+              // set with an identical one. Setting `attachments: []` here would be the fightFrames
+              // rule misapplied: that rule exists because one MessagePayload object reaches two
+              // send sites and each must shed the other's set, and landmarkPayload builds a fresh
+              // object per call that is spread into exactly one send.
+              await i.update({
+                ...landmarkPayload(fresh, def, nextLandmark(ctx, i.user.id)),
+                content: `🏛️ Built the **${def.name}**.`,
+              });
+            } catch (e) {
+              if (e instanceof LandmarkMaxedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+              else if (e instanceof InsufficientFundsError) {
+                await i.reply({
+                  content: `Not enough cash — the ${rung.name} costs ${rung.cost.toLocaleString('en-US')}.`,
+                  flags: MessageFlags.Ephemeral,
+                });
+              } else throw e;
+            }
+            return;
           }
+          default:
+            await i.deferUpdate();
+            return;
         }
       },
     },
