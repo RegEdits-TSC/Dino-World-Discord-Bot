@@ -144,9 +144,7 @@ describe('Lots tab', () => {
     expect(fieldsOf(p).find((f) => f.name.includes('Built'))!.value).toContain('/build');
   });
 
-  // Un-skip in Task 9, which adds assets/images/banners/lots.webp. assetImage returns
-  // null for a missing file and attach() no-ops on null, so this cannot pass before then.
-  it.skip('carries the lots banner', () => {
+  it('carries the lots banner', () => {
     const ctx = makeCtx();
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
     const p = lotsPayload(user, [], 3);
