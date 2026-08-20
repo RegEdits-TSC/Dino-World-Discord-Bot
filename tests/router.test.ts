@@ -410,7 +410,7 @@ describe('router component guard — every live button surface still routes', ()
     const topRows = (top.replies[0] as { components: Array<{ toJSON(): unknown }> }).components;
 
     const surfaces: Array<[string, string[]]> = [
-      ['/park view dashboard', idsOf(dashboardPayload(user, [], 0, 1234, 0, { now: ctx.now() }).components)],
+      ['/park view dashboard', idsOf(dashboardPayload(user, 1234, { now: ctx.now() }).components)],
       ['/dex list pager', idsOf([dexPageRow('u1', {}, 2, 5)])],
       ['/battle chapters', idsOf(chaptersPayload('u1', 0, chapters).components)],
       ['/hatch eggs pager', idsOf(eggListPayload(eggRows, ctx.now(), 'u1').components)],

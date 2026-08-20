@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { MessageFlags } from 'discord.js';
-import { makeCtx, fakeCommand, fakeButton, replyText, testRegistry } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, upgradeCostFor, BASE_LOT_SLOTS, breedingSlots } from '../src/modules/park/service.js';
 import { incubatorSlots } from '../src/modules/hatchery/service.js';
 import { renameDino } from '../src/modules/park/dinos.js';
@@ -9,8 +9,6 @@ import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
 import { dashboardPayload, PARK_HEADER_KEYS } from '../src/modules/park/embeds.js';
-import { visitPayload } from '../src/modules/park/visit.js';
-import { attendanceOf } from '../src/modules/park/attendance.js';
 import { eventHeaderLine } from '../src/modules/world/embeds.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
 import { FACILITIES } from '../src/data/facilities.js';
@@ -18,7 +16,6 @@ import { DECOR } from '../src/data/decor.js';
 import { lotSlots } from '../src/data/progression.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { recordSpeciesSeen } from '../src/core/species-seen.js';
-import { rollSeason } from '../src/modules/daily/season.js';
 
 const H = 3_600_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -171,7 +168,8 @@ describe('park module commands', () => {
     await parkModule.commands[0].execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: unknown[]; components: unknown[] };
     expect(payload.embeds).toHaveLength(1);
-    expect(payload.components).toHaveLength(1);
+    // Collect (row 1) plus the tab row Task 1 added (row 2) — was 1 before the tabs split.
+    expect(payload.components).toHaveLength(2);
   });
   it('/build paddock reply hints at assigning a dino', async () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
@@ -205,7 +203,7 @@ describe('/park subcommand dispatch', () => {
 describe('Collect button', () => {
   it('shows a plain numeric label with the coin as a real emoji, not text', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 0, 1234, 0, {});
+    const p = dashboardPayload(user, 1234, {});
     const button = (p.components[0] as {
       toJSON(): { components: Array<{ label: string; emoji?: { name: string; animated: boolean } }> };
     }).toJSON().components[0];
@@ -216,174 +214,44 @@ describe('Collect button', () => {
   });
 });
 
+// The itemised at-risk/mismatch/escaped breakdown this block used to pin was retired by
+// the Park tab rewrite: dashboardPayload now renders a single caller-supplied `attention`
+// sum (see tests/park-tabs.test.ts, 'Park tab' > 'shows a compact attention marker').
+// Splitting the reasons back out is Task 3's animalsPayload job, with its own coverage —
+// there is no version of that breakdown left to pin on THIS function ever again.
 describe('dashboard warnings', () => {
-  it('shows the at-risk count in the dino field', () => {
-    const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 3, 0, 0, { atRiskCount: 2 });
-    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🦕 Dinos')!;
-    expect(field.value).toContain('⚠ 2 at risk');
-  });
-  it('omits the warning at zero', () => {
-    const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 3, 0, 0, {});
-    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🦕 Dinos')!;
-    expect(field.value).toBe('3');
-  });
   it('adds a capped field when capped', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 1, 480, 0, { capped: true });
+    const p = dashboardPayload(user, 480, { capped: true, dinoCount: 1 });
     const names = p.embeds[0].toJSON().fields!.map((f) => f.name);
     expect(names).toContain('⛔ Income capped');
   });
   it('no capped field otherwise', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 1, 480, 0, {});
+    const p = dashboardPayload(user, 480, { dinoCount: 1 });
     const names = p.embeds[0].toJSON().fields!.map((f) => f.name);
     expect(names).not.toContain('⛔ Income capped');
   });
 });
 
-describe('dashboard achievements badge', () => {
-  it('shows the earned tier count when greater than zero', () => {
-    const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 0, 0, 0, { earnedTiers: 3 });
-    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏆 Achievements');
-    expect(field).toBeTruthy();
-    expect(field!.value).toContain('3');
-  });
-  it('omits the achievements field entirely at zero', () => {
-    const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 0, 0, 0, {});
-    const names = p.embeds[0].toJSON().fields!.map((f) => f.name);
-    expect(names).not.toContain('🏆 Achievements');
-  });
-  it('also omits it when earnedTiers is left unset entirely', () => {
-    const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 0, 0, 0);
-    const names = p.embeds[0].toJSON().fields!.map((f) => f.name);
-    expect(names).not.toContain('🏆 Achievements');
-  });
-});
-
-describe('/park view achievements badge wiring', () => {
-  it('passes earnedTierCount into the own-park dashboard', async () => {
+// Achievements, Attendance and Legacy all left the Park tab for good — Achievements and
+// Legacy move to the Prestige tab (Task 5), Attendance to the Animals tab (Task 3), each
+// a different payload builder with its own test coverage. None of these three fields has
+// a code path left on dashboardPayload to test against, own-park or visited alike, so the
+// wiring tests that used to pin them here are gone rather than skipped — Tasks 3 and 5
+// cover the new call sites fresh.
+//
+// bumpLegacyBest's SIDE EFFECT is the one piece of this that still runs on THIS command
+// path (see the comment at its call site in src/modules/park/index.ts), so that survives
+// as its own regression test below rather than disappearing along with the display.
+describe('/park view legacy high-water wiring', () => {
+  it('still bumps legacyRankBest on every view, even though Legacy no longer renders here', async () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
-    ctx.db.insert(schema.achievementClaims).values([
-      { userId: 'u1', trackId: 'eggs_hatched', tier: 0, claimedAt: 0 },
-      { userId: 'u1', trackId: 'eggs_hatched', tier: 1, claimedAt: 0 },
-    ]).run();
+    for (const s of allSpecies().slice(0, 15)) recordSpeciesSeen(ctx, 'u1', s.id);
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.legacyRankBest).toBe(0);
     const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
     await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
-    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
-    const field = fields.find((f) => f.name === '🏆 Achievements')!;
-    expect(field.value).toContain('2');
-  });
-
-  it('passes earnedTierCount into the read-only other-user dashboard', async () => {
-    getOrCreateUser(ctx, 'u1', 'Reg');
-    getOrCreateUser(ctx, 'other', 'Other');
-    ctx.db.insert(schema.achievementClaims).values([
-      { userId: 'other', trackId: 'eggs_hatched', tier: 0, claimedAt: 0 },
-    ]).run();
-    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1', options: { user: 'other' } });
-    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
-    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
-    const field = fields.find((f) => f.name === '🏆 Achievements')!;
-    expect(field.value).toContain('1');
-  });
-});
-
-describe('/park view attendance wiring', () => {
-  it('keys the attendance field to the right park on your own card and on a visited one', async () => {
-    for (const id of ['u1', 'u2']) getOrCreateUser(ctx, id, id);
-    ctx.economy.apply('u1', { cash: 50_000 }, 'test:seed', 0);
-    ctx.economy.apply('u2', { cash: 50_000 }, 'test:seed', 0);
-    const lot1 = buildLot(ctx, 'u1', 'herbivore_paddock');
-    ctx.db.insert(schema.dinos).values({
-      userId: 'u1', lotId: lot1.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
-    }).run();
-    // u2's own park gets a DIFFERENT distinct-species count (2, not 1) — attendance's
-    // species term is what moves the figure here, so u1 and u2 must resolve to different
-    // numbers or this test cannot tell a correctly-threaded value from a dropped
-    // `attendance:` line (which renders the unconditional field at its `?? 0` default,
-    // still matching /Attendance/) or a caller-identity mixup.
-    const lot2 = buildLot(ctx, 'u2', 'herbivore_paddock');
-    ctx.db.insert(schema.dinos).values([
-      { userId: 'u2', lotId: lot2.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 },
-      { userId: 'u2', lotId: lot2.id, speciesId: 'stegosaurus', hunger: 100, lastFedAt: 0, hatchedAt: 0 },
-    ]).run();
-
-    const u1Attendance = attendanceOf(ctx, 'u1').attendance;
-    const u2Attendance = attendanceOf(ctx, 'u2').attendance;
-    expect(u1Attendance).not.toBe(u2Attendance);   // sanity: equal values would prove nothing below
-
-    const attendanceField = (replies: unknown[]) =>
-      (replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> })
-        .embeds[0].toJSON().fields!.find((f) => f.name === '🎡 Attendance')!;
-
-    const own = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
-    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, own.asChatInput());
-    expect(attendanceField(own.replies).value).toContain(u1Attendance.toLocaleString());
-
-    // u2 (the viewer) visits u1's park (the target). The field must carry u1's number —
-    // never u2's own — so a value threaded into one caller and forgotten (or mis-keyed)
-    // in the other renders a card that disagrees with itself depending on who is looking.
-    const visit = fakeCommand({ name: 'park', sub: 'view', user: 'u2', options: { user: { id: 'u1' } } });
-    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, visit.asChatInput());
-    const visitField = attendanceField(visit.replies);
-    expect(visitField.value).toContain(u1Attendance.toLocaleString());
-    expect(visitField.value).not.toContain(u2Attendance.toLocaleString());
-  });
-});
-
-describe('dashboard legacy rank', () => {
-  it('shows the title and rank number when ranked', () => {
-    const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 0, 0, 0, { legacyRank: { rank: 3, title: 'Curator', points: 65 } });
-    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏛️ Legacy');
-    expect(field).toBeTruthy();
-    expect(field!.value).toContain('Curator');
-    expect(field!.value).toContain('3');           // rank number, not just the title
-  });
-  it('omits the field when unranked (explicit null and opts unset alike)', () => {
-    const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    for (const opts of [{ legacyRank: null }, {}]) {
-      const names = dashboardPayload(user, [], 0, 0, 0, opts).embeds[0].toJSON().fields!.map((f) => f.name);
-      expect(names).not.toContain('🏛️ Legacy');
-    }
-  });
-});
-
-describe('/park view legacy rank wiring', () => {
-  // allSpecies().slice(0, 15/35) seeds exactly the Groundskeeper/Keeper thresholds
-  // (LEGACY_TIERS in src/modules/park/ranks.js) via species points alone — species alone
-  // caps at allSpecies().length (52, tests/ranks.test.ts), which is why these two tests
-  // stay within Groundskeeper/Keeper rather than reaching for a higher tier. u1 and u2
-  // land on DIFFERENT titles on purpose: a title mismatch fails louder than a
-  // missing-vs-present field would if the wrong id were ever passed at a call site.
-  it('passes the viewer own rank into the own-park dashboard', async () => {
-    getOrCreateUser(ctx, 'u1', 'Reg');
-    for (const s of allSpecies().slice(0, 15)) recordSpeciesSeen(ctx, 'u1', s.id);   // Groundskeeper (rank 1)
-    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
-    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
-    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
-    const field = fields.find((f) => f.name === '🏛️ Legacy');
-    expect(field).toBeTruthy();
-    expect(field!.value).toContain('Groundskeeper');
-  });
-
-  it('shows the TARGET player rank when viewing another park, not the viewer own', async () => {
-    getOrCreateUser(ctx, 'u1', 'Reg');
-    getOrCreateUser(ctx, 'u2', 'Other');
-    for (const s of allSpecies().slice(0, 15)) recordSpeciesSeen(ctx, 'u1', s.id);   // Groundskeeper (rank 1)
-    for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u2', s.id);   // Keeper (rank 2)
-    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1', options: { user: { id: 'u2' } } });
-    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
-    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
-    const field = fields.find((f) => f.name === '🏛️ Legacy');
-    expect(field).toBeTruthy();
-    expect(field!.value).toContain('Keeper');       // u2's rank
-    expect(field!.value).not.toContain('Groundskeeper');   // never u1's (the viewer's) rank
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.legacyRankBest).toBeGreaterThan(0);
   });
 });
 
@@ -427,19 +295,8 @@ describe('/dino list escape countdown', () => {
   });
 });
 
-describe('dashboard food line', () => {
-  it('/park view lists held food items grouped after cash', async () => {
-    getOrCreateUser(ctx, 'u1', 'Reg');
-    const parkCmd = parkModule.commands.find((c) => c.data.name === 'park')!;
-    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
-    await parkCmd.execute(ctx, i.asChatInput());
-    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> })
-      .embeds[0].toJSON().fields!;
-    const food = fields.find((f) => f.name.includes('Food'))!;
-    expect(food.value).toContain('🌿 Ferns ×10');               // starter pantry
-    expect(food.value).toContain('🐟 Fish ×10');
-  });
-});
+// Food left the Park tab too — it moves to the Animals tab in Task 3, a different
+// payload builder with its own coverage, not a retarget of this one.
 
 describe('upgradeLot service', () => {
   it('charges and bumps the level', () => {
@@ -622,20 +479,9 @@ describe('gene lab', () => {
     expect(() => buildLot(ctx, 'u1', 'gene_lab')).toThrow(DuplicateFacilityError);
   });
 
-  // Task 12 shipped dw_lot_genelab.svg and its EMOJI_FALLBACK entry, so emojiTag()
-  // now resolves to the 🧬 unicode fallback even in tests (no map loaded). This pins
-  // the dashboard row's format now that the emoji is live, replacing the Task 7
-  // interim assertion that pinned the plain-text degrade while the SVG was pending.
-  it('renders with its 🧬 emoji on the dashboard', () => {
-    const ctx = makeCtx({ nowMs: 0 });
-    const user = getOrCreateUser(ctx, 'u1', 'u1');
-    ctx.economy.apply('u1', { cash: 100_000 }, 'test', 0);
-    const lot = buildLot(ctx, 'u1', 'gene_lab');
-    const lots = ctx.db.select().from(schema.lots).all();
-    const p = dashboardPayload(user, lots, 0, 0, 0, {});
-    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏗️ Lots')!;
-    expect(field.value).toBe(`#${lot.id} 🧬 Gene Lab (lvl 1)`);
-  });
+  // The lots list itself (and with it, this 🧬-emoji row format pin) moved off
+  // dashboardPayload entirely — it moves to the Lots tab's lotsPayload in Task 4, which
+  // reuses the same module-level LOT_EMOJI map and gets its own fresh coverage there.
 });
 
 describe('renameDino', () => {
@@ -918,7 +764,7 @@ describe('dashboard showcase', () => {
 
   it('renders the motto under the world-event header, not instead of it', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 0, 0, 0, { motto: 'Where the big ones live' });
+    const p = dashboardPayload(user, 0, { motto: 'Where the big ones live' });
     const desc = p.embeds[0].toJSON().description!;
     const lines = desc.split('\n');
     // Fixed values used verbatim (no `now`), so opts.now defaults to 0 (dashboardPayload's
@@ -933,7 +779,7 @@ describe('dashboard showcase', () => {
 
   it('omits the motto line entirely when there is none', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 0, 0, 0, {});
+    const p = dashboardPayload(user, 0, {});
     const lines = p.embeds[0].toJSON().description!.split('\n');
     expect(lines).toHaveLength(1);
     // Not just length 1: a regression that drops the header on the no-motto path
@@ -943,11 +789,12 @@ describe('dashboard showcase', () => {
     expect(lines[0]).toBe(eventHeaderLine(0, PARK_HEADER_KEYS));
   });
 
-  it('names the featured dino and attaches its archetype art as the thumbnail', () => {
+  // Retargeted to animalsPayload in Task 3 — un-skip there.
+  it.skip('names the featured dino and attaches its archetype art as the thumbnail', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 0, 0, 0, {
-      featured: { name: 'Trixie', speciesId: 'triceratops', archetype: 'tank', diet: 'herbivore' },
-    });
+    // featured: { name: 'Trixie', speciesId: 'triceratops', archetype: 'tank', diet: 'herbivore' }
+    // moves onto animalsPayload's own opts in Task 3 — dashboardPayload no longer accepts it.
+    const p = dashboardPayload(user, 0, {});
     expect(fieldsOf(p).find((f) => f.name === '🦖 Featured')!.value).toBe('Trixie');
     // assets/images/dinos/tank-herbivore.webp ships in the repo, so this exercises the
     // real attach path — the URL without the file (or vice versa) is the broken-image bug.
@@ -955,9 +802,9 @@ describe('dashboard showcase', () => {
     expect(p.files).toHaveLength(1);
   });
 
-  it('ships no files and no Featured field when nothing is featured', () => {
+  it.skip('ships no files and no Featured field when nothing is featured', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, [], 0, 0, 0, {});
+    const p = dashboardPayload(user, 0, {});
     expect(fieldsOf(p).some((f) => f.name === '🦖 Featured')).toBe(false);
     // Not [] — attach() on a null ref never creates the array at all, and two other test
     // files pin exactly this distinction elsewhere in the suite.
@@ -1007,60 +854,10 @@ describe('facility level arrays are bounds-guarded', () => {
   // discriminate this task's fix from the old implementation.
 });
 
-describe('season badge on the park card', () => {
-  it('shows the count and the latest season number', () => {
-    const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const json = dashboardPayload(user, [], 0, 0, 0, {
-      seasonBadges: { count: 2, latest: 691 },
-    }).embeds[0].toJSON();
-    const field = json.fields!.find((f) => f.name === '🎖️ Seasons')!;
-    expect(field.value).toContain('2');
-    expect(field.value).toContain('Season 2');   // 691 - SEASON_EPOCH + 1
-    expect(field.inline).toBe(true);
-  });
-
-  it('is omitted at zero badges', () => {
-    const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const json = dashboardPayload(user, [], 0, 0, 0, {
-      seasonBadges: { count: 0, latest: null },
-    }).embeds[0].toJSON();
-    expect(json.fields!.map((f) => f.name)).not.toContain('🎖️ Seasons');
-  });
-
-  it('is omitted when the opt is unset', () => {
-    const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const json = dashboardPayload(user, [], 0, 0, 0, {}).embeds[0].toJSON();
-    expect(json.fields!.map((f) => f.name)).not.toContain('🎖️ Seasons');
-  });
-});
-
-describe('season badge wiring', () => {
-  it('/park view shows the viewer’s own badges', async () => {
-    ctx.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690
-    getOrCreateUser(ctx, 'u1', 'U1');
-    rollSeason(ctx, 'u1');
-    ctx.db.update(schema.seasonProgress).set({ badgeAt: ctx.now() })
-      .where(eq(schema.seasonProgress.userId, 'u1')).run();
-    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
-    await testRegistry.findCommand('park')!.execute(ctx, i.asChatInput());
-    expect(JSON.stringify(i.replies[0])).toContain('🎖️ Seasons');
-  });
-
-  it('a visited park shows the TARGET’s badges, not the viewer’s', async () => {
-    ctx.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690
-    getOrCreateUser(ctx, 'u1', 'U1');
-    getOrCreateUser(ctx, 'u2', 'U2');
-    rollSeason(ctx, 'u2');
-    ctx.db.update(schema.seasonProgress).set({ badgeAt: ctx.now() })
-      .where(eq(schema.seasonProgress.userId, 'u2')).run();
-    const payload = (await visitPayload(ctx, 'u2'))!;
-    const json = payload.embeds[0].toJSON();
-    expect(json.fields!.map((f) => f.name)).toContain('🎖️ Seasons');
-    // And rendering another player's card must not have stamped anything for them.
-    expect(ctx.db.select().from(schema.seasonProgress)
-      .where(eq(schema.seasonProgress.userId, 'u1')).all()).toHaveLength(0);
-  });
-});
+// Seasons left the Park tab too — it moves to the Prestige tab in Task 5, a different
+// payload builder with its own coverage, not a retarget of this one. The wiring tests
+// that used to pin the badge field on /park view's own reply and on a visited one are
+// gone rather than skipped, since dashboardPayload has no Seasons code path left to test.
 
 describe('park component handler default arm', () => {
   it('acknowledges an unrecognised park action instead of timing out', async () => {

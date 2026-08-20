@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { PARK_TABS, isParkTab, tabRow } from '../src/modules/park/embeds.js';
+import { PARK_TABS, isParkTab, tabRow, dashboardPayload } from '../src/modules/park/embeds.js';
+import { makeCtx } from './harness.js';
+import { getOrCreateUser } from '../src/modules/park/service.js';
+
+const fieldsOf = (p: { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }) =>
+  p.embeds[0].toJSON().fields ?? [];
 
 describe('tab row', () => {
   it('mints one button per tab, owner ids for the own-park family', () => {
@@ -32,5 +37,48 @@ describe('tab row', () => {
     expect(isParkTab('map')).toBe(false);
     expect(isParkTab('')).toBe(false);
     expect(isParkTab('__proto__')).toBe(false);
+  });
+});
+
+describe('Park tab', () => {
+  it('carries only the headline numbers, not the full card', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, 0, { dinoCount: 3 });
+    const names = fieldsOf(p).map((f) => f.name);
+    expect(names.some((n) => n.includes('Cash'))).toBe(true);
+    expect(names.some((n) => n.includes('Rating'))).toBe(true);
+    expect(names.some((n) => n.includes('Dinos'))).toBe(true);
+    // These four moved to other tabs — the whole point of the change.
+    for (const gone of ['Food', 'Attendance', 'Achievements', 'Legacy']) {
+      expect(names.some((n) => n.includes(gone)), gone).toBe(false);
+    }
+  });
+
+  it('shows a compact attention marker so an escape is never hidden behind a click', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const calm = dashboardPayload(user, 0, { dinoCount: 5 });
+    expect(fieldsOf(calm).find((f) => f.name.includes('Dinos'))!.value).toBe('5');
+    const alarmed = dashboardPayload(user, 0, { dinoCount: 5, attention: 2 });
+    expect(fieldsOf(alarmed).find((f) => f.name.includes('Dinos'))!.value)
+      .toBe('5 · ⚠️ 2 need attention');
+  });
+
+  it('puts Collect first in the first row and the tab row second', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, 1234, {});
+    const row0 = p.components[0].toJSON().components;
+    expect((row0[0] as { custom_id: string }).custom_id).toBe('park:collect');
+    expect(p.components[1].toJSON().components).toHaveLength(4);
+  });
+
+  it('drops Collect entirely on a visited card', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, 999, { visit: true });
+    expect(JSON.stringify(p)).not.toContain('park:collect');
+    expect(p.components[0].toJSON().components).toHaveLength(4);
   });
 });

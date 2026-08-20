@@ -4,16 +4,9 @@ import { eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
 import { settleEscapes } from './escapes.js';
-import { earnedTierCount } from '../daily/service.js';
-import { seasonBadges } from '../daily/season.js';
-import { legacyRank } from './ranks.js';
-import { featuredFor } from './showcase.js';
 import { dashboardPayload, withParkImage } from './embeds.js';
-import { attendanceOf } from './attendance.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
-import { foodEmoji } from '../../core/emojis.js';
-import { FOODS, type FoodId } from '../../data/foods.js';
 
 export interface VisitPayload {
   embeds: EmbedBuilder[];
@@ -69,21 +62,18 @@ export async function visitPayload(ctx: Ctx, targetUserId: string): Promise<Visi
   settleEscapes(ctx, targetUserId);
   const user = ctx.db.select().from(schema.users)
     .where(eq(schema.users.discordId, targetUserId)).get()!;
-  const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, targetUserId)).all();
   const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, targetUserId)).all();
   const escaped = dinos.filter((d) => d.escapedAt !== null).length;
-  const inv = ctx.economy.getFoodInventory(targetUserId);
-  const foodLine = (Object.entries(inv) as Array<[FoodId, number]>)
-    .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
-  const built = dashboardPayload(user, lots, dinos.length, 0, escaped, {
-    foodLine,
-    earnedTiers: earnedTierCount(ctx, targetUserId),
-    legacyRank: legacyRank(ctx, targetUserId),
+  // Minimal fixup for the Task 2 signature change only — this call renders the Park tab
+  // alone and drops the Food/Attendance/Achievements/Legacy/Seasons/Featured content this
+  // function used to assemble. Task 8 rewrites visitPayload to walk all four tabs; do not
+  // expand this further in the meantime.
+  const built = dashboardPayload(user, 0, {
+    attention: escaped,
     motto: user.motto,
-    featured: featuredFor(ctx, user),
     now: ctx.now(),
-    seasonBadges: seasonBadges(ctx, targetUserId),
-    attendance: attendanceOf(ctx, targetUserId).attendance,
+    dinoCount: dinos.length,
+    visit: true,
   });
   const payload: VisitPayload = { embeds: built.embeds, components: [] };
   if (built.files) payload.files = built.files;
