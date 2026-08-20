@@ -171,4 +171,49 @@ describe('park:vtab animals tab', () => {
     expect(sent.embeds[0].toJSON().thumbnail?.url).toBeDefined();
     expect(sent.files!.some((f) => f.name === sent.embeds[0].toJSON().thumbnail!.url.replace('attachment://', ''))).toBe(true);
   });
+
+  // Fix-round regression test: dashboardPayload's Next park row only ever gets appended by
+  // visitPayload, at the initial park:tour hop. renderTab replaces `components` wholesale
+  // on every branch and, before nextParkRow was threaded through it, never re-minted this
+  // row — so a tour that navigated to any tab dead-ended there, with no way to advance
+  // short of re-running a command. Animals is the tab named in the fix request; the same
+  // row is re-minted on Park/Lots/Prestige too, via the shared `tourRow` computed once at
+  // the top of renderTab.
+  it('keeps the Next park button after switching tabs, not just on the initial park:tour render', async () => {
+    player('a', 300); player('b', 200);
+    const i = await click('park:vtab:a:animals');
+    expect(JSON.stringify(i.replies[0])).toContain('park:tour:b');
+  });
+});
+
+describe('visited card attention consistency', () => {
+  // Fix-round regression test: visitPayload used to pass `attention: escaped` (escaped
+  // dinos only) while renderTab's Park tab passed `escaped + needsAttentionCount(...)` —
+  // two different numbers for the same screen depending on which entry point rendered it.
+  // A carnivore dropped into an herbivore paddock is wrong-habitat but NOT escaped, so it
+  // trips needsAttentionCount without moving the escaped count at all — exactly the case
+  // that would have made the two entry points disagree (0 vs 1) before the fix.
+  it('renders the same attention number from visitPayload and park:vtab:<target>:park', async () => {
+    player('a', 300);
+    const lot = ctx.db.insert(schema.lots).values({
+      userId: 'a', type: 'paddock', kind: 'herbivore_paddock', name: 'Herbivore Paddock', level: 1,
+    }).returning().get();
+    ctx.db.insert(schema.dinos).values({
+      userId: 'a', lotId: lot.id, speciesId: 'velociraptor', hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }).run();
+
+    const dinosField = (fields: Array<{ name: string; value: string }>) =>
+      fields.find((f) => f.name.includes('Dinos'))!.value;
+
+    const viaTour = (await visitPayload(ctx, 'a'))!;
+    const tourValue = dinosField(viaTour.embeds[0].toJSON().fields!);
+    expect(tourValue).toContain('need attention');   // sanity: the case actually trips the marker
+
+    const b = fakeButton({ customId: 'park:vtab:a:park', user: 'viewer' });
+    await parkModule.components.find((c) => c.prefix === 'park')!.execute(ctx, b.asInteraction() as never);
+    const sent = b.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
+    const vtabValue = dinosField(sent.embeds[0].toJSON().fields!);
+
+    expect(vtabValue).toBe(tourValue);
+  });
 });

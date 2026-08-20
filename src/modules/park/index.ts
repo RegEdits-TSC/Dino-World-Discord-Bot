@@ -2,13 +2,13 @@ import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, Butt
 import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
-import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, toClockDinos } from './service.js';
+import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, toClockDinos, needsAttentionCount } from './service.js';
 import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
 import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
 import { guestsPayload } from '../guests/embeds.js';
-import { visitPayload } from './visit.js';
+import { visitPayload, nextParkRow } from './visit.js';
 import { bumpLegacyBest, legacyRank } from './ranks.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
@@ -190,27 +190,23 @@ export const parkModule: ModuleManifest = {
         const nowMs = ctx.now();
         const pending = pendingIncome(ctx, i.user.id);
         const capped = pending > 0 && ctx.now() - user.lastCollectAt >= capHours(lots) * 3_600_000;
-        // Counts DISTINCT dinos, not distinct problems: at-risk and mismatch are independent
-        // predicates over the same non-escaped dinos, so one dino can trip both (an off-diet
-        // paddock is paddockFit 0.5, which is exactly what drives comfort down and pulls
-        // escapeAt into the warning window — mismatched dinos are disproportionately the
-        // at-risk ones). Summing three separate counts here double-counted that dino, which
-        // could render more "need attention" than the park actually holds. The Animals tab's
-        // itemised breakdown is unaffected by this — it lists issues, not dinos, so summing
-        // there is correct.
-        const needsAttentionCount = clockDinos.filter((c) => {
-          if (c.escapedAt !== null) return false;
-          const e = escapeAt(c);
-          const atRisk = e !== null && e - nowMs <= ESCAPE_WARN_MS;
-          const mismatch = c.paddock !== null && c.paddock.diet !== c.species.diet;
-          return atRisk || mismatch;
-        }).length;
+        // needsAttentionCount (service.ts) is the single shared definition — DISTINCT dinos,
+        // not distinct problems: at-risk and mismatch are independent predicates over the
+        // same non-escaped dinos, so one dino can trip both (an off-diet paddock is
+        // paddockFit 0.5, which is exactly what drives comfort down and pulls escapeAt into
+        // the warning window — mismatched dinos are disproportionately the at-risk ones).
+        // Summing three separate counts here would double-count that dino, which could
+        // render more "need attention" than the park actually holds. renderTab's Park tab
+        // and visitPayload both call the same function, so this number can never drift from
+        // theirs. The Animals tab's itemised breakdown is unaffected by any of this — it
+        // lists issues, not dinos, so summing there is correct.
+        //
         // bumpLegacyBest stays on this path even though its result is no longer displayed
         // here: the Park tab is the first thing every /park view renders, so the legacy
         // high-water still latches on every view. The Legacy display itself moves to the
         // Prestige tab.
         bumpLegacyBest(ctx, i.user.id);
-        const attention = escapedCount + needsAttentionCount;
+        const attention = escapedCount + needsAttentionCount(clockDinos, nowMs);
         const base = dashboardPayload(user, pending, {
           attention, capped, now: nowMs, motto: user.motto, dinoCount: dinos.length,
         });
@@ -712,6 +708,11 @@ export const parkModule: ModuleManifest = {
  * themselves today, so the order is cosmetic right now, but a future builder that does
  * set one must win over a stale caller-supplied value — reordering the spread would
  * silently let this parameter clobber a builder's own content instead.
+ *
+ * `tourRow` (visit only) is re-minted here and pushed onto every branch's components,
+ * never just the Park tab's: each of the four tab builders returns a fresh components
+ * array, so without this a tour that navigated to any tab would lose the Next park
+ * button and strand the visitor unable to advance without re-running a command.
  */
 async function renderTab(
   ctx: Ctx, i: ButtonInteraction, ownerId: string, tab: ParkTab, visit: boolean, content?: string,
@@ -721,27 +722,22 @@ async function renderTab(
     .where(eq(schema.users.discordId, ownerId)).get()!;
   const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, ownerId)).all();
   const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, ownerId)).all();
+  const tourRow = visit ? nextParkRow(ctx, ownerId) : null;
   if (tab === 'park') {
     await i.deferUpdate();
     const { clockDinos } = toClockDinos(ctx, ownerId);
     const nowMs = ctx.now();
     const escaped = dinos.filter((d) => d.escapedAt !== null).length;
-    // A single pass over DISTINCT dinos, matching /park view's own execute path (below):
-    // at-risk and mismatch are independent predicates over the same non-escaped dinos, so
-    // one dino can trip both, and summing them separately double-counts it.
-    const needsAttention = clockDinos.filter((c) => {
-      if (c.escapedAt !== null) return false;
-      const e = escapeAt(c);
-      const atRisk = e !== null && e - nowMs <= ESCAPE_WARN_MS;
-      const mismatch = c.paddock !== null && c.paddock.diet !== c.species.diet;
-      return atRisk || mismatch;
-    }).length;
     const pending = visit ? 0 : pendingIncome(ctx, ownerId);
     const capped = pending > 0 && ctx.now() - user.lastCollectAt >= capHours(lots) * 3_600_000;
     const base = dashboardPayload(user, pending, {
-      attention: escaped + needsAttention, capped, now: nowMs,
+      // needsAttentionCount is the SAME shared computation visitPayload uses (see its doc
+      // comment in service.ts) — the one-pass-over-DISTINCT-dinos rule, not a sum of the
+      // two predicates — so this number can never drift from a visited card's Park tab.
+      attention: escaped + needsAttentionCount(clockDinos, nowMs), capped, now: nowMs,
       motto: user.motto, dinoCount: dinos.length, visit,
     });
+    if (tourRow) base.components.push(tourRow);
     let png: Buffer | undefined;
     try { png = await renderPark(buildParkSnapshot(ctx, ownerId)); } catch { png = undefined; }
     await i.editReply({ ...(content ? { content } : {}), ...(png ? withParkImage(base, png) : base), attachments: [] });
@@ -753,43 +749,37 @@ async function renderTab(
     const inv = ctx.economy.getFoodInventory(ownerId);
     const foodLine = (Object.entries(inv) as Array<[FoodId, number]>)
       .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
-    await i.update({
-      ...(content ? { content } : {}),
-      ...animalsPayload(user, dinos.length, {
-        escaped: dinos.filter((d) => d.escapedAt !== null).length,
-        atRisk: clockDinos.filter((c) => {
-          if (c.escapedAt !== null) return false;
-          const e = escapeAt(c);
-          return e !== null && e - nowMs <= ESCAPE_WARN_MS;
-        }).length,
-        mismatch: clockDinos.filter((c) =>
-          c.paddock !== null && c.escapedAt === null && c.paddock.diet !== c.species.diet).length,
-        foodLine, featured: featuredFor(ctx, user), visit,
-      }),
-      attachments: [],
+    const built = animalsPayload(user, dinos.length, {
+      escaped: dinos.filter((d) => d.escapedAt !== null).length,
+      atRisk: clockDinos.filter((c) => {
+        if (c.escapedAt !== null) return false;
+        const e = escapeAt(c);
+        return e !== null && e - nowMs <= ESCAPE_WARN_MS;
+      }).length,
+      mismatch: clockDinos.filter((c) =>
+        c.paddock !== null && c.escapedAt === null && c.paddock.diet !== c.species.diet).length,
+      foodLine, featured: featuredFor(ctx, user), visit,
     });
+    if (tourRow) built.components.push(tourRow);
+    await i.update({ ...(content ? { content } : {}), ...built, attachments: [] });
     return;
   }
   if (tab === 'lots') {
-    await i.update({
-      ...(content ? { content } : {}),
-      ...lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit }),
-      attachments: [],
-    });
+    const built = lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit });
+    if (tourRow) built.components.push(tourRow);
+    await i.update({ ...(content ? { content } : {}), ...built, attachments: [] });
     return;
   }
   // prestige — legacyRank (pure), never bumpLegacyBest: the high-water latches on the
   // Park tab, which every /park view renders first, so a navigation click never writes.
-  await i.update({
-    ...(content ? { content } : {}),
-    ...prestigePayload(user, {
-      attendance: attendanceOf(ctx, ownerId).attendance,
-      earnedTiers: earnedTierCount(ctx, ownerId),
-      legacyRank: legacyRank(ctx, ownerId),
-      seasonBadges: seasonBadges(ctx, ownerId),
-      landmark: landmarkFor(user.landmarkTier),
-      visit,
-    }),
-    attachments: [],
+  const built = prestigePayload(user, {
+    attendance: attendanceOf(ctx, ownerId).attendance,
+    earnedTiers: earnedTierCount(ctx, ownerId),
+    legacyRank: legacyRank(ctx, ownerId),
+    seasonBadges: seasonBadges(ctx, ownerId),
+    landmark: landmarkFor(user.landmarkTier),
+    visit,
   });
+  if (tourRow) built.components.push(tourRow);
+  await i.update({ ...(content ? { content } : {}), ...built, attachments: [] });
 }
