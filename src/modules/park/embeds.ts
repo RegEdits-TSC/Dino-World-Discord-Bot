@@ -3,7 +3,8 @@ import type { User } from './service.js';
 import { emojiTag } from '../../core/emojis.js';
 import { eventHeaderLine } from '../world/embeds.js';
 import type { LandmarkDef } from '../../data/landmarks.js';
-import { assetImage, attach } from '../../core/images.js';
+import { assetImage, attach, dinoImage } from '../../core/images.js';
+import type { Featured } from './showcase.js';
 
 const LOT_EMOJI: Record<string, string> = {
   carnivore_paddock: 'dw_lot_carnivore', herbivore_paddock: 'dw_lot_herbivore',
@@ -63,6 +64,63 @@ export function dashboardPayload(
   const payload: {
     embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[];
   } = { embeds: [embed], components };
+  return payload;
+}
+
+/**
+ * The ANIMALS tab. The three attention counts share one toClockDinos pass in the caller —
+ * they are free once it is paid for, which is why they live together rather than being
+ * split across tabs.
+ */
+export function animalsPayload(
+  user: User, dinoCount: number,
+  opts: { escaped?: number; atRisk?: number; mismatch?: number; foodLine?: string;
+          featured?: Featured | null; visit?: boolean } = {},
+) {
+  const embed = new EmbedBuilder()
+    .setTitle(`🦕 ${user.parkName} — Animals`)
+    .setColor(0x3ba55c)
+    .addFields(
+      { name: '🦕 Dinos', value: String(dinoCount), inline: true },
+      { name: `${emojiTag('dw_food')} Food`, value: opts.foodLine ?? 'none — /shop food', inline: true },
+    );
+  if (opts.featured) {
+    embed.addFields({ name: '🦖 Featured', value: opts.featured.name, inline: true });
+  }
+  // A SUM of issues, not distinct dinos, unlike the Park tab's `attention` marker: a dino
+  // that is both off-diet and at-risk appears in both lines here on purpose, since this tab
+  // lists issues, not dinos.
+  const parts: string[] = [];
+  if (opts.escaped) parts.push(`${emojiTag('dw_alert')} ${opts.escaped} escaped — /rescue`);
+  if (opts.atRisk) parts.push(`${emojiTag('dw_hunger')} ${opts.atRisk} at risk`);
+  if (opts.mismatch) parts.push(`⚠️ ${opts.mismatch} wrong habitat`);
+  if (parts.length) {
+    embed.addFields({ name: '⚠️ Needs attention', value: parts.join('\n') });
+  }
+  const components: ActionRowBuilder<ButtonBuilder>[] = [];
+  // park:feedall and park:dinos are minted here but have no handler yet — absorbed by the
+  // park component handler's default arm until a later task wires them up.
+  if (!opts.visit) {
+    components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`park:feedall:${user.discordId}`)
+        .setLabel('🍖 Feed all').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`park:dinos:${user.discordId}:1`)
+        .setLabel('📋 Full roster').setStyle(ButtonStyle.Secondary),
+    ));
+  }
+  components.push(tabRow(user.discordId, 'animals', opts.visit));
+  const payload: {
+    embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[];
+  } = { embeds: [embed], components };
+  // Two attach() calls, never a hand-assigned files array. Order is upload order and the
+  // names differ (dino_roster.webp vs <archetype>-<diet>.webp, or a per-species override),
+  // so neither can shadow the other's attachment:// URL. dinoImage, not assetImage: a
+  // species with its own portrait overrides the shared archetype art. The featured ternary
+  // guards domain data (is anything featured) — it stays outside attach, since that is not
+  // an asset miss.
+  attach(embed, payload, 'image', assetImage('banners', 'dino_roster'));
+  attach(embed, payload, 'thumbnail',
+    opts.featured ? dinoImage(opts.featured.speciesId, opts.featured.archetype, opts.featured.diet) : null);
   return payload;
 }
 

@@ -220,8 +220,15 @@ describe('the owner sees their own showcase', () => {
   });
 
   // Featured left /park view's default reply along with the rest of the Park tab split —
-  // it now only renders on the Animals tab (Task 3), reachable by clicking that tab, not
-  // by /park view itself. Retargeted to animalsPayload in Task 3 — un-skip there.
+  // it now only renders on the Animals tab, reachable by clicking that tab. Task 3 added
+  // animalsPayload (tests/park-tabs.test.ts, tests/park.test.ts's 'dashboard showcase' and
+  // tests/dino-image.test.ts all exercise it directly with this same Trixie/triceratops
+  // fixture), but nothing yet threads it into /park view's own execute path — that's a
+  // separate, later wiring task. Retargeting THIS test to call animalsPayload directly
+  // would only duplicate those three byte-for-byte; what it actually pins — the full
+  // /park view command rendering the Featured field — genuinely doesn't hold anymore and
+  // has no home yet. Stays skipped until the click-through wiring lands, then this should
+  // assert against the real command path, not against animalsPayload.
   it.skip('renders the featured dino and its art on your own park view', async () => {
     const d = addDino();
     setFeaturedDino(ctx, 'u1', d.id);
