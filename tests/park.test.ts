@@ -1,15 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { MessageFlags } from 'discord.js';
-import { makeCtx, fakeCommand, fakeButton, replyText, testRegistry } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
 import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, upgradeCostFor, BASE_LOT_SLOTS, breedingSlots } from '../src/modules/park/service.js';
 import { incubatorSlots } from '../src/modules/hatchery/service.js';
 import { renameDino } from '../src/modules/park/dinos.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
-import { dashboardPayload, animalsPayload, lotsPayload, PARK_HEADER_KEYS } from '../src/modules/park/embeds.js';
-import { visitPayload } from '../src/modules/park/visit.js';
+import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, PARK_HEADER_KEYS } from '../src/modules/park/embeds.js';
 import { attendanceOf } from '../src/modules/park/attendance.js';
 import { eventHeaderLine } from '../src/modules/world/embeds.js';
 import { PADDOCKS } from '../src/data/paddocks.js';
@@ -18,7 +17,9 @@ import { DECOR } from '../src/data/decor.js';
 import { lotSlots } from '../src/data/progression.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { recordSpeciesSeen } from '../src/core/species-seen.js';
-import { rollSeason } from '../src/modules/daily/season.js';
+import { rollSeason, seasonBadges } from '../src/modules/daily/season.js';
+import { earnedTierCount } from '../src/modules/daily/service.js';
+import { legacyRank } from '../src/modules/park/ranks.js';
 
 const H = 3_600_000;
 let ctx: ReturnType<typeof makeCtx>;
@@ -305,63 +306,72 @@ describe('/park view legacy high-water wiring', () => {
   });
 });
 
-// Retargeted to prestigePayload in Task 5 — un-skip there.
-describe.skip('dashboard achievements badge', () => {
+describe('prestige achievements badge', () => {
   it('shows the earned tier count when greater than zero', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    // earnedTiers: 3 moves onto prestigePayload's own opts in Task 5 — dashboardPayload no
-    // longer accepts it.
-    const p = dashboardPayload(user, 0, {});
+    const p = prestigePayload(user, { earnedTiers: 3 });
     const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏆 Achievements');
     expect(field).toBeTruthy();
     expect(field!.value).toContain('3');
   });
   it('omits the achievements field entirely at zero', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, 0, {});
+    const p = prestigePayload(user, { earnedTiers: 0 });
     const names = p.embeds[0].toJSON().fields!.map((f) => f.name);
     expect(names).not.toContain('🏆 Achievements');
   });
   it('also omits it when earnedTiers is left unset entirely', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const p = dashboardPayload(user, 0);
+    const p = prestigePayload(user, {});
     const names = p.embeds[0].toJSON().fields!.map((f) => f.name);
     expect(names).not.toContain('🏆 Achievements');
   });
 });
 
-// Retargeted to prestigePayload in Task 5 — un-skip there.
-describe.skip('/park view achievements badge wiring', () => {
-  it('passes earnedTierCount into the own-park dashboard', async () => {
-    getOrCreateUser(ctx, 'u1', 'Reg');
+// Sources earnedTiers from the real earnedTierCount(ctx, userId) read rather than a
+// hand-typed literal — the integration the "prestige achievements badge" block above
+// cannot cover, since it only exercises prestigePayload's own rendering of a synthetic
+// value. Retargeted straight onto prestigePayload, not through /park view: nothing
+// threads earnedTierCount into the command's own execute path yet (that wiring, and the
+// tab click needed to reach it, belongs to a later task), and prestigePayload's contract
+// takes earnedTiers as a plain value, so there is nothing about the real command's own
+// dispatch left to prove here.
+describe('prestige achievements badge wiring', () => {
+  it('renders earnedTierCount for your own park', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
     ctx.db.insert(schema.achievementClaims).values([
       { userId: 'u1', trackId: 'eggs_hatched', tier: 0, claimedAt: 0 },
       { userId: 'u1', trackId: 'eggs_hatched', tier: 1, claimedAt: 0 },
     ]).run();
-    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
-    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
-    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
-    const field = fields.find((f) => f.name === '🏆 Achievements')!;
+    const p = prestigePayload(user, { earnedTiers: earnedTierCount(ctx, 'u1') });
+    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏆 Achievements')!;
     expect(field.value).toContain('2');
   });
 
-  it('passes earnedTierCount into the read-only other-user dashboard', async () => {
+  it('renders earnedTierCount for a read-only other-user card', () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
-    getOrCreateUser(ctx, 'other', 'Other');
+    const other = getOrCreateUser(ctx, 'other', 'Other');
     ctx.db.insert(schema.achievementClaims).values([
       { userId: 'other', trackId: 'eggs_hatched', tier: 0, claimedAt: 0 },
     ]).run();
-    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1', options: { user: 'other' } });
-    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
-    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
-    const field = fields.find((f) => f.name === '🏆 Achievements')!;
+    const p = prestigePayload(other, { earnedTiers: earnedTierCount(ctx, 'other'), visit: true });
+    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏆 Achievements')!;
     expect(field.value).toContain('1');
   });
 });
 
 // Attendance lives on the Prestige tab, not Animals — prestigePayload takes
 // attendance?: number and renders 🎡 Attendance; animalsPayload has no attendance option.
-// Retargeted to prestigePayload in Task 5 — un-skip there.
+//
+// Genuinely needs the tab dispatcher, so this one stays parked rather than being forced
+// onto prestigePayload directly: its entire point is that the real /park view command
+// resolves the TARGET's attendance (never the viewer's own) onto a visited card — logic
+// that lives in the caller, not in prestigePayload, which just renders whatever
+// `attendance` value it is handed. Calling prestigePayload by hand here would mean WE
+// choose which number to pass for each case, which can never disagree with itself — the
+// test would pass unconditionally regardless of whether any real caller gets the
+// identity right, i.e. it would stop testing anything. Retargeted to the tab dispatcher
+// in Task 6 — un-skip there.
 describe.skip('/park view attendance wiring', () => {
   it('keys the attendance field to the right park on your own card and on a visited one', async () => {
     for (const id of ['u1', 'u2']) getOrCreateUser(ctx, id, id);
@@ -405,13 +415,10 @@ describe.skip('/park view attendance wiring', () => {
   });
 });
 
-// Retargeted to prestigePayload in Task 5 — un-skip there.
-describe.skip('dashboard legacy rank', () => {
+describe('prestige legacy rank', () => {
   it('shows the title and rank number when ranked', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    // legacyRank: { rank: 3, title: 'Curator', points: 65 } moves onto prestigePayload's
-    // own opts in Task 5 — dashboardPayload no longer accepts it.
-    const p = dashboardPayload(user, 0, {});
+    const p = prestigePayload(user, { legacyRank: { rank: 3, title: 'Curator', points: 65 } });
     const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏛️ Legacy');
     expect(field).toBeTruthy();
     expect(field!.value).toContain('Curator');
@@ -419,37 +426,42 @@ describe.skip('dashboard legacy rank', () => {
   });
   it('omits the field when unranked (explicit null and opts unset alike)', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    // legacyRank moved off dashboardPayload entirely in Task 5, so the loop's own opts
-    // shape (`{ legacyRank: null } | {}`) no longer type-checks against it — replaced with
-    // an equivalent `{}` for both iterations, since both cases assert the same "no Legacy
-    // field" outcome that no longer depends on the opt at all.
-    for (const opts of [{}, {}]) {
-      const names = dashboardPayload(user, 0, opts).embeds[0].toJSON().fields!.map((f) => f.name);
+    // Two genuinely different cases now that prestigePayload accepts legacyRank as its
+    // own opt: an explicit null (ranked-but-below-the-floor, or the value simply not
+    // computed by the caller) and the option left out entirely. Both must omit the field.
+    for (const opts of [{ legacyRank: null }, {}]) {
+      const names = prestigePayload(user, opts).embeds[0].toJSON().fields!.map((f) => f.name);
       expect(names).not.toContain('🏛️ Legacy');
     }
   });
 });
 
-// Retargeted to prestigePayload in Task 5 — un-skip there.
-describe.skip('/park view legacy rank wiring', () => {
-  // allSpecies().slice(0, 15/35) seeds exactly the Groundskeeper/Keeper thresholds
-  // (LEGACY_TIERS in src/modules/park/ranks.js) via species points alone — species alone
-  // caps at allSpecies().length (52, tests/ranks.test.ts), which is why these two tests
-  // stay within Groundskeeper/Keeper rather than reaching for a higher tier. u1 and u2
-  // land on DIFFERENT titles on purpose: a title mismatch fails louder than a
-  // missing-vs-present field would if the wrong id were ever passed at a call site.
-  it('passes the viewer own rank into the own-park dashboard', async () => {
-    getOrCreateUser(ctx, 'u1', 'Reg');
+// allSpecies().slice(0, 15/35) seeds exactly the Groundskeeper/Keeper thresholds
+// (LEGACY_TIERS in src/modules/park/ranks.js) via species points alone — species alone
+// caps at allSpecies().length (52, tests/ranks.test.ts), which is why the test below
+// stays within Groundskeeper rather than reaching for a higher tier.
+describe('prestige legacy rank wiring', () => {
+  it('renders the real legacyRank() computation on the Prestige tab', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
     for (const s of allSpecies().slice(0, 15)) recordSpeciesSeen(ctx, 'u1', s.id);   // Groundskeeper (rank 1)
-    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
-    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
-    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
-    const field = fields.find((f) => f.name === '🏛️ Legacy');
+    const p = prestigePayload(user, { legacyRank: legacyRank(ctx, 'u1') });
+    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏛️ Legacy');
     expect(field).toBeTruthy();
     expect(field!.value).toContain('Groundskeeper');
   });
 
-  it('shows the TARGET player rank when viewing another park, not the viewer own', async () => {
+  // Genuinely needs the tab dispatcher, so this one stays parked rather than being forced
+  // onto prestigePayload directly: its entire point is that the real /park view command
+  // resolves the TARGET's rank (never the viewer's own) onto a visited card — logic that
+  // lives in the caller, not in prestigePayload, which just renders whatever legacyRank
+  // value it is handed. Calling prestigePayload by hand here would mean WE choose which
+  // rank to pass for each case, which can never disagree with itself — the test would
+  // pass unconditionally regardless of whether any real caller gets the identity right,
+  // i.e. it would stop testing anything. u1 and u2 land on DIFFERENT titles on purpose: a
+  // title mismatch fails louder than a missing-vs-present field would if the wrong id
+  // were ever passed at a call site.
+  // Retargeted to the tab dispatcher in Task 6 — un-skip there.
+  it.skip('shows the TARGET player rank when viewing another park, not the viewer own', async () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
     getOrCreateUser(ctx, 'u2', 'Other');
     for (const s of allSpecies().slice(0, 15)) recordSpeciesSeen(ctx, 'u1', s.id);   // Groundskeeper (rank 1)
@@ -1090,13 +1102,10 @@ describe('facility level arrays are bounds-guarded', () => {
   // discriminate this task's fix from the old implementation.
 });
 
-// Retargeted to prestigePayload in Task 5 — un-skip there.
-describe.skip('season badge on the park card', () => {
+describe('prestige season badge', () => {
   it('shows the count and the latest season number', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    // seasonBadges: { count: 2, latest: 691 } moves onto prestigePayload's own opts in
-    // Task 5 — dashboardPayload no longer accepts it.
-    const json = dashboardPayload(user, 0, {}).embeds[0].toJSON();
+    const json = prestigePayload(user, { seasonBadges: { count: 2, latest: 691 } }).embeds[0].toJSON();
     const field = json.fields!.find((f) => f.name === '🎖️ Seasons')!;
     expect(field.value).toContain('2');
     expect(field.value).toContain('Season 2');   // 691 - SEASON_EPOCH + 1
@@ -1105,41 +1114,48 @@ describe.skip('season badge on the park card', () => {
 
   it('is omitted at zero badges', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const json = dashboardPayload(user, 0, {}).embeds[0].toJSON();
+    const json = prestigePayload(user, { seasonBadges: { count: 0, latest: null } }).embeds[0].toJSON();
     expect(json.fields!.map((f) => f.name)).not.toContain('🎖️ Seasons');
   });
 
   it('is omitted when the opt is unset', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
-    const json = dashboardPayload(user, 0, {}).embeds[0].toJSON();
+    const json = prestigePayload(user, {}).embeds[0].toJSON();
     expect(json.fields!.map((f) => f.name)).not.toContain('🎖️ Seasons');
   });
 });
 
-// Retargeted to prestigePayload in Task 5 — un-skip there.
-describe.skip('season badge wiring', () => {
-  it('/park view shows the viewer’s own badges', async () => {
+// Retargeted straight onto prestigePayload rather than through /park view or
+// visitPayload: neither the command's own execute path nor visitPayload (which only
+// renders the Park tab today — see the comment at its call site in
+// src/modules/park/visit.ts) threads seasonBadges anywhere yet, and prestigePayload's
+// contract takes it as a plain value, so there is nothing about a real dispatch left to
+// prove here. The second case keeps both of the original assertions — the field renders
+// AND rendering someone else's card never writes u1's row — which is exactly
+// prestigePayload's PURE contract, so this remains a real regression guard rather than a
+// vacuous one: a stray write for the wrong user inside the builder would still fail it.
+describe('prestige season badge wiring', () => {
+  it('renders the real seasonBadges() computation for your own park', () => {
     ctx.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690
-    getOrCreateUser(ctx, 'u1', 'U1');
+    const user = getOrCreateUser(ctx, 'u1', 'U1');
     rollSeason(ctx, 'u1');
     ctx.db.update(schema.seasonProgress).set({ badgeAt: ctx.now() })
       .where(eq(schema.seasonProgress.userId, 'u1')).run();
-    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
-    await testRegistry.findCommand('park')!.execute(ctx, i.asChatInput());
-    expect(JSON.stringify(i.replies[0])).toContain('🎖️ Seasons');
+    const p = prestigePayload(user, { seasonBadges: seasonBadges(ctx, 'u1') });
+    expect(JSON.stringify(p)).toContain('🎖️ Seasons');
   });
 
-  it('a visited park shows the TARGET’s badges, not the viewer’s', async () => {
+  it('renders a visited target\'s badges without stamping anything for the viewer', () => {
     ctx.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690
     getOrCreateUser(ctx, 'u1', 'U1');
-    getOrCreateUser(ctx, 'u2', 'U2');
+    const u2 = getOrCreateUser(ctx, 'u2', 'U2');
     rollSeason(ctx, 'u2');
     ctx.db.update(schema.seasonProgress).set({ badgeAt: ctx.now() })
       .where(eq(schema.seasonProgress.userId, 'u2')).run();
-    const payload = (await visitPayload(ctx, 'u2'))!;
-    const json = payload.embeds[0].toJSON();
+    const p = prestigePayload(u2, { seasonBadges: seasonBadges(ctx, 'u2'), visit: true });
+    const json = p.embeds[0].toJSON();
     expect(json.fields!.map((f) => f.name)).toContain('🎖️ Seasons');
-    // And rendering another player's card must not have stamped anything for them.
+    // prestigePayload must never write — rendering u2's card must not touch u1's row.
     expect(ctx.db.select().from(schema.seasonProgress)
       .where(eq(schema.seasonProgress.userId, 'u1')).all()).toHaveLength(0);
   });
