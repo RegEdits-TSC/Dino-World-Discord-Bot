@@ -7,6 +7,7 @@ import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
 import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
+import { guestsPayload } from '../guests/embeds.js';
 import { visitPayload } from './visit.js';
 import { bumpLegacyBest, legacyRank } from './ranks.js';
 import { buildParkSnapshot } from './snapshot.js';
@@ -562,6 +563,52 @@ export const parkModule: ModuleManifest = {
             await renderTab(ctx, i, i.user.id, tab, false);
             return;
           }
+          case 'feedall': {
+            // park:feedall:<uid> acts on the alerted user's park — same shape as the
+            // alert:feedall handler, not the tour/collect self-serve pattern.
+            if (i.user.id !== uid) {
+              await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral });
+              return;
+            }
+            settleEscapes(ctx, i.user.id);
+            const { fed, skipped } = feedAll(ctx, i.user.id);
+            const report = feedSkipReport(ctx, i.user.id, skipped);
+            const head = fed.length === 0
+              ? (skipped.length > 0 ? '🍖 Nothing could be fed.' : '🍖 Nothing to feed — every dino is already full.')
+              : `🍖 Fed **${fed.length}** ${fed.length === 1 ? 'dino' : 'dinos'}.`;
+            // Re-renders the Animals tab beneath the result line rather than collapsing to
+            // a bare confirmation: alert:feedall collapses because an alert DM has nothing
+            // to return to, but this card is the screen the player is standing on.
+            await renderTab(ctx, i, i.user.id, 'animals', false, report ? `${head}\n\n${report}` : head);
+            return;
+          }
+          case 'goto': {
+            // park:goto:<target>:<uid> — four parts, so the owner sits at index 3 (not the
+            // outer destructure's `uid`, which caught 'landmark'/'guests' there).
+            const [, , target, gotoUid] = parts;
+            if (i.user.id !== gotoUid) {
+              await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral });
+              return;
+            }
+            // Ephemeral, never i.update: a routed payload mints its own components under a
+            // foreign prefix, and those handlers re-render THEIR message with no tab row —
+            // so updating in place would strand the player one click from losing navigation.
+            const fresh = ctx.db.select().from(schema.users)
+              .where(eq(schema.users.discordId, i.user.id)).get()!;
+            if (target === 'landmark') {
+              await i.reply({
+                ...landmarkPayload(fresh, landmarkFor(fresh.landmarkTier), landmarkFor(fresh.landmarkTier + 1)),
+                flags: MessageFlags.Ephemeral,
+              });
+              return;
+            }
+            if (target === 'guests') {
+              await i.reply({ ...guestsPayload(ctx, i.user.id), flags: MessageFlags.Ephemeral });
+              return;
+            }
+            await i.deferUpdate();
+            return;
+          }
           default:
             await i.deferUpdate();
             return;
@@ -643,7 +690,7 @@ export const parkModule: ModuleManifest = {
  * attachment cards. This is the opposite of the omit-idiom landmarkPayload uses.
  */
 async function renderTab(
-  ctx: Ctx, i: ButtonInteraction, ownerId: string, tab: ParkTab, visit: boolean,
+  ctx: Ctx, i: ButtonInteraction, ownerId: string, tab: ParkTab, visit: boolean, content?: string,
 ): Promise<void> {
   settleEscapes(ctx, ownerId);
   const user = ctx.db.select().from(schema.users)
@@ -673,7 +720,7 @@ async function renderTab(
     });
     let png: Buffer | undefined;
     try { png = await renderPark(buildParkSnapshot(ctx, ownerId)); } catch { png = undefined; }
-    await i.editReply({ ...(png ? withParkImage(base, png) : base), attachments: [] });
+    await i.editReply({ ...(content ? { content } : {}), ...(png ? withParkImage(base, png) : base), attachments: [] });
     return;
   }
   if (tab === 'animals') {
@@ -683,6 +730,7 @@ async function renderTab(
     const foodLine = (Object.entries(inv) as Array<[FoodId, number]>)
       .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
     await i.update({
+      ...(content ? { content } : {}),
       ...animalsPayload(user, dinos.length, {
         escaped: dinos.filter((d) => d.escapedAt !== null).length,
         atRisk: clockDinos.filter((c) => {
@@ -699,12 +747,17 @@ async function renderTab(
     return;
   }
   if (tab === 'lots') {
-    await i.update({ ...lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit }), attachments: [] });
+    await i.update({
+      ...(content ? { content } : {}),
+      ...lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit }),
+      attachments: [],
+    });
     return;
   }
   // prestige — legacyRank (pure), never bumpLegacyBest: the high-water latches on the
   // Park tab, which every /park view renders first, so a navigation click never writes.
   await i.update({
+    ...(content ? { content } : {}),
     ...prestigePayload(user, {
       attendance: attendanceOf(ctx, ownerId).attendance,
       earnedTiers: earnedTierCount(ctx, ownerId),
