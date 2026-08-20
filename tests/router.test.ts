@@ -246,6 +246,8 @@ describe('autocomplete routing', () => {
 });
 
 describe('router select branch', () => {
+  const SEASON_1 = 690 * SEASON_DAYS * 86_400_000;   // season 1, day 1 (SEASON_EPOCH is 690)
+
   const selCtx = () => {
     const ctx = makeCtx();
     ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
@@ -276,6 +278,31 @@ describe('router select branch', () => {
     await routeInteraction(selCtx(), regWith(async () => {}), s.asInteraction());
     expect(s.replies).toHaveLength(0);
     expect(s.deferOpts).toHaveLength(0);
+  });
+
+  // The subtlest failure mode in the change, ported from the button branch's own case
+  // ("router component guard" below): deferUpdate() sets i.deferred = true, and
+  // daily/hooks.ts gates its hint on `!i.deferred && !i.replied` — so a guard that
+  // rejected without RETURNING would let a forged select emit a real quest/season
+  // followUp and, worse, burn the one-shot notifiedAt / hintedRung stamps for a message
+  // nobody asked for. Counting acknowledgements (as the case above does) cannot see this.
+  it('rejects before postDispatch — no phantom hint, and both one-shot stamps stay owed', async () => {
+    const ctx = makeCtx();
+    ctx.setNow(SEASON_1);
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const quest = ctx.db.insert(schema.dailyQuests)
+      .values({ userId: 'u1', dayKey: dayKeyUTC(ctx.now()), slot: 0, questId: 'hatch_1', baseline: 0, target: 1 })
+      .returning().get();
+    track(ctx, 'u1', 'eggs_hatched', 1);            // quest complete, never notified
+    rollSeason(ctx, 'u1');
+    track(ctx, 'u1', 'expeditions_claimed', 10);    // 50 points = season rung 1, unlocked and unclaimed
+    const reg = regWith(async (_c, i) => { await i.update({ content: 'x' }); });
+    const s = fakeSelect({ customId: 'm:pick', user: 'u1', values: ['a'], componentIds: [] });
+    await routeInteraction(ctx, reg, s.asInteraction(), dailyRouterHooks);
+    expect(s.replies).toHaveLength(0);
+    expect(ctx.db.select().from(schema.dailyQuests)
+      .where(eq(schema.dailyQuests.id, quest.id)).get()!.notifiedAt).toBeNull();
+    expect(seasonView(ctx, 'u1')!.hintedRung).toBe(-1);
   });
 
   it('does not dispatch a select into a button handler of the same prefix', async () => {

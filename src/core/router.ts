@@ -137,7 +137,7 @@ export async function routeInteraction(
       logger.warn({ err }, 'postDispatch hook failed');
     }
   } catch (err) {
-    const i = interaction as ChatInputCommandInteraction | ButtonInteraction;
+    const i = interaction as ChatInputCommandInteraction | ButtonInteraction | StringSelectMenuInteraction;
     const payload: InteractionReplyOptions = { content: 'Something went wrong — nothing was charged. Try again.', flags: MessageFlags.Ephemeral };
     if (i.deferred || i.replied) await i.followUp(payload).catch(() => {});
     else await i.reply(payload).catch(() => {});
