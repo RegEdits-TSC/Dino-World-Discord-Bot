@@ -1417,6 +1417,20 @@ Run: `npx vitest run tests/park-tabs.test.ts -t "carries the lots banner"`
 
 Expected: PASS.
 
+- [ ] **Step 4b: Empty the pending-banner allowlist**
+
+**ADDED DURING EXECUTION — this step did not exist when the plan was written, and skipping it silently re-opens a machine gate.**
+
+Task 4 wires `assetImage('banners', 'lots')` before this asset exists. That tripped a guard the plan's pre-flight never examined: `tests/images.test.ts` scrapes `src/` for banner references and asserts each has a committed, correctly-sized file. Task 4 added a narrowly-scoped `PENDING_BANNERS` allowlist to excuse `'lots'` from the exists-and-dimensions assertions only — the scrape itself, the "found at least one" sanity check, and the reverse "every committed file is referenced" check were all left intact.
+
+Now that the asset exists, delete the `'lots'` entry. The set must end up **empty**, and the `PENDING_BANNERS` declaration and both its use sites should go with it — an empty allowlist left in place is an invitation to add the next entry.
+
+Run: `npx vitest run tests/images.test.ts`
+
+Expected: PASS, with `lots.webp` now covered by the same exists-and-1536×1024 assertions every other banner gets.
+
+**This task is deliberately executed immediately after Task 4, out of numeric order**, so the allowlist lives for exactly one task rather than six. Tasks 5–8 renumber nothing; they simply run after this one.
+
 - [ ] **Step 5: Record the prompt**
 
 Add a row to `docs/assets/prompts.md` in the banners section, matching the surrounding format: the file name, the prompt used, and the `fit-art.mjs banner` invocation.
