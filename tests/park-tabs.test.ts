@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { MessageFlags } from 'discord.js';
 import { PARK_TABS, isParkTab, tabRow, dashboardPayload, animalsPayload, lotsPayload, prestigePayload } from '../src/modules/park/embeds.js';
 import { makeCtx, fakeButton } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
@@ -290,5 +291,38 @@ describe('tab dispatcher', () => {
     const sent = b.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
     const food = (sent.embeds[0].toJSON().fields ?? []).find((f) => f.name.includes('Food'))!.value;
     expect(food).toContain('/shop food');
+  });
+});
+
+describe('tab action buttons', () => {
+  it('feeds and stays on the Animals tab rather than collapsing the card', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'park:feedall:u1', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const sent = b.replies[0] as { content: string; embeds: Array<{ toJSON(): { title: string } }> };
+    expect(sent.content).toContain('🍖');
+    // The tab card survives — alert:feedall collapses to a bare line because a DM has
+    // nothing to return to; this one does not.
+    expect(sent.embeds[0].toJSON().title).toContain('Animals');
+  });
+
+  it('opens a routed surface ephemerally so the tab card is left intact', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'park:goto:landmark:u1', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const sent = b.replies[0] as { flags?: number };
+    expect(sent.flags).toBe(MessageFlags.Ephemeral);
+    expect(b.deferOpts).toEqual([]);
+  });
+
+  it('refuses a stranger feeding somebody else park', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    getOrCreateUser(ctx, 'u2', 'Other');
+    const b = fakeButton({ customId: 'park:feedall:u1', user: 'u2' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(JSON.stringify(b.replies[0])).toContain('Not your park');
   });
 });
