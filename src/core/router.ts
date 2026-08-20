@@ -1,5 +1,5 @@
 import { MessageFlags } from 'discord.js';
-import type { Interaction, ChatInputCommandInteraction, ButtonInteraction, InteractionReplyOptions } from 'discord.js';
+import type { Interaction, ChatInputCommandInteraction, ButtonInteraction, StringSelectMenuInteraction, InteractionReplyOptions } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import type { Ctx } from './context.js';
 import type { ModuleRegistry } from './modules.js';
@@ -21,8 +21,12 @@ function touchPresence(ctx: Ctx, userId: string, displayName: string, guildId: s
 
 export interface RouterHooks {
   preDispatch?(ctx: Ctx, userId: string): void;
+  // Safe to widen to include a select, unlike ComponentDef.execute (see the select branch
+  // below): dailyRouterHooks.postDispatch reads only i.user.id, i.deferred, i.replied and
+  // i.followUp, all present on every member of this union.
   postDispatch?(
-    ctx: Ctx, i: ChatInputCommandInteraction | ButtonInteraction, source: { command?: string; prefix?: string },
+    ctx: Ctx, i: ChatInputCommandInteraction | ButtonInteraction | StringSelectMenuInteraction,
+    source: { command?: string; prefix?: string },
   ): Promise<void>;
 }
 
@@ -42,7 +46,13 @@ export async function routeInteraction(
   }
   const isCommand = interaction.isChatInputCommand();
   const isButton = interaction.isButton();
-  if (!isCommand && !isButton) return;
+  const isSelect = interaction.isStringSelectMenu();
+  // A third branch, deliberately, rather than widening the button one: ComponentDef.execute
+  // is declared with method syntax, so its parameter is bivariant and widening it would
+  // compile clean across all seventeen modules while letting a select reach a handler that
+  // only ever parses i.customId. Anything still unrecognised here keeps the historical
+  // silent no-op — modals in particular are NOT routed.
+  if (!isCommand && !isButton && !isSelect) return;
   try {
     touchPresence(ctx, interaction.user.id, interaction.user.displayName, interaction.guildId);
     try {
@@ -53,6 +63,24 @@ export async function routeInteraction(
     if (isCommand) {
       const cmd = registry.findCommand((interaction as ChatInputCommandInteraction).commandName);
       if (cmd) await cmd.execute(ctx, interaction as ChatInputCommandInteraction);
+    } else if (isSelect) {
+      const sel = registry.findSelect((interaction as StringSelectMenuInteraction).customId);
+      if (sel) {
+        const s = interaction as StringSelectMenuInteraction;
+        // Same guard, same reasoning, same rejection shape as the button branch below.
+        // It proves the bot minted THIS MENU on THIS MESSAGE — and nothing whatsoever
+        // about s.values, which ride outside the customId and are unattested client
+        // input. Every select handler validates its own values in addition to this.
+        if (!clickedIdIsOnMessage(s)) {
+          logger.warn(
+            { customId: s.customId, userId: s.user.id, messageId: s.message?.id },
+            'select id not present on its message',
+          );
+          await s.deferUpdate();
+          return;
+        }
+        await sel.execute(ctx, s);
+      }
     } else {
       const comp = registry.findComponent((interaction as ButtonInteraction).customId);
       if (comp) {
@@ -102,9 +130,9 @@ export async function routeInteraction(
     try {
       const source = isCommand
         ? { command: (interaction as ChatInputCommandInteraction).commandName }
-        : { prefix: (interaction as ButtonInteraction).customId.split(':')[0] };
+        : { prefix: (interaction as ButtonInteraction | StringSelectMenuInteraction).customId.split(':')[0] };
       await hooks?.postDispatch?.(
-        ctx, interaction as ChatInputCommandInteraction | ButtonInteraction, source);
+        ctx, interaction as ChatInputCommandInteraction | ButtonInteraction | StringSelectMenuInteraction, source);
     } catch (err) {
       logger.warn({ err }, 'postDispatch hook failed');
     }

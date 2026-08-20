@@ -128,6 +128,7 @@ export function fakeCommand(opts: {
     guildId: opts.guild ?? null,
     deferred: false, replied: false,
     isChatInputCommand: () => true, isButton: () => false, isAutocomplete: () => false,
+    isStringSelectMenu: () => false,
     options: {
       getSubcommand: () => opts.sub ?? null,
       getString: makeGetter(spec, opts.options, label, [ApplicationCommandOptionType.String], String),
@@ -238,6 +239,7 @@ export function fakeButton(opts: {
     },
     deferred: false, replied: false,
     isChatInputCommand: () => false, isButton: () => true, isAutocomplete: () => false,
+    isStringSelectMenu: () => false,
     reply: async (payload: unknown) => {
       if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
       validateMessagePayload(payload, `${label} reply`);

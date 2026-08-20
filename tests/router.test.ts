@@ -4,7 +4,8 @@ import type { Interaction } from 'discord.js';
 import { routeInteraction } from '../src/core/router.js';
 import { ModuleRegistry } from '../src/core/modules.js';
 import type { ComponentDef } from '../src/core/modules.js';
-import { makeCtx, fakeCommand, fakeButton, fakeAutocomplete, replyText } from './harness.js';
+import type { SelectDef } from '../src/core/modules.js';
+import { makeCtx, fakeCommand, fakeButton, fakeSelect, fakeAutocomplete, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 import { track } from '../src/core/stats.js';
@@ -160,11 +161,14 @@ describe('routeInteraction', () => {
     await routeInteraction(ctx, reg, fb.asInteraction());
     expect(fb.replies).toHaveLength(0);
   });
-  it('non-command, non-button, non-autocomplete interactions return quietly with no presence write', async () => {
+  it('non-command, non-button, non-select, non-autocomplete interactions return quietly with no presence write', async () => {
     const ctx = makeCtx();
     const reg = new ModuleRegistry([], {});
+    // Modals are the one interaction kind this router still never routes: all four
+    // predicates false, matching a real ModalSubmitInteraction.
     const modalish = {
       isAutocomplete: () => false, isChatInputCommand: () => false, isButton: () => false,
+      isStringSelectMenu: () => false,
       user: { id: 'u1', displayName: 'u1' }, guildId: 'g1',
     };
     await routeInteraction(ctx, reg, modalish as unknown as Interaction);
@@ -238,6 +242,53 @@ describe('autocomplete routing', () => {
     await routeInteraction(ctx, acRegistry(), i.asInteraction());
     const rows = ctx.db.select().from(schema.userGuilds).where(eq(schema.userGuilds.userId, 'u1')).all();
     expect(rows).toEqual([]);
+  });
+});
+
+describe('router select branch', () => {
+  const selCtx = () => {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    return ctx;
+  };
+  const regWith = (execute: SelectDef['execute']) =>
+    new ModuleRegistry([{ name: 'm', commands: [], components: [], selects: [{ prefix: 'm', execute }] }], { m: true });
+
+  it('dispatches a select whose id the message actually carries', async () => {
+    let got: string[] | null = null;
+    const s = fakeSelect({ customId: 'm:pick', user: 'u1', values: ['a'], componentIds: ['m:pick'] });
+    await routeInteraction(selCtx(), regWith(async (_c, i) => { got = i.values; }), s.asInteraction());
+    expect(got).toEqual(['a']);
+    expect(s.deferOpts).toHaveLength(0);
+  });
+
+  it('rejects a forged select id anchored on a message that never carried it', async () => {
+    let ran = false;
+    const s = fakeSelect({ customId: 'm:pick', user: 'u1', values: ['a'], componentIds: [] });
+    await routeInteraction(selCtx(), regWith(async () => { ran = true; }), s.asInteraction());
+    expect(ran).toBe(false);
+    expect(s.replies).toHaveLength(0);
+    expect(s.deferOpts[0]).toMatchObject({ kind: 'update' });
+  });
+
+  it('stays silent for a select prefix no module claims', async () => {
+    const s = fakeSelect({ customId: 'unclaimed:x', user: 'u1', values: ['a'] });
+    await routeInteraction(selCtx(), regWith(async () => {}), s.asInteraction());
+    expect(s.replies).toHaveLength(0);
+    expect(s.deferOpts).toHaveLength(0);
+  });
+
+  it('does not dispatch a select into a button handler of the same prefix', async () => {
+    let button = false; let select = false;
+    const registry = new ModuleRegistry([{
+      name: 'm', commands: [],
+      components: [{ prefix: 'm', execute: async () => { button = true; } }],
+      selects: [{ prefix: 'm', execute: async () => { select = true; } }],
+    }], { m: true });
+    const s = fakeSelect({ customId: 'm:pick', user: 'u1', values: ['a'] });
+    await routeInteraction(selCtx(), registry, s.asInteraction());
+    expect(select).toBe(true);
+    expect(button).toBe(false);
   });
 });
 
