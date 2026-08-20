@@ -882,8 +882,46 @@ describe('tab dispatcher', () => {
     expect(b.deferOpts).toEqual([{ kind: 'update' }]);
     expect(b.replies).toEqual([]);
   });
+
+  // ADDED DURING EXECUTION — recovers coverage this plan would otherwise have lost.
+  // Task 2 deleted the /park view `foodLine` local and Task 3's animalsPayload takes
+  // `foodLine?: string` as an opaque value, so between them nothing tested the
+  // DB-to-string formatting any more: the food-line test retargeted in Task 3 now only
+  // asserts that the Food field echoes a hardcoded string. This task is where that
+  // formatting is reintroduced (the getFoodInventory / FOODS / foodEmoji join in
+  // renderTab's animals branch), so this is where it has to be tested again.
+  it('formats the food line from real inventory rows, not a passed-in string', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.addFood('u1', 'fern_bale', 10);
+    ctx.economy.addFood('u1', 'prime_cut', 2);
+    const b = fakeButton({ customId: 'park:tab:u1:animals', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const sent = b.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
+    const food = (sent.embeds[0].toJSON().fields ?? []).find((f) => f.name.includes('Food'))!.value;
+    // Both items present, joined — the grouping and separator are the thing under test.
+    expect(food).toContain('×10');
+    expect(food).toContain('×2');
+    expect(food).toContain(' · ');
+  });
+
+  it('falls back to the shop hint when the player holds no food at all', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'park:tab:u1:animals', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const sent = b.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
+    const food = (sent.embeds[0].toJSON().fields ?? []).find((f) => f.name.includes('Food'))!.value;
+    expect(food).toContain('/shop food');
+  });
 });
 ```
+
+**Note on the two food-line cases above:** `getOrCreateUser` grants `STARTER_FOOD`, so the
+"no food at all" case may need that inventory cleared first — check what a fresh user
+actually holds and adjust the fixture rather than the assertion. Confirm the real helper
+name for granting food (`ctx.economy.addFood` is the assumed name) against
+`src/core/economy.ts` before writing these; use whatever the codebase actually exposes.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
