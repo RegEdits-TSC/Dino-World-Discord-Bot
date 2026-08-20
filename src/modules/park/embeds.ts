@@ -1,13 +1,9 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } from 'discord.js';
-import type { User, Lot } from './service.js';
+import type { User } from './service.js';
 import { emojiTag } from '../../core/emojis.js';
 import { eventHeaderLine } from '../world/embeds.js';
 import type { LandmarkDef } from '../../data/landmarks.js';
-import type { LegacyTier } from './ranks.js';
-import { dinoImage, assetImage, attach } from '../../core/images.js';
-import type { Featured } from './showcase.js';
-import { seasonNumberOf } from '../../core/world.js';
-import { ATTENDANCE_MAX } from '../../data/attendance.js';
+import { assetImage, attach } from '../../core/images.js';
 
 const LOT_EMOJI: Record<string, string> = {
   carnivore_paddock: 'dw_lot_carnivore', herbivore_paddock: 'dw_lot_herbivore',
@@ -20,89 +16,53 @@ const LOT_EMOJI: Record<string, string> = {
 // exact array, not a duplicated literal that could silently drift from it.
 export const PARK_HEADER_KEYS = ['income'] as const;
 
+/**
+ * The PARK tab — the default screen of /park view. Deliberately keeps its old exported
+ * name: visit.ts and a large part of the suite resolve it, and a rename would be churn
+ * with no behavioural payoff.
+ *
+ * Cash and Rating are columns of the users row the caller already holds, so they cost
+ * nothing and render on every tab as a header strip. `attention` is a SUM the caller
+ * computes from one shared toClockDinos pass — the three underlying counts are free once
+ * that read is paid for, and splitting them across tabs would pay it twice.
+ */
 export function dashboardPayload(
-  user: User, lots: Lot[], dinoCount: number, pending: number, escapedCount = 0,
-  // now is optional because a handful of existing fixtures build a payload
-  // without a ctx at all (tests/park.test.ts, tests/park-view-image.test.ts) —
-  // every real call site (src/modules/park/index.ts) always passes ctx.now().
-  // Missing defaults to a calm day, the same convention ChaptersView.now uses
-  // in src/modules/battles/embeds.ts.
-  opts: { atRiskCount?: number; capped?: boolean; mismatchCount?: number; foodLine?: string; earnedTiers?: number; legacyRank?: LegacyTier | null; motto?: string; featured?: Featured | null; now?: number; seasonBadges?: { count: number; latest: number | null }; attendance?: number } = {},
+  user: User, pending: number,
+  opts: { attention?: number; capped?: boolean; now?: number; motto?: string;
+          dinoCount?: number; visit?: boolean } = {},
 ) {
-  const extras: string[] = [];
-  if (escapedCount > 0) extras.push(`${escapedCount} ${emojiTag('dw_alert')} escaped`);
-  if (opts.atRiskCount) extras.push(`${emojiTag('dw_hunger')} ${opts.atRiskCount} at risk`);
-  if (opts.mismatchCount) extras.push(`⚠️ ${opts.mismatchCount} wrong habitat`);
-  const dinoValue = extras.length ? `${dinoCount} (${extras.join(', ')})` : String(dinoCount);
+  const attention = opts.attention ?? 0;
+  const dinoValue = attention > 0
+    ? `${opts.dinoCount ?? 0} · ⚠️ ${attention} need attention`
+    : String(opts.dinoCount ?? 0);
   const embed = new EmbedBuilder()
     .setTitle(`🏞️ ${user.parkName}`)
     .setColor(0x3ba55c)
-    // The world-event header owns this slot; the motto is appended BENEATH it rather
-    // than replacing it. A second .setDescription anywhere downstream would silently
-    // delete the header, and tests/world-module.test.ts checks anyModRelevant, not the
-    // embed, so nothing would notice.
     .setDescription([
       eventHeaderLine(opts.now ?? 0, PARK_HEADER_KEYS),
       opts.motto ? `*“${opts.motto}”*` : '',
     ].filter(Boolean).join('\n'))
     .addFields(
       { name: `${emojiTag('dw_cash')} Cash`, value: user.cash.toLocaleString(), inline: true },
-      { name: `${emojiTag('dw_food')} Food`, value: opts.foodLine ?? 'none — /shop food', inline: true },
       { name: `${emojiTag('dw_star')} Rating`, value: (user.parkRating / 100).toFixed(1), inline: true },
       { name: '🦕 Dinos', value: dinoValue, inline: true },
-      // Attendance is deliberately PUBLIC here, unlike shards (hidden everywhere to avoid
-      // a public wealth display) — it's a prestige number, /top ranks on it, and a visited
-      // park is meant to advertise it. ATTENDANCE_MAX, never ATTENDANCE_SCALE — see
-      // guestsPayload's identical note; the scale understates the real ceiling by 92%.
-      // No test pins this card's field count, so the decision lives here as a comment.
-      { name: '🎡 Attendance', value: `${(opts.attendance ?? 0).toLocaleString()} / ${ATTENDANCE_MAX.toLocaleString()}`, inline: true },
-      { name: '🏗️ Lots', value: lots.map((l) => {
-        const e = emojiTag(LOT_EMOJI[l.kind] ?? '');
-        return `#${l.id} ${e ? `${e} ` : ''}${l.name} (lvl ${l.level})`;
-      }).join('\n') || 'None — /build', inline: false },
     );
-  const earnedTiers = opts.earnedTiers ?? 0;
-  if (earnedTiers > 0) {
-    embed.addFields({ name: '🏆 Achievements', value: `${earnedTiers} tier${earnedTiers === 1 ? '' : 's'} earned`, inline: true });
-  }
-  if (opts.legacyRank) {
-    embed.addFields({
-      name: '🏛️ Legacy',
-      value: `${opts.legacyRank.title} (rank ${opts.legacyRank.rank})`,
-      inline: true,
-    });
-  }
-  // Inline, after Legacy. Achievements + Legacy + Featured were exactly one inline row of
-  // three, so this fourth wraps Featured onto its own row — accepted, since the
-  // income-capped case already breaks that row with a full-width field.
-  if (opts.seasonBadges && opts.seasonBadges.count > 0) {
-    const { count, latest } = opts.seasonBadges;
-    embed.addFields({
-      name: '🎖️ Seasons',
-      value: `${count} badge${count === 1 ? '' : 's'}${latest === null ? '' : ` · latest Season ${seasonNumberOf(latest)}`}`,
-      inline: true,
-    });
-  }
   if (opts.capped) {
     embed.addFields({ name: '⛔ Income capped', value: 'Idle earnings hit the Visitor Center cap — collect now to restart them.' });
   }
-  if (opts.featured) {
-    embed.addFields({ name: '🦖 Featured', value: opts.featured.name, inline: true });
+  const components: ActionRowBuilder<ButtonBuilder>[] = [];
+  // Collect stays the FIRST button of the FIRST row: tests/park.test.ts reads
+  // components[0].toJSON().components[0] positionally. Never reorder these two rows.
+  if (!opts.visit) {
+    components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId('park:collect').setEmoji(emojiTag('dw_cash'))
+        .setLabel(`Collect ${pending.toLocaleString()}`).setStyle(ButtonStyle.Success),
+    ));
   }
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId('park:collect').setEmoji(emojiTag('dw_cash')).setLabel(`Collect ${pending.toLocaleString()}`).setStyle(ButtonStyle.Success),
-  );
-  // Explicit type, not inferred: `files` must be optional so attach() can create it, and
-  // withParkImage's generic now reads it back.
+  components.push(tabRow(user.discordId, 'park', opts.visit));
   const payload: {
     embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[];
-  } = { embeds: [embed], components: [row] };
-  // The ternary guards on DOMAIN data (is anything featured), so it stays outside attach —
-  // "nothing featured" is not an asset miss. Same shape as shop's `best ? … : null`.
-  // dinoImage, not assetImage: a hero species with its own committed portrait overrides the
-  // shared archetype art, and everything else falls back to exactly what shipped before.
-  attach(embed, payload, 'thumbnail',
-    opts.featured ? dinoImage(opts.featured.speciesId, opts.featured.archetype, opts.featured.diet) : null);
+  } = { embeds: [embed], components };
   return payload;
 }
 

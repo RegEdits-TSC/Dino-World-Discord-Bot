@@ -12,7 +12,7 @@ beforeEach(() => { ctx = makeCtx(); });
 describe('withParkImage', () => {
   it('attaches park.png and points the embed image at it', () => {
     const u = getOrCreateUser(ctx, 'a', 'A');
-    const base = dashboardPayload(u, [], 0, 0, 0);
+    const base = dashboardPayload(u, 0);
     const out = withParkImage(base, Buffer.from([1, 2, 3]));
     expect(out.files).toHaveLength(1);
     expect(out.embeds[0].data.image?.url).toBe('attachment://park.png');
@@ -24,7 +24,7 @@ describe('withParkImage', () => {
   // /park view branches — no error, no failing test, just a dangling attachment:// URL.
   it('keeps files the payload already carried, park.png last', () => {
     const u = getOrCreateUser(ctx, 'a', 'A');
-    const base = dashboardPayload(u, [], 0, 0, 0);
+    const base = dashboardPayload(u, 0);
     const existing = new AttachmentBuilder(Buffer.from([9]), { name: 'tank-herbivore.webp' });
     const out = withParkImage({ ...base, files: [existing] }, Buffer.from([1, 2, 3]));
     // Call order is upload order — several tests across the suite pin files by name.

@@ -5,19 +5,16 @@ import { schema } from '../../core/db/index.js';
 import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, toClockDinos } from './service.js';
 import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
-import { earnedTierCount } from '../daily/service.js';
-import { seasonBadges } from '../daily/season.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
 import { dashboardPayload, withParkImage, landmarkPayload } from './embeds.js';
 import { visitPayload } from './visit.js';
-import { attendanceOf } from './attendance.js';
-import { bumpLegacyBest, tierForPoints } from './ranks.js';
+import { bumpLegacyBest } from './ranks.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { buyLandmark, nextLandmark, landmarkTierOf, LandmarkMaxedError } from './landmarks.js';
 import { landmarkFor, MAX_LANDMARK_TIER } from '../../data/landmarks.js';
-import { setMotto, setFeaturedDino, featuredFor, ShowcaseError } from './showcase.js';
+import { setMotto, setFeaturedDino, ShowcaseError } from './showcase.js';
 import { defangLinks } from '../../core/text.js';
 import { escapeAt, ESCAPE_WARN_MS } from '../../core/clock.js';
 import { PADDOCKS } from '../../data/paddocks.js';
@@ -26,9 +23,8 @@ import { DECOR } from '../../data/decor.js';
 import { getSpecies } from '../../data/species/index.js';
 import { matches, respondRanked, emptyRow, dinoLabel } from '../../core/autocomplete.js';
 import { paginate, pageRow } from '../../core/paginate.js';
-import { emojiTag, foodEmoji } from '../../core/emojis.js';
+import { emojiTag } from '../../core/emojis.js';
 import { traitDefs } from '../../data/traits.js';
-import { FOODS, type FoodId } from '../../data/foods.js';
 import type { Ctx } from '../../core/context.js';
 import { assetImage, attach } from '../../core/images.js';
 import type { AttachmentBuilder } from 'discord.js';
@@ -195,11 +191,15 @@ export const parkModule: ModuleManifest = {
         const capped = pending > 0 && ctx.now() - user.lastCollectAt >= capHours(lots) * 3_600_000;
         const mismatchCount = clockDinos.filter((c) =>
           c.paddock !== null && c.escapedAt === null && c.paddock.diet !== c.species.diet).length;
-        const inv = ctx.economy.getFoodInventory(i.user.id);
-        const foodLine = (Object.entries(inv) as Array<[FoodId, number]>)
-          .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
-        const legacyBest = bumpLegacyBest(ctx, i.user.id);
-        const base = dashboardPayload(user, lots, dinos.length, pending, escapedCount, { atRiskCount, capped, mismatchCount, foodLine, earnedTiers: earnedTierCount(ctx, i.user.id), legacyRank: tierForPoints(legacyBest), motto: user.motto, featured: featuredFor(ctx, user), now: nowMs, seasonBadges: seasonBadges(ctx, i.user.id), attendance: attendanceOf(ctx, i.user.id).attendance });
+        // bumpLegacyBest stays on this path even though its result is no longer displayed
+        // here: the Park tab is the first thing every /park view renders, so the legacy
+        // high-water still latches on every view. The Legacy display itself moves to the
+        // Prestige tab.
+        bumpLegacyBest(ctx, i.user.id);
+        const attention = escapedCount + atRiskCount + mismatchCount;
+        const base = dashboardPayload(user, pending, {
+          attention, capped, now: nowMs, motto: user.motto, dinoCount: dinos.length,
+        });
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
         await i.editReply(png ? withParkImage(base, png) : base);
