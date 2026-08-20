@@ -1,7 +1,7 @@
 import { eq, and } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
-import { accruedIncome, type ClockDino } from '../../core/clock.js';
+import { accruedIncome, escapeAt, ESCAPE_WARN_MS, type ClockDino } from '../../core/clock.js';
 import { getSpecies } from '../../data/species/index.js';
 import { FACILITIES } from '../../data/facilities.js';
 import { PADDOCKS } from '../../data/paddocks.js';
@@ -165,6 +165,30 @@ export function toClockDinos(ctx: Ctx, userId: string): { clockDinos: ClockDino[
     };
   });
   return { clockDinos, lots, user, dinos };
+}
+
+/**
+ * Counts DISTINCT dinos needing attention — at risk of escape or in the wrong habitat — as
+ * a single pass over clockDinos, never a sum of the two predicates: a dino can trip both (an
+ * off-diet paddock is paddockFit 0.5, which is exactly what pulls escapeAt into the warning
+ * window), and summing them separately would double-count it.
+ *
+ * The one shared definition for the /park view command's own execute path
+ * (src/modules/park/index.ts), `renderTab`'s Park tab (same file) and `visitPayload`
+ * (src/modules/park/visit.ts), so a park's attention marker reads the same number no
+ * matter which of the three rendered it. The latter two disagreed before this existed
+ * (visitPayload counted escaped dinos only) — exactly the kind of two-copies-drifting
+ * defect this repo already paid a fix round for once. Do not inline a copy of this filter
+ * anywhere; import this instead.
+ */
+export function needsAttentionCount(clockDinos: ClockDino[], nowMs: number): number {
+  return clockDinos.filter((c) => {
+    if (c.escapedAt !== null) return false;
+    const e = escapeAt(c);
+    const atRisk = e !== null && e - nowMs <= ESCAPE_WARN_MS;
+    const mismatch = c.paddock !== null && c.paddock.diet !== c.species.diet;
+    return atRisk || mismatch;
+  }).length;
 }
 
 export function pendingIncome(ctx: Ctx, userId: string): number {

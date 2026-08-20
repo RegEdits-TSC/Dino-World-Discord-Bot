@@ -7,6 +7,7 @@ import { settleEscapes } from './escapes.js';
 import { dashboardPayload, withParkImage } from './embeds.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
+import { toClockDinos, needsAttentionCount } from './service.js';
 
 export interface VisitPayload {
   embeds: EmbedBuilder[];
@@ -42,6 +43,30 @@ export function nextInRing(ctx: Ctx, afterUserId: string): string | null {
 }
 
 /**
+ * The "keep touring" row. Null when the ring has no next member to offer (an empty ring —
+ * `nextInRing` never returns null just because `targetUserId` is the ring's only member, it
+ * wraps to itself instead).
+ *
+ * The customId carries the park to go TO, not the one on screen — so the park:tour handler
+ * renders that id directly and mints the next hop from there. No owner id: this is public
+ * and read-only, and the segment is a target, never an owner.
+ *
+ * Shared by visitPayload (the initial park:tour hop) and renderTab's visit branches
+ * (src/modules/park/index.ts, every tab switch on a visited card) so this button survives
+ * navigation instead of dead-ending the tour the first time a visitor clicks a tab — that
+ * was a real gap: renderTab replaces `components` wholesale on every branch and, before
+ * this existed, never re-minted this row.
+ */
+export function nextParkRow(ctx: Ctx, targetUserId: string): ActionRowBuilder<ButtonBuilder> | null {
+  const next = nextInRing(ctx, targetUserId);
+  if (!next) return null;
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(`park:tour:${next}`)
+      .setLabel('Next park ▶').setStyle(ButtonStyle.Secondary),
+  );
+}
+
+/**
  * Somebody else's park, read-only — the Park tab, rendered with `visit: true`. Null when
  * they have no park row at all.
  *
@@ -61,29 +86,27 @@ export async function visitPayload(ctx: Ctx, targetUserId: string): Promise<Visi
     .where(eq(schema.users.discordId, targetUserId)).get();
   if (!exists) return null;
   settleEscapes(ctx, targetUserId);
-  const user = ctx.db.select().from(schema.users)
-    .where(eq(schema.users.discordId, targetUserId)).get()!;
-  const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, targetUserId)).all();
+  const { clockDinos, user, dinos } = toClockDinos(ctx, targetUserId);
+  const nowMs = ctx.now();
   const escaped = dinos.filter((d) => d.escapedAt !== null).length;
+  // needsAttentionCount is the SAME shared computation renderTab's Park tab (and /park
+  // view's own execute path) use — see its doc comment in service.ts — not a second copy,
+  // so a visited card's attention marker reads the same number whether it was reached via
+  // park:tour or park:vtab:<target>:park. They disagreed before this (this function
+  // counted escaped dinos only), which is the same two-copies-drifting defect class this
+  // repo already paid a fix round for once elsewhere.
+  const attention = escaped + needsAttentionCount(clockDinos, nowMs);
   const built = dashboardPayload(user, 0, {
-    motto: user.motto, now: ctx.now(), dinoCount: dinos.length,
-    attention: escaped, visit: true,
+    motto: user.motto, now: nowMs, dinoCount: dinos.length,
+    attention, visit: true,
   });
   // components come straight from the builder now: `visit: true` suppresses park:collect
   // at the source rather than filtering it out here, and the tab row must survive so a
   // visitor can navigate. The old hand-built `components: []` would strip both.
   const payload: VisitPayload = { embeds: built.embeds, components: built.components };
   if (built.files) payload.files = built.files;
-  const next = nextInRing(ctx, targetUserId);
-  if (next) {
-    // The customId carries the park to go TO, not the one on screen — so the handler
-    // renders parts[2] directly and mints the next hop from there. No owner id: this is
-    // public and read-only, and the segment is a target, never an owner.
-    payload.components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId(`park:tour:${next}`)
-        .setLabel('Next park ▶').setStyle(ButtonStyle.Secondary),
-    ));
-  }
+  const next = nextParkRow(ctx, targetUserId);
+  if (next) payload.components.push(next);
   let png: Buffer | undefined;
   try { png = await renderPark(buildParkSnapshot(ctx, targetUserId)); } catch { png = undefined; }
   return png ? withParkImage(payload, png) : payload;
