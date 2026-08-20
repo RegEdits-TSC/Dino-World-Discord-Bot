@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { PARK_TABS, isParkTab, tabRow, dashboardPayload, animalsPayload, lotsPayload, prestigePayload } from '../src/modules/park/embeds.js';
-import { makeCtx } from './harness.js';
+import { makeCtx, fakeButton } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { tierForPoints } from '../src/modules/park/ranks.js';
 import { ATTENDANCE_MAX } from '../src/data/attendance.js';
+import { parkModule } from '../src/modules/park/index.js';
 
 const fieldsOf = (p: { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }) =>
   p.embeds[0].toJSON().fields ?? [];
@@ -206,5 +207,84 @@ describe('Prestige tab', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
     const p = prestigePayload(user, {});
     expect(p.files!.map((f) => f.name)).toEqual(['landmark.webp']);
+  });
+});
+
+const parkComp = () => parkModule.components.find((c) => c.prefix === 'park')!;
+
+describe('tab dispatcher', () => {
+  it('renders another tab in place, shedding the previous tab uploads', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'park:tab:u1:prestige', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const sent = b.replies[0] as { attachments: unknown[]; embeds: Array<{ toJSON(): { title: string } }> };
+    // Without attachments: [] the outgoing tab's uploads survive as orphan cards.
+    expect(sent.attachments).toEqual([]);
+    expect(sent.embeds[0].toJSON().title).toContain('Prestige');
+  });
+
+  it('defers before rendering the Park tab, because renderPark can eat the whole window', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'park:tab:u1:park', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(b.deferOpts).toEqual([{ kind: 'update' }]);
+  });
+
+  it('refuses a stranger driving somebody else own-park tabs', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    getOrCreateUser(ctx, 'u2', 'Other');
+    const b = fakeButton({ customId: 'park:tab:u1:lots', user: 'u2' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(JSON.stringify(b.replies[0])).toContain('Not your park');
+  });
+
+  it('absorbs an unknown tab name rather than rendering a default screen', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'park:tab:u1:map', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(b.deferOpts).toEqual([{ kind: 'update' }]);
+    expect(b.replies).toEqual([]);
+  });
+
+  // ADDED DURING EXECUTION — recovers coverage this plan would otherwise have lost.
+  // Task 2 deleted the /park view `foodLine` local and Task 3's animalsPayload takes
+  // `foodLine?: string` as an opaque value, so between them nothing tested the
+  // DB-to-string formatting any more: the food-line test retargeted in Task 3 now only
+  // asserts that the Food field echoes a hardcoded string. This task is where that
+  // formatting is reintroduced (the getFoodInventory / FOODS / foodEmoji join in
+  // renderTab's animals branch), so this is where it has to be tested again.
+  it('formats the food line from real inventory rows, not a passed-in string', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    // getOrCreateUser seeds STARTER_FOOD (10 ferns, 10 fish); cleared here so the two
+    // items asserted below are the whole story, not two of four.
+    ctx.economy.apply('u1', { foods: { ferns: -10, fish: -10 } }, 'test', 0);
+    ctx.economy.apply('u1', { foods: { fruit_basket: 10 } }, 'test', 0);
+    ctx.economy.apply('u1', { foods: { prime_steak: 2 } }, 'test', 0);
+    const b = fakeButton({ customId: 'park:tab:u1:animals', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const sent = b.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
+    const food = (sent.embeds[0].toJSON().fields ?? []).find((f) => f.name.includes('Food'))!.value;
+    // Both items present, joined — the grouping and separator are the thing under test.
+    expect(food).toContain('×10');
+    expect(food).toContain('×2');
+    expect(food).toContain(' · ');
+  });
+
+  it('falls back to the shop hint when the player holds no food at all', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    // getOrCreateUser seeds STARTER_FOOD (10 ferns, 10 fish) — clear it so this case
+    // actually exercises the empty-inventory fallback rather than the starter pantry.
+    ctx.economy.apply('u1', { foods: { ferns: -10, fish: -10 } }, 'test', 0);
+    const b = fakeButton({ customId: 'park:tab:u1:animals', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const sent = b.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> };
+    const food = (sent.embeds[0].toJSON().fields ?? []).find((f) => f.name.includes('Food'))!.value;
+    expect(food).toContain('/shop food');
   });
 });

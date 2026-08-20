@@ -6,28 +6,33 @@ import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, p
 import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
-import { dashboardPayload, withParkImage, landmarkPayload } from './embeds.js';
+import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
 import { visitPayload } from './visit.js';
-import { bumpLegacyBest } from './ranks.js';
+import { bumpLegacyBest, legacyRank } from './ranks.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
 import { InsufficientFundsError } from '../../core/economy.js';
 import { buyLandmark, nextLandmark, landmarkTierOf, LandmarkMaxedError } from './landmarks.js';
 import { landmarkFor, MAX_LANDMARK_TIER } from '../../data/landmarks.js';
-import { setMotto, setFeaturedDino, ShowcaseError } from './showcase.js';
+import { setMotto, setFeaturedDino, featuredFor, ShowcaseError } from './showcase.js';
 import { defangLinks } from '../../core/text.js';
 import { escapeAt, ESCAPE_WARN_MS } from '../../core/clock.js';
 import { PADDOCKS } from '../../data/paddocks.js';
 import { FACILITIES } from '../../data/facilities.js';
 import { DECOR } from '../../data/decor.js';
+import { FOODS, type FoodId } from '../../data/foods.js';
 import { getSpecies } from '../../data/species/index.js';
 import { matches, respondRanked, emptyRow, dinoLabel } from '../../core/autocomplete.js';
 import { paginate, pageRow } from '../../core/paginate.js';
-import { emojiTag } from '../../core/emojis.js';
+import { emojiTag, foodEmoji } from '../../core/emojis.js';
 import { traitDefs } from '../../data/traits.js';
 import type { Ctx } from '../../core/context.js';
 import { assetImage, attach } from '../../core/images.js';
-import type { AttachmentBuilder } from 'discord.js';
+import { attendanceOf } from './attendance.js';
+import { earnedTierCount } from '../daily/service.js';
+import { seasonBadges } from '../daily/season.js';
+import { lotSlots } from '../../data/progression.js';
+import type { AttachmentBuilder, ButtonInteraction } from 'discord.js';
 
 const kindChoices = [...Object.keys(PADDOCKS), ...Object.keys(FACILITIES)]
   .map((k) => ({ name: k.replaceAll('_', ' '), value: k }));
@@ -544,6 +549,19 @@ export const parkModule: ModuleManifest = {
             }
             return;
           }
+          case 'tab': {
+            if (i.user.id !== uid) {
+              await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral });
+              return;
+            }
+            const tab = parts[3];
+            // Client-supplied: validated against the real union, never cast. An
+            // unrecognised name is absorbed silently rather than falling through to a
+            // default screen, which would report success for a tab nobody implemented.
+            if (!isParkTab(tab)) { await i.deferUpdate(); return; }
+            await renderTab(ctx, i, i.user.id, tab, false);
+            return;
+          }
           default:
             await i.deferUpdate();
             return;
@@ -606,3 +624,92 @@ export const parkModule: ModuleManifest = {
     },
   ],
 };
+
+/**
+ * Renders one tab onto the message that was clicked.
+ *
+ * settleEscapes runs ONCE here rather than in each builder: it is write-bearing, and
+ * buildParkSnapshot settles again internally, so a per-builder call would multiply a
+ * mutation across a navigation click.
+ *
+ * The Park tab defers first. renderPark's own RENDER_TIMEOUT_MS is 3000 — Discord's entire
+ * initial-response window — and renders serialize process-wide, so rendering before
+ * acknowledging loses the interaction to 10062 and shows "This interaction failed".
+ * deferUpdate, never deferReply: a tab advances ONE message rather than accumulating one
+ * per click, the park:tour reasoning exactly.
+ *
+ * Every branch sends attachments: [] — a tab switch is a different-banner render, and
+ * without it the outgoing tab's uploads survive alongside the incoming one as orphan
+ * attachment cards. This is the opposite of the omit-idiom landmarkPayload uses.
+ */
+async function renderTab(
+  ctx: Ctx, i: ButtonInteraction, ownerId: string, tab: ParkTab, visit: boolean,
+): Promise<void> {
+  settleEscapes(ctx, ownerId);
+  const user = ctx.db.select().from(schema.users)
+    .where(eq(schema.users.discordId, ownerId)).get()!;
+  const lots = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, ownerId)).all();
+  const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, ownerId)).all();
+  if (tab === 'park') {
+    await i.deferUpdate();
+    const { clockDinos } = toClockDinos(ctx, ownerId);
+    const nowMs = ctx.now();
+    const escaped = dinos.filter((d) => d.escapedAt !== null).length;
+    const atRisk = clockDinos.filter((c) => {
+      if (c.escapedAt !== null) return false;
+      const e = escapeAt(c);
+      return e !== null && e - nowMs <= ESCAPE_WARN_MS;
+    }).length;
+    const mismatch = clockDinos.filter((c) =>
+      c.paddock !== null && c.escapedAt === null && c.paddock.diet !== c.species.diet).length;
+    const pending = visit ? 0 : pendingIncome(ctx, ownerId);
+    const capped = pending > 0 && ctx.now() - user.lastCollectAt >= capHours(lots) * 3_600_000;
+    const base = dashboardPayload(user, pending, {
+      attention: escaped + atRisk + mismatch, capped, now: nowMs,
+      motto: user.motto, dinoCount: dinos.length, visit,
+    });
+    let png: Buffer | undefined;
+    try { png = await renderPark(buildParkSnapshot(ctx, ownerId)); } catch { png = undefined; }
+    await i.editReply({ ...(png ? withParkImage(base, png) : base), attachments: [] });
+    return;
+  }
+  if (tab === 'animals') {
+    const { clockDinos } = toClockDinos(ctx, ownerId);
+    const nowMs = ctx.now();
+    const inv = ctx.economy.getFoodInventory(ownerId);
+    const foodLine = (Object.entries(inv) as Array<[FoodId, number]>)
+      .map(([id, q]) => `${foodEmoji(id)}${FOODS[id].name} ×${q}`).join(' · ') || 'none — /shop food';
+    await i.update({
+      ...animalsPayload(user, dinos.length, {
+        escaped: dinos.filter((d) => d.escapedAt !== null).length,
+        atRisk: clockDinos.filter((c) => {
+          if (c.escapedAt !== null) return false;
+          const e = escapeAt(c);
+          return e !== null && e - nowMs <= ESCAPE_WARN_MS;
+        }).length,
+        mismatch: clockDinos.filter((c) =>
+          c.paddock !== null && c.escapedAt === null && c.paddock.diet !== c.species.diet).length,
+        foodLine, featured: featuredFor(ctx, user), visit,
+      }),
+      attachments: [],
+    });
+    return;
+  }
+  if (tab === 'lots') {
+    await i.update({ ...lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit }), attachments: [] });
+    return;
+  }
+  // prestige — legacyRank (pure), never bumpLegacyBest: the high-water latches on the
+  // Park tab, which every /park view renders first, so a navigation click never writes.
+  await i.update({
+    ...prestigePayload(user, {
+      attendance: attendanceOf(ctx, ownerId).attendance,
+      earnedTiers: earnedTierCount(ctx, ownerId),
+      legacyRank: legacyRank(ctx, ownerId),
+      seasonBadges: seasonBadges(ctx, ownerId),
+      landmark: landmarkFor(user.landmarkTier),
+      visit,
+    }),
+    attachments: [],
+  });
+}

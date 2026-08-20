@@ -347,30 +347,35 @@ describe('prestige achievements badge wiring', () => {
     expect(field.value).toContain('2');
   });
 
-  // Genuinely needs the tab dispatcher, so this one stays parked rather than being forced
-  // onto prestigePayload directly. Unlike the "own park" case above, this one DOES
-  // discriminate identity in its parked form: u1 holds zero claims and 'other' holds one,
-  // so had the real /park view command resolved the VIEWER's own count instead of the
-  // TARGET's, prestigePayload would omit the Achievements field entirely (it renders
-  // nothing at earnedTiers === 0) and the `fields.find(...)!` non-null assertion below
-  // would throw. Calling prestigePayload directly with a hand-picked
-  // earnedTierCount(ctx, 'other') removes that discriminator — there is no caller-side
-  // identity resolution left to get wrong, so the test could never fail no matter which
-  // user's count a real caller threaded through. It is also near-vacuous against the
-  // "prestige achievements badge" unit tests above it once retargeted: only one
-  // achievementClaims row exists in the whole DB here, so even a broken userId filter on
-  // earnedTierCount would still return 1.
-  // Retargeted to the tab dispatcher in Task 6 — un-skip there.
-  it.skip('passes earnedTierCount into the read-only other-user dashboard', async () => {
+  // Retargeted to the tab dispatcher (Task 6). The parked original drove /park view's
+  // VISIT path (options: { user: 'other' }) to prove the TARGET's count, never the
+  // viewer's own, reaches the card — but visitPayload only renders the Park tab until
+  // Task 8 rewrites it to walk all four (see src/modules/park/visit.ts's own note), so
+  // that specific path cannot show an Achievements field yet regardless of anything this
+  // task does. The dispatcher this task actually wires is park:tab:<uid>:prestige for the
+  // CLICKING user's own park (owner-checked — a stranger cannot drive u1's tabs), so the
+  // cross-identity discriminator moves to: two different users, each clicking their OWN
+  // button, must not collapse onto the same (or a stale/shared) value. u1 holds zero
+  // claims and 'other' holds one — a dispatcher bug that hardcoded, cached, or otherwise
+  // mis-resolved the owner id would either make both replies agree or throw on the `!`
+  // assertion below, the same way the original discriminator worked.
+  it('threads each clicking user\'s own earnedTierCount into their Prestige tab', async () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
     getOrCreateUser(ctx, 'other', 'Other');
     ctx.db.insert(schema.achievementClaims).values([
       { userId: 'other', trackId: 'eggs_hatched', tier: 0, claimedAt: 0 },
     ]).run();
-    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1', options: { user: 'other' } });
-    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
-    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
-    const field = fields.find((f) => f.name === '🏆 Achievements')!;
+    const parkComp = () => parkModule.components.find((c) => c.prefix === 'park')!;
+
+    const mine = fakeButton({ customId: 'park:tab:u1:prestige', user: 'u1' });
+    await parkComp().execute(ctx, mine.asInteraction() as never);
+    const mineFields = (mine.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields ?? [];
+    expect(mineFields.find((f) => f.name === '🏆 Achievements')).toBeUndefined();   // u1 holds zero claims
+
+    const theirs = fakeButton({ customId: 'park:tab:other:prestige', user: 'other' });
+    await parkComp().execute(ctx, theirs.asInteraction() as never);
+    const theirsFields = (theirs.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field = theirsFields.find((f) => f.name === '🏆 Achievements')!;
     expect(field.value).toContain('1');
   });
 });
@@ -378,17 +383,18 @@ describe('prestige achievements badge wiring', () => {
 // Attendance lives on the Prestige tab, not Animals — prestigePayload takes
 // attendance?: number and renders 🎡 Attendance; animalsPayload has no attendance option.
 //
-// Genuinely needs the tab dispatcher, so this one stays parked rather than being forced
-// onto prestigePayload directly: its entire point is that the real /park view command
-// resolves the TARGET's attendance (never the viewer's own) onto a visited card — logic
-// that lives in the caller, not in prestigePayload, which just renders whatever
-// `attendance` value it is handed. Calling prestigePayload by hand here would mean WE
-// choose which number to pass for each case, which can never disagree with itself — the
-// test would pass unconditionally regardless of whether any real caller gets the
-// identity right, i.e. it would stop testing anything. Retargeted to the tab dispatcher
-// in Task 6 — un-skip there.
-describe.skip('/park view attendance wiring', () => {
-  it('keys the attendance field to the right park on your own card and on a visited one', async () => {
+// Retargeted to the tab dispatcher (Task 6). The parked original drove /park view's VISIT
+// path to prove the TARGET's attendance (never the viewer's own) reaches a visited card —
+// but visitPayload only renders the Park tab until Task 8 rewrites it to walk all four
+// (src/modules/park/visit.ts's own note), so that path cannot show an Attendance field yet
+// regardless of anything this task does. The dispatcher this task wires is
+// park:tab:<uid>:prestige for the CLICKING user's own park (owner-checked), so the
+// discriminator moves to: two different users, each clicking their OWN button, must each
+// see their OWN number, never the other's or a stale/shared one. u1 and u2 still get
+// DIFFERENT distinct-species counts (1 vs 2) on purpose — equal values would prove nothing
+// below.
+describe('prestige attendance wiring', () => {
+  it('keys the attendance field to the clicking user\'s own park, never another\'s', async () => {
     for (const id of ['u1', 'u2']) getOrCreateUser(ctx, id, id);
     ctx.economy.apply('u1', { cash: 50_000 }, 'test:seed', 0);
     ctx.economy.apply('u2', { cash: 50_000 }, 'test:seed', 0);
@@ -396,11 +402,6 @@ describe.skip('/park view attendance wiring', () => {
     ctx.db.insert(schema.dinos).values({
       userId: 'u1', lotId: lot1.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0,
     }).run();
-    // u2's own park gets a DIFFERENT distinct-species count (2, not 1) — attendance's
-    // species term is what moves the figure here, so u1 and u2 must resolve to different
-    // numbers or this test cannot tell a correctly-threaded value from a dropped
-    // `attendance:` line (which renders the unconditional field at its `?? 0` default,
-    // still matching /Attendance/) or a caller-identity mixup.
     const lot2 = buildLot(ctx, 'u2', 'herbivore_paddock');
     ctx.db.insert(schema.dinos).values([
       { userId: 'u2', lotId: lot2.id, speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0 },
@@ -414,19 +415,20 @@ describe.skip('/park view attendance wiring', () => {
     const attendanceField = (replies: unknown[]) =>
       (replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> })
         .embeds[0].toJSON().fields!.find((f) => f.name === '🎡 Attendance')!;
+    const parkComp = () => parkModule.components.find((c) => c.prefix === 'park')!;
 
-    const own = fakeCommand({ name: 'park', sub: 'view', user: 'u1' });
-    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, own.asChatInput());
+    const own = fakeButton({ customId: 'park:tab:u1:prestige', user: 'u1' });
+    await parkComp().execute(ctx, own.asInteraction() as never);
     expect(attendanceField(own.replies).value).toContain(u1Attendance.toLocaleString());
 
-    // u2 (the viewer) visits u1's park (the target). The field must carry u1's number —
-    // never u2's own — so a value threaded into one caller and forgotten (or mis-keyed)
-    // in the other renders a card that disagrees with itself depending on who is looking.
-    const visit = fakeCommand({ name: 'park', sub: 'view', user: 'u2', options: { user: { id: 'u1' } } });
-    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, visit.asChatInput());
-    const visitField = attendanceField(visit.replies);
-    expect(visitField.value).toContain(u1Attendance.toLocaleString());
-    expect(visitField.value).not.toContain(u2Attendance.toLocaleString());
+    // u2 clicks their OWN prestige tab, not u1's — the field must carry u2's number, never
+    // u1's, so a value threaded into one caller and forgotten (or mis-keyed) in the other
+    // renders a card that disagrees with itself depending on who clicked.
+    const other = fakeButton({ customId: 'park:tab:u2:prestige', user: 'u2' });
+    await parkComp().execute(ctx, other.asInteraction() as never);
+    const otherField = attendanceField(other.replies);
+    expect(otherField.value).toContain(u2Attendance.toLocaleString());
+    expect(otherField.value).not.toContain(u1Attendance.toLocaleString());
   });
 });
 
@@ -465,29 +467,37 @@ describe('prestige legacy rank wiring', () => {
     expect(field!.value).toContain('Groundskeeper');
   });
 
-  // Genuinely needs the tab dispatcher, so this one stays parked rather than being forced
-  // onto prestigePayload directly: its entire point is that the real /park view command
-  // resolves the TARGET's rank (never the viewer's own) onto a visited card — logic that
-  // lives in the caller, not in prestigePayload, which just renders whatever legacyRank
-  // value it is handed. Calling prestigePayload by hand here would mean WE choose which
-  // rank to pass for each case, which can never disagree with itself — the test would
-  // pass unconditionally regardless of whether any real caller gets the identity right,
-  // i.e. it would stop testing anything. u1 and u2 land on DIFFERENT titles on purpose: a
-  // title mismatch fails louder than a missing-vs-present field would if the wrong id
-  // were ever passed at a call site.
-  // Retargeted to the tab dispatcher in Task 6 — un-skip there.
-  it.skip('shows the TARGET player rank when viewing another park, not the viewer own', async () => {
+  // Retargeted to the tab dispatcher (Task 6). The parked original drove /park view's
+  // VISIT path to prove the TARGET's rank (never the viewer's own) reaches a visited
+  // card — but visitPayload only renders the Park tab until Task 8 rewrites it to walk
+  // all four (src/modules/park/visit.ts's own note), so that path cannot show a Legacy
+  // field yet regardless of anything this task does. The dispatcher this task wires is
+  // park:tab:<uid>:prestige for the CLICKING user's own park (owner-checked), so the
+  // discriminator moves to: two different users, each clicking their OWN button, land on
+  // DIFFERENT titles — a title mismatch fails louder than a missing-vs-present field
+  // would if a dispatcher bug ever resolved the wrong id.
+  it('shows each clicking user\'s own legacy rank, not another\'s', async () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
     getOrCreateUser(ctx, 'u2', 'Other');
     for (const s of allSpecies().slice(0, 15)) recordSpeciesSeen(ctx, 'u1', s.id);   // Groundskeeper (rank 1)
     for (const s of allSpecies().slice(0, 35)) recordSpeciesSeen(ctx, 'u2', s.id);   // Keeper (rank 2)
-    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1', options: { user: { id: 'u2' } } });
-    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
-    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
-    const field = fields.find((f) => f.name === '🏛️ Legacy');
-    expect(field).toBeTruthy();
-    expect(field!.value).toContain('Keeper');       // u2's rank
-    expect(field!.value).not.toContain('Groundskeeper');   // never u1's (the viewer's) rank
+    const parkComp = () => parkModule.components.find((c) => c.prefix === 'park')!;
+
+    const b1 = fakeButton({ customId: 'park:tab:u1:prestige', user: 'u1' });
+    await parkComp().execute(ctx, b1.asInteraction() as never);
+    const fields1 = (b1.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field1 = fields1.find((f) => f.name === '🏛️ Legacy');
+    expect(field1).toBeTruthy();
+    expect(field1!.value).toContain('Groundskeeper');
+    expect(field1!.value).not.toContain('Keeper');
+
+    const b2 = fakeButton({ customId: 'park:tab:u2:prestige', user: 'u2' });
+    await parkComp().execute(ctx, b2.asInteraction() as never);
+    const fields2 = (b2.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field2 = fields2.find((f) => f.name === '🏛️ Legacy');
+    expect(field2).toBeTruthy();
+    expect(field2!.value).toContain('Keeper');       // u2's rank
+    expect(field2!.value).not.toContain('Groundskeeper');   // never u1's rank
   });
 });
 
