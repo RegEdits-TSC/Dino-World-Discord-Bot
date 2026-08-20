@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeCtx, fakeCommand, fakeAutocomplete, fakeButton, mulberry32, replyText } from './harness.js';
+import { makeCtx, fakeCommand, fakeAutocomplete, fakeButton, fakeSelect, mulberry32, replyText } from './harness.js';
 
 describe('harness', () => {
   it('ctx time is controllable and rng deterministic', () => {
@@ -123,5 +123,48 @@ describe('harness', () => {
     const a = fa.asAutocomplete();
     await a.respond([]);
     await expect(a.respond([])).rejects.toThrow(/already responded/);
+  });
+});
+
+describe('fakeSelect', () => {
+  it('defaults componentIds to the clicked id, like fakeButton', () => {
+    const s = fakeSelect({ customId: 'park:build:u1', user: 'u1', values: ['gene_lab'] });
+    const raw = s.asInteraction() as unknown as {
+      message: { components: Array<{ components: Array<{ type: number; customId: string }> }> };
+    };
+    expect(raw.message.components[0].components[0]).toMatchObject({ type: 3, customId: 'park:build:u1' });
+  });
+
+  it('models a forged value by letting options and values diverge', () => {
+    const s = fakeSelect({
+      customId: 'park:build:u1', user: 'u1', values: ['__proto__'], options: ['gene_lab'],
+    });
+    const raw = s.asInteraction() as unknown as {
+      values: string[];
+      message: { components: Array<{ components: Array<{ options: Array<{ value: string }> }> }> };
+    };
+    expect(raw.values).toEqual(['__proto__']);
+    expect(raw.message.components[0].components[0].options).toEqual([{ value: 'gene_lab', label: 'gene_lab' }]);
+  });
+
+  it('discriminates the two defers, like fakeButton', async () => {
+    const s = fakeSelect({ customId: 'x:y', user: 'u1', values: ['a'] });
+    const raw = s.asInteraction() as unknown as { deferUpdate(): Promise<void> };
+    await raw.deferUpdate();
+    expect(s.deferOpts).toEqual([{ kind: 'update' }]);
+  });
+
+  it('enforces reply-once', async () => {
+    const s = fakeSelect({ customId: 'x:y', user: 'u1', values: ['a'] });
+    const raw = s.asInteraction() as unknown as { reply(p: unknown): Promise<void> };
+    await raw.reply({ content: 'one' });
+    await expect(raw.reply({ content: 'two' })).rejects.toMatchObject({ code: 'InteractionAlreadyReplied' });
+  });
+
+  it('reports itself as a select and not as a button', () => {
+    const raw = fakeSelect({ customId: 'x:y', user: 'u1', values: ['a'] })
+      .asInteraction() as unknown as { isButton(): boolean; isStringSelectMenu(): boolean };
+    expect(raw.isButton()).toBe(false);
+    expect(raw.isStringSelectMenu()).toBe(true);
   });
 });

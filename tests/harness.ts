@@ -280,6 +280,74 @@ export function fakeButton(opts: {
   };
 }
 
+export function fakeSelect(opts: {
+  customId: string; user: string; values: string[]; guild?: string;
+  componentIds?: string[]; options?: string[];
+}): FakeInteraction {
+  const replies: unknown[] = [];
+  const deferOpts: unknown[] = [];
+  const label = `select ${opts.customId}`;
+  // options defaults to values, so a fixture models a well-formed submission unless it
+  // deliberately opts out. Divergence is how a test models the one attack a select adds
+  // over a button: a value the minted menu never offered.
+  const optionValues = opts.options ?? opts.values;
+  const raw = {
+    customId: opts.customId,
+    values: opts.values,
+    user: { id: opts.user, displayName: opts.user },
+    guildId: opts.guild ?? null,
+    // Type 3 children, mirroring Message#components for a select-bearing row. Discord
+    // allows exactly one select per action row, so each id gets its own row.
+    message: {
+      id: 'fake-message',
+      interactionMetadata: null,
+      components: (opts.componentIds ?? [opts.customId]).map((id) => ({
+        type: 1,
+        components: [{
+          type: 3, customId: id,
+          options: optionValues.map((v) => ({ value: v, label: v })),
+        }],
+      })),
+    },
+    deferred: false, replied: false,
+    isChatInputCommand: () => false, isButton: () => false, isAutocomplete: () => false,
+    isStringSelectMenu: () => true,
+    reply: async (payload: unknown) => {
+      if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
+      validateMessagePayload(payload, `${label} reply`);
+      raw.replied = true; replies.push(payload);
+    },
+    editReply: async (payload: unknown) => {
+      if (!raw.deferred && !raw.replied) throw djsError('InteractionNotReplied');
+      validateMessagePayload(payload, `${label} editReply`);
+      raw.replied = true; replies.push(payload);
+    },
+    followUp: async (payload: unknown) => {
+      if (!raw.deferred && !raw.replied) throw djsError('InteractionNotReplied');
+      validateMessagePayload(payload, `${label} followUp`);
+      replies.push(payload);
+    },
+    update: async (payload: unknown) => {
+      if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
+      validateMessagePayload(payload, `${label} update`);
+      raw.replied = true; replies.push(payload);
+    },
+    deferUpdate: async (o?: unknown) => {
+      if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
+      raw.deferred = true; deferOpts.push({ kind: 'update', ...(o as Record<string, unknown> ?? {}) });
+    },
+    deferReply: async (o?: unknown) => {
+      if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
+      raw.deferred = true; deferOpts.push({ kind: 'reply', ...(o as Record<string, unknown> ?? {}) });
+    },
+  };
+  return {
+    replies, deferOpts,
+    asChatInput: () => raw as unknown as ChatInputCommandInteraction,
+    asInteraction: () => raw as unknown as Interaction,
+  };
+}
+
 // Install a synthetic custom-emoji map covering every known emoji name, so
 // tests can exercise the custom-tag arms that production hits after client
 // ready. Returns the restore function; call it in finally/afterEach.
