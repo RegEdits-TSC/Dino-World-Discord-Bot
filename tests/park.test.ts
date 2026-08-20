@@ -8,7 +8,7 @@ import { renameDino } from '../src/modules/park/dinos.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
-import { dashboardPayload, animalsPayload, PARK_HEADER_KEYS } from '../src/modules/park/embeds.js';
+import { dashboardPayload, animalsPayload, lotsPayload, PARK_HEADER_KEYS } from '../src/modules/park/embeds.js';
 import { visitPayload } from '../src/modules/park/visit.js';
 import { attendanceOf } from '../src/modules/park/attendance.js';
 import { eventHeaderLine } from '../src/modules/world/embeds.js';
@@ -702,20 +702,20 @@ describe('gene lab', () => {
 
   // Task 12 shipped dw_lot_genelab.svg and its EMOJI_FALLBACK entry, so emojiTag()
   // now resolves to the 🧬 unicode fallback even in tests (no map loaded). This pins
-  // the dashboard row's format now that the emoji is live, replacing the Task 7
-  // interim assertion that pinned the plain-text degrade while the SVG was pending.
+  // the lot row's format now that the emoji is live, replacing the Task 7 interim
+  // assertion that pinned the plain-text degrade while the SVG was pending.
   //
   // The lots list itself (and with it, this row format) moved off dashboardPayload
-  // entirely — it moves to the Lots tab's lotsPayload in Task 4, which reuses the same
-  // module-level LOT_EMOJI map. Retargeted to lotsPayload in Task 4 — un-skip there.
-  it.skip('renders with its 🧬 emoji on the dashboard', () => {
+  // entirely onto the Lots tab's lotsPayload, which reuses the same module-level
+  // LOT_EMOJI map — retargeted here rather than dropped.
+  it('renders with its 🧬 emoji in the Built field', () => {
     const ctx = makeCtx({ nowMs: 0 });
     const user = getOrCreateUser(ctx, 'u1', 'u1');
     ctx.economy.apply('u1', { cash: 100_000 }, 'test', 0);
     const lot = buildLot(ctx, 'u1', 'gene_lab');
-    const lots = ctx.db.select().from(schema.lots).all();   // moves onto lotsPayload's own params in Task 4
-    const p = dashboardPayload(user, 0, {});
-    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏗️ Lots')!;
+    const lots = ctx.db.select().from(schema.lots).all();
+    const p = lotsPayload(user, lots, lotSlots(user.ratingHighWater));
+    const field = p.embeds[0].toJSON().fields!.find((f) => f.name.includes('Built'))!;
     expect(field.value).toBe(`#${lot.id} 🧬 Gene Lab (lvl 1)`);
   });
 });
