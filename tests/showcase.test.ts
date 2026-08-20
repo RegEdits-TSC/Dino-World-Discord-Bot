@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MessageFlags } from 'discord.js';
 import { eq } from 'drizzle-orm';
-import { makeCtx, fakeCommand, replyText, fakeAutocomplete } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, replyText, fakeAutocomplete } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { setMotto, setFeaturedDino, featuredFor, ShowcaseError, MAX_MOTTO } from '../src/modules/park/showcase.js';
@@ -219,40 +219,35 @@ describe('the owner sees their own showcase', () => {
     expect(p.embeds[0].toJSON().description).toContain('Where the big ones live');
   });
 
-  // Retargeted to the tab dispatcher in Task 6 — un-skip there.
+  // Retargeted to the tab dispatcher (Task 6): dispatches a real park:tab:u1:animals
+  // click through fakeButton, which is the mechanism this test's premise always needed —
+  // Featured left /park view's default reply along with the rest of the Park tab split
+  // and now only renders on the Animals tab, reachable by clicking that tab. This is the
+  // real dispatch path added by src/modules/park/index.ts's renderTab helper, not a call
+  // to animalsPayload directly, which would only duplicate the three other Trixie/
+  // triceratops fixtures already exercising the builder (tests/park-tabs.test.ts,
+  // tests/park.test.ts's 'dashboard showcase', tests/dino-image.test.ts).
   //
-  // Featured left /park view's default reply along with the rest of the Park tab split —
-  // it now only renders on the Animals tab, reachable by clicking that tab. Task 3 added
-  // animalsPayload (tests/park-tabs.test.ts, tests/park.test.ts's 'dashboard showcase' and
-  // tests/dino-image.test.ts all exercise it directly with this same Trixie/triceratops
-  // fixture), but nothing yet threads it into /park view's own execute path — that's a
-  // separate, later wiring task. Retargeting THIS test to call animalsPayload directly
-  // would only duplicate those three byte-for-byte; what it actually pins — the full
-  // /park view command rendering the Featured field — genuinely doesn't hold anymore and
-  // has no home yet. Stays skipped until Task 6's tab dispatcher can render the command and
-  // dispatch a real park:tab:<uid>:animals click through fakeButton, which is what this
-  // test's premise needs — then it should assert against that real dispatch path, not
-  // against animalsPayload directly.
-  //
-  // When un-skipped: the `files` assertion below is ALREADY WRONG for animalsPayload and
-  // must become `['dino_roster.webp', 'tank-herbivore.webp']`, not just have `.skip`
-  // dropped. animalsPayload always attaches the roster banner first (call order is upload
-  // order), which dashboardPayload never did — do not "fix" that ordering to match this
-  // stale single-file expectation.
-  it.skip('renders the featured dino and its art on your own park view', async () => {
+  // The `files` assertion below was WRONG when this test was still parked and pinned to
+  // `dashboardPayload` — it must be `['dino_roster.webp', 'tank-herbivore.webp']`, not
+  // just have `.skip` dropped. animalsPayload always attaches the roster banner first
+  // (call order is upload order); that ordering is real and correct, not a stale
+  // expectation to "fix" back to a single file.
+  it('renders the featured dino and its art on the Animals tab', async () => {
     const d = addDino();
     setFeaturedDino(ctx, 'u1', d.id);
-    const p = await view();
+    const b = fakeButton({ customId: 'park:tab:u1:animals', user: 'u1' });
+    await parkModule.components.find((c) => c.prefix === 'park')!.execute(ctx, b.asInteraction() as never);
+    const p = b.replies[0] as {
+      embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }>; thumbnail?: { url: string } } }>;
+      files?: Array<{ name: string }>;
+    };
     expect(p.embeds[0].toJSON().fields!.find((f) => f.name === '🦖 Featured')!.value)
       .toBe('Triceratops');
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://tank-herbivore.webp');
-    // The park PNG cannot render under vitest: renderPark spawns a real worker thread that
-    // fails to resolve its module graph in-process, so `png` is undefined and withParkImage
-    // never runs. Offline, the meaningful property is that the featured dino's file IS
-    // attached and matches the embed's thumbnail URL. The two-files-on-one-embed pairing
-    // (thumbnail then park.png) is a live-gallery check — see the /park view case in
-    // scripts/test-live.ts.
-    expect(p.files!.map((f) => f.name)).toEqual(['tank-herbivore.webp']);
+    // The two-files-on-one-embed pairing (roster banner, then the featured dino's own art)
+    // is call order, i.e. upload order — see the repo CLAUDE.md note on attach().
+    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster.webp', 'tank-herbivore.webp']);
   });
 
   it('carries no Next park button — that belongs to the visitor branch only', async () => {
