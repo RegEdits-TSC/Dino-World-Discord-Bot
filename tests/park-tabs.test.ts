@@ -3,6 +3,7 @@ import { PARK_TABS, isParkTab, tabRow, dashboardPayload, animalsPayload, lotsPay
 import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { tierForPoints } from '../src/modules/park/ranks.js';
+import { ATTENDANCE_MAX } from '../src/data/attendance.js';
 
 const fieldsOf = (p: { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }) =>
   p.embeds[0].toJSON().fields ?? [];
@@ -185,5 +186,25 @@ describe('Prestige tab', () => {
     expect(mine).toContain('park:goto:guests');
     const theirs = JSON.stringify(prestigePayload(user, { visit: true }));
     expect(theirs).not.toContain('park:goto:');
+  });
+
+  // Pins the real ATTENDANCE_MAX as the denominator, imported rather than hardcoded —
+  // ATTENDANCE_MAX is 1920, not the 1000 ATTENDANCE_SCALE understates it by (see the repo
+  // CLAUDE.md note on that 92% gap). Nothing else in this file reads the Attendance
+  // field's rendered VALUE, so swapping ATTENDANCE_MAX for ATTENDANCE_SCALE at the call
+  // site would otherwise leave the whole suite green.
+  it('renders the real ATTENDANCE_MAX as the denominator', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = prestigePayload(user, { attendance: 100 });
+    const field = fieldsOf(p).find((f) => f.name.includes('Attendance'))!;
+    expect(field.value).toContain(ATTENDANCE_MAX.toLocaleString());
+  });
+
+  it('carries the landmark banner', () => {
+    const ctx = makeCtx();
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = prestigePayload(user, {});
+    expect(p.files!.map((f) => f.name)).toEqual(['landmark.webp']);
   });
 });

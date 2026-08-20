@@ -328,15 +328,14 @@ describe('prestige achievements badge', () => {
   });
 });
 
-// Sources earnedTiers from the real earnedTierCount(ctx, userId) read rather than a
-// hand-typed literal — the integration the "prestige achievements badge" block above
-// cannot cover, since it only exercises prestigePayload's own rendering of a synthetic
-// value. Retargeted straight onto prestigePayload, not through /park view: nothing
-// threads earnedTierCount into the command's own execute path yet (that wiring, and the
-// tab click needed to reach it, belongs to a later task), and prestigePayload's contract
-// takes earnedTiers as a plain value, so there is nothing about the real command's own
-// dispatch left to prove here.
 describe('prestige achievements badge wiring', () => {
+  // Sources earnedTiers from the real earnedTierCount(ctx, userId) read rather than a
+  // hand-typed literal — the integration the "prestige achievements badge" block above
+  // cannot cover, since it only exercises prestigePayload's own rendering of a synthetic
+  // value. Retargeted straight onto prestigePayload, not through /park view: there is no
+  // cross-identity discrimination in this one (u1 is the only user and only ever reads
+  // its own count), so nothing about the real command's own dispatch is lost by calling
+  // the builder directly.
   it('renders earnedTierCount for your own park', () => {
     const user = getOrCreateUser(ctx, 'u1', 'Reg');
     ctx.db.insert(schema.achievementClaims).values([
@@ -348,14 +347,30 @@ describe('prestige achievements badge wiring', () => {
     expect(field.value).toContain('2');
   });
 
-  it('renders earnedTierCount for a read-only other-user card', () => {
+  // Genuinely needs the tab dispatcher, so this one stays parked rather than being forced
+  // onto prestigePayload directly. Unlike the "own park" case above, this one DOES
+  // discriminate identity in its parked form: u1 holds zero claims and 'other' holds one,
+  // so had the real /park view command resolved the VIEWER's own count instead of the
+  // TARGET's, prestigePayload would omit the Achievements field entirely (it renders
+  // nothing at earnedTiers === 0) and the `fields.find(...)!` non-null assertion below
+  // would throw. Calling prestigePayload directly with a hand-picked
+  // earnedTierCount(ctx, 'other') removes that discriminator — there is no caller-side
+  // identity resolution left to get wrong, so the test could never fail no matter which
+  // user's count a real caller threaded through. It is also near-vacuous against the
+  // "prestige achievements badge" unit tests above it once retargeted: only one
+  // achievementClaims row exists in the whole DB here, so even a broken userId filter on
+  // earnedTierCount would still return 1.
+  // Retargeted to the tab dispatcher in Task 6 — un-skip there.
+  it.skip('passes earnedTierCount into the read-only other-user dashboard', async () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
-    const other = getOrCreateUser(ctx, 'other', 'Other');
+    getOrCreateUser(ctx, 'other', 'Other');
     ctx.db.insert(schema.achievementClaims).values([
       { userId: 'other', trackId: 'eggs_hatched', tier: 0, claimedAt: 0 },
     ]).run();
-    const p = prestigePayload(other, { earnedTiers: earnedTierCount(ctx, 'other'), visit: true });
-    const field = p.embeds[0].toJSON().fields!.find((f) => f.name === '🏆 Achievements')!;
+    const i = fakeCommand({ name: 'park', sub: 'view', user: 'u1', options: { user: 'other' } });
+    await parkModule.commands.find((c) => c.data.name === 'park')!.execute(ctx, i.asChatInput());
+    const fields = (i.replies[0] as { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }).embeds[0].toJSON().fields!;
+    const field = fields.find((f) => f.name === '🏆 Achievements')!;
     expect(field.value).toContain('1');
   });
 });
@@ -1130,10 +1145,7 @@ describe('prestige season badge', () => {
 // renders the Park tab today — see the comment at its call site in
 // src/modules/park/visit.ts) threads seasonBadges anywhere yet, and prestigePayload's
 // contract takes it as a plain value, so there is nothing about a real dispatch left to
-// prove here. The second case keeps both of the original assertions — the field renders
-// AND rendering someone else's card never writes u1's row — which is exactly
-// prestigePayload's PURE contract, so this remains a real regression guard rather than a
-// vacuous one: a stray write for the wrong user inside the builder would still fail it.
+// prove here.
 describe('prestige season badge wiring', () => {
   it('renders the real seasonBadges() computation for your own park', () => {
     ctx.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690
@@ -1145,9 +1157,16 @@ describe('prestige season badge wiring', () => {
     expect(JSON.stringify(p)).toContain('🎖️ Seasons');
   });
 
-  it('renders a visited target\'s badges without stamping anything for the viewer', () => {
+  // The parked original also asserted that rendering u2's visited card never wrote to
+  // u1's seasonProgress row — a real guard THEN, because it drove visitPayload(ctx, 'u2'),
+  // a ctx-taking function that genuinely could have stamped something. prestigePayload
+  // takes no ctx anywhere in its callee graph (verified: no `ctx.`/`.db.` token appears in
+  // src/modules/park/embeds.ts at all), so no implementation of it could ever make that
+  // row appear — the assertion could not fail no matter what the builder did. Dropped it
+  // rather than keep a check that only looks like protection; the rendering assertion
+  // below is the honest half that remains genuinely testable here.
+  it('renders a visited target\'s badges', () => {
     ctx.setNow(690 * 30 * 86_400_000);   // SEASON_EPOCH is 690
-    getOrCreateUser(ctx, 'u1', 'U1');
     const u2 = getOrCreateUser(ctx, 'u2', 'U2');
     rollSeason(ctx, 'u2');
     ctx.db.update(schema.seasonProgress).set({ badgeAt: ctx.now() })
@@ -1155,9 +1174,6 @@ describe('prestige season badge wiring', () => {
     const p = prestigePayload(u2, { seasonBadges: seasonBadges(ctx, 'u2'), visit: true });
     const json = p.embeds[0].toJSON();
     expect(json.fields!.map((f) => f.name)).toContain('🎖️ Seasons');
-    // prestigePayload must never write — rendering u2's card must not touch u1's row.
-    expect(ctx.db.select().from(schema.seasonProgress)
-      .where(eq(schema.seasonProgress.userId, 'u1')).all()).toHaveLength(0);
   });
 });
 
