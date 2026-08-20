@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ButtonInteraction } from 'discord.js';
-import { clickedIdIsOnMessage } from '../src/core/components.js';
+import { clickedIdIsOnMessage, submittedValuesAreOnMessage } from '../src/core/components.js';
+import { fakeSelect } from './harness.js';
 
 /**
  * The shapes here mirror what discord.js hands a component handler: Message#components
@@ -65,5 +66,56 @@ describe('clickedIdIsOnMessage', () => {
     expect(clickedIdIsOnMessage(
       { customId: null, message: { components: linkOnly } } as unknown as ButtonInteraction,
     )).toBe(false);
+  });
+});
+
+const asSelect = (o: { customId: string; values: string[]; options?: string[]; componentIds?: string[] }) =>
+  fakeSelect({ user: 'u1', ...o }).asInteraction() as never;
+
+describe('submittedValuesAreOnMessage', () => {
+  it('accepts values the minted menu actually offered', () => {
+    expect(submittedValuesAreOnMessage(asSelect({
+      customId: 'm:pick', values: ['a'], options: ['a', 'b'],
+    }))).toBe(true);
+  });
+
+  it('rejects a value the menu never offered', () => {
+    expect(submittedValuesAreOnMessage(asSelect({
+      customId: 'm:pick', values: ['evil'], options: ['a', 'b'],
+    }))).toBe(false);
+  });
+
+  it('rejects a prototype key, which a plain-object lookup would read back truthy', () => {
+    expect(submittedValuesAreOnMessage(asSelect({
+      customId: 'm:pick', values: ['__proto__'], options: ['a'],
+    }))).toBe(false);
+    expect(submittedValuesAreOnMessage(asSelect({
+      customId: 'm:pick', values: ['constructor'], options: ['a'],
+    }))).toBe(false);
+  });
+
+  it('rejects a partially valid submission rather than accepting the good half', () => {
+    expect(submittedValuesAreOnMessage(asSelect({
+      customId: 'm:pick', values: ['a', 'evil'], options: ['a', 'b'],
+    }))).toBe(false);
+  });
+
+  it('fails closed on an empty submission and on a menu that is not on the message', () => {
+    expect(submittedValuesAreOnMessage(asSelect({
+      customId: 'm:pick', values: [], options: ['a'],
+    }))).toBe(false);
+    expect(submittedValuesAreOnMessage(asSelect({
+      customId: 'm:pick', values: ['a'], options: ['a'], componentIds: [],
+    }))).toBe(false);
+  });
+
+  // Not in the brief's five cases, but called out by the design rules ("a menu carrying
+  // no options" is one of the three fail-closed conditions): a menu minted with zero
+  // options must reject every submission, never fall through to an empty offered Set
+  // matching nothing by coincidence of both sides being empty.
+  it('fails closed on a menu that carries no options at all', () => {
+    expect(submittedValuesAreOnMessage(asSelect({
+      customId: 'm:pick', values: ['a'], options: [],
+    }))).toBe(false);
   });
 });
