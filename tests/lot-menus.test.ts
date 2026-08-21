@@ -323,9 +323,9 @@ describe('upgrade menu', () => {
     // Positive assertions, without which this case CANNOT FAIL under any implementation:
     // upgradeLot is itself scoped by userId, so the state assertion above passes whether
     // or not the handler's own fresh read is scoped — and it passed before the `upgyes`
-    // case existed at all, when the click still fell to the switch's `default:
-    // await i.deferUpdate()` (the park component switch's default arm) and wrote nothing. Pinning
-    // the message text and the absence of a defer is what distinguishes the three.
+    // case existed at all, when the click still fell through to the park component
+    // switch's `default: await i.deferUpdate()` arm and wrote nothing. Pinning the
+    // message text and the absence of a defer is what distinguishes the three.
     expect(JSON.stringify(b.replies[0])).toContain('No such lot');
     expect(b.deferOpts).toEqual([]);
   });

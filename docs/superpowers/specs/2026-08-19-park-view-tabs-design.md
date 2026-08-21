@@ -398,11 +398,25 @@ into a confirm state (tab bar retained, action row replaced with Yes / No), and 
 to a freshly rendered Lots tab. The card is therefore never left displaying a level it has
 just changed, and no ephemeral messages accumulate.
 
-- `park:buildyes:<uid>:<kind>` / `park:buildno:<uid>`
+- `park:buildyes:<uid>:<kind>:<lotCount>` / `park:buildno:<uid>`
 - `park:upgyes:<uid>:<lotId>:<expectedLevel>` / `park:upgno:<uid>`
 
 The confirm buttons re-validate everything the select validated. The confirm click is a
 second layer, never the guard — another open message may still hold a stale menu.
+
+**Build carries a staleness anchor too, and it is `<lotCount>`.** §3.5's lock lives in the
+service because an upgrade has a level to compare; a build has none and its price never
+moves, so the anchor is the owner's lot count at mint time and the handler's own check of it
+is the whole lock. Without it the id changes nothing when the purchase succeeds, so two
+clicks landing before the first repaint both pass the owner check and both pass the
+allowlist. `DuplicateFacilityError` stops the second for a facility. Paddocks are duplicable
+by design, so it builds a second one — and since `lotSlots` caps at 10 with no demolish path
+outside `adminReset`, the loss is a permanent slot rather than the cash. The count is a sound
+anchor precisely because `buildLot` only ever increases it. It is validated in the same order
+`park:upgyes` validates its level — integer parse, then a fresh read, both before any write —
+and **no `await` may sit between that read and `buildLot`**: better-sqlite3 is synchronous and
+Node is single-threaded, so a check-then-write with no suspension point between them cannot
+interleave with a second interaction, which is what closes the race.
 
 **`confirmPayload` returns four keys, and three of them are load-bearing in ways "renders in
 place" does not imply.** None is derivable from the description above, so each is specified
@@ -548,6 +562,10 @@ The **§3.4 null-prototype change breaks no pin at all.** Nothing in `src/`, `te
   `[customId]` so the router guard is *exercised* rather than bypassed.
 - Regression tests pinning each of:
   - a stale `expectedLevel` on `park:upgyes` is rejected and charges nothing
+  - a stale `lotCount` on `park:buildyes` is rejected and builds no second lot
+  - the Cancel half of each confirm (`park:buildno`, `park:upgno`) re-renders the Lots tab
+    rather than acknowledging silently — asserting only that the confirm MINTS those ids
+    leaves the handler deletable with the suite still green
   - a forged foreign `lotId` is rejected
   - a select menu whose customId is not on the message is rejected by the router guard
   - a forged `park:tab` anchored on a foreign message is rejected
