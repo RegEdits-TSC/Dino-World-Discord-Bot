@@ -16,10 +16,13 @@ const cashOf = (id: string) =>
   ctx.db.select().from(schema.users).where(eq(schema.users.discordId, id)).get()!.cash;
 const fieldsOf = (p: { embeds: Array<{ toJSON(): { fields?: Array<{ name: string; value: string }> } }> }) =>
   p.embeds[0].toJSON().fields ?? [];
-// Reads the (at most one) string-select component minted on a builder's `components`
-// array — discord.js's toJSON() uses ComponentType.StringSelect === 3, distinguishing it
-// from a button row's ComponentType.Button === 2. Undefined when no select was minted,
-// which is itself the assertion in the visited/slot-cap cases below.
+// Reads the FIRST string-select component minted on a builder's `components` array —
+// discord.js's toJSON() uses ComponentType.StringSelect === 3, distinguishing it from a
+// button row's ComponentType.Button === 2. The Lots tab can mint TWO (Build, then
+// Upgrade), so every case using this helper either seeds a state where only one of them
+// survives its filter or asserts on the id it got back; a case that needs both filters
+// the rows itself (see 'mints no build menu once every lot slot is used'). Undefined when
+// no select was minted, which is itself the assertion in the visited cases below.
 const selectOf = (rows: ReadonlyArray<{ toJSON(): { components: Array<{ type: number; custom_id?: string; options?: Array<{ value: string }> }> } }>) =>
   rows.flatMap((r) => r.toJSON().components).find((c) => c.type === 3) as
     { custom_id: string; options: Array<{ value: string }> } | undefined;
@@ -37,7 +40,11 @@ describe('build menu', () => {
     await parkSelect().execute(ctx, s.asInteraction() as never);
     expect(cashOf('u1')).toBe(before);
     const json = JSON.stringify(s.replies[0]);
-    expect(json).toContain('park:buildyes:u1:carnivore_paddock');
+    // Four segments, not three: the trailing 0 is the lot COUNT this confirm was minted
+    // against — u1 owns none yet. It is what makes the id single-use (see the
+    // double-click case below), so pinning the bare three-segment prefix here would let
+    // the anchor be dropped from the mint with every assertion in this file still green.
+    expect(json).toContain('park:buildyes:u1:carnivore_paddock:0');
     expect(json).toContain('park:buildno:u1');
     // Without these three the confirm can ship with no tab row, no attachments: [] and
     // no content, and every other assertion in this file still passes. The tab row keeps
@@ -49,15 +56,72 @@ describe('build menu', () => {
     expect((s.replies[0] as { content?: string }).content).toBe('');
   });
 
+  // The case above mints against a park with no lots, where `:0` is also what a hardcoded
+  // constant would produce. This one seeds a lot first, so only a live read passes.
+  it('anchors the confirm to the live lot count, not a constant', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.db.insert(schema.lots).values({
+      userId: 'u1', type: 'paddock', kind: 'carnivore_paddock', name: 'Carnivore Paddock', level: 1,
+    }).run();
+    const s = fakeSelect({
+      customId: 'park:build:u1', user: 'u1',
+      values: ['herbivore_paddock'], options: ['herbivore_paddock'],
+    });
+    await parkSelect().execute(ctx, s.asInteraction() as never);
+    expect(JSON.stringify(s.replies[0])).toContain('park:buildyes:u1:herbivore_paddock:1');
+  });
+
   it('builds only after the confirm click', async () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
     ctx.db.update(schema.users).set({ cash: 10_000_000 })
       .where(eq(schema.users.discordId, 'u1')).run();
     const before = cashOf('u1');
-    const b = fakeButton({ customId: 'park:buildyes:u1:carnivore_paddock', user: 'u1' });
+    const b = fakeButton({ customId: 'park:buildyes:u1:carnivore_paddock:0', user: 'u1' });
     await parkComp().execute(ctx, b.asInteraction() as never);
     expect(cashOf('u1')).toBeLessThan(before);
     expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all()).toHaveLength(1);
+  });
+
+  // The park:upgyes stale-button case's twin, and the reason the count anchor exists at
+  // all. Two clicks landing before the first repaint both pass the owner check and both
+  // pass the allowlist; for a FACILITY the second is stopped by DuplicateFacilityError,
+  // but paddocks are duplicable by design, so without an anchor the second click builds a
+  // second one. lotSlots caps at 10 and this codebase has no demolish path outside
+  // adminReset, so the loss is a permanent slot, not the 2,000 cash.
+  it('refuses a second click of the same build button and builds no second paddock', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.db.update(schema.users).set({ cash: 10_000_000 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    const first = fakeButton({ customId: 'park:buildyes:u1:carnivore_paddock:0', user: 'u1' });
+    await parkComp().execute(ctx, first.asInteraction() as never);
+    const afterFirst = cashOf('u1');
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all()).toHaveLength(1);
+    const second = fakeButton({ customId: 'park:buildyes:u1:carnivore_paddock:0', user: 'u1' });
+    await parkComp().execute(ctx, second.asInteraction() as never);
+    expect(cashOf('u1')).toBe(afterFirst);
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all()).toHaveLength(1);
+    // Pins the FIGURES, exactly as the upgrade twin does. 'no longer valid' belongs to the
+    // allowlist and integer-parse branches, so asserting it here would go red against a
+    // correct implementation — and the two counts are the only part of the message telling
+    // the player what actually changed.
+    expect(JSON.stringify(second.replies[0])).toContain('has 1 lot now, not 0');
+    expect(second.deferOpts).toEqual([]);
+  });
+
+  it('refuses a non-integer lot-count anchor without touching the database', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.db.update(schema.users).set({ cash: 10_000_000 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    const before = cashOf('u1');
+    const b = fakeButton({ customId: 'park:buildyes:u1:carnivore_paddock:notanumber', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(cashOf('u1')).toBe(before);
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all()).toHaveLength(0);
+    // Fixes which guard is under test: with Number.isInteger removed, `offeredCount` is
+    // NaN and `lotCount !== NaN` is always true, so the count check would swallow this and
+    // the parse guard would go untested — the upgrade side's reasoning, verbatim.
+    expect(JSON.stringify(b.replies[0])).toContain('no longer valid');
+    expect(b.deferOpts).toEqual([]);
   });
 
   it('rejects a prototype key at the handler, before buildLot is reached', async () => {
@@ -65,7 +129,9 @@ describe('build menu', () => {
     ctx.db.update(schema.users).set({ cash: 10_000_000 })
       .where(eq(schema.users.discordId, 'u1')).run();
     const before = cashOf('u1');
-    const b = fakeButton({ customId: 'park:buildyes:u1:constructor', user: 'u1' });
+    // `:0` is the CORRECT count for a player with no lots, so the count anchor cannot be
+    // what rejects this — the allowlist is, which is the guard this case exists for.
+    const b = fakeButton({ customId: 'park:buildyes:u1:constructor:0', user: 'u1' });
     await parkComp().execute(ctx, b.asInteraction() as never);
     expect(cashOf('u1')).toBe(before);
     expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all()).toHaveLength(0);
@@ -81,6 +147,23 @@ describe('build menu', () => {
     await parkSelect().execute(ctx, s.asInteraction() as never);
     expect(s.deferOpts).toEqual([{ kind: 'update' }]);
     expect(s.replies).toEqual([]);
+  });
+
+  // Cancel had no coverage on either menu: `park:buildno` was asserted only as a string
+  // the confirm MINTS, and `park:upgno` appeared in tests/ nowhere at all. Deleting
+  // `case 'buildno': case 'upgno':` left the whole suite green — the clicks then fell to
+  // the switch's `default: await i.deferUpdate()` and Cancel became a silent no-op,
+  // stranding the player on a confirm card with a live Yes and a dead Cancel.
+  it('returns Cancel to a freshly rendered Lots tab rather than acknowledging silently', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'park:buildno:u1', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    // deferOpts first, deliberately: it is the assertion that goes red when the case is
+    // deleted, and it reads as a clean diff. A deleted case falls to the switch's
+    // `default: await i.deferUpdate()`, which records there and sends no payload at all.
+    // The Build menu below then proves what WAS sent is the Lots tab, not some other card.
+    expect(b.deferOpts).toEqual([]);
+    expect(JSON.stringify(b.replies[0])).toContain('park:build:u1');
   });
 
   it('refuses a stranger driving the menu', async () => {
@@ -182,7 +265,21 @@ describe('upgrade menu', () => {
       values: [`${lot.id}:1`], options: [`${lot.id}:1`],
     });
     await parkSelect().execute(ctx, s.asInteraction() as never);
-    expect(JSON.stringify(s.replies[0])).toContain(`park:upgyes:u1:${lot.id}:1`);
+    const json = JSON.stringify(s.replies[0]);
+    expect(json).toContain(`park:upgyes:u1:${lot.id}:1`);
+    // The Cancel half was minted here and asserted nowhere — see the buildno/upgno
+    // handler cases for what that cost.
+    expect(json).toContain('park:upgno:u1');
+  });
+
+  // The buildno twin. Both ids share one `case`, so this pins that the SHARED arm is
+  // reached from the upgrade side too rather than only from the build side.
+  it('returns upgrade Cancel to a freshly rendered Lots tab', async () => {
+    seedLot(1);
+    const b = fakeButton({ customId: 'park:upgno:u1', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(b.deferOpts).toEqual([]);
+    expect(JSON.stringify(b.replies[0])).toContain('park:build:u1');
   });
 
   it('upgrades once when the level still matches', async () => {
@@ -224,9 +321,11 @@ describe('upgrade menu', () => {
     await parkComp().execute(ctx, b.asInteraction() as never);
     expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.id, theirs.id)).get()!.level).toBe(1);
     // Positive assertions, without which this case CANNOT FAIL under any implementation:
-    // today `park:upgyes:*` falls to index.ts:635's `default: await i.deferUpdate()`,
-    // which writes nothing, and afterwards upgradeLot is itself scoped by userId. The
-    // state assertion above is satisfied twice over either way.
+    // upgradeLot is itself scoped by userId, so the state assertion above passes whether
+    // or not the handler's own fresh read is scoped — and it passed before the `upgyes`
+    // case existed at all, when the click still fell to the switch's `default:
+    // await i.deferUpdate()` (the park component switch's default arm) and wrote nothing. Pinning
+    // the message text and the absence of a defer is what distinguishes the three.
     expect(JSON.stringify(b.replies[0])).toContain('No such lot');
     expect(b.deferOpts).toEqual([]);
   });
