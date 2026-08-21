@@ -456,11 +456,22 @@ describe('router component guard', () => {
     expect(b.replies).toHaveLength(0);
   });
 
-  // The subtlest failure mode in the change. deferUpdate() sets i.deferred = true, and
-  // daily/hooks.ts gates its hint on `!i.deferred && !i.replied` — so a guard that
-  // rejected without RETURNING would let a forged click emit a real quest/season followUp
-  // and, worse, burn the one-shot notifiedAt / hintedRung stamps for a message nobody
-  // asked for. Nothing else in the suite can see this.
+  // The subtlest failure mode in the change, and the same shape as its select-side twin
+  // ("rejects before postDispatch" above, in the select describe block): deferUpdate()
+  // sets i.deferred = true, and daily/hooks.ts gates its hint on
+  // `!i.deferred && !i.replied` — so a guard that rejected without RETURNING would let a
+  // forged click emit a real quest/season followUp and, worse, burn the one-shot
+  // notifiedAt / hintedRung stamps for a message nobody asked for.
+  //
+  // The handler MUST be a true no-op, never one that touches `i` (e.g. i.update()):
+  // under the no-RETURN regression, i.deferred is already true from the guard's own
+  // deferUpdate(), so a handler that replies would throw InteractionAlreadyReplied
+  // before ever reaching postDispatch, and the router's outer catch swallows that —
+  // leaving notifiedAt and hintedRung looking "safe" for the wrong reason, and only
+  // b.replies differentiating, via a crash rather than via the phantom hint this test
+  // claims to catch. A true no-op handler runs harmlessly instead, so execution reaches
+  // postDispatch under the regression, the hint genuinely fires, and all three
+  // assertions below diverge for the reason this comment states.
   it('rejects before postDispatch — no phantom hint, and both one-shot stamps stay owed', async () => {
     const ctx = makeCtx();
     ctx.setNow(SEASON_1);
@@ -471,7 +482,7 @@ describe('router component guard', () => {
     track(ctx, 'u1', 'eggs_hatched', 1);            // quest complete, never notified
     rollSeason(ctx, 'u1');
     track(ctx, 'u1', 'expeditions_claimed', 10);    // 50 points = season rung 1, unlocked and unclaimed
-    const reg = regWith(async (_c, i) => { await i.update({ content: 'x' }); });
+    const reg = regWith(async () => {});
     const b = fakeButton({ customId: 'm:go', user: 'u1', componentIds: [] });
     await routeInteraction(ctx, reg, b.asInteraction(), dailyRouterHooks);
     expect(b.replies).toHaveLength(0);
