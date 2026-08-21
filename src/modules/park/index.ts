@@ -6,7 +6,7 @@ import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, p
 import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
-import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
+import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, confirmPayload, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
 import { guestsPayload } from '../guests/embeds.js';
 import { visitPayload, nextParkRow } from './visit.js';
 import { bumpLegacyBest, legacyRank } from './ranks.js';
@@ -29,6 +29,7 @@ import { emojiTag, foodEmoji } from '../../core/emojis.js';
 import { traitDefs } from '../../data/traits.js';
 import type { Ctx } from '../../core/context.js';
 import { assetImage, attach } from '../../core/images.js';
+import { submittedValuesAreOnMessage } from '../../core/components.js';
 import { attendanceOf } from './attendance.js';
 import { earnedTierCount } from '../daily/service.js';
 import { seasonBadges } from '../daily/season.js';
@@ -417,6 +418,45 @@ export const parkModule: ModuleManifest = {
       },
     },
   ],
+  selects: [
+    {
+      prefix: 'park',
+      async execute(ctx, i) {
+        const [, action, uid] = i.customId.split(':');
+        if (i.user.id !== uid) {
+          await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        // The router already proved the bot minted THIS MENU on THIS MESSAGE. It proved
+        // nothing about the submitted values, which arrive on a separate client-supplied
+        // channel — so they are checked against the message's own option list here.
+        if (!submittedValuesAreOnMessage(i)) { await i.deferUpdate(); return; }
+        const value = i.values[0]!;
+        const user = ctx.db.select().from(schema.users)
+          .where(eq(schema.users.discordId, i.user.id)).get()!;
+        if (action === 'build') {
+          // Defence in depth over Task 0a, which is what actually closed this: the tables
+          // are null-prototype now and buildLot owns an Object.hasOwn check of its own.
+          // This copy earns its place because 90 of 101 fakeButton sites and every case in
+          // scripts/test-live.ts call execute directly rather than through routeInteraction,
+          // so a handler-level check is what those paths exercise.
+          if (!Object.hasOwn(PADDOCKS, value) && !Object.hasOwn(FACILITIES, value)) {
+            await i.deferUpdate();
+            return;
+          }
+          const def = PADDOCKS[value] ?? FACILITIES[value]!;
+          await i.update(confirmPayload(
+            user,
+            `Build **${def.name}** for **${def.buildCost.toLocaleString('en-US')}** cash?`,
+            `park:buildyes:${i.user.id}:${value}`, `park:buildno:${i.user.id}`,
+            `Build ${def.name}`,
+          ));
+          return;
+        }
+        await i.deferUpdate();
+      },
+    },
+  ],
   components: [
     {
       prefix: 'park',
@@ -643,6 +683,52 @@ export const parkModule: ModuleManifest = {
             await renderTab(ctx, i, uid, tab, true);
             return;
           }
+          case 'buildno':
+          case 'upgno': {
+            if (i.user.id !== uid) {
+              await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral });
+              return;
+            }
+            await renderTab(ctx, i, i.user.id, 'lots', false);
+            return;
+          }
+          case 'buildyes': {
+            if (i.user.id !== uid) {
+              await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral });
+              return;
+            }
+            const kind = parts[3] ?? '';
+            // Re-validated here and not merely at the menu: another open message may still
+            // hold a stale confirm button, and the customId is client-supplied regardless.
+            if (!Object.hasOwn(PADDOCKS, kind) && !Object.hasOwn(FACILITIES, kind)) {
+              await i.reply({
+                content: 'That build button is no longer valid — open `/park view` again.',
+                flags: MessageFlags.Ephemeral,
+              });
+              return;
+            }
+            try {
+              const lot = buildLot(ctx, i.user.id, kind);
+              await renderTab(ctx, i, i.user.id, 'lots', false, `🏗️ Built **${lot.name}** (lot #${lot.id}).`);
+            } catch (e) {
+              // Mapped for the BUILD menu specifically: LotLimitError means "slot cap" here
+              // and "already max level" in upgradeLot, and UnknownKindError is likewise
+              // overloaded. Reusing /upgrade's mapping would tell a player "already max
+              // level" when they meant "all lots full".
+              if (e instanceof DuplicateFacilityError) {
+                await i.reply({ content: `You already have a ${e.message} — upgrade it instead.`, flags: MessageFlags.Ephemeral });
+              } else if (e instanceof LotLimitError) {
+                await i.reply({ content: 'All lots full. More slots unlock with park rating.', flags: MessageFlags.Ephemeral });
+              } else if (e instanceof InsufficientFundsError) {
+                const def = PADDOCKS[kind] ?? FACILITIES[kind]!;
+                await i.reply({
+                  content: `Not enough cash — ${def.name} costs ${def.buildCost.toLocaleString('en-US')}.`,
+                  flags: MessageFlags.Ephemeral,
+                });
+              } else throw e;
+            }
+            return;
+          }
           default:
             await i.deferUpdate();
             return;
@@ -793,7 +879,18 @@ async function renderTab(
     return;
   }
   if (tab === 'lots') {
-    const built = lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit });
+    const owned = new Set(lots.map((l) => l.kind));
+    const full = lots.length >= lotSlots(user.ratingHighWater);
+    // Facilities are one per park; paddocks are duplicable — building more of one kind IS
+    // the capacity progression. Filtering here keeps the menu honest, but it is NOT the
+    // guard: buildLot re-checks both, and a stale menu is rejected there.
+    const buildable = full ? [] : [
+      ...Object.entries(PADDOCKS).map(([kind, d]) => ({ kind, name: d.name, cost: d.buildCost })),
+      ...Object.entries(FACILITIES)
+        .filter(([kind]) => !owned.has(kind))
+        .map(([kind, d]) => ({ kind, name: d.name, cost: d.buildCost })),
+    ];
+    const built = lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit, buildable });
     if (tourRow) built.components.push(tourRow);
     await i.update({ content: content ?? '', ...built, attachments: [] });
     return;

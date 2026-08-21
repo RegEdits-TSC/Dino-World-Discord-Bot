@@ -185,8 +185,12 @@ describe('park:vtab animals tab', () => {
   // the top of renderTab.
   it('keeps the Next park button after switching tabs, not just on the initial park:tour render', async () => {
     player('a', 300); player('b', 200);
-    const i = await click('park:vtab:a:animals');
-    expect(JSON.stringify(i.replies[0])).toContain('park:tour:b');
+    // Every tab, not just Animals: each of the four builders returns a fresh components
+    // array, so the tourRow push is per-branch and any one branch can lose it on its own.
+    for (const tab of ['park', 'animals', 'lots', 'prestige'] as const) {
+      const i = await click(`park:vtab:a:${tab}`);
+      expect(JSON.stringify(i.replies[0]), tab).toContain('park:tour:b');
+    }
   });
 });
 
