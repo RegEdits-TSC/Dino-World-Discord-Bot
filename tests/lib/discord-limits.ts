@@ -76,10 +76,15 @@ export function validateMessagePayload(payload: unknown, source: string): void {
     const children = ((r as { components?: unknown[] }).components ?? []).map(toJson) as Array<{ type?: number }>;
     // Discord allows exactly one select per action row and nothing else beside it. This
     // is the rule a button-only rowSchema silently ignored, and an illegal payload would
-    // otherwise first fail against real Discord in test:live rather than here.
-    if (children.some((c) => c?.type === 3)) {
+    // otherwise first fail against real Discord in test:live rather than here. The rule is
+    // identical for every select kind — string (3), user (5), role (6), mentionable (7) and
+    // channel (8); type 4 is a modal text input, never minted on a message. Only string
+    // selects get the fuller option-list schema below: the other kinds don't carry `options`
+    // at all (they configure via default_values/channel_types instead), so applying
+    // selectSchema to one would fail every payload that legitimately mints it.
+    if (children.some((c) => c?.type === 3 || (c?.type !== undefined && c.type >= 5 && c.type <= 8))) {
       if (children.length !== 1) fail(source, 'select must be alone in its row');
-      parseOr(source, 'select', selectSchema, children[0]);
+      if (children[0]?.type === 3) parseOr(source, 'select', selectSchema, children[0]);
       continue;
     }
     parseOr(source, 'row', rowSchema, r);

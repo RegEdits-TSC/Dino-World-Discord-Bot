@@ -39,6 +39,21 @@ describe('validateMessagePayload', () => {
     bad({ components: [row(6)] }, /buttons/);
     bad({ components: [{ components: [{ custom_id: 'x'.repeat(101), label: 'b', style: 2 }] }] }, /custom_id/);
   });
+  // The alone-in-its-row rule is identical for every select kind, not just the string
+  // select (type 3) this repo mints today — user (5), role (6), mentionable (7) and
+  // channel (8) selects would otherwise sail through a button-only rowSchema exactly the
+  // way a type-3 select used to before this rule existed.
+  it('rejects a non-string select menu sharing its row with another component', () => {
+    bad({ components: [{ components: [
+      { type: 5, custom_id: 'pick:user' },
+      { type: 2, custom_id: 'pick:go', label: 'Go', style: 2 },
+    ] }] }, /alone in its row/);
+  });
+  it('accepts a non-string select menu alone in its row, for every non-string select type', () => {
+    for (const type of [5, 6, 7, 8]) {
+      ok({ components: [{ components: [{ type, custom_id: `pick:${type}` }] }] });
+    }
+  });
 });
 
 describe('validateAutocompleteChoices', () => {

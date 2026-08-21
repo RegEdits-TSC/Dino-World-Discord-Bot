@@ -75,6 +75,12 @@ export function clickedIdIsOnMessage(i: MessageComponentInteraction): boolean {
  * guard reads `disabled`, so a disabled select is not a lock. Close a flow by removing the
  * component.
  *
+ * A second corollary, now load-bearing rather than merely inconvenient: NEVER mint a select
+ * with `min_values: 0`. `routeInteraction` (src/core/router.ts) calls this guard for every
+ * select centrally, and an empty `values` array fails it closed — there is no longer a
+ * handler-local opt-out. A flow that needs an optional selection must give it an explicit
+ * "none" option instead of relying on an empty submission.
+ *
  * Fails CLOSED: an empty submission, a menu absent from the message, or a menu carrying no
  * options authorises nothing. All-or-nothing — a partially valid submission is rejected
  * rather than filtered down to its good half, because a handler receiving a shortened

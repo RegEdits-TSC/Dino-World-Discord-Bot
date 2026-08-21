@@ -110,9 +110,14 @@ describe('submittedValuesAreOnMessage', () => {
   });
 
   // Not in the brief's five cases, but called out by the design rules ("a menu carrying
-  // no options" is one of the three fail-closed conditions): a menu minted with zero
-  // options must reject every submission, never fall through to an empty offered Set
-  // matching nothing by coincidence of both sides being empty.
+  // no options" is one of the three fail-closed conditions). Note this doesn't pin distinct
+  // behaviour: `values.length === 0` already short-circuits before a menu is even looked
+  // up, so submitted values here are always non-empty, and a non-empty values array against
+  // an empty offered Set already fails the `.every` check with no help from the explicit
+  // `menu.options.length === 0` clause — there is no "both sides empty, matching by
+  // coincidence" state for this function to fall into. The explicit clause is genuinely
+  // redundant today and is kept only as defence in depth; this test would still pass with
+  // it deleted, so don't read it as proof the clause is load-bearing.
   it('fails closed on a menu that carries no options at all', () => {
     expect(submittedValuesAreOnMessage(asSelect({
       customId: 'm:pick', values: ['a'], options: [],

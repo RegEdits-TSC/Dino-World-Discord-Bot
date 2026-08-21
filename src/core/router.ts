@@ -5,7 +5,7 @@ import type { Ctx } from './context.js';
 import type { ModuleRegistry } from './modules.js';
 import { schema } from './db/index.js';
 import { logger } from './logger.js';
-import { clickedIdIsOnMessage } from './components.js';
+import { clickedIdIsOnMessage, submittedValuesAreOnMessage } from './components.js';
 
 function touchPresence(ctx: Ctx, userId: string, displayName: string, guildId: string | null): void {
   ctx.db.update(schema.users).set({ displayName }).where(eq(schema.users.discordId, userId)).run();
@@ -51,7 +51,12 @@ export async function routeInteraction(
   // is declared with method syntax, so its parameter is bivariant and widening it would
   // compile clean across all seventeen modules while letting a select reach a handler that
   // only ever parses i.customId. Anything still unrecognised here keeps the historical
-  // silent no-op — modals in particular are NOT routed.
+  // silent no-op — modals are NOT routed, and neither are the non-string select kinds
+  // (user/role/mentionable/channel, Discord component types 5-8): isStringSelectMenu()
+  // is false for all of them, so they fall through to this same silent no-op today. "Selects
+  // are routed now" means STRING selects only — a future implementer wiring up one of the
+  // other kinds needs its own predicate, its own registry namespace, and its own pair of
+  // guards, not an assumption that this branch already covers it.
   if (!isCommand && !isButton && !isSelect) return;
   try {
     touchPresence(ctx, interaction.user.id, interaction.user.displayName, interaction.guildId);
@@ -67,14 +72,32 @@ export async function routeInteraction(
       const sel = registry.findSelect((interaction as StringSelectMenuInteraction).customId);
       if (sel) {
         const s = interaction as StringSelectMenuInteraction;
-        // Same guard, same reasoning, same rejection shape as the button branch below.
-        // It proves the bot minted THIS MENU on THIS MESSAGE — and nothing whatsoever
-        // about s.values, which ride outside the customId and are unattested client
-        // input. Every select handler validates its own values in addition to this.
+        // Two guards, enforced centrally by the router — not left to individual select
+        // handlers, none of which exist yet. Same reasoning, same rejection shape as the
+        // button branch below (logger.warn, then deferUpdate, then return — before
+        // postDispatch), but each guard gets its own log message so the two rejections are
+        // distinguishable in logs; the client sees no difference either way.
+        //
+        // clickedIdIsOnMessage proves the bot minted THIS MENU on THIS MESSAGE — and
+        // nothing whatsoever about s.values, which ride outside the customId on a separate
+        // client-supplied channel. It must run FIRST: submittedValuesAreOnMessage reads the
+        // menu's own options off the message, so it is only meaningful once the menu itself
+        // is known to be the bot's.
         if (!clickedIdIsOnMessage(s)) {
           logger.warn(
             { customId: s.customId, userId: s.user.id, messageId: s.message?.id },
             'select id not present on its message',
+          );
+          await s.deferUpdate();
+          return;
+        }
+        // submittedValuesAreOnMessage proves every submitted value was one the bot actually
+        // offered on this menu. A handler still owns any DOMAIN validation beyond that — e.g.
+        // that a legal option is still legal for the CURRENT state of a multi-step flow.
+        if (!submittedValuesAreOnMessage(s)) {
+          logger.warn(
+            { customId: s.customId, userId: s.user.id, messageId: s.message?.id, values: s.values },
+            'select values not offered by its message',
           );
           await s.deferUpdate();
           return;

@@ -270,11 +270,41 @@ describe('router select branch', () => {
     await routeInteraction(selCtx(), regWith(async () => { ran = true; }), s.asInteraction());
     expect(ran).toBe(false);
     expect(s.replies).toHaveLength(0);
+    expect(s.deferOpts).toHaveLength(1);
     expect(s.deferOpts[0]).toMatchObject({ kind: 'update' });
   });
 
+  it('rejects a select whose submitted value the minted menu never offered', async () => {
+    let ran = false;
+    // componentIds carries the menu itself (clickedIdIsOnMessage must pass), but its
+    // options are ['a', 'b'] — 'evil' was never one of them, so only the second guard,
+    // submittedValuesAreOnMessage, is what has to catch this.
+    const s = fakeSelect({
+      customId: 'm:pick', user: 'u1', values: ['evil'], options: ['a', 'b'], componentIds: ['m:pick'],
+    });
+    await routeInteraction(selCtx(), regWith(async () => { ran = true; }), s.asInteraction());
+    expect(ran).toBe(false);
+    expect(s.replies).toHaveLength(0);
+    expect(s.deferOpts).toHaveLength(1);
+    expect(s.deferOpts[0]).toMatchObject({ kind: 'update' });
+  });
+
+  it('dispatches a well-formed select whose values are all among the minted options', async () => {
+    let got: string[] | null = null;
+    const s = fakeSelect({
+      customId: 'm:pick', user: 'u1', values: ['a'], options: ['a', 'b'], componentIds: ['m:pick'],
+    });
+    await routeInteraction(selCtx(), regWith(async (_c, i) => { got = i.values; }), s.asInteraction());
+    expect(got).toEqual(['a']);
+    expect(s.deferOpts).toHaveLength(0);
+  });
+
+  // componentIds is STATED here, never left to the harness default it happens to equal
+  // (the menu's own customId): this case must pin the silent no-op against a message that
+  // genuinely never carried the prefix, not against one that coincidentally would have
+  // passed clickedIdIsOnMessage had a handler existed to run it.
   it('stays silent for a select prefix no module claims', async () => {
-    const s = fakeSelect({ customId: 'unclaimed:x', user: 'u1', values: ['a'] });
+    const s = fakeSelect({ customId: 'unclaimed:x', user: 'u1', values: ['a'], componentIds: [] });
     await routeInteraction(selCtx(), regWith(async () => {}), s.asInteraction());
     expect(s.replies).toHaveLength(0);
     expect(s.deferOpts).toHaveLength(0);
@@ -285,7 +315,29 @@ describe('router select branch', () => {
   // daily/hooks.ts gates its hint on `!i.deferred && !i.replied` — so a guard that
   // rejected without RETURNING would let a forged select emit a real quest/season
   // followUp and, worse, burn the one-shot notifiedAt / hintedRung stamps for a message
-  // nobody asked for. Counting acknowledgements (as the case above does) cannot see this.
+  // nobody asked for. Counting acknowledgements (as the cases above do) cannot see this.
+  //
+  // The fixture deliberately isolates the SECOND guard: componentIds carries the menu
+  // itself, so clickedIdIsOnMessage passes cleanly and never calls deferUpdate, while
+  // 'evil' is not among the minted options ['a'], so submittedValuesAreOnMessage is the
+  // one guard that rejects. That isolation is load-bearing, not incidental: if BOTH
+  // guards were made to reject on the same fixture (an empty componentIds does exactly
+  // that, since an absent menu fails the values check too), a return omitted from the
+  // FIRST guard would fall through into the SECOND guard's own deferUpdate() call — which
+  // throws InteractionAlreadyReplied on an interaction already deferred once. That crash
+  // still leaves replies/notifiedAt/hintedRung all looking "safe", but for the wrong
+  // reason: the outer catch's generic error reply masks the very regression this test
+  // exists to catch, exactly the way the old handler used to. Isolating the LAST-checked
+  // guard's rejection is what lets its own missing `return` reach postDispatch cleanly,
+  // with no second guard downstream to collide with.
+  //
+  // The handler MUST also be a true no-op, never one that touches `i` (e.g. i.update()):
+  // under the no-RETURN regression, i.deferred is already true from the guard's own
+  // deferUpdate(), so a handler that replies would throw InteractionAlreadyReplied before
+  // ever reaching postDispatch — masking the regression a second way. Only a handler that
+  // does nothing lets the regression run all the way into postDispatch, where it fires the
+  // hint and burns both stamps — which is what makes all three assertions below actually
+  // fail under that regression, for the reason this comment claims.
   it('rejects before postDispatch — no phantom hint, and both one-shot stamps stay owed', async () => {
     const ctx = makeCtx();
     ctx.setNow(SEASON_1);
@@ -296,8 +348,10 @@ describe('router select branch', () => {
     track(ctx, 'u1', 'eggs_hatched', 1);            // quest complete, never notified
     rollSeason(ctx, 'u1');
     track(ctx, 'u1', 'expeditions_claimed', 10);    // 50 points = season rung 1, unlocked and unclaimed
-    const reg = regWith(async (_c, i) => { await i.update({ content: 'x' }); });
-    const s = fakeSelect({ customId: 'm:pick', user: 'u1', values: ['a'], componentIds: [] });
+    const reg = regWith(async () => {});
+    const s = fakeSelect({
+      customId: 'm:pick', user: 'u1', values: ['evil'], options: ['a'], componentIds: ['m:pick'],
+    });
     await routeInteraction(ctx, reg, s.asInteraction(), dailyRouterHooks);
     expect(s.replies).toHaveLength(0);
     expect(ctx.db.select().from(schema.dailyQuests)
