@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { MessageFlags } from 'discord.js';
 import { makeCtx, fakeCommand, fakeButton, replyText } from './harness.js';
-import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, upgradeLot, upgradeCostFor, BASE_LOT_SLOTS, breedingSlots } from '../src/modules/park/service.js';
+import { getOrCreateUser, buildLot, collectIncome, capHours, facilityBonusPct, LotLimitError, UnknownKindError, DuplicateFacilityError, StaleLevelError, upgradeLot, upgradeCostFor, BASE_LOT_SLOTS, breedingSlots } from '../src/modules/park/service.js';
 import { incubatorSlots } from '../src/modules/hatchery/service.js';
 import { renameDino } from '../src/modules/park/dinos.js';
 import { InsufficientFundsError } from '../src/core/economy.js';
@@ -665,7 +665,7 @@ describe('upgradeLot service', () => {
     ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
     const lot = buildLot(ctx, 'u1', Object.keys(PADDOCKS)[0]);
     const before = ctx.db.select().from(schema.users).all()[0].cash;
-    const upgraded = upgradeLot(ctx, 'u1', lot.id);
+    const upgraded = upgradeLot(ctx, 'u1', lot.id, lot.level);
     expect(upgraded.level).toBe(2);
     expect(ctx.db.select().from(schema.users).all()[0].cash).toBeLessThan(before);
   });
@@ -674,15 +674,35 @@ describe('upgradeLot service', () => {
     ctx.db.update(schema.users).set({ cash: 10_000_000 }).run();
     const lot = buildLot(ctx, 'u1', Object.keys(PADDOCKS)[0]);
     ctx.db.update(schema.lots).set({ level: 4 }).run();   // paddock max level
-    expect(() => upgradeLot(ctx, 'u1', lot.id)).toThrow(LotLimitError);
-    expect(() => upgradeLot(ctx, 'u1', 9999)).toThrow(UnknownKindError);
+    expect(() => upgradeLot(ctx, 'u1', lot.id, 4)).toThrow(LotLimitError);
+    expect(() => upgradeLot(ctx, 'u1', 9999, 1)).toThrow(UnknownKindError);
   });
   it('throws InsufficientFundsError when broke', () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
     ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
     const lot = buildLot(ctx, 'u1', Object.keys(PADDOCKS)[0]);
     ctx.db.update(schema.users).set({ cash: 0 }).run();
-    expect(() => upgradeLot(ctx, 'u1', lot.id)).toThrow(InsufficientFundsError);
+    expect(() => upgradeLot(ctx, 'u1', lot.id, lot.level)).toThrow(InsufficientFundsError);
+  });
+  it('throws StaleLevelError when the anchor no longer matches the row, and charges nothing', () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 10_000_000 }).run();
+    const lot = buildLot(ctx, 'u1', Object.keys(PADDOCKS)[0]);
+    ctx.db.update(schema.lots).set({ level: 2 }).where(eq(schema.lots.id, lot.id)).run();
+    const before = ctx.db.select().from(schema.users).all()[0].cash;
+    // Anchor 1 against a row now at level 2 — the stale-menu case, and the shape the 90x
+    // overcharge took: a label frozen at level 1 against a level-2 price.
+    expect(() => upgradeLot(ctx, 'u1', lot.id, 1)).toThrow(StaleLevelError);
+    // Cash as well as level: the level assertion alone still passes if the charge went
+    // through and only the UPDATE failed.
+    expect(ctx.db.select().from(schema.users).all()[0].cash).toBe(before);
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.id, lot.id)).get()!.level).toBe(2);
+  });
+  it('checks not-found before stale, so an unknown id is never reported as stale', () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    // -1 is the sentinel /upgrade passes when its own hoisted read found nothing. The
+    // guard order is what makes that sentinel safe: it must never reach the stale check.
+    expect(() => upgradeLot(ctx, 'u1', 9999, -1)).toThrow(UnknownKindError);
   });
 });
 
@@ -707,7 +727,7 @@ describe('upgradeCostFor', () => {
     const lot = seedLot({ type: 'paddock', kind: 'herbivore_paddock', name: 'Pen', level: 1 });
     const quoted = upgradeCostFor('herbivore_paddock', 1);
     ctx.db.update(schema.users).set({ cash: quoted }).where(eq(schema.users.discordId, 'u1')).run();
-    upgradeLot(ctx, 'u1', lot.id);
+    upgradeLot(ctx, 'u1', lot.id, 1);
     // Exact-charge check: if upgradeLot ever drifted from upgradeCostFor's quote, cash would
     // land above or below 0 instead of landing exactly on it.
     expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.cash).toBe(0);

@@ -16,6 +16,16 @@ export class UnknownKindError extends Error {}
 // Carries the facility's display name as its message so /build can name it in the reply.
 // LotLimitError has no message, which is why its text is hardcoded at the call site.
 export class DuplicateFacilityError extends Error {}
+/**
+ * Thrown when a caller's `expectedLevel` no longer matches the stored row — a menu option
+ * or button minted at one level being redeemed against another. Carries both levels so the
+ * handler can name them without a second read.
+ */
+export class StaleLevelError extends Error {
+  constructor(readonly expected: number, readonly actual: number) {
+    super(`expected level ${expected}, found ${actual}`);
+  }
+}
 
 export type User = typeof schema.users.$inferSelect;
 export type Lot = typeof schema.lots.$inferSelect;
@@ -128,10 +138,28 @@ export function upgradeCostFor(kind: string, level: number): number {
   return Math.round(PADDOCKS[kind].buildCost * 2.5 ** level);
 }
 
-export function upgradeLot(ctx: Ctx, userId: string, lotId: number): Lot {
+/**
+ * `expectedLevel` is REQUIRED, never optional — the same rule as hungerAt(…, drainMs),
+ * feedCostFor(now) and energyCostFor(now). A default would let a call site silently charge
+ * whatever the current level costs against a price the player read at an older one, which
+ * is the park:landmark:buy incident. upgradeCostFor is a pure function of (kind, level) and
+ * paddock cost is buildCost * 2.5 ** level, so a stale anchor charges the NEXT rung's
+ * price: measured worst case is a hatchery_lab label reading 25,000 against a charge of
+ * 2,250,000, 90x.
+ *
+ * Callers must pass the CLIENT-SUPPLIED anchor, never a level they just read from the
+ * database — see the note at the /upgrade call site for the one legitimate exception.
+ *
+ * Guard order is load-bearing: not-found BEFORE stale, so /upgrade's `lotRow?.level ?? -1`
+ * sentinel still maps to 'No such lot.' for an unknown id; and stale BEFORE maxLevel, so a
+ * stale anchor on a now-maxed lot reports staleness rather than "Already max level", which
+ * would name the wrong problem.
+ */
+export function upgradeLot(ctx: Ctx, userId: string, lotId: number, expectedLevel: number): Lot {
   const lot = ctx.db.select().from(schema.lots)
     .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, userId))).get();
   if (!lot) throw new UnknownKindError(String(lotId));
+  if (lot.level !== expectedLevel) throw new StaleLevelError(expectedLevel, lot.level);
   const def = FACILITIES[lot.kind];
   const maxLevel = def ? def.maxLevel : 4;                       // paddock max level 4 (capacity 8)
   if (lot.level >= maxLevel) throw new LotLimitError();

@@ -2,7 +2,7 @@ import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, Butt
 import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
-import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, toClockDinos, needsAttentionCount } from './service.js';
+import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, StaleLevelError, toClockDinos, needsAttentionCount } from './service.js';
 import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
@@ -259,13 +259,24 @@ export const parkModule: ModuleManifest = {
         const lotRow = ctx.db.select().from(schema.lots)
           .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, i.user.id))).get();
         try {
-          const lot = upgradeLot(ctx, i.user.id, lotId);
+          // The one legitimate place to pass a freshly-read level: this command quotes no
+          // frozen label, so there is no client anchor to carry. The `?? -1` sentinel is
+          // only reached when the hoisted read found nothing, in which case upgradeLot's
+          // own read also finds nothing and UnknownKindError fires first.
+          const lot = upgradeLot(ctx, i.user.id, lotId, lotRow?.level ?? -1);
           await i.reply({ content: `⬆️ **${lot.name}** is now level ${lot.level}.` });
         } catch (e) {
           if (e instanceof LotLimitError) await i.reply({ content: 'Already max level.', flags: MessageFlags.Ephemeral });
           else if (e instanceof UnknownKindError) await i.reply({ content: 'No such lot.', flags: MessageFlags.Ephemeral });
           else if (e instanceof InsufficientFundsError) await i.reply({
             content: `Not enough cash — that upgrade costs ${upgradeCostFor(lotRow!.kind, lotRow!.level).toLocaleString('en-US')}.`,
+            flags: MessageFlags.Ephemeral,
+          });
+          else if (e instanceof StaleLevelError) await i.reply({
+            // Unreachable today — the hoisted read and upgradeLot's own read happen in the
+            // same tick with no write between them — but `else throw e` on a spend path is
+            // not where anyone wants to discover otherwise.
+            content: 'That lot changed — run `/upgrade` again for the current price.',
             flags: MessageFlags.Ephemeral,
           });
           else throw e;
