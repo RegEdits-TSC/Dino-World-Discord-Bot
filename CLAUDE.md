@@ -1301,8 +1301,14 @@
   client-supplied channel; `submittedValuesAreOnMessage` is what proves every submitted
   value was one the bot actually offered on this menu. A select handler still owns any
   DOMAIN validation beyond that — e.g. that an offered option is still legal for the
-  CURRENT state of a multi-step flow — but no handler needs to (and none should) re-prove
-  "these values were on this menu"; the router already has. It is ALL-OR-NOTHING: a partly
+  CURRENT state of a multi-step flow — and no handler NEEDS to re-prove "these values were
+  on this menu", because the router already has. A handler MAY keep its own copy as defence
+  in depth, and the Lots tab's Build and Upgrade menus (below) do exactly that: the router
+  is not on the path when `execute` is invoked directly, which is how
+  `scripts/test-live.ts` and all but a handful of this suite's dispatch sites reach a
+  handler. What is forbidden is treating a handler-level copy as the PRIMARY enforcement —
+  the router's is primary, and a new select must not ship relying on its own check instead.
+  It is ALL-OR-NOTHING: a partly
   valid submission is rejected rather than filtered, since a shortened values array is a
   selection the player never made. Only `submittedValuesAreOnMessage` needs a `Set` for
   this — `offered = new Set(menu.options.map(o => o.value))`, never an object keyed by
@@ -1378,5 +1384,23 @@
   player "All lots full" when they meant "already max level".
   Both spends sit behind a confirm rendered ONTO the card via `i.update`, never an
   ephemeral follow-up — the Lots tab must not be left displaying a state it is about to
-  change. The confirm is a second layer only: the anchor check in the handler is the guard,
-  because another open message may still hold a stale button.
+  change. The confirm CLICK is a second layer only, never the guard — another open message
+  may still hold a stale button. What actually locks the upgrade is the REQUIRED
+  `expectedLevel` on `upgradeLot`: the handler's own fresh read stays because it needs
+  `lot.kind`/`lot.level` to quote the price in the `InsufficientFundsError` arm and to name
+  the two levels in the stale rejection, NOT because it is the thing standing between a
+  stale button and the money. Build has no service-level twin, because a build has no
+  level to anchor on and its price never moves — so `park:buildyes:<uid>:<kind>:<lotCount>`
+  carries the owner's LOT COUNT and the handler's own check of it is the whole lock. That
+  anchor is not decoration: two `park:buildyes` clicks landing before the first repaint
+  both pass the owner check and both pass the allowlist, and for a PADDOCK — duplicable by
+  design, unlike a facility, which `DuplicateFacilityError` already stops — the second
+  click builds a second one. The cost is not the cash: `lotSlots` caps at 10, no demolish
+  path exists anywhere in this codebase, and a duplicate lot can only be removed by
+  `adminReset`, so the slot is gone permanently. `lotCount` is a sound anchor precisely
+  because it is monotone under those same rules — `buildLot` only ever increases it.
+  **No `await` may sit between reading `lots.length` for that check and calling
+  `buildLot`**: better-sqlite3 is synchronous and Node is single-threaded, so a
+  check-then-write with no suspension point between them cannot interleave with a second
+  interaction, and that — not the read itself — is what closes the race. Introducing an
+  await there reopens it silently.

@@ -389,7 +389,11 @@ const cases: Case[] = [
   { title: 'park:tab:park — the Park tab reached via a tab click rather than /park view: same dashboard + park map, exercising renderTab\'s own code path', run: () => button('park', `park:tab:${P1}:park`, P1) },
   { title: 'park:tab:animals — Animals tab: dino_roster banner + hero-portrait featured-dino thumbnail', run: () => button('park', `park:tab:${P1}:animals`, P1) },
   { title: 'park:tab:lots — Lots tab: lots banner (new asset), built lots and slot usage, and the Build/Upgrade dropdowns', run: () => button('park', `park:tab:${P1}:lots`, P1) },
-  { title: 'park:build select — picking Gene Lab swaps the card into its confirm state: the tab row survives, the price is re-derived by buildLot at execution, and the option value carries the kind alone', run: () => select('park', `park:build:${P1}`, P1, ['gene_lab']) },
+  // visitor_center, NOT gene_lab: the seed above builds P1 a Gene Lab, and renderTab
+  // filters owned facilities out of `buildable`, so a gene_lab confirm renders a state no
+  // player can actually reach from the menu. P1 owns one paddock and that Gene Lab, well
+  // under lotSlots at ratingHighWater 1000, so visitor_center is genuinely on offer.
+  { title: 'park:build select — picking Visitor Center swaps the card into its confirm state: the tab row survives, the price is re-derived by buildLot at execution, and the option value carries the kind alone', run: () => select('park', `park:build:${P1}`, P1, ['visitor_center']) },
   { title: 'park:upgrade select — the confirm names the exact rung being bought. The option value is <lotId>:<expectedLevel>, so the label and the charge cannot disagree', run: async () => {
       const lot = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, P1)).all()[0]!;
       return select('park', `park:upgrade:${P1}`, P1, [`${lot.id}:${lot.level}`]);

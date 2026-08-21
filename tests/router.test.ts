@@ -531,7 +531,7 @@ describe('router component guard — every live component surface still routes',
       .filter((c): c is { custom_id: string; type?: number; options?: Array<{ value: string }> } =>
         typeof c.custom_id === 'string'));
 
-  it('routes every customId minted by every button-bearing payload in the game', async () => {
+  it('routes every customId minted by every button- or select-bearing payload in the game', async () => {
     const ctx = makeCtx();
     ctx.setNow(SEASON_1);
     const user = getOrCreateUser(ctx, 'u1', 'u1');
