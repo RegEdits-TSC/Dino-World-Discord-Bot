@@ -13,7 +13,8 @@ last PR of the series
 > (§3.4), and `upgradeLot` takes the staleness anchor as a **required** parameter
 > (§3.5). Both move enforcement out of the handlers and into the service and data layers,
 > which is the reverse of what those sections originally specified. §11's two-PR split is
-> superseded outright by the four-PR series the work actually shipped as.
+> superseded outright: the work is planned as three numbered PRs plus a standalone bug fix
+> that was split out of the first, which reached GitHub as three merged PRs so far.
 
 ## Problem
 
@@ -660,28 +661,36 @@ irreversible; no command deploy, no emoji deploy, no migration.
 
 ## 11. Sequencing
 
-> **Superseded 2026-08-21.** This section described a two-PR split. The work shipped as
-> **four** PRs, and §6's blast radius and §7's test-work list should be read against that
-> boundary rather than this one.
+> **Superseded 2026-08-21.** This section described a two-PR split. The work is planned as
+> three numbered PRs plus a standalone bug fix that was split out of the first, and §6's
+> blast radius and §7's test-work list should be read against that boundary rather than
+> this one.
 
-| PR | Landed | Contents |
-|---|---|---|
-| #41 | `0a6a7a2` | The park component handler's missing default arm, plus the spec and plan docs |
-| #43 | `f8e02f4` | The four tabs, swapped in place, read-only on a visited park. Player-visible |
-| #44 | `8359f62` | Select-menu routing — `SelectDef`, `findSelect`, the router branch, both guards, `fakeSelect`. Engine only; no select minted |
-| PR 4 | not started | The Lots tab Build and Upgrade menus, both confirm steps, and the §3.4 / §3.5 hardening the menus make reachable |
+**Two numberings are in play and they do not line up.** The plan documents number themselves
+1–3; GitHub has merged three PRs so far. Plan PR 1's scope was split in two on the way out,
+which is where the numbers diverge.
 
-The original reasoning survives the renumbering and is why the split is worth keeping: the
-`src/core/` half can break all seventeen modules, so a router change deserves review against a
-`main` where the tabs already work, rather than arriving mixed into a large cosmetic diff where
-a bivariance mistake is easy to miss. Splitting the default-arm fix out first was the same
-instinct applied once more — it is a standalone bug fix that should not have to wait on a
-feature.
+| Plan PR | GitHub | Landed | Contents |
+|---|---|---|---|
+| — (split out of plan PR 1) | **#41** | `0a6a7a2` | The park component handler's missing default arm, plus the spec and plan docs. A standalone bug fix that should not have had to wait on a feature |
+| **1** — tabs | **#43** | `f8e02f4` | The four tabs, swapped in place, read-only on a visited park. Player-visible |
+| **2** — select routing | **#44** | `8359f62` | `SelectDef`, `findSelect`, the router's select branch, both guards, `fakeSelect`. Engine only; no select minted |
+| **3** — lot menus | next | not started | The Lots tab Build and Upgrade menus, both confirm steps, and the §3.4 / §3.5 hardening the menus make reachable |
 
-The last PR is the one that spends money, which is why the two hardening rulings ride with it
-rather than shipping separately: they have no player-visible effect and are unreachable through
-today's commands, so a standalone PR for them would be justified only by "a future PR needs
-this".
+`docs/superpowers/plans/2026-08-19-park-view-tabs-3-lot-menus.md` is titled "PR 3 of 4" and
+that is correct on the plan axis — the fourth document is the unnumbered default-arm plan.
+Nothing should be renumbered to make the two axes agree; they are counting different things.
+
+The original reasoning survives the resplit and is why it is worth keeping: the `src/core/`
+half can break all seventeen modules, so a router change deserves review against a `main`
+where the tabs already work, rather than arriving mixed into a large cosmetic diff where a
+bivariance mistake is easy to miss. Splitting the default-arm fix out was the same instinct
+applied once more.
+
+Plan PR 3 is the one that spends money, which is why the two hardening rulings ride with it
+rather than shipping separately: they have no player-visible effect and are unreachable
+through today's commands, so a standalone PR for them would be justified only by "a future PR
+needs this".
 
 ## Decisions made and rejected alternatives
 
@@ -697,7 +706,7 @@ this".
 | Always open on Park | Remember last tab | Requires a new column for UI state; no other surface stores one |
 | Compact alert marker on Park | Full breakdown on Animals only | Hiding an escaped dino behind a click is a visibility regression on the most time-sensitive state in the game |
 | Routed surfaces open ephemeral | `i.update` the tab card | Would destroy the navigation the player is standing in, and the routed payloads mint their own components |
-| Four PRs | One, or the two-PR split this spec originally proposed | The `src/core/` half can break all seventeen modules and deserves review against a `main` where the tabs already work; the default-arm fix is a standalone bug fix that should not wait on a feature; and the money-spending menus are worth isolating from the cosmetic diff. See the superseded §11 |
+| Three numbered PRs plus a split-out bug fix | One, or the two-PR split this spec originally proposed | The `src/core/` half can break all seventeen modules and deserves review against a `main` where the tabs already work; the default-arm fix is a standalone bug fix that should not wait on a feature; and the money-spending menus are worth isolating from the cosmetic diff. See the superseded §11 |
 | `submittedValuesAreOnMessage` as a sibling helper | Fold value-checking into `clickedIdIsOnMessage` | The router calls that guard for every component including buttons, which have no values to check |
 | Null-prototype `PADDOCKS`/`FACILITIES`, **plus** an `Object.hasOwn` check inside `buildLot` | An allowlist in the Build handler only | The handler check leaves eight other raw index sites exposed, and `upgradeCostFor` has no guard at all — its silent `NaN` becomes a loud `TypeError` only once the table itself is fixed |
 | `upgradeLot`'s `expectedLevel` is a **required** parameter | A level check in the confirm handler | Required makes omitting it a typecheck failure rather than a 90x charge; a handler check is one forgotten line away from the `park:landmark:buy` incident |
