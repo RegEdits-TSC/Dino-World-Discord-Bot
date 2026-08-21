@@ -517,16 +517,19 @@ describe('router component guard', () => {
 // of the REAL builder JSON of the payload that mints it (the
 // `.toJSON().components.map(c => c.custom_id)` idiom already at tests/dex.test.ts), never
 // hand-typed — a hand-typed id would prove only that the guard compares two strings
-// someone wrote, not that the buttons the game ships pass it.
-describe('router component guard — every live button surface still routes', () => {
+// someone wrote, not that the buttons and select menus the game ships pass it.
+describe('router component guard — every live component surface still routes', () => {
   const SEASON_1 = 690 * SEASON_DAYS * 86_400_000;
   // One prefix per surface below; the handler only records, since what is under test is
   // the guard's verdict, not any module's logic.
   const PREFIXES = ['park', 'dex', 'battle', 'hatch', 'season', 'guests', 'daily', 'alert', 'top'];
 
-  const idsOf = (rows: ReadonlyArray<{ toJSON(): unknown }> = []): string[] =>
-    rows.flatMap((r) => ((r.toJSON() as { components?: Array<{ custom_id?: string }> }).components ?? [])
-      .map((c) => c.custom_id).filter((id): id is string => typeof id === 'string'));
+  const componentsOf = (rows: ReadonlyArray<{ toJSON(): unknown }> = []) =>
+    rows.flatMap((r) => ((r.toJSON() as {
+      components?: Array<{ custom_id?: string; type?: number; options?: Array<{ value: string }> }>;
+    }).components ?? [])
+      .filter((c): c is { custom_id: string; type?: number; options?: Array<{ value: string }> } =>
+        typeof c.custom_id === 'string'));
 
   it('routes every customId minted by every button-bearing payload in the game', async () => {
     const ctx = makeCtx();
@@ -552,26 +555,29 @@ describe('router component guard — every live button surface still routes', ()
     await leaderboardsModule.commands[0].execute(ctx, top.asChatInput());
     const topRows = (top.replies[0] as { components: Array<{ toJSON(): unknown }> }).components;
 
-    const surfaces: Array<[string, string[]]> = [
-      ['/park view dashboard', idsOf(dashboardPayload(user, 1234, { now: ctx.now() }).components)],
-      ['/park view Animals tab', idsOf(animalsPayload(user, 3, {}).components)],
-      ['/park view Lots tab', idsOf(lotsPayload(user, [], 3).components)],
-      ['/park view Prestige tab', idsOf(prestigePayload(user, {}).components)],
-      ['/park view visited card', idsOf(dashboardPayload(user, 0, { visit: true }).components)],
-      ['/dex list pager', idsOf([dexPageRow('u1', {}, 2, 5)])],
-      ['/battle chapters', idsOf(chaptersPayload('u1', 0, chapters).components)],
-      ['/hatch eggs pager', idsOf(eggListPayload(eggRows, ctx.now(), 'u1').components)],
-      ['/season hub', idsOf(seasonPayload(seasonView(ctx, 'u1')!, 'u1').components)],
-      ['/guests view', idsOf(guestsPayload(ctx, 'u1').components)],
-      ['/daily hub', idsOf(hubPayload(ctx, 'u1').components)],
-      ['park alert DM', idsOf(alertPayload(
+    const surfaces: Array<[string, Array<{ custom_id: string; type?: number; options?: Array<{ value: string }> }>]> = [
+      ['/park view dashboard', componentsOf(dashboardPayload(user, 1234, { now: ctx.now() }).components)],
+      ['/park view Animals tab', componentsOf(animalsPayload(user, 3, {}).components)],
+      ['/park view Lots tab', componentsOf(lotsPayload(user, [], 3, {
+        buildable: [{ kind: 'carnivore_paddock', name: 'Carnivore Paddock', cost: 1000 }],
+        upgradable: [{ lotId: 1, name: 'Carnivore Paddock', level: 1, cost: 5000 }],
+      }).components)],
+      ['/park view Prestige tab', componentsOf(prestigePayload(user, {}).components)],
+      ['/park view visited card', componentsOf(dashboardPayload(user, 0, { visit: true }).components)],
+      ['/dex list pager', componentsOf([dexPageRow('u1', {}, 2, 5)])],
+      ['/battle chapters', componentsOf(chaptersPayload('u1', 0, chapters).components)],
+      ['/hatch eggs pager', componentsOf(eggListPayload(eggRows, ctx.now(), 'u1').components)],
+      ['/season hub', componentsOf(seasonPayload(seasonView(ctx, 'u1')!, 'u1').components)],
+      ['/guests view', componentsOf(guestsPayload(ctx, 'u1').components)],
+      ['/daily hub', componentsOf(hubPayload(ctx, 'u1').components)],
+      ['park alert DM', componentsOf(alertPayload(
         'u1',
         [{ dinoId: 1, name: 'Rexy', escapeAt: ctx.now() + 3_600_000, tier: 'last_call' }],
         { capAt: ctx.now(), pending: 1240, capHours: 8 },
         { endsAt: ctx.now() + 3 * 86_400_000, unclaimed: 2 },
         ctx.now(),
       )!.components)],
-      ['/top board', idsOf(topRows)],
+      ['/top board', componentsOf(topRows)],
     ];
 
     const seen: string[] = [];
@@ -580,16 +586,30 @@ describe('router component guard — every live button surface still routes', ()
       components: PREFIXES.map((prefix): ComponentDef => ({
         prefix, execute: async (_c, i) => { seen.push(i.customId); },
       })),
+      selects: PREFIXES.map((prefix): SelectDef => ({
+        prefix, execute: async (_c, i) => { seen.push(i.customId); },
+      })),
     }], { m: true });
 
-    for (const [label, ids] of surfaces) {
-      expect(ids.length, `${label} minted no buttons — the case would be vacuous`).toBeGreaterThan(0);
-      for (const id of ids) {
-        const b = fakeButton({ customId: id, user: 'u1', componentIds: ids });
-        await routeInteraction(ctx, registry, b.asInteraction());
-        expect(seen, `${label}: ${id} was rejected by the guard`).toContain(id);
-        expect(b.deferOpts, `${label}: ${id} was acknowledged instead of dispatched`).toHaveLength(0);
+    for (const [label, comps] of surfaces) {
+      expect(comps.length, `${label} minted no components — the case would be vacuous`).toBeGreaterThan(0);
+      const ids = comps.map((x) => x.custom_id);
+      for (const c of comps) {
+        const fake = c.type === 3
+          ? fakeSelect({
+              customId: c.custom_id, user: 'u1',
+              values: [c.options![0]!.value], options: c.options!.map((o) => o.value),
+              componentIds: ids,
+            })
+          : fakeButton({ customId: c.custom_id, user: 'u1', componentIds: ids });
+        await routeInteraction(ctx, registry, fake.asInteraction());
+        expect(seen, `${label}: ${c.custom_id} was rejected by the guard`).toContain(c.custom_id);
+        expect(fake.deferOpts, `${label}: ${c.custom_id} was acknowledged instead of dispatched`).toHaveLength(0);
       }
     }
+    // Whole-sweep guard: without a type-3 component somewhere in `surfaces`, everything above
+    // proves only that the button half still works.
+    expect(surfaces.flatMap(([, comps]) => comps).some((c) => c.type === 3),
+      'no surface minted a select — the select half of this sweep would be vacuous').toBe(true);
   });
 });
