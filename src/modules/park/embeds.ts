@@ -137,11 +137,13 @@ export function animalsPayload(
 }
 
 /**
- * The LOTS tab. Build arrives as a select menu here; Upgrade follows in a later task.
+ * The LOTS tab. Build and Upgrade both arrive as select menus here.
  */
 export function lotsPayload(
   user: User, lots: Lot[], slots: number,
-  opts: { visit?: boolean; buildable?: Array<{ kind: string; name: string; cost: number }> } = {},
+  opts: { visit?: boolean;
+          buildable?: Array<{ kind: string; name: string; cost: number }>;
+          upgradable?: Array<{ lotId: number; name: string; level: number; cost: number }> } = {},
 ) {
   const embed = new EmbedBuilder()
     .setTitle(`🏗️ ${user.parkName} — Lots`)
@@ -173,6 +175,21 @@ export function lotsPayload(
       name: 'Building', value: 'No room for another lot — raise your park rating for more slots.',
       inline: false,
     });
+  }
+  const upgradable = opts.upgradable ?? [];
+  if (!opts.visit && upgradable.length > 0) {
+    components.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`park:upgrade:${user.discordId}`)
+        .setPlaceholder('Upgrade…')
+        .addOptions(upgradable.slice(0, 25).map((u) => new StringSelectMenuOptionBuilder()
+          // <lotId>:<expectedLevel> — the level it was minted for is the staleness anchor.
+          // upgradeCostFor is a pure function of (kind, level), so without it a stale
+          // option silently charges the NEXT rung's price: measured worst case is a
+          // hatchery_lab label reading 25,000 against a 2,250,000 charge, 90x.
+          .setValue(`${u.lotId}:${u.level}`)
+          .setLabel(`#${u.lotId} ${u.name} → lvl ${u.level + 1} — ${u.cost.toLocaleString('en-US')} cash`))),
+    ));
   }
   components.push(tabRow(user.discordId, 'lots', opts.visit));
   const payload: {

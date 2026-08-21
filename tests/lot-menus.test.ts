@@ -154,8 +154,150 @@ describe('build menu mint', () => {
     const b = fakeButton({ customId: 'park:tab:u1:lots', user: 'u1' });
     await parkComp().execute(ctx, b.asInteraction() as never);
     const sent = b.replies[0] as {
-      components: ReadonlyArray<{ toJSON(): { components: Array<{ type: number }> } }>;
+      components: ReadonlyArray<{ toJSON(): { components: Array<{ type: number; custom_id?: string }> } }>;
     };
-    expect(selectOf(sent.components)).toBeUndefined();
+    // Slots are full, so no Build select — but these three level-1 paddocks are still each
+    // upgradable, so the Upgrade select IS present. Narrowed from "no select at all" (the
+    // right assertion when Build was the only menu kind) to "no Build select specifically",
+    // now that Task 2's Upgrade menu shares this tab.
+    const selects = sent.components.flatMap((r) => r.toJSON().components).filter((c) => c.type === 3);
+    expect(selects.some((c) => c.custom_id === 'park:build:u1')).toBe(false);
+  });
+});
+
+describe('upgrade menu', () => {
+  const seedLot = (level: number) => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.db.update(schema.users).set({ cash: 100_000_000 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    return ctx.db.insert(schema.lots).values({
+      userId: 'u1', type: 'paddock', kind: 'carnivore_paddock', name: 'Carnivore Paddock', level,
+    }).returning().get();
+  };
+
+  it('carries the level it was minted for in the option value', async () => {
+    const lot = seedLot(1);
+    const s = fakeSelect({
+      customId: 'park:upgrade:u1', user: 'u1',
+      values: [`${lot.id}:1`], options: [`${lot.id}:1`],
+    });
+    await parkSelect().execute(ctx, s.asInteraction() as never);
+    expect(JSON.stringify(s.replies[0])).toContain(`park:upgyes:u1:${lot.id}:1`);
+  });
+
+  it('upgrades once when the level still matches', async () => {
+    const lot = seedLot(1);
+    const b = fakeButton({ customId: `park:upgyes:u1:${lot.id}:1`, user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const after = ctx.db.select().from(schema.lots).where(eq(schema.lots.id, lot.id)).get()!;
+    expect(after.level).toBe(2);
+  });
+
+  // The park:landmark:buy incident, in its new home. Worst measured case is 90x.
+  it('refuses a stale button and charges nothing', async () => {
+    const lot = seedLot(1);
+    const first = fakeButton({ customId: `park:upgyes:u1:${lot.id}:1`, user: 'u1' });
+    await parkComp().execute(ctx, first.asInteraction() as never);
+    const afterFirst = cashOf('u1');
+    // The same button clicked again: its label still says level 1 to 2, but the lot is
+    // level 2 now and upgradeCostFor would charge the level-2 price.
+    const second = fakeButton({ customId: `park:upgyes:u1:${lot.id}:1`, user: 'u1' });
+    await parkComp().execute(ctx, second.asInteraction() as never);
+    expect(cashOf('u1')).toBe(afterFirst);
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.id, lot.id)).get()!.level).toBe(2);
+    // Pins the FIGURES, not a loose phrase. 'no longer' appears only on the non-integer
+    // branch and in the build handler, so asserting it here goes red against a CORRECT
+    // implementation — and the two obvious repairs are both wrong: loosening the
+    // assertion is this repo's recurring substring trap, and rewriting the handler to
+    // say 'no longer' drops the two levels, which are the only part telling the player
+    // what actually changed.
+    expect(JSON.stringify(second.replies[0])).toContain('is level 2 now, not 1');
+  });
+
+  it('refuses a forged lot id belonging to someone else', async () => {
+    seedLot(1);
+    getOrCreateUser(ctx, 'u2', 'Other');
+    const theirs = ctx.db.insert(schema.lots).values({
+      userId: 'u2', type: 'paddock', kind: 'carnivore_paddock', name: 'Carnivore Paddock', level: 1,
+    }).returning().get();
+    const b = fakeButton({ customId: `park:upgyes:u1:${theirs.id}:1`, user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.id, theirs.id)).get()!.level).toBe(1);
+    // Positive assertions, without which this case CANNOT FAIL under any implementation:
+    // today `park:upgyes:*` falls to index.ts:635's `default: await i.deferUpdate()`,
+    // which writes nothing, and afterwards upgradeLot is itself scoped by userId. The
+    // state assertion above is satisfied twice over either way.
+    expect(JSON.stringify(b.replies[0])).toContain('No such lot');
+    expect(b.deferOpts).toEqual([]);
+  });
+
+  it('refuses a non-integer level anchor without touching the database', async () => {
+    const lot = seedLot(1);
+    const before = cashOf('u1');
+    const b = fakeButton({ customId: `park:upgyes:u1:${lot.id}:notanumber`, user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(cashOf('u1')).toBe(before);
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.id, lot.id)).get()!.level).toBe(1);
+    // Same reason as the forged-lot case: the state assertions above are already true
+    // before this feature exists. This one also fixes which guard is under test — with
+    // Number.isInteger removed, `expected` is NaN and `lot.level !== NaN` is always true,
+    // so the stale check would cover it and the parse guard would go untested.
+    expect(JSON.stringify(b.replies[0])).toContain('no longer valid');
+    expect(b.deferOpts).toEqual([]);
+  });
+});
+
+// Same gap as the build menu's own mint block above, for the same reason: every case in
+// the block above drives the SELECT/BUTTON HANDLERS against fixtures the harness
+// fabricates, never a menu lotsPayload actually produced, and never renderTab's own
+// `upgradable` computation. These three close that for the upgrade menu.
+describe('upgrade menu mint', () => {
+  it('mints the select menu with <lotId>:<expectedLevel> as the option value', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = lotsPayload(user, [], 3, {
+      upgradable: [{ lotId: 42, name: 'Carnivore Paddock', level: 1, cost: 12_000 }],
+    });
+    const select = selectOf(p.components);
+    expect(select?.custom_id).toBe('park:upgrade:u1');
+    // The label carries the cost and the target level; only `value` is read back by the
+    // handler, so it must be exactly `<lotId>:<level>` and nothing else.
+    expect(select?.options.map((o) => o.value)).toEqual(['42:1']);
+  });
+
+  it('suppresses the upgrade menu on a visited card', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = lotsPayload(user, [], 3, {
+      upgradable: [{ lotId: 42, name: 'Carnivore Paddock', level: 1, cost: 12_000 }], visit: true,
+    });
+    expect(selectOf(p.components)).toBeUndefined();
+  });
+
+  it('renderTab excludes a lot already at max level from the minted options', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    // Three lots fills every slot at ratingHighWater 0 (BASE_LOT_SLOTS_FALLBACK 3), which
+    // empties `buildable` and leaves the Upgrade menu the only select on the card — so
+    // selectOf (first-match) is unambiguous without a second helper.
+    const below = ctx.db.insert(schema.lots).values({
+      userId: 'u1', type: 'paddock', kind: 'carnivore_paddock', name: 'Carnivore Paddock', level: 1,
+    }).returning().get();
+    // gene_lab's maxLevel is 3 (src/data/facilities.ts) — seeded already there so it must
+    // be filtered OUT, covering both the `upgradable` filter itself and the renderTab call
+    // site, neither of which a direct lotsPayload call can reach.
+    const geneLab = ctx.db.insert(schema.lots).values({
+      userId: 'u1', type: 'facility', kind: 'gene_lab', name: 'Gene Lab', level: 3,
+    }).returning().get();
+    ctx.db.insert(schema.lots).values({
+      userId: 'u1', type: 'paddock', kind: 'herbivore_paddock', name: 'Herbivore Paddock', level: 1,
+    }).run();
+    const b = fakeButton({ customId: 'park:tab:u1:lots', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    const sent = b.replies[0] as {
+      components: ReadonlyArray<{ toJSON(): { components: Array<{ type: number; custom_id?: string; options?: Array<{ value: string }> }> } }>;
+    };
+    const select = selectOf(sent.components);
+    expect(select?.custom_id).toBe('park:upgrade:u1');
+    const values = select!.options.map((o) => o.value);
+    expect(values).toContain(`${below.id}:1`);
+    expect(values.some((v) => v.startsWith(`${geneLab.id}:`))).toBe(false);
   });
 });
