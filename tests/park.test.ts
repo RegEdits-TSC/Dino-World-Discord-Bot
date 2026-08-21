@@ -651,6 +651,14 @@ describe('animalsPayload food line', () => {
   });
 });
 
+describe('buildLot kind validation', () => {
+  it('rejects a prototype key outright rather than relying on a NOT NULL accident', () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 10_000_000 }).run();
+    expect(() => buildLot(ctx, 'u1', 'constructor')).toThrow(UnknownKindError);
+  });
+});
+
 describe('upgradeLot service', () => {
   it('charges and bumps the level', () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');

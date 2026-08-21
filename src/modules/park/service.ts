@@ -82,8 +82,12 @@ export function breedingSlots(lots: Lot[]): number {
 }
 
 export function buildLot(ctx: Ctx, userId: string, kind: string): Lot {
+  // Explicit, even though Task 0a's null-prototype tables already make the old
+  // `!paddock && !facility` test sound: CLAUDE.md's rule is that boundaries get
+  // validation, and a reader arriving here should see why this is safe without first
+  // having to know how the table was constructed.
+  if (!Object.hasOwn(PADDOCKS, kind) && !Object.hasOwn(FACILITIES, kind)) throw new UnknownKindError(kind);
   const paddock = PADDOCKS[kind]; const facility = FACILITIES[kind];
-  if (!paddock && !facility) throw new UnknownKindError(kind);
   const lots = ctx.db.select().from(schema.lots)
     .where(eq(schema.lots.userId, userId)).all();
   // One facility per kind. capHours/incubatorSlots/facilityBonusPct each resolve a kind
