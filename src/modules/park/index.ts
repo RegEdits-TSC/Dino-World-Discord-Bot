@@ -427,9 +427,12 @@ export const parkModule: ModuleManifest = {
           await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral });
           return;
         }
-        // The router already proved the bot minted THIS MENU on THIS MESSAGE. It proved
-        // nothing about the submitted values, which arrive on a separate client-supplied
-        // channel — so they are checked against the message's own option list here.
+        // The router proves BOTH halves centrally before this handler is ever reached:
+        // clickedIdIsOnMessage that the bot minted this menu on this message, then
+        // submittedValuesAreOnMessage that every submitted value was one the bot offered
+        // on it (src/core/router.ts). This copy is defence in depth for the callers that
+        // invoke execute() directly and so never pass through the router at all —
+        // scripts/test-live.ts's select() helper and every direct-dispatch test.
         if (!submittedValuesAreOnMessage(i)) { await i.deferUpdate(); return; }
         const value = i.values[0]!;
         const user = ctx.db.select().from(schema.users)
@@ -437,7 +440,7 @@ export const parkModule: ModuleManifest = {
         if (action === 'build') {
           // Defence in depth over Task 0a, which is what actually closed this: the tables
           // are null-prototype now and buildLot owns an Object.hasOwn check of its own.
-          // This copy earns its place because 90 of 101 fakeButton sites and every case in
+          // This copy earns its place because 132 of 143 fakeButton sites and every case in
           // scripts/test-live.ts call execute directly rather than through routeInteraction,
           // so a handler-level check is what those paths exercise.
           if (!Object.hasOwn(PADDOCKS, value) && !Object.hasOwn(FACILITIES, value)) {
@@ -445,10 +448,21 @@ export const parkModule: ModuleManifest = {
             return;
           }
           const def = PADDOCKS[value] ?? FACILITIES[value]!;
+          // The confirm carries the lot COUNT it was minted against, the same way
+          // park:upgyes carries the level it was minted against. Build has no level to
+          // anchor on and its price never moves, so the count is what makes the id
+          // single-use: buildLot only ever increases it and nothing outside adminReset
+          // removes a lot, so the second of two clicks racing the first repaint provably
+          // reads a different count and is rejected. Facilities were already safe
+          // (DuplicateFacilityError stops the second), but paddocks are duplicable by
+          // design and lotSlots caps at 10 with no demolish path anywhere — a doubled
+          // paddock burns a slot permanently.
+          const lotCount = ctx.db.select().from(schema.lots)
+            .where(eq(schema.lots.userId, i.user.id)).all().length;
           await i.update(confirmPayload(
             user,
             `Build **${def.name}** for **${def.buildCost.toLocaleString('en-US')}** cash?`,
-            `park:buildyes:${i.user.id}:${value}`, `park:buildno:${i.user.id}`,
+            `park:buildyes:${i.user.id}:${value}:${lotCount}`, `park:buildno:${i.user.id}`,
             `Build ${def.name}`,
           ));
           return;
@@ -724,6 +738,33 @@ export const parkModule: ModuleManifest = {
             if (!Object.hasOwn(PADDOCKS, kind) && !Object.hasOwn(FACILITIES, kind)) {
               await i.reply({
                 content: 'That build button is no longer valid — open `/park view` again.',
+                flags: MessageFlags.Ephemeral,
+              });
+              return;
+            }
+            // park:buildyes:<uid>:<kind>:<lotCount> — the count anchor, validated in the
+            // same order upgyes validates its level: integer parse first, then a FRESH
+            // read, both before any write. It is what makes this id single-use, which
+            // matters most for paddocks: they are duplicable by design, so a second click
+            // landing before the first repaint would build a second one, and lotSlots caps
+            // at 10 with no demolish path short of adminReset — the slot is gone for good.
+            const offeredCount = Number(parts[4]);
+            if (!Number.isInteger(offeredCount)) {
+              await i.reply({
+                content: 'That build button is no longer valid — open `/park view` again.',
+                flags: MessageFlags.Ephemeral,
+              });
+              return;
+            }
+            // NO `await` may sit between this read and buildLot below. better-sqlite3 is
+            // synchronous and Node is single-threaded, so a check-then-write with no
+            // suspension point between them cannot interleave with a second interaction;
+            // introducing one here reopens the very race this anchor closes.
+            const lotCount = ctx.db.select().from(schema.lots)
+              .where(eq(schema.lots.userId, i.user.id)).all().length;
+            if (lotCount !== offeredCount) {
+              await i.reply({
+                content: `Your park has ${lotCount} lot${lotCount === 1 ? '' : 's'} now, not ${offeredCount} — open \`/park view\` again to build.`,
                 flags: MessageFlags.Ephemeral,
               });
               return;
