@@ -889,15 +889,15 @@
   `.components`, in the same change. And if a button or select is ever minted onto a
   message the bot does not own, add an explicit greppable flag on `ComponentDef`/
   `SelectDef` — never a prefix exception list inside the router.
-  The guard's tests are its only evidence, and that is not a figure of speech: 101
+  The guard's tests are its only evidence, and that is not a figure of speech: 143
   `fakeButton` sites exist and only 11 dispatch through `routeInteraction` — the
-  other 90 call `execute` directly, and `npm run test:live` bypasses the router by its
+  other 132 call `execute` directly, and `npm run test:live` bypasses the router by its
   own design — so both existing gates are blind to this seam and a simulated version of
   the guard ran the whole suite green. The nine cases live in `tests/router.test.ts`
   ("router component guard", plus the real-payload sweep that reads every minted id out
   of the builder JSON rather than hand-typing it) and `tests/harness.test.ts` (the
-  `fakeButton` default `componentIds: [customId]`, now load-bearing for those 90 sites).
-  Do NOT add `componentIds` to the 90 direct-execute sites: they test handler logic and
+  `fakeButton` default `componentIds: [customId]`, now load-bearing for those 132 sites).
+  Do NOT add `componentIds` to the 132 direct-execute sites: they test handler logic and
   the default already models the truth. Re-run the grep rather than trusting these
   figures — `grep -rc 'fakeButton(' tests/` minus the one declaration site in
   `tests/harness.ts` gives the total, and `grep -n 'fakeButton(' <file>` cross-referenced
@@ -1285,9 +1285,12 @@
   which opens with `i.customId.split(':')` and none of which reads `i.values`. A select and
   a button MAY share a prefix — separate namespaces — but two selects may not.
   `routeInteraction` gates the select branch on TWO guards, both enforced centrally by the
-  router — never left to individual select handlers, and the Lots tab's Build and Upgrade
-  menus (below), the first select handlers to exist, re-implement neither — in a fixed
-  order: `clickedIdIsOnMessage` first (exactly as it gates buttons), then
+  router — never left to individual select handlers as their only proof. The Lots tab's
+  Build and Upgrade menus (below), the first select handlers to exist, re-implement
+  `submittedValuesAreOnMessage` as defence in depth, for the same direct-execute-bypass
+  reason the build allowlist is duplicated below, but never `clickedIdIsOnMessage` — that
+  one the router alone proves — in a fixed order: `clickedIdIsOnMessage` first (exactly as
+  it gates buttons), then
   `submittedValuesAreOnMessage` (`src/core/components.ts`), only once the first guard has
   already passed, since it reads the menu's own options off the message and is meaningless
   before the menu itself is known to be the bot's. Each has the same `deferUpdate` +
@@ -1353,7 +1356,7 @@
   `buildLot` now owns an explicit
   `if (!Object.hasOwn(PADDOCKS, kind) && !Object.hasOwn(FACILITIES, kind)) throw new UnknownKindError(kind)`.
   The menu handler's identical allowlist is DEFENCE IN DEPTH, never the only guard — it
-  earns its place because 90 of 101 `fakeButton` sites and every case in
+  earns its place because 132 of 143 `fakeButton` sites and every case in
   `scripts/test-live.ts` call `execute` directly rather than through `routeInteraction`.
   `upgradeLot(ctx, userId, lotId, expectedLevel)` takes the anchor as a REQUIRED fourth
   parameter — never defaulted, the same rule as `hungerAt(…, drainMs)`, `feedCostFor(now)`
