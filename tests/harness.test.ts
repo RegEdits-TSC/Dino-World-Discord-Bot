@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { makeCtx, fakeCommand, fakeAutocomplete, fakeButton, mulberry32, replyText } from './harness.js';
+import { makeCtx, fakeCommand, fakeAutocomplete, fakeButton, fakeSelect, mulberry32, replyText } from './harness.js';
+import { validateMessagePayload } from './lib/discord-limits.js';
 
 describe('harness', () => {
   it('ctx time is controllable and rng deterministic', () => {
@@ -123,5 +124,91 @@ describe('harness', () => {
     const a = fa.asAutocomplete();
     await a.respond([]);
     await expect(a.respond([])).rejects.toThrow(/already responded/);
+  });
+});
+
+describe('fakeSelect', () => {
+  it('defaults componentIds to the clicked id, like fakeButton', () => {
+    const s = fakeSelect({ customId: 'park:build:u1', user: 'u1', values: ['gene_lab'] });
+    const raw = s.asInteraction() as unknown as {
+      message: { components: Array<{ components: Array<{ type: number; customId: string }> }> };
+    };
+    expect(raw.message.components[0].components[0]).toMatchObject({ type: 3, customId: 'park:build:u1' });
+  });
+
+  it('models a forged value by letting options and values diverge', () => {
+    const s = fakeSelect({
+      customId: 'park:build:u1', user: 'u1', values: ['__proto__'], options: ['gene_lab'],
+    });
+    const raw = s.asInteraction() as unknown as {
+      values: string[];
+      message: { components: Array<{ components: Array<{ options: Array<{ value: string }> }> }> };
+    };
+    expect(raw.values).toEqual(['__proto__']);
+    expect(raw.message.components[0].components[0].options).toEqual([{ value: 'gene_lab', label: 'gene_lab' }]);
+  });
+
+  it('discriminates the two defers, like fakeButton', async () => {
+    const s = fakeSelect({ customId: 'x:y', user: 'u1', values: ['a'] });
+    const raw = s.asInteraction() as unknown as { deferUpdate(): Promise<void> };
+    await raw.deferUpdate();
+    expect(s.deferOpts).toEqual([{ kind: 'update' }]);
+  });
+
+  it('enforces reply-once', async () => {
+    const s = fakeSelect({ customId: 'x:y', user: 'u1', values: ['a'] });
+    const raw = s.asInteraction() as unknown as { reply(p: unknown): Promise<void> };
+    await raw.reply({ content: 'one' });
+    await expect(raw.reply({ content: 'two' })).rejects.toMatchObject({ code: 'InteractionAlreadyReplied' });
+  });
+
+  it('reports itself as a select and not as a button', () => {
+    const raw = fakeSelect({ customId: 'x:y', user: 'u1', values: ['a'] })
+      .asInteraction() as unknown as { isButton(): boolean; isStringSelectMenu(): boolean };
+    expect(raw.isButton()).toBe(false);
+    expect(raw.isStringSelectMenu()).toBe(true);
+  });
+});
+
+describe('select menu payload limits', () => {
+  const row = (components: unknown[]) => ({ components: [{ type: 1, components }] });
+  const select = (over: Record<string, unknown> = {}) => ({
+    type: 3, custom_id: 'm:pick',
+    options: [{ label: 'a', value: 'a' }],
+    ...over,
+  });
+
+  it('accepts a legal select row', () => {
+    expect(() => validateMessagePayload(row([select()]), 'ok')).not.toThrow();
+  });
+
+  it('rejects more than 25 options', () => {
+    const options = Array.from({ length: 26 }, (_, n) => ({ label: `o${n}`, value: `o${n}` }));
+    expect(() => validateMessagePayload(row([select({ options })]), 'x')).toThrow(/options > 25/);
+  });
+
+  it('rejects a select sharing its row with anything else', () => {
+    expect(() => validateMessagePayload(row([select(), { type: 2, custom_id: 'm:b' }]), 'x'))
+      .toThrow(/select must be alone in its row/);
+  });
+
+  it('rejects an over-long option label and an over-long value', () => {
+    expect(() => validateMessagePayload(
+      row([select({ options: [{ label: 'x'.repeat(101), value: 'a' }] })]), 'x')).toThrow(/label > 100/);
+    expect(() => validateMessagePayload(
+      row([select({ options: [{ label: 'a', value: 'x'.repeat(101) }] })]), 'x')).toThrow(/value > 100/);
+  });
+
+  it('still enforces the five-button cap on ordinary rows', () => {
+    const six = Array.from({ length: 6 }, (_, n) => ({ type: 2, custom_id: `m:${n}` }));
+    expect(() => validateMessagePayload(row(six), 'x')).toThrow(/buttons per row > 5/);
+  });
+
+  it('rejects an over-long option description and an over-long placeholder', () => {
+    expect(() => validateMessagePayload(
+      row([select({ options: [{ label: 'a', value: 'a', description: 'x'.repeat(101) }] })]), 'x'))
+      .toThrow(/description > 100/);
+    expect(() => validateMessagePayload(
+      row([select({ placeholder: 'x'.repeat(151) })]), 'x')).toThrow(/placeholder > 150/);
   });
 });

@@ -26,6 +26,16 @@ const buttonSchema = z.looseObject({
 const rowSchema = z.looseObject({
   components: z.array(buttonSchema).max(5, 'buttons per row > 5'),
 });
+const selectOptionSchema = z.looseObject({
+  label: z.string().min(1, 'option label empty').max(100, 'option label > 100'),
+  value: z.string().min(1, 'option value empty').max(100, 'option value > 100'),
+  description: z.string().max(100, 'option description > 100').optional(),
+});
+const selectSchema = z.looseObject({
+  custom_id: z.string().max(100, 'custom_id > 100').optional(),
+  placeholder: z.string().max(150, 'placeholder > 150').optional(),
+  options: z.array(selectOptionSchema).min(1, 'options empty').max(25, 'options > 25'),
+});
 
 type RawEmbed = z.infer<typeof embedSchema>;
 function embedTextLength(e: RawEmbed): number {
@@ -62,7 +72,23 @@ export function validateMessagePayload(payload: unknown, source: string): void {
   if (total > 6000) fail(source, `combined embed text ${total} > 6000`);
   const rows = Array.isArray(p.components) ? p.components.map(toJson) : [];
   if (rows.length > 5) fail(source, `component rows ${rows.length} > 5`);
-  for (const r of rows) parseOr(source, 'row', rowSchema, r);
+  for (const r of rows) {
+    const children = ((r as { components?: unknown[] }).components ?? []).map(toJson) as Array<{ type?: number }>;
+    // Discord allows exactly one select per action row and nothing else beside it. This
+    // is the rule a button-only rowSchema silently ignored, and an illegal payload would
+    // otherwise first fail against real Discord in test:live rather than here. The rule is
+    // identical for every select kind — string (3), user (5), role (6), mentionable (7) and
+    // channel (8); type 4 is a modal text input, never minted on a message. Only string
+    // selects get the fuller option-list schema below: the other kinds don't carry `options`
+    // at all (they configure via default_values/channel_types instead), so applying
+    // selectSchema to one would fail every payload that legitimately mints it.
+    if (children.some((c) => c?.type === 3 || (c?.type !== undefined && c.type >= 5 && c.type <= 8))) {
+      if (children.length !== 1) fail(source, 'select must be alone in its row');
+      if (children[0]?.type === 3) parseOr(source, 'select', selectSchema, children[0]);
+      continue;
+    }
+    parseOr(source, 'row', rowSchema, r);
+  }
 }
 
 export function validateAutocompleteChoices(choices: unknown, source: string): void {

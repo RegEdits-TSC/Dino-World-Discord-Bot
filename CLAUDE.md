@@ -860,11 +860,35 @@
   their own messages and would pass this guard cleanly. Every future button that spends
   money, turns a page or names a rung still needs that state in its customId and
   validated in its handler; the router guard relaxes none of that.
-  If select menus or modals are ever routed, the guard must be extended in the same
-  change (a component whose state rides in its VALUE rather than its `custom_id` needs
-  the premise re-checked), and if a button is ever minted onto a message the bot does
-  not own, add an explicit greppable flag on `ComponentDef` — never a prefix exception
-  list inside the router.
+  Select menus are routed now, and the guard was extended in the same change, exactly as
+  this paragraph called for while selects were still unrouted: they dispatch through their
+  own `selects` array and `findSelect` on `ModuleRegistry` (never by widening
+  `ComponentDef.execute` — see that type's own doc comment for why), and
+  `routeInteraction` gates the select branch on `clickedIdIsOnMessage` too, with the same
+  fail-closed `deferUpdate` + `logger.warn` rejection the button branch uses. That guard
+  proves the bot minted THIS MENU on THIS MESSAGE and nothing about `i.values`, which ride
+  outside the `custom_id` on a separate client-supplied channel. **The router calls a
+  second guard centrally for the same reason it hoisted the first one** — this repo's own
+  history is the argument, since the id guard exists because a per-handler check was
+  forgotten once already: `submittedValuesAreOnMessage` (`src/core/components.ts`) runs
+  right after `clickedIdIsOnMessage` passes (it reads the menu's own options off the
+  message, so it's only meaningful once the menu is known to be the bot's), with the same
+  rejection shape and its own distinct `logger.warn` message so the two rejections read
+  apart in logs — the client sees no difference either way. No select handler validates
+  its own values as a way of satisfying this; a handler still owns any DOMAIN validation
+  beyond "these values were on this menu" (e.g. that an offered option is still legal for
+  the current state of a multi-step flow). One binding consequence: **never mint a select
+  with `min_values: 0`** — a legitimately empty submission from one now fails this guard
+  closed, since the router enforces it for every select with no opt-out. Give an optional
+  selection an explicit "none" option instead. Modals remain UNROUTED, and so do the
+  non-string select kinds (user/role/mentionable/channel, component types 5-8) — routing
+  string selects did not cover them, since `isStringSelectMenu()` is false for all four; a
+  future implementer wiring one up needs its own predicate and its own pair of guards. If
+  modals are ever routed, extend `clickedIdIsOnMessage`'s walk to follow
+  `SectionComponent.accessory` and `LabelComponent.component`, both of which sit outside
+  `.components`, in the same change. And if a button or select is ever minted onto a
+  message the bot does not own, add an explicit greppable flag on `ComponentDef`/
+  `SelectDef` — never a prefix exception list inside the router.
   The guard's tests are its only evidence, and that is not a figure of speech: 101
   `fakeButton` sites exist and only 11 dispatch through `routeInteraction` — the
   other 90 call `execute` directly, and `npm run test:live` bypasses the router by its
@@ -1252,3 +1276,57 @@
   a schema with exactly one index (`daily_quests_user_day_slot`), so a tab switch re-pays
   the same unindexed scans. `user_id` indexes on `lots`/`dinos`/`attractions` are the
   higher-leverage change and were left out of this work deliberately.
+- Select menus route through their own `selects?: SelectDef[]` on `ModuleManifest`
+  (`src/core/modules.ts`) with their own `findSelect` and their own boot-time duplicate
+  check — NEVER by widening `ComponentDef.execute`. That declaration uses method syntax,
+  so its parameter is bivariant: widening it was measured to break exactly ONE call site
+  under `npm run typecheck` and go green everywhere else, while letting a select reach any
+  of the seventeen button handlers minted across this codebase's modules, every one of
+  which opens with `i.customId.split(':')` and none of which reads `i.values`. A select and
+  a button MAY share a prefix — separate namespaces — but two selects may not.
+  `routeInteraction` gates the select branch on TWO guards, both enforced centrally by the
+  router — never left to individual select handlers, none of which exist yet — in a fixed
+  order: `clickedIdIsOnMessage` first (exactly as it gates buttons), then
+  `submittedValuesAreOnMessage` (`src/core/components.ts`), only once the first guard has
+  already passed, since it reads the menu's own options off the message and is meaningless
+  before the menu itself is known to be the bot's. Each has the same `deferUpdate` +
+  `logger.warn` rejection shape as the button branch, and each guard's `logger.warn` carries
+  its own distinct message, so the two rejections read apart in logs even though the client
+  cannot tell them apart either way. `clickedIdIsOnMessage` proves the bot minted THIS MENU
+  on THIS MESSAGE and **nothing about `i.values`**, which arrive on a separate
+  client-supplied channel; `submittedValuesAreOnMessage` is what proves every submitted
+  value was one the bot actually offered on this menu. A select handler still owns any
+  DOMAIN validation beyond that — e.g. that an offered option is still legal for the
+  CURRENT state of a multi-step flow — but no handler needs to (and none should) re-prove
+  "these values were on this menu"; the router already has. It is ALL-OR-NOTHING: a partly
+  valid submission is rejected rather than filtered, since a shortened values array is a
+  selection the player never made. Only `submittedValuesAreOnMessage` needs a `Set` for
+  this — `offered = new Set(menu.options.map(o => o.value))`, never an object keyed by
+  value, since `__proto__` and `constructor` read back truthy from a plain object.
+  `clickedIdIsOnMessage` carries no equivalent risk to guard against: it never indexes into
+  anything by an attacker-supplied key, only walks `Message#components` and compares each
+  candidate to `i.customId` with `===`.
+  Nothing in the installed discord.js or discord-api-types claims Discord's gateway
+  validates submitted values, selection counts, or clicks on a `disabled` component, so
+  this repo assumes none of it is enforced. **Never close a select flow by disabling the
+  menu** — neither guard reads `disabled`, so a disabled select is not a lock. Remove the
+  component instead. **Never mint a select with `min_values: 0`** either, now that the
+  router enforces `submittedValuesAreOnMessage` for every select with no opt-out: a menu
+  minted that way can legitimately submit an empty `values` array, which the guard fails
+  closed on. A flow that needs an optional selection must give it an explicit "none" option
+  instead of relying on an empty submission.
+  Modals are still NOT routed, and neither are the non-string select kinds — user, role,
+  mentionable and channel selects, Discord component types 5-8. Routing STRING selects
+  did not cover them: `isStringSelectMenu()` reads false for all four, so they fall through
+  the router's top-level predicate check to the same silent no-op modals get. A future
+  implementer wiring one of those kinds up needs its own predicate, its own registry
+  namespace and its own pair of guards — not the assumption that "selects are routed now"
+  already covers it. If modals are ever routed, extend `clickedIdIsOnMessage`'s walk
+  to follow `SectionComponent.accessory` and `LabelComponent.component` in the same change —
+  both sit outside `.components`.
+  `tests/lib/discord-limits.ts` knows the select rules (25 options, 100-char label and
+  value, alone in its row — the alone-in-its-row rule is checked for every select type,
+  3 and 5-8, since it's identical for all of them; the option-count/label/value rules only
+  apply to type 3, since the other four don't carry an `options` array at all);
+  `tests/contract.test.ts` structurally CANNOT catch a select-menu mistake, since it walks
+  command options only.

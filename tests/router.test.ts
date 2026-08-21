@@ -4,7 +4,8 @@ import type { Interaction } from 'discord.js';
 import { routeInteraction } from '../src/core/router.js';
 import { ModuleRegistry } from '../src/core/modules.js';
 import type { ComponentDef } from '../src/core/modules.js';
-import { makeCtx, fakeCommand, fakeButton, fakeAutocomplete, replyText } from './harness.js';
+import type { SelectDef } from '../src/core/modules.js';
+import { makeCtx, fakeCommand, fakeButton, fakeSelect, fakeAutocomplete, replyText } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { eq } from 'drizzle-orm';
 import { track } from '../src/core/stats.js';
@@ -160,11 +161,14 @@ describe('routeInteraction', () => {
     await routeInteraction(ctx, reg, fb.asInteraction());
     expect(fb.replies).toHaveLength(0);
   });
-  it('non-command, non-button, non-autocomplete interactions return quietly with no presence write', async () => {
+  it('non-command, non-button, non-select, non-autocomplete interactions return quietly with no presence write', async () => {
     const ctx = makeCtx();
     const reg = new ModuleRegistry([], {});
+    // Modals are the one interaction kind this router still never routes: all four
+    // predicates false, matching a real ModalSubmitInteraction.
     const modalish = {
       isAutocomplete: () => false, isChatInputCommand: () => false, isButton: () => false,
+      isStringSelectMenu: () => false,
       user: { id: 'u1', displayName: 'u1' }, guildId: 'g1',
     };
     await routeInteraction(ctx, reg, modalish as unknown as Interaction);
@@ -238,6 +242,134 @@ describe('autocomplete routing', () => {
     await routeInteraction(ctx, acRegistry(), i.asInteraction());
     const rows = ctx.db.select().from(schema.userGuilds).where(eq(schema.userGuilds.userId, 'u1')).all();
     expect(rows).toEqual([]);
+  });
+});
+
+describe('router select branch', () => {
+  const SEASON_1 = 690 * SEASON_DAYS * 86_400_000;   // season 1, day 1 (SEASON_EPOCH is 690)
+
+  const selCtx = () => {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.users).values({ discordId: 'u1', lastCollectAt: 0, createdAt: 0 }).run();
+    return ctx;
+  };
+  const regWith = (execute: SelectDef['execute']) =>
+    new ModuleRegistry([{ name: 'm', commands: [], components: [], selects: [{ prefix: 'm', execute }] }], { m: true });
+
+  it('dispatches a select whose id the message actually carries', async () => {
+    let got: string[] | null = null;
+    const s = fakeSelect({ customId: 'm:pick', user: 'u1', values: ['a'], componentIds: ['m:pick'] });
+    await routeInteraction(selCtx(), regWith(async (_c, i) => { got = i.values; }), s.asInteraction());
+    expect(got).toEqual(['a']);
+    expect(s.deferOpts).toHaveLength(0);
+  });
+
+  it('rejects a forged select id anchored on a message that never carried it', async () => {
+    let ran = false;
+    const s = fakeSelect({ customId: 'm:pick', user: 'u1', values: ['a'], componentIds: [] });
+    await routeInteraction(selCtx(), regWith(async () => { ran = true; }), s.asInteraction());
+    expect(ran).toBe(false);
+    expect(s.replies).toHaveLength(0);
+    expect(s.deferOpts).toHaveLength(1);
+    expect(s.deferOpts[0]).toMatchObject({ kind: 'update' });
+  });
+
+  it('rejects a select whose submitted value the minted menu never offered', async () => {
+    let ran = false;
+    // componentIds carries the menu itself (clickedIdIsOnMessage must pass), but its
+    // options are ['a', 'b'] — 'evil' was never one of them, so only the second guard,
+    // submittedValuesAreOnMessage, is what has to catch this.
+    const s = fakeSelect({
+      customId: 'm:pick', user: 'u1', values: ['evil'], options: ['a', 'b'], componentIds: ['m:pick'],
+    });
+    await routeInteraction(selCtx(), regWith(async () => { ran = true; }), s.asInteraction());
+    expect(ran).toBe(false);
+    expect(s.replies).toHaveLength(0);
+    expect(s.deferOpts).toHaveLength(1);
+    expect(s.deferOpts[0]).toMatchObject({ kind: 'update' });
+  });
+
+  it('dispatches a well-formed select whose values are all among the minted options', async () => {
+    let got: string[] | null = null;
+    const s = fakeSelect({
+      customId: 'm:pick', user: 'u1', values: ['a'], options: ['a', 'b'], componentIds: ['m:pick'],
+    });
+    await routeInteraction(selCtx(), regWith(async (_c, i) => { got = i.values; }), s.asInteraction());
+    expect(got).toEqual(['a']);
+    expect(s.deferOpts).toHaveLength(0);
+  });
+
+  // componentIds is STATED here, never left to the harness default it happens to equal
+  // (the menu's own customId): this case must pin the silent no-op against a message that
+  // genuinely never carried the prefix, not against one that coincidentally would have
+  // passed clickedIdIsOnMessage had a handler existed to run it.
+  it('stays silent for a select prefix no module claims', async () => {
+    const s = fakeSelect({ customId: 'unclaimed:x', user: 'u1', values: ['a'], componentIds: [] });
+    await routeInteraction(selCtx(), regWith(async () => {}), s.asInteraction());
+    expect(s.replies).toHaveLength(0);
+    expect(s.deferOpts).toHaveLength(0);
+  });
+
+  // The subtlest failure mode in the change, ported from the button branch's own case
+  // ("router component guard" below): deferUpdate() sets i.deferred = true, and
+  // daily/hooks.ts gates its hint on `!i.deferred && !i.replied` — so a guard that
+  // rejected without RETURNING would let a forged select emit a real quest/season
+  // followUp and, worse, burn the one-shot notifiedAt / hintedRung stamps for a message
+  // nobody asked for. Counting acknowledgements (as the cases above do) cannot see this.
+  //
+  // The fixture deliberately isolates the SECOND guard: componentIds carries the menu
+  // itself, so clickedIdIsOnMessage passes cleanly and never calls deferUpdate, while
+  // 'evil' is not among the minted options ['a'], so submittedValuesAreOnMessage is the
+  // one guard that rejects. That isolation is load-bearing, not incidental: if BOTH
+  // guards were made to reject on the same fixture (an empty componentIds does exactly
+  // that, since an absent menu fails the values check too), a return omitted from the
+  // FIRST guard would fall through into the SECOND guard's own deferUpdate() call — which
+  // throws InteractionAlreadyReplied on an interaction already deferred once. That crash
+  // still leaves replies/notifiedAt/hintedRung all looking "safe", but for the wrong
+  // reason: the outer catch's generic error reply masks the very regression this test
+  // exists to catch, exactly the way the old handler used to. Isolating the LAST-checked
+  // guard's rejection is what lets its own missing `return` reach postDispatch cleanly,
+  // with no second guard downstream to collide with.
+  //
+  // The handler MUST also be a true no-op, never one that touches `i` (e.g. i.update()):
+  // under the no-RETURN regression, i.deferred is already true from the guard's own
+  // deferUpdate(), so a handler that replies would throw InteractionAlreadyReplied before
+  // ever reaching postDispatch — masking the regression a second way. Only a handler that
+  // does nothing lets the regression run all the way into postDispatch, where it fires the
+  // hint and burns both stamps — which is what makes all three assertions below actually
+  // fail under that regression, for the reason this comment claims.
+  it('rejects before postDispatch — no phantom hint, and both one-shot stamps stay owed', async () => {
+    const ctx = makeCtx();
+    ctx.setNow(SEASON_1);
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const quest = ctx.db.insert(schema.dailyQuests)
+      .values({ userId: 'u1', dayKey: dayKeyUTC(ctx.now()), slot: 0, questId: 'hatch_1', baseline: 0, target: 1 })
+      .returning().get();
+    track(ctx, 'u1', 'eggs_hatched', 1);            // quest complete, never notified
+    rollSeason(ctx, 'u1');
+    track(ctx, 'u1', 'expeditions_claimed', 10);    // 50 points = season rung 1, unlocked and unclaimed
+    const reg = regWith(async () => {});
+    const s = fakeSelect({
+      customId: 'm:pick', user: 'u1', values: ['evil'], options: ['a'], componentIds: ['m:pick'],
+    });
+    await routeInteraction(ctx, reg, s.asInteraction(), dailyRouterHooks);
+    expect(s.replies).toHaveLength(0);
+    expect(ctx.db.select().from(schema.dailyQuests)
+      .where(eq(schema.dailyQuests.id, quest.id)).get()!.notifiedAt).toBeNull();
+    expect(seasonView(ctx, 'u1')!.hintedRung).toBe(-1);
+  });
+
+  it('does not dispatch a select into a button handler of the same prefix', async () => {
+    let button = false; let select = false;
+    const registry = new ModuleRegistry([{
+      name: 'm', commands: [],
+      components: [{ prefix: 'm', execute: async () => { button = true; } }],
+      selects: [{ prefix: 'm', execute: async () => { select = true; } }],
+    }], { m: true });
+    const s = fakeSelect({ customId: 'm:pick', user: 'u1', values: ['a'] });
+    await routeInteraction(selCtx(), registry, s.asInteraction());
+    expect(select).toBe(true);
+    expect(button).toBe(false);
   });
 });
 
@@ -324,11 +456,22 @@ describe('router component guard', () => {
     expect(b.replies).toHaveLength(0);
   });
 
-  // The subtlest failure mode in the change. deferUpdate() sets i.deferred = true, and
-  // daily/hooks.ts gates its hint on `!i.deferred && !i.replied` — so a guard that
-  // rejected without RETURNING would let a forged click emit a real quest/season followUp
-  // and, worse, burn the one-shot notifiedAt / hintedRung stamps for a message nobody
-  // asked for. Nothing else in the suite can see this.
+  // The subtlest failure mode in the change, and the same shape as its select-side twin
+  // ("rejects before postDispatch" above, in the select describe block): deferUpdate()
+  // sets i.deferred = true, and daily/hooks.ts gates its hint on
+  // `!i.deferred && !i.replied` — so a guard that rejected without RETURNING would let a
+  // forged click emit a real quest/season followUp and, worse, burn the one-shot
+  // notifiedAt / hintedRung stamps for a message nobody asked for.
+  //
+  // The handler MUST be a true no-op, never one that touches `i` (e.g. i.update()):
+  // under the no-RETURN regression, i.deferred is already true from the guard's own
+  // deferUpdate(), so a handler that replies would throw InteractionAlreadyReplied
+  // before ever reaching postDispatch, and the router's outer catch swallows that —
+  // leaving notifiedAt and hintedRung looking "safe" for the wrong reason, and only
+  // b.replies differentiating, via a crash rather than via the phantom hint this test
+  // claims to catch. A true no-op handler runs harmlessly instead, so execution reaches
+  // postDispatch under the regression, the hint genuinely fires, and all three
+  // assertions below diverge for the reason this comment states.
   it('rejects before postDispatch — no phantom hint, and both one-shot stamps stay owed', async () => {
     const ctx = makeCtx();
     ctx.setNow(SEASON_1);
@@ -339,7 +482,7 @@ describe('router component guard', () => {
     track(ctx, 'u1', 'eggs_hatched', 1);            // quest complete, never notified
     rollSeason(ctx, 'u1');
     track(ctx, 'u1', 'expeditions_claimed', 10);    // 50 points = season rung 1, unlocked and unclaimed
-    const reg = regWith(async (_c, i) => { await i.update({ content: 'x' }); });
+    const reg = regWith(async () => {});
     const b = fakeButton({ customId: 'm:go', user: 'u1', componentIds: [] });
     await routeInteraction(ctx, reg, b.asInteraction(), dailyRouterHooks);
     expect(b.replies).toHaveLength(0);
