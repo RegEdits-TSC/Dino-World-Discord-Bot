@@ -1285,7 +1285,8 @@
   which opens with `i.customId.split(':')` and none of which reads `i.values`. A select and
   a button MAY share a prefix — separate namespaces — but two selects may not.
   `routeInteraction` gates the select branch on TWO guards, both enforced centrally by the
-  router — never left to individual select handlers, none of which exist yet — in a fixed
+  router — never left to individual select handlers, and the Lots tab's Build and Upgrade
+  menus (below), the first select handlers to exist, re-implement neither — in a fixed
   order: `clickedIdIsOnMessage` first (exactly as it gates buttons), then
   `submittedValuesAreOnMessage` (`src/core/components.ts`), only once the first guard has
   already passed, since it reads the menu's own options off the message and is meaningless
@@ -1330,3 +1331,49 @@
   apply to type 3, since the other four don't carry an `options` array at all);
   `tests/contract.test.ts` structurally CANNOT catch a select-menu mistake, since it walks
   command options only.
+- The Lots tab's Build and Upgrade select menus follow the `park:landmark:buy` lesson,
+  which they would otherwise repeat in a worse form. A menu option's `value` is an
+  IDENTITY plus a STALENESS ANCHOR and never a price: `park:build` carries `<kind>`,
+  `park:upgrade` carries `<lotId>:<expectedLevel>`. Prices are re-derived by `buildLot` /
+  `upgradeLot` at execution, and the label is a display copy no handler reads back.
+  The level anchor is load-bearing: `upgradeCostFor` is a pure function of `(kind, level)`
+  and paddock cost is `buildCost * 2.5 ** level`, so a stale option charges the NEXT rung's
+  price. Measured worst case is `hatchery_lab` — a label reading 25,000 against a charge of
+  2,250,000, **90x**, against the landmark defect's 32x.
+  `PADDOCKS` and `FACILITIES` (`src/data/paddocks.ts`, `src/data/facilities.ts`) are
+  NULL-PROTOTYPE maps —
+  `Object.assign(Object.create(null) as Record<string, XDef>, { … } satisfies Record<string, XDef>)`.
+  The `as` and the `satisfies` are both required: `Object.assign(Object.create(null), {…})`
+  returns `any`, which silently discards the literal's type check. Before this, a select
+  menu could hand `buildLot` a prototype key — `PADDOCKS['constructor']` read back truthy
+  through `Object`, so its `!paddock && !facility` check did not fire, and the write
+  survived only because the resulting `NaN` cost bound as `NULL` against
+  `users.cash NOT NULL`, a schema accident rather than validation. `/build` could not reach
+  it because its `kind` comes from `addChoices`; a select menu value could.
+  `buildLot` now owns an explicit
+  `if (!Object.hasOwn(PADDOCKS, kind) && !Object.hasOwn(FACILITIES, kind)) throw new UnknownKindError(kind)`.
+  The menu handler's identical allowlist is DEFENCE IN DEPTH, never the only guard — it
+  earns its place because 90 of 101 `fakeButton` sites and every case in
+  `scripts/test-live.ts` call `execute` directly rather than through `routeInteraction`.
+  `upgradeLot(ctx, userId, lotId, expectedLevel)` takes the anchor as a REQUIRED fourth
+  parameter — never defaulted, the same rule as `hungerAt(…, drainMs)`, `feedCostFor(now)`
+  and `energyCostFor(now)` — and throws `StaleLevelError(expected, actual)`. Its guard order
+  is not-found, then stale, then maxLevel, so `/upgrade`'s `lotRow?.level ?? -1` sentinel
+  still reports 'No such lot.' for an unknown id. **The caller must pass the CLIENT-SUPPLIED
+  anchor**: passing a level the caller just read makes the comparison a tautology that can
+  never fire, which compiles, typechecks and passes every test. `/upgrade` is the one
+  exception and says so at the call site — it quotes no frozen label, so it has no anchor to
+  carry.
+  `confirmPayload` (`src/modules/park/embeds.ts`) ships `content: ''`, `attachments: []` and
+  RETAINS the tab row. The `attachments: []` is load-bearing rather than redundant:
+  `lotsPayload` attaches `banners/lots.webp` on every call, and an `i.update` carrying
+  neither `files` nor an explicit `attachments` strands that banner as an orphan attachment
+  card.
+  Error mapping is PER MENU. The service layer overloads two classes: `UnknownKindError`
+  means unknown *kind* in `buildLot` and unknown *lot* in `upgradeLot`; `LotLimitError`
+  means *slot cap* in one and *already max level* in the other. A shared mapping tells a
+  player "All lots full" when they meant "already max level".
+  Both spends sit behind a confirm rendered ONTO the card via `i.update`, never an
+  ephemeral follow-up — the Lots tab must not be left displaying a state it is about to
+  change. The confirm is a second layer only: the anchor check in the handler is the guard,
+  because another open message may still hold a stale button.

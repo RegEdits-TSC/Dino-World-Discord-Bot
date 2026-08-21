@@ -13,14 +13,14 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
-| `/park view` | Your park dashboard, across four tabs — Park, Animals, Lots, Prestige | Tab buttons switch the same message in place (nothing new gets posted); the tab you're on shows as a disabled button. The Park tab opens by default and renders a map of your lots, falling back to a text-only embed if the map can't render. Add `user:` to visit another player's park: the same four tabs, read-only (no Collect, Feed all, or other action buttons), with a **Next park ▶** button that survives tab switches to keep walking the ranked list |
+| `/park view` | Your park dashboard, across four tabs — Park, Animals, Lots, Prestige | Tab buttons switch the same message in place (nothing new gets posted); the tab you're on shows as a disabled button. The Park tab opens by default and renders a map of your lots, falling back to a text-only embed if the map can't render. The Lots tab offers **Build…**/**Upgrade…** dropdowns, priced per option, behind a confirm — see `/build`/`/upgrade` below. Add `user:` to visit another player's park: the same four tabs, read-only (no Collect, Feed all, Build/Upgrade, or other action buttons), with a **Next park ▶** button that survives tab switches to keep walking the ranked list |
 | `/park rename` | Rename your park | Up to 60 characters |
 | `/park alerts` | Turn proactive park alerts on or off | DM-only warnings before a dino escapes and when your park's income hits its cap. On by default; also turned off by the 🔕 Mute button on an alert itself |
 | `/park landmark` | Your park's prestige monument — the six-rung cash-sink ladder | Shows the built and next rungs with a Build button. Purely cosmetic. Also reachable from the Prestige tab of `/park view` |
 | `/park motto` | The line visitors see on the Park tab of your park card | Up to 80 characters. Leave the option blank to clear it |
 | `/park feature` | Feature one of your dinos on the Animals tab of your park card | Autocomplete: dino. Shows its name and art to anyone visiting. Leave the option blank to clear it. An escaped dino is still a valid choice |
-| `/build` | Build on an empty lot | |
-| `/upgrade` | Upgrade a lot to the next level | Autocomplete: lot, and the suggestion quotes the price. Costs are also quoted in the insufficient-funds reply |
+| `/build` | Build on an empty lot | Also offered as a **Build…** dropdown on the Lots tab of `/park view`, behind a confirm — pick a menu option and it doesn't charge until you confirm |
+| `/upgrade` | Upgrade a lot to the next level | Autocomplete: lot, and the suggestion quotes the price. Costs are also quoted in the insufficient-funds reply. Also offered as an **Upgrade…** dropdown on the Lots tab of `/park view`, behind a confirm |
 | `/decorate` | Add decor to a paddock | Autocomplete: lot, item |
 | `/dino list` | List every dino you own, with nickname and trait line | Paginated, 10 per page |
 | `/dino assign` | Put a dino in a paddock so it starts earning | Autocomplete: dino, lot |
