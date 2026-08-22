@@ -1,4 +1,4 @@
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } from 'discord.js';
 import type { Lot, User } from './service.js';
 import { emojiTag } from '../../core/emojis.js';
 import { eventHeaderLine } from '../world/embeds.js';
@@ -137,11 +137,13 @@ export function animalsPayload(
 }
 
 /**
- * The LOTS tab. Build and Upgrade arrive as select menus in a later PR; until then this
- * tab points at the existing slash commands rather than pretending to be actionable.
+ * The LOTS tab. Build and Upgrade both arrive as select menus here.
  */
 export function lotsPayload(
-  user: User, lots: Lot[], slots: number, opts: { visit?: boolean } = {},
+  user: User, lots: Lot[], slots: number,
+  opts: { visit?: boolean;
+          buildable?: Array<{ kind: string; name: string; cost: number }>;
+          upgradable?: Array<{ lotId: number; name: string; level: number; cost: number }> } = {},
 ) {
   const embed = new EmbedBuilder()
     .setTitle(`🏗️ ${user.parkName} — Lots`)
@@ -153,17 +155,89 @@ export function lotsPayload(
       }).join('\n') || 'Nothing built yet — `/build` to start.', inline: false },
       { name: 'Slots', value: `${lots.length} / ${slots} used`, inline: true },
     );
-  if (!opts.visit) {
+  const components: Array<ActionRowBuilder<ButtonBuilder> | ActionRowBuilder<StringSelectMenuBuilder>> = [];
+  const buildable = opts.buildable ?? [];
+  if (!opts.visit && buildable.length > 0) {
+    components.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`park:build:${user.discordId}`)
+        .setPlaceholder('Build…')
+        // Discord caps a select at 25 options. Six kinds exist today; the slice is
+        // insurance against a future catalog, not a live constraint.
+        .addOptions(buildable.slice(0, 25).map((b) => new StringSelectMenuOptionBuilder()
+          // The value is the KIND alone — an identity, never a price. Cost is re-derived
+          // by buildLot at execution; this label is a display copy nothing reads back.
+          .setValue(b.kind)
+          .setLabel(`${b.name} — ${b.cost.toLocaleString('en-US')} cash`))),
+    ));
+  } else if (!opts.visit) {
     embed.addFields({
-      name: 'Building', value: 'Use `/build kind:` for a new lot and `/upgrade lot:` to level one up.',
+      name: 'Building', value: 'No room for another lot — raise your park rating for more slots.',
       inline: false,
     });
   }
+  const upgradable = opts.upgradable ?? [];
+  if (!opts.visit && upgradable.length > 0) {
+    components.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`park:upgrade:${user.discordId}`)
+        .setPlaceholder('Upgrade…')
+        .addOptions(upgradable.slice(0, 25).map((u) => new StringSelectMenuOptionBuilder()
+          // <lotId>:<expectedLevel> — the level it was minted for is the staleness anchor.
+          // upgradeCostFor is a pure function of (kind, level), so without it a stale
+          // option silently charges the NEXT rung's price: measured worst case is a
+          // hatchery_lab label reading 25,000 against a 2,250,000 charge, 90x.
+          .setValue(`${u.lotId}:${u.level}`)
+          .setLabel(`#${u.lotId} ${u.name} → lvl ${u.level + 1} — ${u.cost.toLocaleString('en-US')} cash`))),
+    ));
+  }
+  components.push(tabRow(user.discordId, 'lots', opts.visit));
   const payload: {
-    embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[];
-  } = { embeds: [embed], components: [tabRow(user.discordId, 'lots', opts.visit)] };
+    embeds: EmbedBuilder[];
+    components: Array<ActionRowBuilder<ButtonBuilder> | ActionRowBuilder<StringSelectMenuBuilder>>;
+    files?: AttachmentBuilder[];
+  } = { embeds: [embed], components };
   attach(embed, payload, 'image', assetImage('banners', 'lots'));
   return payload;
+}
+
+/**
+ * A yes/no confirm rendered onto the card the player is already standing on, rather than
+ * an ephemeral follow-up: the Lots tab must not be left displaying a state it is about to
+ * change, and an ephemeral would accumulate one message per attempt.
+ *
+ * The thing being bought rides in `yesId`, never in this builder — see the
+ * park:landmark:buy incident. This builder only renders what it is handed.
+ */
+export function confirmPayload(user: User, question: string, yesId: string, noId: string, yesLabel: string) {
+  const embed = new EmbedBuilder()
+    .setTitle(`🏗️ ${user.parkName} — Confirm`)
+    .setColor(0xc9a227)
+    .setDescription(question)
+    .addFields({ name: `${emojiTag('dw_cash')} Your cash`, value: user.cash.toLocaleString(), inline: true });
+  return {
+    // content: '' for the same reason every renderTab branch sets it — discord.js drops an
+    // OMITTED content key from the request body and Discord then leaves the message's
+    // existing content unchanged, so a previous result line ("Built Gene Lab (lot #4).")
+    // would sit pinned above a spend that has not happened yet.
+    content: '',
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(yesId).setLabel(yesLabel).setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(noId).setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+      ),
+      // The tab row is RETAINED. A player mid-confirm must never be one click from losing
+      // navigation — the same reason routed surfaces reply ephemerally instead of updating
+      // the tab card away. Never `visit`: menus are suppressed on a visited card, so this
+      // builder is only ever reached by the owner.
+      tabRow(user.discordId, 'lots'),
+    ],
+    // REQUIRED, not redundant: the Lots tab this update replaces attaches
+    // banners/lots.webp, and a payload carrying neither `files` nor an explicit
+    // `attachments` leaves that upload behind as an orphan attachment card.
+    attachments: [],
+  };
 }
 
 /**

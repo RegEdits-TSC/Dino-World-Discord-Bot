@@ -1,8 +1,20 @@
 # /park view — tabbed navigation (spec 5b)
 
 **Date:** 2026-08-19
-**Status:** design approved, not implemented
-**Depends on:** `main` at `d6a88a6`
+**Amended:** 2026-08-21
+**Status:** the tabs and the select-menu engine have shipped; the Lots tab menus are the
+last PR of the series
+**Depends on:** `main` at `8359f62`
+
+> **Amendment note (2026-08-21).** Sections 3.4, 3.5, 3.6, 3.7, 6, 7, 9, 11 and the
+> decisions table were
+> rewritten after the shipped work moved past what they described. Two rulings drive most
+> of it: the lot tables become null-prototype maps and `buildLot` owns its own kind check
+> (§3.4), and `upgradeLot` takes the staleness anchor as a **required** parameter
+> (§3.5). Both move enforcement out of the handlers and into the service and data layers,
+> which is the reverse of what those sections originally specified. §11's two-PR split is
+> superseded outright: the work is planned as three numbered PRs plus a standalone bug fix
+> that was split out of the first, which reached GitHub as three merged PRs so far.
 
 ## Problem
 
@@ -228,38 +240,81 @@ enforced.** One consequence: **do not close a select flow by disabling the menu*
 does not read `disabled`, so a disabled select is not a lock. Close a flow by removing the
 component.
 
-### 3.4 Build is NOT already safe — `buildLot` has a prototype-key hole
+### 3.4 Build was NOT already safe — `buildLot` had a prototype-key hole
+
+> **Amended.** An earlier version of this section put the fix in the Build *handler* and said
+> it must "never rely on `buildLot`'s own check". That is now backwards. The fix lands in the
+> data layer and in `buildLot` itself; the handler's allowlist is defence in depth. The
+> history below is kept because it is the reason the design has this shape.
 
 An earlier draft of this spec claimed a forged Build value fails closed on `buildLot`'s own
-checks. That is wrong.
+checks. That was wrong.
 
 ```ts
-// src/modules/park/service.ts:85-86
+// src/modules/park/service.ts:85-86, as it stood
 const paddock = PADDOCKS[kind]; const facility = FACILITIES[kind];
 if (!paddock && !facility) throw new UnknownKindError(kind);
 ```
 
-`PADDOCKS['constructor']` is **truthy** — it resolves up the prototype chain to
-`Object`, with `.buildCost` `undefined` and `.name === 'Object'`. The guard does not fire.
-The write survives today only by schema accident: `cost` becomes `NaN`, better-sqlite3 binds
-`NaN` as `NULL`, and the `users.cash` `NOT NULL` constraint rolls the transaction back.
+`PADDOCKS['constructor']` was **truthy** — it resolved up the prototype chain to `Object`,
+with `.buildCost` `undefined` and `.name === 'Object'`. The guard did not fire. The write
+survived only by schema accident: `cost` became `NaN`, better-sqlite3 bound `NaN` as `NULL`,
+and the `users.cash` `NOT NULL` constraint rolled the transaction back.
 
-`/build` cannot reach this because its `kind` comes from `addChoices` — a **select menu
-value can**. So the Build handler validates with an explicit
-`Object.hasOwn(PADDOCKS, kind) || Object.hasOwn(FACILITIES, kind)` before calling
-`buildLot`, and never relies on `buildLot`'s own check.
+`/build` cannot reach this — its `kind` comes from `addChoices`. **A select menu value can.**
+Nine raw index sites exist across `src/`, and `upgradeCostFor` does `PADDOCKS[kind].buildCost`
+with no guard at all.
+
+**Fix, two layers, both kept.**
+
+*Layer 1 — the tables themselves.* `PADDOCKS` and `FACILITIES` become null-prototype maps:
+
+```ts
+export const PADDOCKS: Record<string, PaddockDef> = Object.assign(
+  Object.create(null) as Record<string, PaddockDef>,
+  { herbivore_paddock: { /* … */ }, carnivore_paddock: { /* … */ } } satisfies Record<string, PaddockDef>,
+);
+```
+
+The `as` and the `satisfies` are both load-bearing. `Object.create(null)` is `any`, so a bare
+`Object.assign(Object.create(null), {…})` returns `any` and the literal silently loses its
+`PaddockDef` check — a typo in a `buildCost` would stop being a type error.
+
+This kills the whole class at all nine index sites at once, and turns `upgradeCostFor`'s
+silent `NaN` into a loud `TypeError` at the read. It is safe to apply: nothing in `src/`,
+`tests/` or `scripts/` uses `for…in` over either table, spreads one, or compares a whole
+table with `toEqual`/`toStrictEqual`. Every access is dot-access or
+`Object.keys`/`values`/`entries`, all of which ignore the prototype.
+
+*Layer 2 — `buildLot` owns an explicit check.*
+
+```ts
+if (!Object.hasOwn(PADDOCKS, kind) && !Object.hasOwn(FACILITIES, kind)) throw new UnknownKindError(kind);
+```
+
+CLAUDE.md's own rule is that boundaries get validation, and a reader arriving at `buildLot`
+should be able to see why it is safe without first knowing how the table was constructed.
+
+The Build **handler** keeps the identical allowlist as defence in depth — never as the guard.
+It earns its place for a concrete reason: 90 of 101 `fakeButton` sites, and every case in
+`scripts/test-live.ts`, call `execute` directly rather than through `routeInteraction`, so
+handler-level checks are what those paths actually exercise.
 
 The *rest* of what `buildLot` re-derives at execution is correct and must not be duplicated
 into the menu value: a stale "Build Gene Lab" option is already rejected by
-`DuplicateFacilityError`, and a stale option on a now-full park by `LotLimitError`. **No
-extra state in the customId is required for Build** — only the allowlist check.
+`DuplicateFacilityError`, and a stale option on a now-full park by `LotLimitError`. Build's
+cost is a flat per-kind constant — no level term, no world-event multiplier — so **Build
+needs no staleness anchor**, only the allowlist.
 
 ### 3.5 Upgrade's stale-label overcharge reaches 90x
 
-`upgradeLot` (`src/modules/park/service.ts:127-134`) scopes its lookup by `userId`
-(`and(eq(id), eq(userId))`), so a forged foreign lot id is rejected — but it re-derives cost
-from `lot.level` **at execution time** while the menu label was frozen at render time. For a
-paddock that cost is geometric:
+> **Amended.** An earlier version enforced the anchor in the *handler* only. `upgradeLot` now
+> takes it as a **required** parameter and throws `StaleLevelError`; the handler check remains
+> for its message, not as the lock.
+
+`upgradeLot` scopes its lookup by `userId` (`and(eq(id), eq(userId))`), so a forged foreign lot
+id is rejected — but it re-derived cost from `lot.level` **at execution time** while the menu
+label was frozen at render time. For a paddock that cost is geometric:
 
 ```ts
 // src/modules/park/service.ts:124
@@ -267,17 +322,51 @@ return Math.round(PADDOCKS[kind].buildCost * 2.5 ** level);
 ```
 
 This is the `park:landmark:buy` incident in a new place: frozen label, re-derived price, no
-refund path. **It is worse than the original.** The measured worst case is `hatchery_lab` —
-a label reading 25,000 against a charge of 2,250,000, a **90x** overcharge, versus the
-landmark defect's 32x.
+refund path. **It is worse than the original.** The measured worst case is `hatchery_lab` — a
+label reading 25,000 against a charge of 2,250,000, a **90x** overcharge, versus the landmark
+defect's 32x.
 
-A menu option's `value` therefore carries **identity plus a staleness anchor, never a
-price**. The handler passes the id to the existing service function and lets it charge; any
-price in the label is a display copy the handler never reads back.
+A menu option's `value` therefore carries **identity plus a staleness anchor, never a price**.
+The Upgrade option's value is `<lotId>:<expectedLevel>`; any price in the label is a display
+copy no handler reads back.
 
-**Fix, same shape as the landmark one:** the Upgrade option's **value carries
-`<lotId>:<expectedLevel>`**, and the handler rejects when `lot.level !== expectedLevel`,
-after the owner check and before any read or write.
+**The lock lives in the service, not the handler.**
+
+```ts
+export class StaleLevelError extends Error {
+  constructor(readonly expected: number, readonly actual: number) {
+    super(`expected level ${expected}, found ${actual}`);
+  }
+}
+
+export function upgradeLot(ctx: Ctx, userId: string, lotId: number, expectedLevel: number): Lot
+```
+
+`expectedLevel` is **required, never optional** — the same rule that makes
+`hungerAt(…, drainMs)`, `feedCostFor(now)` and `energyCostFor(now)` required. A default would
+let a call site silently charge whatever the current level costs against a price the player
+read at an older one. Required means a future caller cannot forget it: omitting it is a
+typecheck failure rather than a 90x charge.
+
+Two properties must survive future work.
+
+1. **Guard order is not-found → stale → maxLevel.** At a stale level the max verdict is
+   computed against a level the caller did not expect either, so "already max level" would name
+   the wrong problem. The ordering is also what lets `/upgrade` pass a `-1` sentinel for an id
+   it could not read and still get "No such lot." rather than a stale-level message.
+2. **The argument must be the CLIENT-SUPPLIED anchor, never a level the caller just read.** At
+   `park:upgyes` that is `Number(parts[4])`, parsed out of the customId. Passing the in-scope
+   freshly-read `lot.level` instead compiles, typechecks, passes every test written for this
+   feature, and makes the comparison `lot.level !== lot.level` — a guard that can never fire,
+   silently voiding the entire mechanism. `/upgrade` is the one legitimate exception and needs
+   a comment saying so: it carries no frozen label — the player names the lot and the charge
+   happens on the same read — so there is no anchor to carry, and `lotRow?.level ?? -1` is the
+   honest argument rather than a tautology waiting to be "fixed".
+
+The confirm handler still performs its own fresh read, because it needs `lot.kind` and
+`lot.level` to quote the price in the `InsufficientFundsError` branch — the hoist `/upgrade`
+already does (`index.ts:257-260`). That read stays. It simply stops being the only thing
+standing between a stale button and the money.
 
 ### 3.6 The two menus cannot share one error mapping
 
@@ -291,8 +380,15 @@ The service layer overloads two error classes:
 A single handler serving both menus that reuses `/upgrade`'s mapping verbatim tells a player
 "All lots full" when they meant "already max level". **Branch on which menu submitted before
 mapping errors.** Keep `/upgrade`'s hoisted-read-for-the-price-quote pattern
-(`index.ts:248-250`) for `InsufficientFundsError` — it is the only way to name the amount
+(`index.ts:257-260`) for `InsufficientFundsError` — it is the only way to name the amount
 without deriving it in a second place.
+
+`StaleLevelError` (§3.5) is the one class that is **not** overloaded across the two menus: it
+can only come from `upgradeLot`, and it means exactly one thing. It still needs an arm in
+every catch chain that calls `upgradeLot`, `/upgrade`'s included — where it is unreachable
+today, since the hoisted read and the service's own read happen in the same tick with no
+write between them, but where `else throw e` on a spend path is not where anyone wants to
+discover otherwise.
 
 ### 3.7 Confirm step
 
@@ -302,11 +398,58 @@ into a confirm state (tab bar retained, action row replaced with Yes / No), and 
 to a freshly rendered Lots tab. The card is therefore never left displaying a level it has
 just changed, and no ephemeral messages accumulate.
 
-- `park:buildyes:<uid>:<kind>` / `park:buildno:<uid>`
+- `park:buildyes:<uid>:<kind>:<lotCount>` / `park:buildno:<uid>`
 - `park:upgyes:<uid>:<lotId>:<expectedLevel>` / `park:upgno:<uid>`
 
 The confirm buttons re-validate everything the select validated. The confirm click is a
 second layer, never the guard — another open message may still hold a stale menu.
+
+**Build carries a staleness anchor too, and it is `<lotCount>`.** §3.5's lock lives in the
+service because an upgrade has a level to compare; a build has none and its price never
+moves, so the anchor is the owner's lot count at mint time and the handler's own check of it
+is the whole lock. Without it the id changes nothing when the purchase succeeds, so two
+clicks landing before the first repaint both pass the owner check and both pass the
+allowlist. `DuplicateFacilityError` stops the second for a facility. Paddocks are duplicable
+by design, so it builds a second one — and since `lotSlots` caps at 10 with no demolish path
+outside `adminReset`, the loss is a permanent slot rather than the cash. The count is a sound
+anchor precisely because `buildLot` only ever increases it. It is validated in the same order
+`park:upgyes` validates its level — integer parse, then a fresh read, both before any write —
+and **no `await` may sit between that read and `buildLot`**: better-sqlite3 is synchronous and
+Node is single-threaded, so a check-then-write with no suspension point between them cannot
+interleave with a second interaction, which is what closes the race.
+
+**`confirmPayload` returns four keys, and three of them are load-bearing in ways "renders in
+place" does not imply.** None is derivable from the description above, so each is specified
+here:
+
+```ts
+return {
+  content: '',                 // an OMITTED key leaves the message's existing content pinned
+  embeds: [embed],
+  components: [yesNoRow, tabRow(user.discordId, 'lots')],
+  attachments: [],             // lotsPayload attaches banners/lots.webp on every call
+};
+```
+
+- **`content: ''`** — discord.js drops an omitted `content` key from the request body, and
+  Discord then leaves the existing content unchanged. Concrete failure without it: confirm a
+  build, so `renderTab` writes "Built **Gene Lab** (lot #4).", then pick an Upgrade option on
+  that same card — the confirm renders with a success line pinned above a spend that has not
+  happened.
+- **`attachments: []`** — `lotsPayload` calls
+  `attach(embed, payload, 'image', assetImage('banners', 'lots'))` unconditionally and
+  `confirmPayload` ships no `files` of its own, so without this the banner strands as an orphan
+  attachment card under the confirm embed. Same rule as §2.3, for the same reason.
+- **The tab row is retained**, so a player mid-confirm is never one click away from losing
+  navigation — the reason routed surfaces reply ephemerally rather than `i.update`-ing the card
+  away.
+
+**`renderTab`'s `lots` branch is an ADDITIVE edit, never a block replacement.** The two new
+locals thread into the existing `lotsPayload` call; `if (tourRow) built.components.push(tourRow)`
+and `content: content ?? ''` both stay exactly where they are. Dropping the first dead-ends a
+park tour on the Lots tab with no way to advance short of re-running a command; dropping the
+second discards every build and upgrade success line and leaves a stale one pinned. Neither is
+caught by any existing test — the only `tourRow` regression test exercises the *Animals* tab.
 
 ## 4. Router hooks
 
@@ -396,6 +539,22 @@ keep passing exactly as they are.
 `components[0].toJSON().components[0]` and **keeps passing** provided Collect stays the first
 button of the first row — see the action-row budget above.
 
+**Added by the §3.5 amendment — pins that break on the `upgradeLot` signature change:**
+
+| Pin | Cause |
+|---|---|
+| `tests/park.test.ts` — six `upgradeLot(ctx, 'u1', …)` call sites | Each gains a fourth argument. Every one must pass the level the lot is actually at, or it starts testing `StaleLevelError` instead of what it was written for — `:669`'s `toThrow(LotLimitError)` is the one that silently becomes a wrong-error test |
+| `tests/stats-sites.test.ts:121` | Same, one site |
+
+The `/upgrade` command itself (`src/modules/park/index.ts:262`) is the only production call
+site. It already hoists `lotRow` for its price quote, so it passes `lotRow?.level ?? -1` for
+free — see §3.5 for why the sentinel is correct there and why that site is exempt from the
+"never pass a level you just read" rule.
+
+The **§3.4 null-prototype change breaks no pin at all.** Nothing in `src/`, `tests/` or
+`scripts/` uses `for…in` over either table, spreads one, or compares a whole table with
+`toEqual`/`toStrictEqual`; `tests/data.test.ts`'s existing assertions are all dot-access.
+
 ## 7. Test work
 
 - **`fakeSelect` in `tests/harness.ts`**, alongside `fakeButton`: carries `values`, enforces
@@ -403,10 +562,42 @@ button of the first row — see the action-row budget above.
   `[customId]` so the router guard is *exercised* rather than bypassed.
 - Regression tests pinning each of:
   - a stale `expectedLevel` on `park:upgyes` is rejected and charges nothing
+  - a stale `lotCount` on `park:buildyes` is rejected and builds no second lot
+  - the Cancel half of each confirm (`park:buildno`, `park:upgno`) re-renders the Lots tab
+    rather than acknowledging silently — asserting only that the confirm MINTS those ids
+    leaves the handler deletable with the suite still green
   - a forged foreign `lotId` is rejected
   - a select menu whose customId is not on the message is rejected by the router guard
   - a forged `park:tab` anchored on a foreign message is rejected
   - a `park:vtab` click writes nothing for the target
+
+**Every rejection pin above needs a POSITIVE assertion on the reply, not only on the state.**
+This is the amendment's sharpest test finding and it applies to the whole list. A rejection
+test that asserts only "cash unchanged, level unchanged" is satisfied twice over without any
+implementation at all: the park component handler's pre-existing `default: await
+i.deferUpdate()` arm writes nothing, and `upgradeLot` is already scoped by `userId`, so the
+forged-foreign-lot case **cannot fail under any implementation**. Assert the specific message
+or the specific `deferOpts` shape as well as the state.
+
+The same trap sets the shape of the red gate: when a suite is run before the implementation
+exists, name **which** cases are expected to go red. Two of the five upgrade cases pass on an
+untouched `main`, so a bare "expected: FAIL" is satisfied by the other three and nobody learns
+the two are inert.
+
+**Three surfaces that ship with no coverage unless it is written deliberately:**
+
+- **`confirmPayload` needs its own direct test** — tab row present, `attachments` is `[]`,
+  `content` is `''`. Assertions that only `toContain` the yes/no customIds are satisfied by a
+  builder that has none of the three (§3.7).
+- **A visited Lots tab must pin that `park:tour:` survives.** The only existing `tourRow`
+  regression test clicks the *Animals* tab, and the `park:vtab:<uid>:lots` case asserts on the
+  embed title and the absence of owner-only buttons — so the loss described in §3.7 is
+  currently invisible.
+- **§3.4 and §3.5's own guards.** For §3.4: `constructor` / `__proto__` / `toString` /
+  `valueOf` / `hasOwnProperty` all read back `undefined` on both tables. For §3.5: a mismatched
+  `expectedLevel` throws `StaleLevelError` with the lot's level **and the user's cash** both
+  unchanged — the level assertion alone still passes if the charge went through and the update
+  failed.
 - Router-level dispatch tests for the new select branch. The existing suite is structurally
   blind here: only 11 of 101 `fakeButton` sites route through `routeInteraction` at all, so
   a select-menu guard that is never wired would otherwise pass the whole suite green.
@@ -425,6 +616,16 @@ skipped:
   only that the guard compares two strings — the exact vacuous pass the sweep's own header
   comment says it exists to prevent. Replay type-3 components through `fakeSelect`, add the
   select-bearing builder to `surfaces`, add its prefix to `PREFIXES`.
+
+  **The select-bearing surface must REPLACE the existing Lots-tab entry in `surfaces`, not sit
+  beside it as a standalone local.** The live entry passes no `buildable`, so under the menu's
+  own `buildable.length > 0` guard it mints no select at all; the replay loop iterates
+  `surfaces` only, so every component stays type 2, neither select guard is ever reached, and
+  an anti-vacuity assertion written against a local variable passes while the sweep it guards
+  stays vacuous. Convert every entry from ids to full components, keep the existing
+  "acknowledged instead of dispatched" `deferOpts` assertion — it is the only thing separating a
+  real dispatch from a guard acknowledgement — and include `park:upgrade:<uid>`, the one id in
+  this work carrying a colon-separated payload past the owner segment.
 - **`fakeSelect` must copy `fakeButton`'s lifecycle block wholesale**, including the
   `deferOpts` `kind` discriminator (`tests/harness.ts:261-274`). A thinner fake that only
   records replies cannot tell a correct `deferUpdate` rejection from a UX-breaking
@@ -456,6 +657,21 @@ Updated in the same change, not as follow-up:
   `ComponentDef`; the geometric-upgrade-cost lesson and the `<lotId>:<expectedLevel>` value
   contract; the Collect-must-stay-row-0 layout pin
 
+  Three corrections belong in the same edit, because `CLAUDE.md` is the file every future
+  implementer is told is authoritative and each of these would otherwise be written into it as
+  a live fact:
+
+  - The prototype-hole story must be recorded in the **past tense**, with the null-prototype
+    maps and `buildLot`'s own `Object.hasOwn` named as the fix. The `NaN`-binds-as-`NULL`
+    detail stays as history — it explains why the hole was survivable — but must not read as
+    the current safety mechanism, and "never rely on `buildLot`'s own check" inverts the
+    shipped design and must go.
+  - `upgradeLot`'s required fourth parameter joins the `hungerAt(drainMs)` /
+    `feedCostFor(now)` / `energyCostFor(now)` family, with the tautology warning from §3.5:
+    the caller must pass the client-supplied anchor, never a level it just read.
+  - The existing select-menu bullet says the guards are "never left to individual select
+    handlers, **none of which exist yet**". One exists after this work; that clause is stale.
+
 ## 10. Operator steps
 
 `npm run build` → restart the bot → `npm run test:live` for the gallery. Nothing
@@ -463,23 +679,36 @@ irreversible; no command deploy, no emoji deploy, no migration.
 
 ## 11. Sequencing
 
-Two PRs, not one. The halves have very different risk profiles and the first is useful on
-its own.
+> **Superseded 2026-08-21.** This section described a two-PR split. The work is planned as
+> three numbered PRs plus a standalone bug fix that was split out of the first, and §6's
+> blast radius and §7's test-work list should be read against that boundary rather than
+> this one.
 
-**PR 1 — tabs.** The four tabs, both customId shapes, the visited-park treatment, the
-compact alert marker, the routed surfaces, the `lots.webp` asset, and the three broken art
-pins. Touches the park module only. The Lots tab ships in this PR with its fields and its
-banner but **no** Build / Upgrade menus — a line pointing at `/build` and `/upgrade` stands
-in.
+**Two numberings are in play and they do not line up.** The plan documents number themselves
+1–3; GitHub has merged three PRs so far. Plan PR 1's scope was split in two on the way out,
+which is where the numbers diverge.
 
-**PR 2 — select menus.** The `SelectDef` type, the registry's `findSelect`, the router's
-`isStringSelectMenu` branch, the guard wiring, `fakeSelect`, the Build and Upgrade menus,
-both confirm steps, and the `<lotId>:<expectedLevel>` contract. Touches `src/core/`, so it
-is the half that can break all seventeen modules.
+| Plan PR | GitHub | Landed | Contents |
+|---|---|---|---|
+| — (split out of plan PR 1) | **#41** | `0a6a7a2` | The park component handler's missing default arm, plus the spec and plan docs. A standalone bug fix that should not have had to wait on a feature |
+| **1** — tabs | **#43** | `f8e02f4` | The four tabs, swapped in place, read-only on a visited park. Player-visible |
+| **2** — select routing | **#44** | `8359f62` | `SelectDef`, `findSelect`, the router's select branch, both guards, `fakeSelect`. Engine only; no select minted |
+| **3** — lot menus | next | not started | The Lots tab Build and Upgrade menus, both confirm steps, and the §3.4 / §3.5 hardening the menus make reachable |
 
-Splitting this way means a router change lands on its own, reviewable against a `main` that
-already has the tabs working — rather than arriving mixed into a large cosmetic diff where a
-bivariance mistake is easy to miss.
+`docs/superpowers/plans/2026-08-19-park-view-tabs-3-lot-menus.md` is titled "PR 3 of 4" and
+that is correct on the plan axis — the fourth document is the unnumbered default-arm plan.
+Nothing should be renumbered to make the two axes agree; they are counting different things.
+
+The original reasoning survives the resplit and is why it is worth keeping: the `src/core/`
+half can break all seventeen modules, so a router change deserves review against a `main`
+where the tabs already work, rather than arriving mixed into a large cosmetic diff where a
+bivariance mistake is easy to miss. Splitting the default-arm fix out was the same instinct
+applied once more.
+
+Plan PR 3 is the one that spends money, which is why the two hardening rulings ride with it
+rather than shipping separately: they have no player-visible effect and are unreachable
+through today's commands, so a standalone PR for them would be justified only by "a future PR
+needs this".
 
 ## Decisions made and rejected alternatives
 
@@ -495,8 +724,10 @@ bivariance mistake is easy to miss.
 | Always open on Park | Remember last tab | Requires a new column for UI state; no other surface stores one |
 | Compact alert marker on Park | Full breakdown on Animals only | Hiding an escaped dino behind a click is a visibility regression on the most time-sensitive state in the game |
 | Routed surfaces open ephemeral | `i.update` the tab card | Would destroy the navigation the player is standing in, and the routed payloads mint their own components |
-| Two PRs | One | The `src/core/` half can break all seventeen modules; it deserves review against a `main` where the tabs already work |
+| Three numbered PRs plus a split-out bug fix | One, or the two-PR split this spec originally proposed | The `src/core/` half can break all seventeen modules and deserves review against a `main` where the tabs already work; the default-arm fix is a standalone bug fix that should not wait on a feature; and the money-spending menus are worth isolating from the cosmetic diff. See the superseded §11 |
 | `submittedValuesAreOnMessage` as a sibling helper | Fold value-checking into `clickedIdIsOnMessage` | The router calls that guard for every component including buttons, which have no values to check |
-| Explicit `Object.hasOwn` allowlist on Build | Rely on `buildLot`'s own kind check | `PADDOCKS['constructor']` is truthy; the write survives only by a `NOT NULL` accident |
+| Null-prototype `PADDOCKS`/`FACILITIES`, **plus** an `Object.hasOwn` check inside `buildLot` | An allowlist in the Build handler only | The handler check leaves eight other raw index sites exposed, and `upgradeCostFor` has no guard at all — its silent `NaN` becomes a loud `TypeError` only once the table itself is fixed |
+| `upgradeLot`'s `expectedLevel` is a **required** parameter | A level check in the confirm handler | Required makes omitting it a typecheck failure rather than a 90x charge; a handler check is one forgotten line away from the `park:landmark:buy` incident |
+| `StaleLevelError` as its own class | Reuse `UnknownKindError` or `LotLimitError` | Both are already overloaded across `buildLot` and `upgradeLot` (§3.6); a third meaning on either would make the per-menu error mapping unwritable |
 | `bumpLegacyBest` on the Park tab only | Everywhere, or nowhere | Keeps the high-water armed on every `/park view` without a navigation click mutating a row |
 | `user_id` indexes left out of scope | Add them alongside the tabs | Higher-leverage change on its own merits; should not ride in as a side effect of a UI change |

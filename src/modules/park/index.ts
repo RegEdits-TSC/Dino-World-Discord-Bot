@@ -2,11 +2,11 @@ import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, Butt
 import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
-import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, toClockDinos, needsAttentionCount } from './service.js';
+import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, StaleLevelError, toClockDinos, needsAttentionCount } from './service.js';
 import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
-import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
+import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, confirmPayload, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
 import { guestsPayload } from '../guests/embeds.js';
 import { visitPayload, nextParkRow } from './visit.js';
 import { bumpLegacyBest, legacyRank } from './ranks.js';
@@ -29,6 +29,7 @@ import { emojiTag, foodEmoji } from '../../core/emojis.js';
 import { traitDefs } from '../../data/traits.js';
 import type { Ctx } from '../../core/context.js';
 import { assetImage, attach } from '../../core/images.js';
+import { submittedValuesAreOnMessage } from '../../core/components.js';
 import { attendanceOf } from './attendance.js';
 import { earnedTierCount } from '../daily/service.js';
 import { seasonBadges } from '../daily/season.js';
@@ -259,13 +260,24 @@ export const parkModule: ModuleManifest = {
         const lotRow = ctx.db.select().from(schema.lots)
           .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, i.user.id))).get();
         try {
-          const lot = upgradeLot(ctx, i.user.id, lotId);
+          // The one legitimate place to pass a freshly-read level: this command quotes no
+          // frozen label, so there is no client anchor to carry. The `?? -1` sentinel is
+          // only reached when the hoisted read found nothing, in which case upgradeLot's
+          // own read also finds nothing and UnknownKindError fires first.
+          const lot = upgradeLot(ctx, i.user.id, lotId, lotRow?.level ?? -1);
           await i.reply({ content: `⬆️ **${lot.name}** is now level ${lot.level}.` });
         } catch (e) {
           if (e instanceof LotLimitError) await i.reply({ content: 'Already max level.', flags: MessageFlags.Ephemeral });
           else if (e instanceof UnknownKindError) await i.reply({ content: 'No such lot.', flags: MessageFlags.Ephemeral });
           else if (e instanceof InsufficientFundsError) await i.reply({
             content: `Not enough cash — that upgrade costs ${upgradeCostFor(lotRow!.kind, lotRow!.level).toLocaleString('en-US')}.`,
+            flags: MessageFlags.Ephemeral,
+          });
+          else if (e instanceof StaleLevelError) await i.reply({
+            // Unreachable today — the hoisted read and upgradeLot's own read happen in the
+            // same tick with no write between them — but `else throw e` on a spend path is
+            // not where anyone wants to discover otherwise.
+            content: 'That lot changed — run `/upgrade` again for the current price.',
             flags: MessageFlags.Ephemeral,
           });
           else throw e;
@@ -403,6 +415,80 @@ export const parkModule: ModuleManifest = {
         await respondRanked(i, paddocks
           .filter((l) => matches(q, l.id, l.name))
           .map((l) => ({ value: l.id, valid: true, label: `🏗️ #${l.id} ${l.name} (lvl ${l.level})` })));
+      },
+    },
+  ],
+  selects: [
+    {
+      prefix: 'park',
+      async execute(ctx, i) {
+        const [, action, uid] = i.customId.split(':');
+        if (i.user.id !== uid) {
+          await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        // The router proves BOTH halves centrally before this handler is ever reached:
+        // clickedIdIsOnMessage that the bot minted this menu on this message, then
+        // submittedValuesAreOnMessage that every submitted value was one the bot offered
+        // on it (src/core/router.ts). This copy is defence in depth for the callers that
+        // invoke execute() directly and so never pass through the router at all —
+        // scripts/test-live.ts's select() helper and every direct-dispatch test.
+        if (!submittedValuesAreOnMessage(i)) { await i.deferUpdate(); return; }
+        const value = i.values[0]!;
+        const user = ctx.db.select().from(schema.users)
+          .where(eq(schema.users.discordId, i.user.id)).get()!;
+        if (action === 'build') {
+          // Defence in depth over Task 0a, which is what actually closed this: the tables
+          // are null-prototype now and buildLot owns an Object.hasOwn check of its own.
+          // This copy earns its place because 132 of 143 fakeButton sites and every case in
+          // scripts/test-live.ts call execute directly rather than through routeInteraction,
+          // so a handler-level check is what those paths exercise.
+          if (!Object.hasOwn(PADDOCKS, value) && !Object.hasOwn(FACILITIES, value)) {
+            await i.deferUpdate();
+            return;
+          }
+          const def = PADDOCKS[value] ?? FACILITIES[value]!;
+          // The confirm carries the lot COUNT it was minted against, the same way
+          // park:upgyes carries the level it was minted against. Build has no level to
+          // anchor on and its price never moves, so the count is what makes the id
+          // single-use: buildLot only ever increases it and nothing outside adminReset
+          // removes a lot, so the second of two clicks racing the first repaint provably
+          // reads a different count and is rejected. Facilities were already safe
+          // (DuplicateFacilityError stops the second), but paddocks are duplicable by
+          // design and lotSlots caps at 10 with no demolish path anywhere — a doubled
+          // paddock burns a slot permanently.
+          const lotCount = ctx.db.select().from(schema.lots)
+            .where(eq(schema.lots.userId, i.user.id)).all().length;
+          await i.update(confirmPayload(
+            user,
+            `Build **${def.name}** for **${def.buildCost.toLocaleString('en-US')}** cash?`,
+            `park:buildyes:${i.user.id}:${value}:${lotCount}`, `park:buildno:${i.user.id}`,
+            `Build ${def.name}`,
+          ));
+          return;
+        }
+        if (action === 'upgrade') {
+          const [lotStr, levelStr] = value.split(':');
+          const lotId = Number(lotStr); const expected = Number(levelStr);
+          if (!Number.isInteger(lotId) || !Number.isInteger(expected)) { await i.deferUpdate(); return; }
+          const lot = ctx.db.select().from(schema.lots)
+            .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, i.user.id))).get();
+          if (!lot || lot.level !== expected) {
+            await i.reply({
+              content: 'That lot changed — open `/park view` again for current prices.',
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
+          await i.update(confirmPayload(
+            user,
+            `Upgrade **${lot.name}** to level ${lot.level + 1} for **${upgradeCostFor(lot.kind, lot.level).toLocaleString('en-US')}** cash?`,
+            `park:upgyes:${i.user.id}:${lotId}:${expected}`, `park:upgno:${i.user.id}`,
+            `Upgrade to lvl ${lot.level + 1}`,
+          ));
+          return;
+        }
+        await i.deferUpdate();
       },
     },
   ],
@@ -632,6 +718,135 @@ export const parkModule: ModuleManifest = {
             await renderTab(ctx, i, uid, tab, true);
             return;
           }
+          case 'buildno':
+          case 'upgno': {
+            if (i.user.id !== uid) {
+              await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral });
+              return;
+            }
+            await renderTab(ctx, i, i.user.id, 'lots', false);
+            return;
+          }
+          case 'buildyes': {
+            if (i.user.id !== uid) {
+              await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral });
+              return;
+            }
+            const kind = parts[3] ?? '';
+            // Re-validated here and not merely at the menu: another open message may still
+            // hold a stale confirm button, and the customId is client-supplied regardless.
+            if (!Object.hasOwn(PADDOCKS, kind) && !Object.hasOwn(FACILITIES, kind)) {
+              await i.reply({
+                content: 'That build button is no longer valid — open `/park view` again.',
+                flags: MessageFlags.Ephemeral,
+              });
+              return;
+            }
+            // park:buildyes:<uid>:<kind>:<lotCount> — the count anchor, validated in the
+            // same order upgyes validates its level: integer parse first, then a FRESH
+            // read, both before any write. It is what makes this id single-use, which
+            // matters most for paddocks: they are duplicable by design, so a second click
+            // landing before the first repaint would build a second one, and lotSlots caps
+            // at 10 with no demolish path short of adminReset — the slot is gone for good.
+            const offeredCount = Number(parts[4]);
+            if (!Number.isInteger(offeredCount)) {
+              await i.reply({
+                content: 'That build button is no longer valid — open `/park view` again.',
+                flags: MessageFlags.Ephemeral,
+              });
+              return;
+            }
+            // NO `await` may sit between this read and buildLot below. better-sqlite3 is
+            // synchronous and Node is single-threaded, so a check-then-write with no
+            // suspension point between them cannot interleave with a second interaction;
+            // introducing one here reopens the very race this anchor closes.
+            const lotCount = ctx.db.select().from(schema.lots)
+              .where(eq(schema.lots.userId, i.user.id)).all().length;
+            if (lotCount !== offeredCount) {
+              await i.reply({
+                content: `Your park has ${lotCount} lot${lotCount === 1 ? '' : 's'} now, not ${offeredCount} — open \`/park view\` again to build.`,
+                flags: MessageFlags.Ephemeral,
+              });
+              return;
+            }
+            try {
+              const lot = buildLot(ctx, i.user.id, kind);
+              await renderTab(ctx, i, i.user.id, 'lots', false, `🏗️ Built **${lot.name}** (lot #${lot.id}).`);
+            } catch (e) {
+              // Mapped for the BUILD menu specifically: LotLimitError means "slot cap" here
+              // and "already max level" in upgradeLot, and UnknownKindError is likewise
+              // overloaded. Reusing /upgrade's mapping would tell a player "already max
+              // level" when they meant "all lots full".
+              if (e instanceof DuplicateFacilityError) {
+                await i.reply({ content: `You already have a ${e.message} — upgrade it instead.`, flags: MessageFlags.Ephemeral });
+              } else if (e instanceof LotLimitError) {
+                await i.reply({ content: 'All lots full. More slots unlock with park rating.', flags: MessageFlags.Ephemeral });
+              } else if (e instanceof InsufficientFundsError) {
+                const def = PADDOCKS[kind] ?? FACILITIES[kind]!;
+                await i.reply({
+                  content: `Not enough cash — ${def.name} costs ${def.buildCost.toLocaleString('en-US')}.`,
+                  flags: MessageFlags.Ephemeral,
+                });
+              } else throw e;
+            }
+            return;
+          }
+          case 'upgyes': {
+            if (i.user.id !== uid) {
+              await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral });
+              return;
+            }
+            // park:upgyes:<uid>:<lotId>:<expectedLevel> — both client-supplied. Parsed as
+            // integers first, then checked against a FRESH read, in that order, before any
+            // write. This is the guard, not the confirm click: another open message may
+            // still hold a stale button for the same lot.
+            const lotId = Number(parts[3]); const expected = Number(parts[4]);
+            if (!Number.isInteger(lotId) || !Number.isInteger(expected)) {
+              await i.reply({ content: 'That upgrade button is no longer valid — open `/park view` again.', flags: MessageFlags.Ephemeral });
+              return;
+            }
+            const lot = ctx.db.select().from(schema.lots)
+              .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, i.user.id))).get();
+            if (!lot || lot.level !== expected) {
+              await i.reply({
+                content: lot
+                  ? `That lot is level ${lot.level} now, not ${expected} — open \`/park view\` again for the current price.`
+                  : 'No such lot.',
+                flags: MessageFlags.Ephemeral,
+              });
+              return;
+            }
+            try {
+              // `expected` is the CLIENT-SUPPLIED anchor parsed out of the customId, never
+              // `lot.level` from the fresh read above. Passing the fresh read would make
+              // upgradeLot compare a value against itself, so its StaleLevelError could
+              // never fire — two layers over ONE anchor, not one layer applied twice.
+              const upgraded = upgradeLot(ctx, i.user.id, lotId, expected);
+              await renderTab(ctx, i, i.user.id, 'lots', false, `⬆️ **${upgraded.name}** is now level ${upgraded.level}.`);
+            } catch (e) {
+              // Mapped for the UPGRADE menu: LotLimitError means "already max level" here,
+              // where the build handler reads the same class as "slot cap".
+              if (e instanceof LotLimitError) {
+                await i.reply({ content: 'Already max level.', flags: MessageFlags.Ephemeral });
+              } else if (e instanceof UnknownKindError) {
+                await i.reply({ content: 'No such lot.', flags: MessageFlags.Ephemeral });
+              } else if (e instanceof StaleLevelError) {
+                // Unreachable while the pre-check above stands, and kept anyway: without
+                // it, relaxing that pre-check turns a price change into the router's
+                // generic error. e.actual/e.expected save a second read.
+                await i.reply({
+                  content: `That lot is level ${e.actual} now, not ${e.expected} — open \`/park view\` again for the current price.`,
+                  flags: MessageFlags.Ephemeral,
+                });
+              } else if (e instanceof InsufficientFundsError) {
+                await i.reply({
+                  content: `Not enough cash — that upgrade costs ${upgradeCostFor(lot.kind, lot.level).toLocaleString('en-US')}.`,
+                  flags: MessageFlags.Ephemeral,
+                });
+              } else throw e;
+            }
+            return;
+          }
           default:
             await i.deferUpdate();
             return;
@@ -782,7 +997,24 @@ async function renderTab(
     return;
   }
   if (tab === 'lots') {
-    const built = lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit });
+    const owned = new Set(lots.map((l) => l.kind));
+    const full = lots.length >= lotSlots(user.ratingHighWater);
+    // Facilities are one per park; paddocks are duplicable — building more of one kind IS
+    // the capacity progression. Filtering here keeps the menu honest, but it is NOT the
+    // guard: buildLot re-checks both, and a stale menu is rejected there.
+    const buildable = full ? [] : [
+      ...Object.entries(PADDOCKS).map(([kind, d]) => ({ kind, name: d.name, cost: d.buildCost })),
+      ...Object.entries(FACILITIES)
+        .filter(([kind]) => !owned.has(kind))
+        .map(([kind, d]) => ({ kind, name: d.name, cost: d.buildCost })),
+    ];
+    // `?? 4` matches upgradeLot's own `const maxLevel = def ? def.maxLevel : 4` — a
+    // paddock has no FACILITIES entry and caps at level 4. Keep the two in step; a menu
+    // that offers a maxed lot is rejected by LotLimitError, but it is a wasted click.
+    const upgradable = lots
+      .filter((l) => l.level < (FACILITIES[l.kind]?.maxLevel ?? 4))
+      .map((l) => ({ lotId: l.id, name: l.name, level: l.level, cost: upgradeCostFor(l.kind, l.level) }));
+    const built = lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit, buildable, upgradable });
     if (tourRow) built.components.push(tourRow);
     await i.update({ content: content ?? '', ...built, attachments: [] });
     return;

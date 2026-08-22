@@ -73,7 +73,11 @@ export async function routeInteraction(
       if (sel) {
         const s = interaction as StringSelectMenuInteraction;
         // Two guards, enforced centrally by the router — not left to individual select
-        // handlers, none of which exist yet. Same reasoning, same rejection shape as the
+        // handlers as their only proof. The Lots tab's Build/Upgrade menu
+        // (src/modules/park/index.ts), the first select handler to exist, re-implements
+        // submittedValuesAreOnMessage as defence in depth, for the same direct-execute-
+        // bypass reason its build allowlist is duplicated, but never clickedIdIsOnMessage —
+        // that one the router alone proves. Same reasoning, same rejection shape as the
         // button branch below (logger.warn, then deferUpdate, then return — before
         // postDispatch), but each guard gets its own log message so the two rejections are
         // distinguishable in logs; the client sees no difference either way.

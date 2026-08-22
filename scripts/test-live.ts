@@ -29,8 +29,8 @@ import { dayKeyUTC } from '../src/core/clock.js';
 import { QUESTS } from '../src/data/quests.js';
 import { recordSpeciesSeen } from '../src/core/species-seen.js';
 import { dexListPayload, dexViewPayload } from '../src/modules/dex/embeds.js';
-import { makeCtx, fakeCommand, fakeButton } from '../tests/harness.js';
-import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
+import { makeCtx, fakeCommand, fakeButton, fakeSelect } from '../tests/harness.js';
+import type { ButtonInteraction, ChatInputCommandInteraction, StringSelectMenuInteraction } from 'discord.js';
 import type { Ctx } from '../src/core/context.js';
 import type { Sender } from '../src/core/notify.js';
 
@@ -319,6 +319,15 @@ const button = async (m: string, customId: string, user: string) => {
   await compOf(m, customId.split(':')[0]).execute(ctx as Ctx, b.asInteraction() as unknown as ButtonInteraction);
   return b;
 };
+// This drives a select handler DIRECTLY, exactly as button() drives a component handler.
+// It never calls routeInteraction, so a green run here is NOT evidence the router routes
+// selects or that either guard fired — tests/router.test.ts owns that.
+const selectOf = (m: string, p: string) => mod(m).selects!.find((x) => x.prefix === p)!;
+const select = async (m: string, customId: string, user: string, values: string[]) => {
+  const s = fakeSelect({ customId, user, values });
+  await selectOf(m, customId.split(':')[0]).execute(ctx as Ctx, s.asInteraction() as unknown as StringSelectMenuInteraction);
+  return s;
+};
 
 // The alert sweep has no interaction — it fans out over every alerts-enabled user and
 // DMs a Sender directly (src/modules/park/alert-sweep.ts). Captured the same way the
@@ -379,7 +388,17 @@ const cases: Case[] = [
   { title: '/park view user:P1 (as P2) — visiting via the command: check motto present, no Collect, Next park present (featured thumbnail moved to the Animals tab)', run: () => slash('park', 'park', { name: 'park', sub: 'view', user: P2, options: { user: P1 } }) },
   { title: 'park:tab:park — the Park tab reached via a tab click rather than /park view: same dashboard + park map, exercising renderTab\'s own code path', run: () => button('park', `park:tab:${P1}:park`, P1) },
   { title: 'park:tab:animals — Animals tab: dino_roster banner + hero-portrait featured-dino thumbnail', run: () => button('park', `park:tab:${P1}:animals`, P1) },
-  { title: 'park:tab:lots — Lots tab: lots banner (new asset), built lots and slot usage', run: () => button('park', `park:tab:${P1}:lots`, P1) },
+  { title: 'park:tab:lots — Lots tab: lots banner (new asset), built lots and slot usage, and the Build/Upgrade dropdowns', run: () => button('park', `park:tab:${P1}:lots`, P1) },
+  // visitor_center, NOT gene_lab: the seed above builds P1 a Gene Lab, and renderTab
+  // filters owned facilities out of `buildable`, so a gene_lab confirm renders a state no
+  // player can actually reach from the menu. P1 owns one paddock and that Gene Lab, well
+  // under lotSlots at ratingHighWater 1000, so visitor_center is genuinely on offer.
+  { title: 'park:build select — picking Visitor Center swaps the card into its confirm state: the tab row survives, the price is re-derived by buildLot at execution, and the option value carries the kind alone', run: () => select('park', `park:build:${P1}`, P1, ['visitor_center']) },
+  { title: 'park:upgrade select — the confirm names the exact rung being bought. The option value is <lotId>:<expectedLevel>, so the label and the charge cannot disagree', run: async () => {
+      const lot = ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, P1)).all()[0]!;
+      return select('park', `park:upgrade:${P1}`, P1, [`${lot.id}:${lot.level}`]);
+    } },
+  { title: 'park:buildno — Cancel returns to a freshly rendered Lots tab with both dropdowns, not to a blank card', run: () => button('park', `park:buildno:${P1}`, P1) },
   { title: 'park:tab:prestige — P5, Legacy rank Keeper at 35 of 52 species discovered: landmark banner', run: () => button('park', `park:tab:${P5}:prestige`, P5) },
   { title: '/eggs — list', run: () => slash('hatchery', 'eggs', { name: 'eggs', user: P1 }) },
   { title: '/hatch — pre-hatch embed', run: () => slash('hatchery', 'hatch', { name: 'hatch', user: P1, options: { egg: readyEgg.id } }) },

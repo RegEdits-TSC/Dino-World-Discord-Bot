@@ -71,9 +71,14 @@ currently on renders as a disabled button so you always know where you are.
   and an itemised breakdown of anything that needs attention: escaped, at
   risk of escaping, and in the wrong habitat. Feed all and Full roster live
   here.
-- **Lots** — the lots you've built, how many of your slots are in use, and a
-  pointer at `/build` and `/upgrade` for anything actionable — this tab has
-  no build buttons of its own yet.
+- **Lots** — the lots you've built, how many of your slots are in use, and,
+  when there's something to act on, a **Build…** dropdown (if you have a free
+  slot) and/or an **Upgrade…** dropdown (if any lot isn't maxed), each option
+  priced right there in its label. Picking one shows a confirm screen naming
+  the lot and its price, with a Yes button to go ahead and a Cancel button
+  to back out untouched — nothing is charged until you press Yes. `/build`
+  and `/upgrade` still work exactly the same as slash commands, if you'd
+  rather type them directly.
 - **Prestige** — Rating again, Attendance, Achievement tiers earned, your
   Legacy rank, Season badges, and your landmark tier, with buttons that jump
   to `/park landmark` and `/guests`.

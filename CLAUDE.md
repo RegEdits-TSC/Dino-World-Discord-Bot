@@ -889,15 +889,15 @@
   `.components`, in the same change. And if a button or select is ever minted onto a
   message the bot does not own, add an explicit greppable flag on `ComponentDef`/
   `SelectDef` — never a prefix exception list inside the router.
-  The guard's tests are its only evidence, and that is not a figure of speech: 101
+  The guard's tests are its only evidence, and that is not a figure of speech: 143
   `fakeButton` sites exist and only 11 dispatch through `routeInteraction` — the
-  other 90 call `execute` directly, and `npm run test:live` bypasses the router by its
+  other 132 call `execute` directly, and `npm run test:live` bypasses the router by its
   own design — so both existing gates are blind to this seam and a simulated version of
   the guard ran the whole suite green. The nine cases live in `tests/router.test.ts`
   ("router component guard", plus the real-payload sweep that reads every minted id out
   of the builder JSON rather than hand-typing it) and `tests/harness.test.ts` (the
-  `fakeButton` default `componentIds: [customId]`, now load-bearing for those 90 sites).
-  Do NOT add `componentIds` to the 90 direct-execute sites: they test handler logic and
+  `fakeButton` default `componentIds: [customId]`, now load-bearing for those 132 sites).
+  Do NOT add `componentIds` to the 132 direct-execute sites: they test handler logic and
   the default already models the truth. Re-run the grep rather than trusting these
   figures — `grep -rc 'fakeButton(' tests/` minus the one declaration site in
   `tests/harness.ts` gives the total, and `grep -n 'fakeButton(' <file>` cross-referenced
@@ -1285,8 +1285,12 @@
   which opens with `i.customId.split(':')` and none of which reads `i.values`. A select and
   a button MAY share a prefix — separate namespaces — but two selects may not.
   `routeInteraction` gates the select branch on TWO guards, both enforced centrally by the
-  router — never left to individual select handlers, none of which exist yet — in a fixed
-  order: `clickedIdIsOnMessage` first (exactly as it gates buttons), then
+  router — never left to individual select handlers as their only proof. The Lots tab's
+  Build and Upgrade menus (below), the first select handlers to exist, re-implement
+  `submittedValuesAreOnMessage` as defence in depth, for the same direct-execute-bypass
+  reason the build allowlist is duplicated below, but never `clickedIdIsOnMessage` — that
+  one the router alone proves — in a fixed order: `clickedIdIsOnMessage` first (exactly as
+  it gates buttons), then
   `submittedValuesAreOnMessage` (`src/core/components.ts`), only once the first guard has
   already passed, since it reads the menu's own options off the message and is meaningless
   before the menu itself is known to be the bot's. Each has the same `deferUpdate` +
@@ -1297,8 +1301,14 @@
   client-supplied channel; `submittedValuesAreOnMessage` is what proves every submitted
   value was one the bot actually offered on this menu. A select handler still owns any
   DOMAIN validation beyond that — e.g. that an offered option is still legal for the
-  CURRENT state of a multi-step flow — but no handler needs to (and none should) re-prove
-  "these values were on this menu"; the router already has. It is ALL-OR-NOTHING: a partly
+  CURRENT state of a multi-step flow — and no handler NEEDS to re-prove "these values were
+  on this menu", because the router already has. A handler MAY keep its own copy as defence
+  in depth, and the Lots tab's Build and Upgrade menus (below) do exactly that: the router
+  is not on the path when `execute` is invoked directly, which is how
+  `scripts/test-live.ts` and all but a handful of this suite's dispatch sites reach a
+  handler. What is forbidden is treating a handler-level copy as the PRIMARY enforcement —
+  the router's is primary, and a new select must not ship relying on its own check instead.
+  It is ALL-OR-NOTHING: a partly
   valid submission is rejected rather than filtered, since a shortened values array is a
   selection the player never made. Only `submittedValuesAreOnMessage` needs a `Set` for
   this — `offered = new Set(menu.options.map(o => o.value))`, never an object keyed by
@@ -1330,3 +1340,67 @@
   apply to type 3, since the other four don't carry an `options` array at all);
   `tests/contract.test.ts` structurally CANNOT catch a select-menu mistake, since it walks
   command options only.
+- The Lots tab's Build and Upgrade select menus follow the `park:landmark:buy` lesson,
+  which they would otherwise repeat in a worse form. A menu option's `value` is an
+  IDENTITY plus a STALENESS ANCHOR and never a price: `park:build` carries `<kind>`,
+  `park:upgrade` carries `<lotId>:<expectedLevel>`. Prices are re-derived by `buildLot` /
+  `upgradeLot` at execution, and the label is a display copy no handler reads back.
+  The level anchor is load-bearing: `upgradeCostFor` is a pure function of `(kind, level)`
+  and paddock cost is `buildCost * 2.5 ** level`, so a stale option charges the NEXT rung's
+  price. Measured worst case is `hatchery_lab` — a label reading 25,000 against a charge of
+  2,250,000, **90x**, against the landmark defect's 32x.
+  `PADDOCKS` and `FACILITIES` (`src/data/paddocks.ts`, `src/data/facilities.ts`) are
+  NULL-PROTOTYPE maps —
+  `Object.assign(Object.create(null) as Record<string, XDef>, { … } satisfies Record<string, XDef>)`.
+  The `as` and the `satisfies` are both required: `Object.assign(Object.create(null), {…})`
+  returns `any`, which silently discards the literal's type check. Before this, a select
+  menu could hand `buildLot` a prototype key — `PADDOCKS['constructor']` read back truthy
+  through `Object`, so its `!paddock && !facility` check did not fire, and the write
+  survived only because the resulting `NaN` cost bound as `NULL` against
+  `users.cash NOT NULL`, a schema accident rather than validation. `/build` could not reach
+  it because its `kind` comes from `addChoices`; a select menu value could.
+  `buildLot` now owns an explicit
+  `if (!Object.hasOwn(PADDOCKS, kind) && !Object.hasOwn(FACILITIES, kind)) throw new UnknownKindError(kind)`.
+  The menu handler's identical allowlist is DEFENCE IN DEPTH, never the only guard — it
+  earns its place because 132 of 143 `fakeButton` sites and every case in
+  `scripts/test-live.ts` call `execute` directly rather than through `routeInteraction`.
+  `upgradeLot(ctx, userId, lotId, expectedLevel)` takes the anchor as a REQUIRED fourth
+  parameter — never defaulted, the same rule as `hungerAt(…, drainMs)`, `feedCostFor(now)`
+  and `energyCostFor(now)` — and throws `StaleLevelError(expected, actual)`. Its guard order
+  is not-found, then stale, then maxLevel, so `/upgrade`'s `lotRow?.level ?? -1` sentinel
+  still reports 'No such lot.' for an unknown id. **The caller must pass the CLIENT-SUPPLIED
+  anchor**: passing a level the caller just read makes the comparison a tautology that can
+  never fire, which compiles, typechecks and passes every test. `/upgrade` is the one
+  exception and says so at the call site — it quotes no frozen label, so it has no anchor to
+  carry.
+  `confirmPayload` (`src/modules/park/embeds.ts`) ships `content: ''`, `attachments: []` and
+  RETAINS the tab row. The `attachments: []` is load-bearing rather than redundant:
+  `lotsPayload` attaches `banners/lots.webp` on every call, and an `i.update` carrying
+  neither `files` nor an explicit `attachments` strands that banner as an orphan attachment
+  card.
+  Error mapping is PER MENU. The service layer overloads two classes: `UnknownKindError`
+  means unknown *kind* in `buildLot` and unknown *lot* in `upgradeLot`; `LotLimitError`
+  means *slot cap* in one and *already max level* in the other. A shared mapping tells a
+  player "All lots full" when they meant "already max level".
+  Both spends sit behind a confirm rendered ONTO the card via `i.update`, never an
+  ephemeral follow-up — the Lots tab must not be left displaying a state it is about to
+  change. The confirm CLICK is a second layer only, never the guard — another open message
+  may still hold a stale button. What actually locks the upgrade is the REQUIRED
+  `expectedLevel` on `upgradeLot`: the handler's own fresh read stays because it needs
+  `lot.kind`/`lot.level` to quote the price in the `InsufficientFundsError` arm and to name
+  the two levels in the stale rejection, NOT because it is the thing standing between a
+  stale button and the money. Build has no service-level twin, because a build has no
+  level to anchor on and its price never moves — so `park:buildyes:<uid>:<kind>:<lotCount>`
+  carries the owner's LOT COUNT and the handler's own check of it is the whole lock. That
+  anchor is not decoration: two `park:buildyes` clicks landing before the first repaint
+  both pass the owner check and both pass the allowlist, and for a PADDOCK — duplicable by
+  design, unlike a facility, which `DuplicateFacilityError` already stops — the second
+  click builds a second one. The cost is not the cash: `lotSlots` caps at 10, no demolish
+  path exists anywhere in this codebase, and a duplicate lot can only be removed by
+  `adminReset`, so the slot is gone permanently. `lotCount` is a sound anchor precisely
+  because it is monotone under those same rules — `buildLot` only ever increases it.
+  **No `await` may sit between reading `lots.length` for that check and calling
+  `buildLot`**: better-sqlite3 is synchronous and Node is single-threaded, so a
+  check-then-write with no suspension point between them cannot interleave with a second
+  interaction, and that — not the read itself — is what closes the race. Introducing an
+  await there reopens it silently.

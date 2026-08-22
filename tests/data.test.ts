@@ -55,6 +55,14 @@ describe('game data', () => {
     expect(PADDOCKS.carnivore_paddock.diet).toBe('carnivore');
     expect(PADDOCKS.carnivore_paddock.buildCost).toBe(2000);
   });
+  // A select menu value reaches these tables as a raw string. On a plain object literal
+  // PADDOCKS['constructor'] resolves up the prototype chain to Object and reads back
+  // truthy, which is exactly what buildLot's `!paddock && !facility` check failed to catch.
+  it.each(['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty'])(
+    'reads the prototype key %s back as undefined on both lot tables', (key) => {
+      expect(PADDOCKS[key]).toBeUndefined();
+      expect(FACILITIES[key]).toBeUndefined();
+    });
   it('DECOR values match the spec', () => {
     expect(Object.keys(DECOR)).toHaveLength(23);
     for (const [key, d] of Object.entries(DECOR)) {

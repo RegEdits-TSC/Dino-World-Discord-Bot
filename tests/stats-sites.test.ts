@@ -118,7 +118,7 @@ describe('buildLot / upgradeLot stat tracking', () => {
   it('counts lots_upgraded once', () => {
     ctx.economy.apply('u1', { cash: 1_000_000 }, 'seed', 0);
     const lot = buildLot(ctx, 'u1', Object.keys(PADDOCKS)[0]);
-    upgradeLot(ctx, 'u1', lot.id);
+    upgradeLot(ctx, 'u1', lot.id, lot.level);
     expect(readStat(ctx, 'u1', 'lots_upgraded')).toBe(1);
   });
 });
