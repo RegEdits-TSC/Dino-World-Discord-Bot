@@ -889,20 +889,24 @@
   `.components`, in the same change. And if a button or select is ever minted onto a
   message the bot does not own, add an explicit greppable flag on `ComponentDef`/
   `SelectDef` — never a prefix exception list inside the router.
-  The guard's tests are its only evidence, and that is not a figure of speech: 143
-  `fakeButton` sites exist and only 11 dispatch through `routeInteraction` — the
-  other 132 call `execute` directly, and `npm run test:live` bypasses the router by its
-  own design — so both existing gates are blind to this seam and a simulated version of
-  the guard ran the whole suite green. The nine cases live in `tests/router.test.ts`
+  The guard's tests are its only evidence, and that is not a figure of speech: the
+  overwhelming majority of `fakeButton` sites never reach `routeInteraction` at all —
+  only three test files dispatch through it — and `npm run test:live` bypasses the router
+  by its own design, so both existing gates are blind to this seam and a simulated version
+  of the guard ran the whole suite green. The nine cases live in `tests/router.test.ts`
   ("router component guard", plus the real-payload sweep that reads every minted id out
   of the builder JSON rather than hand-typing it) and `tests/harness.test.ts` (the
-  `fakeButton` default `componentIds: [customId]`, now load-bearing for those 132 sites).
-  Do NOT add `componentIds` to the 132 direct-execute sites: they test handler logic and
-  the default already models the truth. Re-run the grep rather than trusting these
-  figures — `grep -rc 'fakeButton(' tests/` minus the one declaration site in
-  `tests/harness.ts` gives the total, and `grep -n 'fakeButton(' <file>` cross-referenced
-  against the same file's `routeInteraction(` calls gives the router-dispatching count;
-  a future test file adding either kind of site will move both numbers again.
+  `fakeButton` default `componentIds: [customId]`, load-bearing for every direct-execute
+  site). Do NOT add `componentIds` to the direct-execute sites: they test handler logic
+  and the default already models the truth.
+  **This passage deliberately carries no counts, and none should be added back.** Earlier
+  revisions pinned exact figures ("90 of 101", then "132 of 143") and both went stale — the
+  second time because the very commit correcting the number added five `fakeButton` sites of
+  its own, so it was wrong on arrival. A count written into prose is wrong the moment the
+  next test lands, and it is wrong silently. Derive the figures when you actually need them:
+  `grep -rc 'fakeButton(' tests/` summed, minus the one declaration site in
+  `tests/harness.ts`, gives the total; `grep -rl 'routeInteraction(' tests/` cross-referenced
+  against each of those files' own `fakeButton(` count gives the router-dispatching share.
   The duel handler pairs it with a second rule worth copying: a client-supplied INSTANT
   needs clamping from ABOVE as well as below. `expiresAtMs` was bounded only as
   "finite and in the future", and `challengeAlreadyResolved`
@@ -1362,8 +1366,9 @@
   `buildLot` now owns an explicit
   `if (!Object.hasOwn(PADDOCKS, kind) && !Object.hasOwn(FACILITIES, kind)) throw new UnknownKindError(kind)`.
   The menu handler's identical allowlist is DEFENCE IN DEPTH, never the only guard — it
-  earns its place because 132 of 143 `fakeButton` sites and every case in
-  `scripts/test-live.ts` call `execute` directly rather than through `routeInteraction`.
+  earns its place because nearly every `fakeButton` site, and every case in
+  `scripts/test-live.ts`, calls `execute` directly rather than through `routeInteraction`
+  (see the no-counts note in the router-guard section above).
   `upgradeLot(ctx, userId, lotId, expectedLevel)` takes the anchor as a REQUIRED fourth
   parameter — never defaulted, the same rule as `hungerAt(…, drainMs)`, `feedCostFor(now)`
   and `energyCostFor(now)` — and throws `StaleLevelError(expected, actual)`. Its guard order

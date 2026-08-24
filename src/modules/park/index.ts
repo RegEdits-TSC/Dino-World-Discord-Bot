@@ -440,9 +440,9 @@ export const parkModule: ModuleManifest = {
         if (action === 'build') {
           // Defence in depth over Task 0a, which is what actually closed this: the tables
           // are null-prototype now and buildLot owns an Object.hasOwn check of its own.
-          // This copy earns its place because 132 of 143 fakeButton sites and every case in
-          // scripts/test-live.ts call execute directly rather than through routeInteraction,
-          // so a handler-level check is what those paths exercise.
+          // This copy earns its place because nearly every fakeButton site, and every
+          // case in scripts/test-live.ts, calls execute directly rather than through
+          // routeInteraction, so a handler-level check is what those paths exercise.
           if (!Object.hasOwn(PADDOCKS, value) && !Object.hasOwn(FACILITIES, value)) {
             await i.deferUpdate();
             return;
