@@ -276,7 +276,110 @@ After `npm run deploy-commands`, confirm the new command set is live by exercisi
 
 All commands should reply without an "application did not respond" timeout. If a command is missing, re-run `npm run deploy-commands` (guild deploys are instant; global takes up to ~1h).
 
+## After a PR Merges (local development machine)
+
+The loop for the Windows dev box, distinct from the VPS flow in the next section:
+here the bot is a foreground `npm start` you manage by hand, and Windows file
+locking changes the safe ordering.
+
+### 1. Sync
+
+```bash
+git checkout main
+git pull --ff-only
+```
+
+### 2. Decide whether dependencies moved
+
+```bash
+git diff --name-only HEAD@{1} HEAD | grep -E 'package(-lock)?\.json'
+```
+
+Anything printed — every Dependabot PR qualifies — means you need `npm ci`.
+**Stop the bot first.** On Windows a running bot holds
+`node_modules/@napi-rs/canvas-win32-x64-msvc/skia.win32-x64-msvc.node` open for the
+park renderer. `npm ci` clears `node_modules` before it reinstalls, then fails to
+replace that one locked file and aborts, leaving `node_modules/.bin/` **empty**.
+The symptom is confusing and looks unrelated: `vitest` disappears from `PATH` and
+`npm test` fails with `'vitest' is not recognized as an internal or external
+command`. Stop, reinstall, then start — never reinstall against a live process.
+
+This is Windows-specific. Linux replaces an open file by swapping the inode, so
+the VPS flow below reinstalls without stopping the service.
+
+If nothing printed, skip `npm ci` — it is otherwise pure downtime.
+
+### 3. Build and verify
+
+```bash
+npm run build      # the bot serves compiled dist/ — a merge alone changes nothing
+npm run typecheck  # the only gate covering tests/ and scripts/
+npm test
+```
+
+`npm run build` is `tsc` against `tsconfig.json`, which includes `src` only, and
+`npm test` transpiles without typechecking. A type error in a test or a script
+passes both and is caught only by `npm run typecheck`.
+
+Chain these with `&&` rather than running them separately, and **never pipe a
+command whose exit status you are checking** — `npm ci 2>&1 | tail -4` reports
+`tail`'s exit code, so a hard install failure reads as success.
+
+### 4. Restart
+
+Find the process. PowerShell shows full command lines, which `tasklist` does not:
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
+  Select-Object ProcessId, CreationDate, @{n='Cmd';e={$_.CommandLine}} | Format-List
+```
+
+Kill the `node dist/index.js` child; the `npm start` wrapper exits with it. From
+Git Bash, `MSYS_NO_PATHCONV=1` is required or MSYS rewrites `/PID` into a
+filesystem path and `taskkill` rejects it:
+
+```bash
+MSYS_NO_PATHCONV=1 taskkill /PID <pid-of-node-dist-index.js> /F
+npm start
+```
+
+### 5. Confirm the restart took
+
+Re-run the PowerShell query and confirm there is **exactly one**
+`node dist/index.js`. Two processes on one token makes every interaction fail with
+`10062 Unknown interaction`, which reads like a code bug and is not one.
+
+Startup logs `Logged in as …` and `Loaded N application emojis`.
+
+To prove the *new* build is live, do not rely on that emoji count — it only moves
+when the release actually changed emojis, so an unchanged count proves nothing
+either way. Check the compile time and grep the built output for something the
+release introduced:
+
+```bash
+ls -l --time-style=+%H:%M:%S dist/index.js
+grep -c "<symbol the release added>" dist/modules/<touched-module>/index.js
+```
+
+### Conditional extras
+
+| Run when | Command |
+| --- | --- |
+| A slash-command **builder** changed — options, choices, subcommands | `npm run deploy-commands` |
+| Anything under `assets/emojis/` changed | `npm run build-emojis`, then `npm run deploy-emojis` |
+| You want the payload gallery for cosmetic review | `npm run test:live` |
+| A migration shipped | nothing — migrations apply automatically on boot |
+
+Changing a command builder also requires exactly one running bot instance per
+token, so run `deploy-commands` around the restart rather than alongside a second
+process.
+
 ## Updating to a New Version
+
+This is the **VPS / systemd** flow. For the local development machine, where the
+bot is a foreground `npm start` and Windows file locking changes the safe
+ordering, see [After a PR Merges](#after-a-pr-merges-local-development-machine)
+above.
 
 Before deploying a new version, **back up the database**:
 
