@@ -378,6 +378,26 @@ describe('egg art', () => {
     for (const [x, y] of [[0, 0], [1023, 0], [0, 1023], [1023, 1023]] as const) {
       expect(c.getImageData(x, y, 1, 1).data[3], `${name} corner ${x},${y}`).toBe(0);
     }
+    // No L/R check here — the egg-axis bias makes the horizontal margin asymmetric on
+    // purpose (docs/assets/prompts.md's divergence table, e.g. common.webp L74/R53).
+    // But `--axis=egg` only re-centres HORIZONTALLY: fitDraw keeps fitBox.y0 === box.y0
+    // and the fit height equal to the box height, so top and bottom both land at exactly
+    // (1024 - 976) / 2 = 24px for every committed egg. That IS checkable, and checking it
+    // is what catches `fit-art.mjs cutout` (31px, whole-bbox) run on an egg by mistake —
+    // the wrong mode still yields 1024×1024 with transparent corners and would otherwise
+    // pass every assertion above unchanged.
+    const px = c.getImageData(0, 0, 1024, 1024).data;
+    let minY = 1024, maxY = -1;
+    for (let y = 0; y < 1024; y++) {
+      for (let x = 0; x < 1024; x++) {
+        if (px[(y * 1024 + x) * 4 + 3] === 0) continue;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    const topMargin = minY, bottomMargin = 1023 - maxY;
+    const margin = Math.min(topMargin, bottomMargin);
+    expect(Math.abs(margin - 24), `${name} vertical margin ${margin} (top ${topMargin}, bottom ${bottomMargin}), expected ~24`).toBeLessThanOrEqual(1);
   });
 });
 
@@ -406,6 +426,28 @@ describe('hatch crack art', () => {
     for (const [x, y] of [[0, 0], [1023, 0], [0, 1023], [1023, 1023]] as const) {
       expect(px[(y * img.width + x) * 4 + 3], `corner ${x},${y}`).toBe(0);
     }
+    // Margin, not a per-file region count: the multi-region guard below cannot be
+    // applied per file (mythic-crack legitimately lands at one region — see its own
+    // comment), so it stays keyed to the whole RARITIES set and says nothing about any
+    // one variant. This margin check is what covers a single file, and it is strictly
+    // stronger than a region count for the mistake it exists to catch: running
+    // `fit-art.mjs portrait` on a crack (instead of `cutout`) deletes every disconnected
+    // shell fragment AND moves the margin from 31px to 24px, so a wrong-mode crack that
+    // happens to still measure more than one region (or one nobody is flood-filling,
+    // i.e. any variant) is still caught here on the margin alone. Whole-bbox, matching
+    // `cutout`'s fit — never axis-biased like the eggs.
+    let minX = 1024, minY = 1024, maxX = -1, maxY = -1;
+    for (let y = 0; y < img.height; y++) {
+      for (let x = 0; x < img.width; x++) {
+        if (px[(y * img.width + x) * 4 + 3] === 0) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    const margin = Math.min(minX, minY, img.width - 1 - maxX, img.height - 1 - maxY);
+    expect(Math.abs(margin - 31), `${name} margin ${margin}, expected ~31`).toBeLessThanOrEqual(1);
   });
 
   // The multi-region guard below is DELIBERATELY still keyed to the six base RARITIES,

@@ -33,15 +33,18 @@ describe('docs track the committed assets', () => {
     for (const n of quoted) expect(n).toBe(bannerCount);
   });
 
+  // Registered from DISK, not hand-typed: a hand-typed list can only prove that what
+  // it names has a prompt row, and would give a newly committed park raster (e.g. a
+  // future landmark-d/e/f band) zero checking the moment it lands with no matching
+  // prompts.md row — silently, since nothing else in this suite checks prompts.md
+  // coverage for assets/images/park/. tests/park-art-assets.test.ts derives its
+  // landmark-band list from disk for the same reason.
   it('prompts.md carries a regeneration target for every generated park raster', () => {
-    for (const f of [
-      'park/ground.webp', 'park/ground-wet.webp', 'park/ground-dry.webp', 'park/ground-cold.webp',
-      'park/plate-paddock.webp', 'park/plate-facility.webp',
-      'park/landmark-a.webp', 'park/landmark-b.webp', 'park/landmark-c.webp',
-      'park/attraction-picnic_lawn.webp', 'park/attraction-gift_shop.webp',
-      'park/attraction-viewing_platform.webp', 'park/attraction-amber_carousel.webp',
-      'park/attraction-sky_gondola.webp', 'park/attraction-grand_atrium.webp',
-    ]) {
+    const files = readdirSync(resolve(process.cwd(), 'assets/images/park'))
+      .filter((f) => f.endsWith('.webp'))
+      .map((f) => `park/${f}`);
+    expect(files.length, 'no park art found — wrong root?').toBeGreaterThan(0);
+    for (const f of files) {
       expect(prompts, `prompts.md is missing the regeneration target ${f}`).toContain(f);
     }
   });
