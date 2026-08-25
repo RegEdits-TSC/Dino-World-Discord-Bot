@@ -16,6 +16,17 @@ function srcFiles(dir: string): string[] {
   });
 }
 
+// Registers checks from the FILESYSTEM, not from src/ or a data table. A hardcoded
+// list or a scrape can only ever prove "what it names, exists" — a file nobody named
+// (a -vN variant, a portrait banked for a chapter that doesn't exist as data yet)
+// gets zero checking and the suite stays green. Reading the directory means a file is
+// checked because it EXISTS.
+function namesUnder(kind: string): string[] {
+  return readdirSync(resolve(process.cwd(), 'assets/images', kind))
+    .filter((f) => f.endsWith('.webp'))
+    .map((f) => f.replace(/\.webp$/, ''));
+}
+
 // BANNERS is SCRAPED from src/, never hand-typed. A hand-typed list can only
 // ever verify that what exists, exists: it stayed green when daily/embeds.ts
 // referenced 'daily' and 'achievements' banners neither of which had a shipped
@@ -183,7 +194,14 @@ describe('banner art', () => {
   // generator's native output is 1264×848) would letterbox on the /world hub with
   // this suite green.
   const DIMENSION_CHECKED_BANNERS = [
-    ...BANNERS, ...WORLD_EVENTS.map((e) => `event-${e.id}`),
+    ...new Set([
+      ...BANNERS,
+      ...WORLD_EVENTS.map((e) => `event-${e.id}`),
+      // Variants are unreferenced from src/ until spec 6b, so neither the scrape nor
+      // WORLD_EVENTS can see them. An unfitted variant would letterbox on the /world
+      // hub exactly like an unfitted base, so register it from disk instead.
+      ...namesUnder('banners').filter((n) => /-v\d+$/.test(n)),
+    ]),
   ];
   it.each(DIMENSION_CHECKED_BANNERS)('%s is 1536×1024', async (name) => {
     const img = new Image();
@@ -231,6 +249,30 @@ describe('banner art', () => {
     await img.decode();
     expect(img.width).toBe(1536);
     expect(img.height).toBe(1024);
+  });
+});
+
+describe('site art dimensions', () => {
+  // Registered from disk rather than from CAMPAIGN: the forward direction (every
+  // CAMPAIGN site HAS a banner and a thumb) is already covered by 'resolves every
+  // asset kind the bot references' below. This is the reverse and stricter check —
+  // every committed file, including any banked ahead of its chapter's data, ships at
+  // the right size for its family.
+  const SITE_FILES = namesUnder('sites');
+  it('found site art', () => expect(SITE_FILES.length).toBeGreaterThanOrEqual(14));
+  it.each(SITE_FILES)('%s ships at its family size', async (name) => {
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/sites', `${name}.webp`));
+    await img.decode();
+    if (name.includes('-banner')) {
+      expect([img.width, img.height], name).toEqual([1536, 1024]);
+    } else {
+      // volcano_core-thumb is a known 1254×1254 outlier that predates the WebP
+      // conversion; docs/assets/prompts.md records it as an open item. Every other
+      // thumb is square at 1024 — assert squareness for all, and 1024 for the rest.
+      expect(img.width, name).toBe(img.height);
+      if (name !== 'volcano_core-thumb') expect(img.width, name).toBe(1024);
+    }
   });
 });
 
@@ -283,24 +325,60 @@ async function expectTransparentCutout(kind: 'battles' | 'dinos', name: string):
   expect(Math.abs(margin - expected), `${name} margin ${margin}, expected ~${expected}`).toBeLessThanOrEqual(1);
 }
 
-const PORTRAIT_BOSS_IDS = CAMPAIGN.map((c) => c.stages[4].boss!.bossId);
+// Registered from DISK, not from CAMPAIGN: spec 6a banks portraits for chapters that
+// do not exist as data yet (PORTRAIT_BOSS_IDS = CAMPAIGN.map(...) cannot see them), and
+// a CAMPAIGN-derived list would give them zero checking. The forward direction — every
+// CAMPAIGN boss HAS a portrait — is covered separately by 'resolves every asset kind
+// the bot references' below.
+const PORTRAIT_FILES = namesUnder('battles');
 
 describe('boss portrait art', () => {
-  it.each(PORTRAIT_BOSS_IDS)('%s is a 1024×1024 transparent cutout',
-    (bossId) => expectTransparentCutout('battles', `${bossId}-portrait`));
+  it('found boss portraits', () => expect(PORTRAIT_FILES.length).toBeGreaterThanOrEqual(7));
+  it.each(PORTRAIT_FILES)('%s is a 1024×1024 transparent cutout',
+    (name) => expectTransparentCutout('battles', name));
 });
 
 const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] as const;
 
+describe('egg art', () => {
+  // eggs/ had no dimension, corner-transparency or margin check at all before spec 6a
+  // — the expectTransparentCutout kind union excludes it (eggs share boss portraits'
+  // 24px margin family per docs/assets/prompts.md, but with an egg-axis bias that the
+  // symmetric min/max margin measurement in expectTransparentCutout isn't shaped for,
+  // so this stays a simpler dimension + corner check rather than widening that helper).
+  // Registered from disk so every rarity AND every future -vN variant is covered.
+  const EGG_FILES = namesUnder('eggs');
+  it('found egg art', () => expect(EGG_FILES.length).toBeGreaterThanOrEqual(6));
+  it.each(EGG_FILES)('%s is 1024×1024 with transparent corners', async (name) => {
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/eggs', `${name}.webp`));
+    await img.decode();
+    expect(img.width, name).toBe(1024);
+    expect(img.height, name).toBe(1024);
+    const canvas = createCanvas(1024, 1024);
+    const c = canvas.getContext('2d');
+    c.drawImage(img, 0, 0);
+    for (const [x, y] of [[0, 0], [1023, 0], [0, 1023], [1023, 1023]] as const) {
+      expect(c.getImageData(x, y, 1, 1).data[3], `${name} corner ${x},${y}`).toBe(0);
+    }
+  });
+});
+
 describe('hatch crack art', () => {
+  // Registered from disk, not from RARITIES, so a future -vN variant gets the same
+  // dimension and corner-transparency bar as the six base cracks. The multi-region
+  // flood-fill guard just below stays keyed to RARITIES on purpose — see its own
+  // comment.
+  const CRACK_FILES = namesUnder('hatch');
+  it('found crack art', () => expect(CRACK_FILES.length).toBeGreaterThanOrEqual(6));
   // 1024×1024 transparent, same square as the eggs they are edited from — NOT
   // banner-sized, so they never belong in the BANNERS size loop above.
-  it.each(RARITIES)('%s-crack ships at 1024x1024 with transparent corners', async (rarity) => {
-    const ref = assetImage('hatch', `${rarity}-crack`);
-    expect(ref, rarity).not.toBeNull();
-    expect(ref!.url).toBe(`attachment://${rarity}-crack.webp`);
+  it.each(CRACK_FILES)('%s ships at 1024x1024 with transparent corners', async (name) => {
+    const ref = assetImage('hatch', name);
+    expect(ref, name).not.toBeNull();
+    expect(ref!.url).toBe(`attachment://${name}.webp`);
     const img = new Image();
-    img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${rarity}-crack.webp`));
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${name}.webp`));
     await img.decode();
     expect(img.width).toBe(1024);
     expect(img.height).toBe(1024);
@@ -313,6 +391,12 @@ describe('hatch crack art', () => {
     }
   });
 
+  // The multi-region guard below is DELIBERATELY still keyed to the six base RARITIES,
+  // never to CRACK_FILES: its assertion (multiRegion.length > 0) is evaluated ACROSS
+  // THE WHOLE SET, so widening it to include every -vN variant would let a base crack
+  // lose its falling shell fragments while a variant kept them, and the guard would
+  // still pass. Keeping it on the fixed base set is what makes it actually test the
+  // fragments, not just "some file somewhere has more than one region".
   // The cracks are the one cutout family that MUST keep several disconnected
   // alpha regions: the prompt asks for shell fragments falling away, and a
   // fragment clear of the nest is its own opaque island. prompts.md's egg pass

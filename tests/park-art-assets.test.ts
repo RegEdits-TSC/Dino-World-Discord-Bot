@@ -28,12 +28,21 @@ describe('park map art', () => {
   // what keeps a square (or otherwise mis-sized) generation from being silently squashed/stretched
   // into the tile — a defect that renders "successfully" (drawImage never throws on a mismatched
   // raster size) and just looks wrong.
-  it.each([
+  //
+  // The landmark bands are registered from DISK, not hand-typed: a hand-typed list can only prove
+  // that what it names, exists, and would give a new landmark band zero checking the moment one is
+  // committed ahead of the rung that references it. The attraction bands are derived from
+  // ATTRACTIONS (src/data/attractions.js) rather than hand-typed for the same reason a hardcoded
+  // list would drift — six kinds today, but a new kind would otherwise ship unchecked. Only the two
+  // plates stay hand-typed: there is no data table or directory pattern that names "plate" kinds.
+  const LANDMARK_BANDS = readdirSync(PARK_DIR).filter((f) => /^landmark-[a-z]\.webp$/.test(f));
+  const TILE_RASTERS = [
     'plate-paddock.webp', 'plate-facility.webp',
-    'landmark-a.webp', 'landmark-b.webp', 'landmark-c.webp',
-    'attraction-picnic_lawn.webp', 'attraction-gift_shop.webp', 'attraction-viewing_platform.webp',
-    'attraction-amber_carousel.webp', 'attraction-sky_gondola.webp', 'attraction-grand_atrium.webp',
-  ])('%s decodes at the 270×150 tile size', async (f) => {
+    ...LANDMARK_BANDS,
+    ...Object.keys(ATTRACTIONS).map((k) => `attraction-${k}.webp`),
+  ];
+  it('found landmark bands', () => expect(LANDMARK_BANDS.length).toBeGreaterThanOrEqual(3));
+  it.each(TILE_RASTERS)('%s decodes at the 270×150 tile size', async (f) => {
     const img = await decodeRaster(readFileSync(resolve(PARK_DIR, f)));
     expect(img.width).toBe(270);
     expect(img.height).toBe(150);
