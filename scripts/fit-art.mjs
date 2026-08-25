@@ -21,14 +21,14 @@
 // prompts.md records the divergence and the numbers.
 //
 // The pure geometry/pixel helpers (COVER, Q, coverGeometry, alphaThreshold,
-// luminancePeel, opaqueBBox, largestRegion, borderFlood, shave, eggAxisBBox, FIT_31,
-// FIT_24) live in scripts/lib/art-pipeline.mjs so they can be tested — this file stays
-// a thin CLI wrapper around them.
+// luminancePeel, opaqueBBox, largestRegion, borderFlood, shave, eggAxisBBox, fitDraw,
+// FIT_31, FIT_24) live in scripts/lib/art-pipeline.mjs so they can be tested — this
+// file stays a thin CLI wrapper around them.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createCanvas, Image } from '@napi-rs/canvas';
 import {
   COVER, Q, coverGeometry, alphaThreshold, luminancePeel, opaqueBBox, stripCaBX,
-  largestRegion, borderFlood, shave, eggAxisBBox, FIT_31, FIT_24,
+  largestRegion, borderFlood, shave, eggAxisBBox, fitDraw, FIT_31, FIT_24,
 } from './lib/art-pipeline.mjs';
 
 const argv = process.argv.slice(2).filter((a) => !a.startsWith('--'));
@@ -38,6 +38,13 @@ const CUTOUTS = new Set(['cutout', 'portrait']);
 if (!(CUTOUTS.has(mode) || Object.hasOwn(COVER, mode)) || !src || !dest) {
   console.error('usage: node scripts/fit-art.mjs <banner|ground|band|cutout|portrait> [--axis=egg] <src> <dest.webp>');
   process.exit(2);
+}
+// A misspelled flag (e.g. --axis=eggs) would otherwise be silently ignored: it lands
+// unvalidated in `flags`, the egg-axis branch below never matches it, and the run
+// exits 0 with a whole-bbox-centred subject instead of the intended egg-axis one.
+const KNOWN_FLAGS = new Set(['--axis=egg']);
+for (const f of flags) {
+  if (!KNOWN_FLAGS.has(f)) { console.error(`unknown flag ${f}`); process.exit(2); }
 }
 
 // Freshly generated PNGs can carry a C2PA `caBX` chunk that makes @napi-rs/canvas
@@ -75,6 +82,16 @@ luminancePeel(px, w, h);
 // assets/images/battles/: single silhouette, 24px margin. cutout keeps every opaque
 // region at 31px, which is what the hatch cracks need. The two are NOT interchangeable
 // — running portrait on a crack silently deletes its falling shell fragments.
+//
+// Order deviates from prompts.md's documented one-off pass, which runs the
+// largest-region step BEFORE the luminance peel: here alphaThreshold + luminancePeel
+// run first (shared with cutout, above), then largestRegion + borderFlood + shave.
+// Verified byte-identical (buffer-for-buffer) to the documented order on all four
+// committed egg/battle portrait files it was checked against, so it is inert today.
+// It is unverified on raw generated art, though: a peel that severs a thin bridge
+// before largestRegion runs would delete real subject matter as a "spurious" second
+// region, rather than an actual spurious island being peeled first and never
+// reaching largestRegion at all.
 if (mode === 'portrait') {
   largestRegion(px, w, h);
   borderFlood(px, w, h);
@@ -93,12 +110,18 @@ const FIT = mode === 'portrait' ? FIT_24 : FIT_31;
 
 const S = 1024;
 const bw = box.x1 - box.x0 + 1, bh = box.y1 - box.y0 + 1;
-const fw = fitBox.x1 - fitBox.x0 + 1, fh = fitBox.y1 - fitBox.y0 + 1;
-const scale = Math.min((S * FIT) / fw, (S * FIT) / fh);
-const out = createCanvas(S, S);
 // Centre the FIT box, then draw the whole opaque box at the same scale around it.
-const cx = (S - fw * scale) / 2 - (fitBox.x0 - box.x0) * scale;
-const cy = (S - fh * scale) / 2 - (fitBox.y0 - box.y0) * scale;
+const { scale, cx, cy } = fitDraw(box, fitBox, FIT, S);
+// --axis=egg's stated purpose is to shift the egg WITHOUT cropping the nest, so a
+// fitBox narrower than the whole box can drive the whole box's drawn rect off the
+// canvas — verified with a synthetic 300px egg centred in a 900px nest (scale 1.22,
+// cx -37.00, 37px clipped on each side). There is no legitimate case to let through.
+const R = cx + bw * scale, B = cy + bh * scale;
+if (cx < -0.5 || cy < -0.5 || R > S + 0.5 || B > S + 0.5) {
+  console.error(`${mode}: subject does not fit — drawn rect x:[${cx.toFixed(1)},${R.toFixed(1)}] y:[${cy.toFixed(1)},${B.toFixed(1)}] on a ${S}px canvas`);
+  process.exit(1);
+}
+const out = createCanvas(S, S);
 out.getContext('2d').drawImage(work, box.x0, box.y0, bw, bh, cx, cy, bw * scale, bh * scale);
 writeFileSync(dest, out.toBuffer('image/webp', Q));
 console.log(`${mode} ${dest} ${S}x${S} (opaque bbox ${bw}x${bh})`);

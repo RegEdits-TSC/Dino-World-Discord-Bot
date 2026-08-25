@@ -26,3 +26,6 @@ export declare function shave(px: Uint8ClampedArray, w: number, h: number, n?: n
 export declare function eggAxisBBox(
   px: Uint8ClampedArray, w: number, h: number, box: BBox,
 ): BBox;
+export declare function fitDraw(
+  box: BBox, fitBox: BBox, FIT: number, S: number,
+): { scale: number; cx: number; cy: number };

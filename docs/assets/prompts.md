@@ -182,11 +182,13 @@ center on the **egg's own axis** (top ~45% of the silhouette), not the whole
 bbox, so asymmetric nest dressing doesn't push the egg off-center. Verify: all
 border pixels transparent, exactly one connected region.
 
-**This 5-step pass is a one-off, NOT `scripts/fit-art.mjs`.** The committed
-script's `cutout` mode implements a subset — alpha threshold, the 3-pass
+**This 5-step pass is now `scripts/fit-art.mjs portrait`** (add `--axis=egg` for
+step (5)'s egg-axis variant; omit it for the whole-bbox battles variant). `cutout`
+remains a deliberately different, looser pass — alpha threshold, the 3-pass
 luminance peel of step (2), then a whole-bbox fit at 0.94 (a 31px margin) — with
-no largest-region step, no border flood, no 2px shave, and no egg-axis bias.
-That is deliberate, and the two are not interchangeable:
+no largest-region step, no border flood, no 2px shave, and no egg-axis bias,
+because the hatch cracks it processes must keep every disconnected shell
+fragment. The two remain not interchangeable:
 
 | | margin on tight axis | centering | regions kept |
 |---|---|---|---|

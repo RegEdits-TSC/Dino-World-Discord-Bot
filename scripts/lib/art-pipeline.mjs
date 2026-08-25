@@ -204,3 +204,20 @@ export function eggAxisBBox(px, w, h, box) {
   }
   return x1 < 0 ? box : { x0, y0: box.y0, x1, y1: box.y1 };
 }
+
+// The shared centring/scale arithmetic for cutout and portrait. fitBox drives the
+// scale AND is what gets centred; box is the whole opaque source rectangle, drawn at
+// that same scale, so an off-centre fitBox (the egg axis) shifts the subject without
+// cropping anything box contains — for cutout and the whole-bbox portrait variant,
+// fitBox === box and cx/cy reduce to the plain whole-bbox centring. bw/bh are not
+// returned: the caller already needs them (derived from box) for the drawImage call
+// itself, and for checking whether the drawn rect still fits the S x S canvas — a
+// narrow fitBox inside a much wider box can drive that rect off-canvas, which this
+// function does not itself guard against.
+export function fitDraw(box, fitBox, FIT, S) {
+  const fw = fitBox.x1 - fitBox.x0 + 1, fh = fitBox.y1 - fitBox.y0 + 1;
+  const scale = Math.min((S * FIT) / fw, (S * FIT) / fh);
+  const cx = (S - fw * scale) / 2 - (fitBox.x0 - box.x0) * scale;
+  const cy = (S - fh * scale) / 2 - (fitBox.y0 - box.y0) * scale;
+  return { scale, cx, cy };
+}

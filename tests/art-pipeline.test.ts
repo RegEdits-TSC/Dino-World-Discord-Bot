@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { coverGeometry, alphaThreshold, luminancePeel, opaqueBBox, COVER, Q, stripCaBX }
-  from '../scripts/lib/art-pipeline.mjs';
-import { largestRegion, borderFlood, shave, eggAxisBBox, FIT_31, FIT_24 }
-  from '../scripts/lib/art-pipeline.mjs';
+import {
+  coverGeometry, alphaThreshold, luminancePeel, opaqueBBox, COVER, Q, stripCaBX,
+  largestRegion, borderFlood, shave, eggAxisBBox, fitDraw, FIT_31, FIT_24,
+} from '../scripts/lib/art-pipeline.mjs';
 
 // A w×h RGBA buffer, fully transparent, with a helper to paint one pixel.
 function buf(w: number, h: number): Uint8ClampedArray {
@@ -148,6 +148,20 @@ describe('largestRegion', () => {
     expect([...px].filter((_, i) => i % 4 === 3)).toEqual([255, 255, 255, 0, 0, 0]);
   });
 
+  // The two-region fixture above cannot distinguish "keep the largest" from "keep
+  // any region but the smallest" — a mutant that clears only the runner-up (the
+  // second-largest, here the 2-pixel run) also passes it. A third, smallest region
+  // pins that the survivor really is the LARGEST, not merely not-the-smallest.
+  it('keeps the largest of three regions, not merely not-the-smallest', () => {
+    const px = buf(8, 1);
+    for (const x of [0, 1, 2]) set(px, 8, x, 0, 9, 9, 9, 255);  // largest: 3px
+    set(px, 8, 4, 0, 9, 9, 9, 255);                             // smallest: 1px
+    for (const x of [6, 7]) set(px, 8, x, 0, 9, 9, 9, 255);     // runner-up: 2px
+    largestRegion(px, 8, 1);
+    expect([...px].filter((_, i) => i % 4 === 3))
+      .toEqual([255, 255, 255, 0, 0, 0, 0, 0]);
+  });
+
   it('is a no-op on a single region', () => {
     const px = buf(3, 1);
     for (const x of [0, 1, 2]) set(px, 3, x, 0, 9, 9, 9, 255);
@@ -206,23 +220,98 @@ describe('shave', () => {
     expect([...px].filter((_, i) => i % 4 === 3).filter((a) => a === 255)).toHaveLength(1);
     expect(px[(2 * 5 + 2) * 4 + 3]).toBe(255);
   });
+
+  // The n=1 fixture above cannot tell "shaves n rings" from "always shaves exactly
+  // one ring" — a mutant that ignores the n argument entirely is byte-identical on
+  // it, while production always calls shave(px, w, h, 2) (scripts/fit-art.mjs). A
+  // 5x5 block needs two rings to erode to its own single-pixel centre, which a
+  // one-ring-only mutant would leave at a 3x3 (9 survivors), not 1.
+  it('shaves exactly n rings, pinning n=2 as fit-art.mjs actually calls it', () => {
+    const px = buf(7, 7);
+    for (let y = 1; y <= 5; y++) for (let x = 1; x <= 5; x++) set(px, 7, x, y, 9, 9, 9, 255);
+    shave(px, 7, 7, 2);
+    expect([...px].filter((_, i) => i % 4 === 3).filter((a) => a === 255)).toHaveLength(1);
+    expect(px[(3 * 7 + 3) * 4 + 3]).toBe(255);
+  });
 });
 
 describe('eggAxisBBox', () => {
   // Centres on the egg's own axis — the top ~45% of the silhouette — so asymmetric
   // nest dressing along the bottom does not push the egg off-centre.
+  //
+  // The original fixture proved the top-45% rule only LOOSELY: on a 10-row whole box
+  // (cut = round(10*0.45) = 5) the egg's own column was the only opaque pixel above
+  // the cut, so any cut fraction from roughly 0.1 to 0.9 would have produced the
+  // identical result — the 0.45 constant itself was untested. Pinned here with a
+  // boundary pair straddling the cut: a wide pixel at row 4 (just inside, y < cut)
+  // must widen the measured extent, and a wider one at row 5 (the first row outside
+  // the cut, where the nest skirt now starts) must not.
   it('measures x extent from the top 45% only', () => {
     const px = buf(10, 10);
-    // Egg: a narrow column in the top half.
-    for (let y = 0; y < 4; y++) for (let x = 4; x <= 5; x++) set(px, 10, x, y, 9, 9, 9, 255);
-    // Nest dressing: a wide skirt along the bottom, far to the right.
-    for (let x = 4; x <= 9; x++) set(px, 10, x, 9, 9, 9, 9, 255);
+    // Egg: a narrow column near the top, clear of the boundary rows below.
+    for (let y = 0; y <= 2; y++) for (let x = 4; x <= 5; x++) set(px, 10, x, y, 9, 9, 9, 255);
+    // Row 4 is the last row inside the cut (cut = 5) -> must widen the extent.
+    set(px, 10, 8, 4, 9, 9, 9, 255);
+    // Nest dressing starts at row 5, the first row outside the cut, and is wider
+    // still -> must NOT widen the extent, even though it dwarfs everything above it.
+    for (let y = 5; y <= 9; y++) for (let x = 4; x <= 9; x++) set(px, 10, x, y, 9, 9, 9, 255);
     const whole = { x0: 4, y0: 0, x1: 9, y1: 9 };
     const eggBox = eggAxisBBox(px, 10, 10, whole);
     expect(eggBox.x0).toBe(4);
-    expect(eggBox.x1).toBe(5);
+    expect(eggBox.x1).toBe(8);
     // Vertical extent stays the whole silhouette — only the axis is re-measured.
     expect(eggBox.y0).toBe(0);
     expect(eggBox.y1).toBe(9);
+  });
+});
+
+describe('fitDraw', () => {
+  // fitBox drives scale and centring; box (the whole opaque source rectangle) is
+  // drawn at that same scale. Pinned against the real post-shave numbers measured
+  // off the committed assets/images/eggs/common.webp: box {76,26,967,997} (the whole
+  // egg+nest silhouette), fitBox {195,26,829,997} (the egg-axis re-measurement).
+  it('reproduces the committed common-egg geometry, centring the fit box exactly', () => {
+    const box = { x0: 76, y0: 26, x1: 967, y1: 997 };
+    const fitBox = { x0: 195, y0: 26, x1: 829, y1: 997 };
+    const { scale, cx, cy } = fitDraw(box, fitBox, FIT_24, 1024);
+    expect(cx).toBeCloseTo(73.7, 1);
+    expect(cy).toBeCloseTo(24, 1);
+    // The fit box's own centre — not the whole box's — must land exactly at the
+    // canvas centre: that is what "centre the FIT box" means.
+    const fw = fitBox.x1 - fitBox.x0 + 1;
+    const fitBoxDestCentre = cx + (fitBox.x0 - box.x0) * scale + (fw * scale) / 2;
+    expect(fitBoxDestCentre).toBeCloseTo(512, 6);
+  });
+
+  // --axis=egg's whole point is to shift the egg without cropping the nest, so
+  // fitBox is always narrower-or-equal on the axis it biases while box (drawn at
+  // fitBox's scale) can be much wider. A narrow fitBox inside a much wider box drives
+  // the whole drawn rect off the S x S canvas. This is the case scripts/fit-art.mjs's
+  // off-canvas guard exists to reject — a synthetic 300px egg centred in a 900px
+  // nest (900 wide, 800 tall), matching the guard's own comment.
+  it('can produce a drawn rect that overflows the canvas — the case the CLI guard rejects', () => {
+    const box = { x0: 0, y0: 0, x1: 899, y1: 799 };     // 900x800 nest
+    const fitBox = { x0: 300, y0: 0, x1: 599, y1: 799 }; // 300px-wide egg axis, centred
+    const { scale, cx, cy } = fitDraw(box, fitBox, FIT_24, 1024);
+    expect(scale).toBeCloseTo(1.22, 2);
+    expect(cx).toBeCloseTo(-37, 1);
+    const bw = box.x1 - box.x0 + 1, bh = box.y1 - box.y0 + 1;
+    const R = cx + bw * scale, B = cy + bh * scale;
+    expect(cx).toBeLessThan(-0.5);
+    expect(R).toBeGreaterThan(1024.5);
+  });
+
+  // Swap guard: FIT_24 and FIT_31 select the margin for portrait vs. cutout in
+  // scripts/fit-art.mjs (`mode === 'portrait' ? FIT_24 : FIT_31`), which is untested
+  // wiring in a file that cannot itself be imported. Driving fitDraw — the actual
+  // production scale/centre arithmetic — with each constant directly, on a square
+  // box where box === fitBox, pins which margin each constant produces; swapping
+  // FIT_24 and FIT_31 anywhere in the chain flips these two assertions.
+  it('produces the 24px margin for FIT_24 and the 31px margin for FIT_31, never swapped', () => {
+    const square = { x0: 0, y0: 0, x1: 1023, y1: 1023 };
+    const portrait = fitDraw(square, square, FIT_24, 1024);
+    const cutout = fitDraw(square, square, FIT_31, 1024);
+    expect(Math.round(portrait.cx)).toBe(24);
+    expect(Math.round(cutout.cx)).toBe(31);
   });
 });
