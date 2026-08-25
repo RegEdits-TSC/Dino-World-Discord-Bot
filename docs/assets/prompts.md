@@ -1798,6 +1798,125 @@ tagged and fitted at 24px; the two must not be confused or reused for each other
 > game-asset look. No text, no lettering, no words, no numbers, no signage
 > writing anywhere in the scene, no human characters, no UI elements.
 
+## Species portraits
+
+44 per-species portraits — every species that shared archetype-only art before
+this pass — one `dinos/<speciesId>.webp` each, 1024×1024 transparent, resolved
+by `dinoImage(speciesId, archetype, diet)` (`src/core/images.ts`) ahead of the
+shared `dinos/<archetype>-<diet>.webp` fallback. Same override-not-replacement
+guarantee as Hero species portraits above: deleting any one file here restores
+that species' archetype art with no code change and no error.
+
+**Workflow (reference chain):** each portrait is an image-edit of the
+archetype cutout that species currently falls back to (`nano_banana_pro`
+requested; the account was served `nano_banana_2` for every generation in this
+batch — served-model routing has moved before, so treat this as a record of
+what actually ran, not a promise for a future run). `medias` role is
+**`image_references`**, verified against `models_explore` on 2026-08-25 —
+the Hero species portraits workflow note above says `image`, which is stale
+for this model as of that date. Post-process each with `remove_background`,
+then `node scripts/fit-art.mjs cutout <src> assets/images/dinos/<speciesId>.webp`
+— **`cutout`, never `portrait`**: this set renders beside the archetype
+cutouts at the 31px margin, not beside the 24px boss-portrait family.
+
+**Shared prompt template** — substitute `{SPECIES}` and `{FEATURES}` per row
+in the table below:
+
+> Keep the exact same head-and-shoulders three-quarter portrait framing as the reference image: same camera angle, same scale in frame, same small even margin, facing right with the snout pointing right, on a plain flat light-gray studio background with no scenery and no ground shadow. Change the dinosaur to {SPECIES}: {FEATURES}. Render it as a species type rather than a named individual: clean unblemished hide, no scars, no chipped teeth, no battle damage. Show only the head, neck and the top of the shoulders - no arms, no hands, no torso. No glow, rays, embers, sparkles, or light effects extending beyond the dinosaur silhouette; glowing details may appear only on the surfaces themselves. Glossy cartoon mobile-game art style, bold dark outlines, vibrant saturated colors, strong glossy highlights, clean cel shading with smooth gradients, polished game-asset look. No text, no lettering, no words, no numbers, no signage writing anywhere in the scene, no human characters, no UI elements.
+
+**The clause that earned its place** (same finding as Hero species portraits
+above, independently reconfirmed here): *"Show only the head, neck and the
+top of the shoulders - no arms, no hands, no torso."* Without it, an
+image-edit off a reference that itself shows forelimbs inherits them —
+`bruiser-carnivore.webp` is the one archetype cutout of the eight with a
+clawed hand actually visible in frame. The clause alone was not sufficient
+this round: four of the first twelve generations in this batch (allosaurus,
+ceratosaurus, nanuqsaurus, sinosaurus — all `bruiser-carnivore`) still came
+back with a hand or claw visible. A second, more literal sentence fixed all
+four on one retry and was carried into every remaining generation in the
+batch as a precaution:
+
+> Crop the frame tight at the base of the neck and the very top of the shoulders so that no forelimb, hand, finger, or claw is visible anywhere in the image.
+
+It sits immediately after the "no arms, no hands, no torso" sentence and
+before the no-glow sentence. `deinosuchus` (`bruiser-carnivore`) is the one
+species this batch could not clear and is the one deliberate gap in the 44:
+its first generation carried an unrelated duplicate-image ghosting artifact;
+its second, with the sentence above added, came back with a hand again; its
+third, with both an anti-hand and an explicit anti-ghosting sentence, came
+back worse — a blurred band across the bottom of the frame with a hand still
+visible inside it. It ships on the shared `dinos/bruiser-carnivore.webp`
+fallback rather than a fourth generation on one file.
+
+**CRITICAL FRAMING block**, for any species whose silhouette grows past the
+reference — used for 16 of the 44 rows below, wherever the Framing column is
+not `—`:
+
+> CRITICAL FRAMING: zoom out so the ENTIRE creature - {PARTS} - sits well inside the frame, small in the canvas, surrounded by a wide band of empty background on all four sides. Nothing may touch, run off, or be cropped by any edge of the image, especially the {THREATENED} edges.
+
+It sits after the no-glow sentence and before the "Glossy cartoon mobile-game
+art style" sentence.
+
+**A shoulder running off the left or bottom edge is house style, not a
+defect** — the same rule the archetype cutouts and the Containment Site boss
+portrait are already held to; do not regenerate for this alone.
+
+**Provenance of the first three rows:** triceratops, velociraptor and
+giganotosaurus were generated as a pilot, one per reference family, before
+the anti-forelimb crop sentence above existed — triceratops needed the
+CRITICAL FRAMING block (its frill grows past the reference), the other two
+did not. Their `{FEATURES}` text below is reconstructed from the committed
+files rather than a preserved original prompt; regenerating from it will not
+reproduce those three files pixel-for-pixel, but will reproduce the same
+species, coloring and framing.
+
+| Species | File | Reference | `{SPECIES}` | `{FEATURES}` | Framing (parts / threatened edges) |
+|---|---|---|---|---|---|
+| triceratops | dinos/triceratops.webp | tank-herbivore | a Triceratops | two long brow horns and a shorter nose horn, a broad bony frill rimmed with small triangular points, a hooked beak, a slate-gray-blue face and neck with a warm tan-brown frill and horns | the whole head and the complete frill with all of its rim points / top and left |
+| velociraptor | dinos/velociraptor.webp | swift-carnivore | a Velociraptor | a slender toothy snout, a feathered crest along the back of the head and neck, a keen yellow eye, two-tone rust-orange mottled hide fading to a pale cream throat and underside | — |
+| giganotosaurus | dinos/giganotosaurus.webp | bruiser-carnivore | a Giganotosaurus | a boxy apex-predator skull with banded teeth showing at the lip line and heavy brow ridges, two-tone olive-green hide with dark charcoal-green mottling and a pale cream throat and jaw | — |
+| allosaurus | dinos/allosaurus.webp | bruiser-carnivore | an Allosaurus | a boxy skull with low twin bony ridges above the eyes and a deep S-curved neck, coarse pebbled hide in burnt-orange and rust with dark umber-brown striping and a pale cream throat | — |
+| ceratosaurus | dinos/ceratosaurus.webp | bruiser-carnivore | a Ceratosaurus | a single blade-like nasal horn above the snout, small bony ridges over the eyes, and a row of small bumpy osteoderms down the neck, teal-green hide with dark charcoal mottling and a pale yellow-cream underside | — |
+| deinosuchus | *(not shipped — see above)* | bruiser-carnivore | a Deinosuchus | a giant prehistoric crocodilian with a broad flat armor-plated snout, heavy overlapping bony scutes, small eyes set high on the head and massive conical teeth, swamp-green plated hide with dark olive-black banding and a pale khaki throat | — |
+| nanuqsaurus | dinos/nanuqsaurus.webp | bruiser-carnivore | a Nanuqsaurus | a small Arctic tyrannosaur with a compact deep skull, thick brow ridges and a short snout, white-and-frost-blue mottled hide with a pale icy gray-blue underside | — |
+| sinosaurus | dinos/sinosaurus.webp | bruiser-carnivore | a Sinosaurus | a crested early tyrannosauroid with a pair of low ridge-crests running from above the eyes back along the skull and a slender jaw of fine teeth, deep forest-green hide with dark bronze-brown crest ridges and a pale sage underside | — |
+| spinosaurus | dinos/spinosaurus.webp | bruiser-carnivore | a Spinosaurus | a long crocodile-like snout lined with conical teeth and a tall sail of skin rising from the back of the neck and shoulders, sandy ochre-tan hide with a dark maroon-red sail membrane and a pale cream throat | the whole head, the full neck and the complete tall sail rising off the shoulders / top and left |
+| tylosaurus | dinos/tylosaurus.webp | bruiser-carnivore | a Tylosaurus | a giant mosasaur with a long paddle-shaped snout, rows of conical teeth and smooth streamlined skin, countershaded steel-gray-blue back and a pale silvery-white throat and jaw | — |
+| iguanodon | dinos/iguanodon.webp | bruiser-herbivore | an Iguanodon | a long horse-like skull with a toothless beak-like tip and a broad muscular cheek pouch, warm olive-brown hide with a pale sandy-tan underside and faint darker striping | — |
+| pachycephalosaurus | dinos/pachycephalosaurus.webp | bruiser-herbivore | a Pachycephalosaurus | a tall thick dome of solid bone on top of the skull ringed by small bony knobs and spikes along the brow and snout, rust-red domed skull with dark charcoal knobs and a warm tan face and throat | the whole domed skull and every brow spike / top |
+| archelon | dinos/archelon.webp | support-carnivore | an Archelon | a giant prehistoric sea turtle with a toothless hooked beak, smooth rubbery hide and a leathery ridged shell edge just visible at the back of the shoulders, deep olive-green shell tone with a pale cream-yellow beak and throat | — |
+| dryosaurus | dinos/dryosaurus.webp | support-herbivore | a Dryosaurus | a small nimble early ornithopod with a short beaked snout, large round eyes and a slender neck, two-tone leaf-green back with a pale creamy-white throat and faint darker green speckling | — |
+| maiasaura | dinos/maiasaura.webp | support-herbivore | a Maiasaura | a duck-billed hadrosaur with a small bony ridge above the eyes and a broad flat duck-like beak, warm caramel-brown back with a pale honey-tan underside and faint darker brown speckling | — |
+| massospondylus | dinos/massospondylus.webp | support-herbivore | a Massospondylus | an early long-necked sauropodomorph with a small blunt head, a slender elongated neck and tiny leaf-shaped teeth just visible at the jaw line, dusty lilac-mauve back with a pale lavender-cream throat | — |
+| microceratus | dinos/microceratus.webp | support-herbivore | a Microceratus | a tiny early ceratopsian with a small bony frill shelf at the back of the skull and a sharp parrot-like beak, no horns yet, mottled moss-green hide with a pale beige belly and a small tan frill | — |
+| ouranosaurus | dinos/ouranosaurus.webp | support-herbivore | an Ouranosaurus | a duck-billed iguanodontian with a low sail of skin running along the neck and back supported by tall spines and a pair of small bony bumps above the eyes, warm terracotta-orange sail with dusky purple-brown webbing and a pale cream throat | the whole head, neck and the complete low sail running along the back / top and left |
+| parasaurolophus | dinos/parasaurolophus.webp | support-herbivore | a Parasaurolophus | a long tubular crest sweeping back from the top of the skull well past the shoulders, and a duck-like beak, two-tone sky-blue crest fading to a warm honey-tan face and throat | the whole head and the complete backswept crest / top and left |
+| stegoceratops | dinos/stegoceratops.webp | support-herbivore | a Stegoceratops | a hybrid ceratopsian with a broad spiked frill, a pair of long brow horns and a short nose horn, deep violet-plum frill with golden-tan horns and a pale lilac face | the whole head, the spiked frill and both brow horns / top and left |
+| therizinosaurus | dinos/therizinosaurus.webp | support-herbivore | a Therizinosaurus | a small toothless beaked head on an unusually long slender neck with light feather-down fuzz along the back of the neck, two-tone slate-teal feathered neck with a warm rust-orange head and beak | the whole head and the complete long slender neck / left and top |
+| baryonyx | dinos/baryonyx.webp | swift-carnivore | a Baryonyx | a fish-eating spinosaurid with a long narrow crocodile-like snout lined with many small conical teeth and a low bony crest above the eyes, river-green hide with dark olive banding and a pale sandy-cream throat | — |
+| carnotaurus | dinos/carnotaurus.webp | swift-carnivore | a Carnotaurus | a pair of short thick bull-like horns above the eyes, an unusually short deep skull and rough pebbled hide, two-tone crimson-red hide with dark charcoal-black horns and a pale ash-gray throat | — |
+| compsognathus | dinos/compsognathus.webp | swift-carnivore | a Compsognathus | a tiny agile theropod with a slender delicate skull, large eyes, fine sharp teeth and a light downy fuzz along the neck, two-tone emerald-green hide with fine dark speckling and a pale cream throat | — |
+| cryolophosaurus | dinos/cryolophosaurus.webp | swift-carnivore | a Cryolophosaurus | a distinctive crest sweeping up and forward crosswise over the top of the skull like a pompadour, icy blue-gray crest with a deep navy face and a pale frost-white throat | the whole head and the complete crosswise crest / top |
+| dilophosaurus | dinos/dilophosaurus.webp | swift-carnivore | a Dilophosaurus | twin thin rounded crests running parallel along the top of the skull, two-tone teal-turquoise crests with a warm golden-yellow face and a pale cream throat | the whole head and both parallel crests / top |
+| elasmosaurus | dinos/elasmosaurus.webp | swift-carnivore | an Elasmosaurus | a plesiosaur with an extremely long slender neck and a small narrow head lined with fine needle-like teeth, deep ocean-blue back with a pale silvery-white throat and smooth wet-looking hide | the small head and the complete extremely long neck / left and bottom |
+| hesperornis | dinos/hesperornis.webp | swift-carnivore | a Hesperornis | a flightless diving bird with a long slender tooth-lined beak, a sleek streamlined head and a small crest of feathers at the back of the skull, two-tone charcoal-black head with a pale white throat like a loon | the whole head and the complete long slender beak / right |
+| pteranodon | dinos/pteranodon.webp | swift-carnivore | a Pteranodon | a pterosaur with a long toothless beak and a tall backward-sweeping bony crest off the back of the skull, warm tan-orange crest and beak with a pale cream head and throat | the whole head, the backward-sweeping crest and the long beak / top and right |
+| scorpios_rex | dinos/scorpios_rex.webp | swift-carnivore | a Scorpios rex | a sharp scorpion-like ridged brow, small hooked spines running down the back of the neck and a narrow jaw with curved teeth, two-tone amber-yellow hide with dark scorpion-black banding and a pale bone-white throat | — |
+| gallimimus | dinos/gallimimus.webp | swift-herbivore | a Gallimimus | an ostrich-like omnivore with a small toothless beaked head, large round eyes and a slender neck, warm sandy-tan back with a pale cream throat and faint darker tan speckling | — |
+| leaellynasaura | dinos/leaellynasaura.webp | swift-herbivore | a Leaellynasaura | a small polar ornithopod with unusually large eyes and a short blunt beak, two-tone rust-red back with a pale cream underside | — |
+| lesothosaurus | dinos/lesothosaurus.webp | swift-herbivore | a Lesothosaurus | a small primitive ornithischian with a short triangular skull, small leaf-shaped cheek teeth and a narrow beak tip, dusty olive-tan back with a pale sandy-cream throat | — |
+| othnielia | dinos/othnielia.webp | swift-herbivore | an Othnielia | a small fast bipedal ornithopod with a slender pointed skull, large eyes and a narrow beak, two-tone honey-gold back with a pale ivory throat and faint darker speckling | — |
+| struthiomimus | dinos/struthiomimus.webp | swift-herbivore | a Struthiomimus | an ostrich-mimic with a toothless beaked head, a long slender neck and large eyes, two-tone slate-gray-blue back with a pale cream throat | — |
+| kronosaurus | dinos/kronosaurus.webp | tank-carnivore | a Kronosaurus | a giant short-necked pliosaur with a massive elongated jaw lined with huge conical teeth and small eyes set high on smooth hide, deep steel-blue back with a pale silvery-white throat and jaw | — |
+| ankylodocus | dinos/ankylodocus.webp | tank-herbivore | an Ankylodocus | a hybrid sauropod-ankylosaur with a long neck ending in a small blunt head crowned with bony armor knobs and a low crest at the back of the skull, two-tone moss-green armor plating with a pale stone-gray throat | the whole head, the complete long neck and the crown of armor knobs and crest / top and left |
+| ankylosaurus | dinos/ankylosaurus.webp | tank-herbivore | an Ankylosaurus | a heavily armored broad low triangular skull covered in bony plates, small horn-like knobs at the back corners of the skull and a beaked mouth, warm olive-brown armor with a pale tan underside and dark bronze plate edges | — |
+| brachiosaurus | dinos/brachiosaurus.webp | tank-herbivore | a Brachiosaurus | a giant sauropod with an extremely long neck and a small blunt head topped by a raised bony nasal crest, two-tone slate-blue back with a pale dove-gray throat | the small head, the complete extremely long neck and the raised nasal crest / top and left |
+| henodus | dinos/henodus.webp | tank-herbivore | a Henodus | an armored placodont, a flat turtle-like marine reptile with a broad flat toothless beak and a low armored plate shell edge visible at the shoulders, sandy-beige armor plating with a pale cream beak and throat | — |
+| nasutoceratops | dinos/nasutoceratops.webp | tank-herbivore | a Nasutoceratops | a broad frill, unusually long forward-curving brow horns and an oversized bulbous nose, deep burgundy-red frill with warm tan horns and a pale rose-tan face | the whole head, the wide frill and both long forward-curving horns / top and left |
+| pachyrhinosaurus | dinos/pachyrhinosaurus.webp | tank-herbivore | a Pachyrhinosaurus | a thick flat bony boss over the nose instead of a horn and a wide frill edged with small hooked spikes, two-tone slate-gray frill with a pale bone-tan boss and face | the whole head, the wide spiked frill and the nasal boss / top and left |
+| stegosaurus | dinos/stegosaurus.webp | tank-herbivore | a Stegosaurus | a row of tall triangular bony plates running from the back of the head down the neck, with small bumpy osteoderms on the cheeks, warm olive-green plates with dark umber-brown edges and a pale sage-cream throat | the whole head, neck and the complete row of tall back plates / top and left |
+| thescelosaurus | dinos/thescelosaurus.webp | tank-herbivore | a Thescelosaurus | a sturdy small-bodied ornithopod with a blunt short beaked snout, small cheek teeth and a thick sturdy build, two-tone forest-green back with a pale cream underside | — |
+
 ## Park map
 
 Three opaque rasters drawn by the park renderer (`src/core/render/draw.ts`)
