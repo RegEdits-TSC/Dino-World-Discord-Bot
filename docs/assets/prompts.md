@@ -1,15 +1,19 @@
-# Image generation prompts — egg, expedition site, and banner art
+# Image generation prompts — egg, expedition site, banner, boss, archetype, hero portrait, park, hatch crack, and branding art
 
 The volcano/frozen banners and volcano thumb were generated with ChatGPT image
 generation; the remaining coastal/amber banners and the coastal/amber/frozen
-thumbs were generated with Higgsfield Nano Banana Pro. The six egg rarities were
-generated with Higgsfield Nano Banana Pro as a reference chain (see the Egg
-rarities section). The 33 embed banners were generated with Higgsfield
-Nano Banana Pro, `care_neglect` as a reference chain off `care` and
-`battle_defeat` off `battle_victory`. The six hatch cracks were generated as
-reference-chain edits of their own egg icons. These prompts are the source of
-truth for regenerating or extending the set — keep them in sync with any new
-assets.
+thumbs were generated with Higgsfield Nano Banana Pro. The three sites that
+shipped later — Abyssal Trench, Containment Site, and Founder's Park — were
+also generated with Higgsfield, each with its own model and pipeline (see each
+site's own section below). The six egg rarities were generated with Higgsfield
+Nano Banana Pro as a reference chain (see the Egg rarities section). The 33
+embed banners were generated with Higgsfield Nano Banana Pro, `care_neglect`
+as a reference chain off `care`, `battle_defeat` off `battle_victory`, and
+`guests`, `dex`, `landmark`, and `season` each generated as a reference chain
+off two existing banners (see Embed banners for each pairing). The six hatch
+cracks were generated as reference-chain edits of their own egg icons. These
+prompts are the source of truth for regenerating or extending the set — keep
+them in sync with any new assets.
 
 Note on thumbs: some models render a "square cartoon game icon of …" prompt as
 a rounded-rectangle app-icon tile with a border. To force a full-bleed square
@@ -52,7 +56,9 @@ icons in `assets/images/eggs/` (glossy cartoon game style):
 **1254×1254** — a discrepancy from the original PNG's IHDR that predates the
 WebP conversion, not something that conversion introduced. Not resized as
 part of that pass; a future regeneration should target 1024×1024 to match the
-other three site thumbs.
+other six site thumbs (verified on disk: `coastal_dig`, `amber_ridge`,
+`frozen_cliffs`, `abyssal_trench`, `containment_site`, and `founders_park`
+all ship at 1024×1024 — `volcano_core` is the sole outlier).
 
 **Output format.** Every committed file under `assets/images/` is **WebP, quality 95**,
 encoded through `@napi-rs/canvas`'s `canvas.toBuffer('image/webp', 95)`, and
@@ -76,6 +82,11 @@ takes whatever the generator emitted (usually PNG) as its source.
 | `node scripts/fit-art.mjs ground <src> <dest>` | 1200×800 (3:2) | cover-scale, center-crop | `assets/images/park/ground{,-wet,-dry,-cold}.webp` |
 | `node scripts/fit-art.mjs band <src> <dest>` | 270×150 (1.8:1) | cover-scale, center-crop | `assets/images/park/attraction-<kind>.webp`, `assets/images/park/landmark-{a,b,c}.webp` — anything the park renderer draws 1:1 at `TILE_W`×`TILE_H` |
 | `node scripts/fit-art.mjs cutout <src> <dest>` | 1024×1024 transparent | defringe, then whole-bbox fit at a 31px margin | `assets/images/hatch/`, `assets/images/dinos/` |
+| `node scripts/fit-art.mjs portrait <src> <dest>` | 1024×1024 transparent | largest region only, border flood, 2px shave, whole-bbox fit at a 24px margin (`--axis=egg` re-centres on the egg's own axis instead) | `assets/images/eggs/` (with `--axis=egg`), `assets/images/battles/` |
+
+`cutout` and `portrait` are not interchangeable — see the divergence table and
+the consequences list in the Egg rarities section for the numbers and what
+goes wrong if either is run on the other's family.
 
 `band` exists because 270×150 is 1.8:1 and no generator offers that aspect ratio:
 generate at 16:9 and let the mode crop. It is the `ground` mode's arithmetic with
@@ -103,24 +114,15 @@ substring instead of trusting only the leading magic bytes, concludes the whole
 file is SVG, and fails parsing it as one. Hence the misleading error, which
 names a format the file has nothing to do with.
 
-*Remedy:* drop the chunk before decoding. It is pure provenance metadata, is
-read nowhere in this codebase, and would not survive re-encoding to WebP in any
-case, so removing it is pixel-for-pixel content-neutral. Walk the chunk stream
-and copy everything except `caBX`:
-
-```js
-// PNG = 8-byte signature, then [4B length][4B type][data][4B CRC] chunks.
-function stripCaBX(buf) {
-  const out = [buf.subarray(0, 8)];
-  for (let p = 8; p + 8 <= buf.length; ) {
-    const end = p + 12 + buf.readUInt32BE(p);
-    if (buf.toString('latin1', p + 4, p + 8) !== 'caBX') out.push(buf.subarray(p, end));
-    p = end;
-  }
-  return Buffer.concat(out);
-}
-img.src = stripCaBX(readFileSync(src));   // instead of readFileSync(src)
-```
+*Remedy:* `scripts/fit-art.mjs` now strips the chunk before decoding — see
+`stripCaBX` in `scripts/lib/art-pipeline.mjs`, called before every `img.decode()`
+in that script. No hand-patching is needed. `tests/art-pipeline.test.ts` covers
+it directly: it removes only the `caBX` chunk(s) and leaves every other chunk
+byte-identical, is a no-op on a PNG that carries none, and returns a non-PNG
+buffer (WebP, JPEG) untouched rather than mangling it. The chunk is pure
+provenance metadata, is read nowhere in this codebase, and would not survive
+re-encoding to WebP in any case, so removing it is pixel-for-pixel
+content-neutral.
 
 Three of the 40 files in the WebP conversion pass were affected
 (`sites/frozen_cliffs-banner`, `sites/volcano_core-banner`,
@@ -137,7 +139,30 @@ Banner = wide establishing shot of the site. Thumb = square icon-style
 composition with one central landmark and a simple background (readable at
 80px — do not just crop the banner).
 
-Site ids: `coastal_dig`, `amber_ridge`, `frozen_cliffs`, `volcano_core`.
+Site ids: `coastal_dig`, `amber_ridge`, `frozen_cliffs`, `volcano_core`,
+`abyssal_trench`, `containment_site`, `founders_park` — the last three shipped
+later and have their own sections below with their own generation notes.
+
+## Art variants (`-v2`, `-v3`, `-v4`)
+
+A surface with more than one committed face carries `<base>-v2.webp`,
+`<base>-v3.webp`, `<base>-v4.webp` beside an untouched `<base>.webp`. The base
+file is never renamed, moved or regenerated.
+
+The `v` is load-bearing: no committed filename and no species id contains a digit
+or a `-v` suffix, so `-vN` can never be read as part of a base name. A bare `-2`
+would carry no such guarantee for a future id.
+
+**Every variant is generated as an image-edit of its own base**, with the base
+attached as the media reference — never from another variant, and never from a
+bare prompt. This is the same reference-chain discipline the egg rarities and the
+dino archetypes use, and for the same reason: a variant that drifts off its base
+reads as a different asset rather than another view of the same one.
+
+Variants are unreferenced from `src/` until the resolver ships. Two guards cover
+them meanwhile: `tests/asset-variants.test.ts` proves every variant has a base,
+and the disk-registered dimension checks in `tests/images.test.ts` hold them to
+their family's size and transparency contract.
 
 ---
 
@@ -701,7 +726,7 @@ plaza has to read as the same park as both.
 **The no-human clause is doubled on this one prompt, and that is load-bearing.**
 Every banner in this section forbids human characters, but a scene whose whole
 subject is *visitors* is the one that will render people anyway; a single human
-figure makes the banner unusable beside the other 26, and no test can see it.
+figure makes the banner unusable beside the other 32, and no test can see it.
 Keep "no human characters, no people, no human visitors of any kind" verbatim on
 any regeneration. The visitors are cartoon dinosaurs, the same way `trading.webp`
 staffs its market stall.
@@ -1074,15 +1099,19 @@ scales). Every prompt carries this rule verbatim.
 
 **Workflow (reference chain):** generate the coastal portrait first on a
 plain flat light-gray studio background, head-and-shoulders three-quarter
-framing filling the square with a small even margin. Generate the other three
-as image-edits of the approved coastal portrait (Nano Banana Pro, `medias`
-role `image`) so pose, framing, and rendering read as a set — all three edit
-from the coastal portrait directly, never from each other. Post-process each
-with `remove_background` plus the one-off defringe + fit pass described in the Egg
-rarities section (not `scripts/fit-art.mjs`, which fits to 31px), with one
-difference: portraits fit and center on the **whole silhouette bbox** (there is
-no egg axis to bias toward), 24px margin on a 1024×1024 transparent canvas — the
-margin all seven committed portraits measure at.
+framing filling the square with a small even margin. Generate the next three
+— `amber_ridge`, `frozen_cliffs`, and `volcano_core` — as image-edits of the
+approved coastal portrait (Nano Banana Pro, `medias` role `image`) so pose,
+framing, and rendering read as a set — all three edit from the coastal
+portrait directly, never from each other. The remaining three —
+`abyssal_trench`, `containment_site`, and `founders_park`, all shipped later
+— are generated as standalone prompts instead, not image-edits of the
+coastal reference (see their own bullets below). Post-process each with
+`remove_background` plus the one-off defringe + fit pass described in the
+Egg rarities section (not `scripts/fit-art.mjs`, which fits to 31px), with
+one difference: portraits fit and center on the **whole silhouette bbox**
+(there is no egg axis to bias toward), 24px margin on a 1024×1024 transparent
+canvas — the margin all seven committed portraits measure at.
 
 **boss-coastal_dig — Old Riptooth (reference portrait):**
 
@@ -1118,7 +1147,8 @@ margin all seven committed portraits measure at.
 - **boss-frozen_cliffs — Stormwing:** a towering cartoon Quetzalcoatlus with
   pale ice-blue and white plumage, a long crested head, frost sheen gleaming
   on the beak surface, and one folded wing shoulder visible. The first
-  generation attempt drifted off-model against the other three bosses — thin
+  generation attempt drifted off-model against the other three bosses in that
+  reference-chain batch (coastal_dig, amber_ridge, volcano_core) — thin
   light blue-grey outlines and washed-out fills instead of matching bold
   near-black linework and saturated color — so the icy palette is not enough
   on its own; insert this before the no-glow sentence: "Every outline on the
@@ -1133,14 +1163,15 @@ margin all seven committed portraits measure at.
   clean cel-shaded gradients, not a flat muted look."
 
   The regeneration above (correct on outline weight and saturation) still
-  came back facing left, mirrored against the other three bosses, which all
-  face right — snout/beak pointing right — matching the coastal_dig
-  reference. Rather than risk losing the now-approved outline/saturation fix
-  on a third generation, the committed `boss-frozen_cliffs-portrait.webp` is
-  that same approved asset horizontally flipped in post (alpha-preserving,
-  1024×1024 dimensions unchanged) to restore right-facing orientation. A
-  future regeneration from this prompt is not guaranteed to land right-facing
-  either — check orientation against the other three bosses before shipping,
+  came back facing left, mirrored against the other three bosses in that same
+  batch, which all face right — snout/beak pointing right — matching the
+  coastal_dig reference. Rather than risk losing the now-approved
+  outline/saturation fix on a third generation, the committed
+  `boss-frozen_cliffs-portrait.webp` is that same approved asset horizontally
+  flipped in post (alpha-preserving, 1024×1024 dimensions unchanged) to
+  restore right-facing orientation. A future regeneration from this prompt is
+  not guaranteed to land right-facing either — check orientation against the
+  other six committed portraits before shipping,
   and either add an explicit "facing right, mirroring the reference
   portrait's profile direction" clause to the prompt or re-apply the same
   horizontal-flip post-process.
@@ -1275,7 +1306,7 @@ outliers. `swift-carnivore` covers both `velociraptor` and `quetzalcoatlus` —
 a beaked pterosaur — and the shared portrait is a scaled toothy theropod, not
 anything pterosaur-shaped. Accepted deliberately, not an oversight: a
 per-species `silhouette` field was considered and declined, since it would
-have traded eight images for roughly twelve plus a migration across all 40
+have traded eight images for roughly twelve plus a migration across all 52
 species files, to fix fidelity for a handful of outliers like this one.
 
 **Style: deliberately simpler than the seven boss portraits.** Same house
@@ -2240,10 +2271,16 @@ the six committed cracks have 3–6 regions (`uncommon` 6, `legendary` and `rare
 rarities pass — "keep only the largest connected region" — and its "exactly one
 connected region" verification are therefore **not** part of this family's
 post-processing: applying either would silently delete the fragments and leave a
-plain open egg, and `fit-art.mjs cutout` correctly keeps every region. No test
-catches that loss (`tests/images.test.ts` checks size and corner transparency
-only), so it is a review-by-eye property: after regenerating, confirm the falling
-fragments survived. What still applies from that pass is the *defringe* half —
+plain open egg, and `fit-art.mjs cutout` correctly keeps every region.
+`tests/images.test.ts`'s "keeps the falling shell fragments — the set is not
+reduced to one region each" case is the real guard against that loss: it
+flood-fills all six committed cracks and asserts that at least one of them
+keeps more than one connected region, which a blanket single-region pass over
+the whole set would drive to zero. It does not verify each rarity's own
+fragment count individually — `mythic` legitimately lands at one region — so
+treat it as a coarse backstop, not a substitute for review: after
+regenerating, still confirm by eye that the crack you touched kept its own
+fragments. What still applies from that pass is the *defringe* half —
 the light studio rim must be peeled, and all border pixels must end transparent.
 
 **Prompt (identical for all six; only the attached reference changes):**
