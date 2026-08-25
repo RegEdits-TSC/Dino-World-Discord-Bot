@@ -17,3 +17,12 @@ export declare function opaqueBBox(
   px: Uint8ClampedArray, w: number, h: number,
 ): { x0: number; y0: number; x1: number; y1: number } | null;
 export declare function stripCaBX(buf: Buffer): Buffer;
+export declare const FIT_31: number;
+export declare const FIT_24: number;
+export interface BBox { x0: number; y0: number; x1: number; y1: number }
+export declare function largestRegion(px: Uint8ClampedArray, w: number, h: number): void;
+export declare function borderFlood(px: Uint8ClampedArray, w: number, h: number): void;
+export declare function shave(px: Uint8ClampedArray, w: number, h: number, n?: number): void;
+export declare function eggAxisBBox(
+  px: Uint8ClampedArray, w: number, h: number, box: BBox,
+): BBox;

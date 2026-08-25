@@ -102,3 +102,105 @@ export function stripCaBX(buf) {
   }
   return stripped ? Buffer.concat(out) : buf;
 }
+
+// 0.94 of 1024 = 962px on the tight axis, i.e. a 31px margin — what the six committed
+// hatch cracks and the dino cutouts were fitted at. 0.953125 = 976px, a 24px margin —
+// what the eggs and boss portraits sit at. Do NOT unify these without re-fitting the
+// committed families, which means regenerating shipped art.
+export const FIT_31 = 0.94;
+export const FIT_24 = 0.953125;
+
+// 4-connected labelling. Keeps the largest opaque region and clears every other.
+// Must NEVER be run on the hatch cracks: their falling shell fragments are
+// disconnected on purpose and tests/images.test.ts:321-354 asserts they survive.
+export function largestRegion(px, w, h) {
+  const seen = new Int32Array(w * h).fill(-1);
+  let best = -1, bestSize = 0;
+  for (let s = 0; s < w * h; s++) {
+    if (px[s * 4 + 3] === 0 || seen[s] !== -1) continue;
+    const stack = [s];
+    seen[s] = s;
+    let size = 0;
+    while (stack.length) {
+      const p = stack.pop();
+      size++;
+      const x = p % w, y = (p - x) / w;
+      const nbr = [];
+      if (x > 0) nbr.push(p - 1);
+      if (x < w - 1) nbr.push(p + 1);
+      if (y > 0) nbr.push(p - w);
+      if (y < h - 1) nbr.push(p + w);
+      for (const n of nbr) {
+        if (px[n * 4 + 3] === 0 || seen[n] !== -1) continue;
+        seen[n] = s;
+        stack.push(n);
+      }
+    }
+    if (size > bestSize) { bestSize = size; best = s; }
+  }
+  if (best === -1) return;
+  for (let p = 0; p < w * h; p++) if (seen[p] !== best) px[p * 4 + 3] = 0;
+}
+
+// Flood inward from the border through transparent and desaturated-light pixels to
+// strip near-white matte residue clinging to the outer silhouette. Saturated art
+// blocks the flood, so interior highlights walled off by dark outlines survive.
+export function borderFlood(px, w, h) {
+  const light = (p) => {
+    const r = px[p * 4], g = px[p * 4 + 1], b = px[p * 4 + 2];
+    return 0.299 * r + 0.587 * g + 0.114 * b > 180
+      && Math.max(r, g, b) - Math.min(r, g, b) < 40;
+  };
+  const seen = new Uint8Array(w * h);
+  const stack = [];
+  const push = (p) => { if (!seen[p]) { seen[p] = 1; stack.push(p); } };
+  for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { push(y * w); push(y * w + w - 1); }
+  while (stack.length) {
+    const p = stack.pop();
+    if (px[p * 4 + 3] !== 0) {
+      if (!light(p)) continue;      // saturated or dark art blocks the flood
+      px[p * 4 + 3] = 0;
+    }
+    const x = p % w, y = (p - x) / w;
+    if (x > 0) push(p - 1);
+    if (x < w - 1) push(p + 1);
+    if (y > 0) push(p - w);
+    if (y < h - 1) push(p + w);
+  }
+}
+
+// Remove n rings of boundary pixels. Each ring is computed against the previous
+// state, so the passes do not cascade within one ring.
+export function shave(px, w, h, n = 2) {
+  const at = (x, y) => (y * w + x) * 4;
+  for (let pass = 0; pass < n; pass++) {
+    const doomed = [];
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (px[at(x, y) + 3] === 0) continue;
+        if (x === 0 || y === 0 || x === w - 1 || y === h - 1
+          || px[at(x - 1, y) + 3] === 0 || px[at(x + 1, y) + 3] === 0
+          || px[at(x, y - 1) + 3] === 0 || px[at(x, y + 1) + 3] === 0) doomed.push(at(x, y) + 3);
+      }
+    }
+    if (!doomed.length) return;
+    for (const a of doomed) px[a] = 0;
+  }
+}
+
+// Re-measure the horizontal extent using only the top 45% of the silhouette, so
+// asymmetric nest dressing does not push the egg off-centre. Vertical extent is
+// unchanged — only the centring axis is biased.
+export function eggAxisBBox(px, w, h, box) {
+  const cut = box.y0 + Math.round((box.y1 - box.y0 + 1) * 0.45);
+  let x0 = w, x1 = -1;
+  for (let y = box.y0; y < cut; y++) {
+    for (let x = 0; x < w; x++) {
+      if (px[(y * w + x) * 4 + 3] === 0) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+    }
+  }
+  return x1 < 0 ? box : { x0, y0: box.y0, x1, y1: box.y1 };
+}
