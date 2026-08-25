@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { coverGeometry, alphaThreshold, luminancePeel, opaqueBBox, COVER, Q }
+import { coverGeometry, alphaThreshold, luminancePeel, opaqueBBox, COVER, Q, stripCaBX }
   from '../scripts/lib/art-pipeline.mjs';
 
 // A w×h RGBA buffer, fully transparent, with a helper to paint one pixel.
@@ -77,5 +77,52 @@ describe('opaqueBBox', () => {
 
   it('returns null for a fully transparent image', () => {
     expect(opaqueBBox(buf(4, 4), 4, 4)).toBeNull();
+  });
+});
+
+// PNG = 8-byte signature, then [4B length][4B type][data][4B CRC] chunks.
+function chunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  // CRC value is never validated by the strip, which only walks lengths and types.
+  return Buffer.concat([len, Buffer.from(type, 'latin1'), data, Buffer.alloc(4)]);
+}
+const SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+describe('stripCaBX', () => {
+  it('removes only the caBX chunk and leaves the others byte-identical', () => {
+    const ihdr = chunk('IHDR', Buffer.alloc(13, 7));
+    const cabx = chunk('caBX', Buffer.from('<svg xmlns="..."/>', 'latin1'));
+    const idat = chunk('IDAT', Buffer.from('pixels', 'latin1'));
+    const out = stripCaBX(Buffer.concat([SIG, ihdr, cabx, idat]));
+    expect(out.equals(Buffer.concat([SIG, ihdr, idat]))).toBe(true);
+  });
+
+  it('returns a PNG with no caBX chunk unchanged', () => {
+    const png = Buffer.concat([SIG, chunk('IHDR', Buffer.alloc(13, 7)),
+                               chunk('IDAT', Buffer.from('pixels', 'latin1'))]);
+    expect(stripCaBX(png).equals(png)).toBe(true);
+  });
+
+  it('removes every caBX chunk when a file carries more than one', () => {
+    const ihdr = chunk('IHDR', Buffer.alloc(13, 7));
+    const idat = chunk('IDAT', Buffer.from('pixels', 'latin1'));
+    const out = stripCaBX(Buffer.concat([
+      SIG, ihdr, chunk('caBX', Buffer.from('a')), idat, chunk('caBX', Buffer.from('b')),
+    ]));
+    expect(out.equals(Buffer.concat([SIG, ihdr, idat]))).toBe(true);
+  });
+
+  // A WebP or JPEG source has no PNG signature; the walk must not mangle it.
+  it('returns a non-PNG buffer untouched', () => {
+    const webp = Buffer.from('RIFF....WEBPVP8 ', 'latin1');
+    expect(stripCaBX(webp).equals(webp)).toBe(true);
+  });
+
+  // A malformed length must not send the walk past the end of the buffer.
+  it('stops cleanly on a truncated chunk rather than overrunning', () => {
+    const bad = Buffer.concat([SIG, Buffer.from([0xff, 0xff, 0xff, 0xff]),
+                               Buffer.from('IDAT', 'latin1')]);
+    expect(() => stripCaBX(bad)).not.toThrow();
   });
 });

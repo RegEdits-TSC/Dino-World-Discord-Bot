@@ -16,3 +16,4 @@ export declare function luminancePeel(
 export declare function opaqueBBox(
   px: Uint8ClampedArray, w: number, h: number,
 ): { x0: number; y0: number; x1: number; y1: number } | null;
+export declare function stripCaBX(buf: Buffer): Buffer;

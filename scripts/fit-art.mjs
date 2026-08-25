@@ -16,7 +16,7 @@
 // tested — this file stays a thin CLI wrapper around them.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createCanvas, Image } from '@napi-rs/canvas';
-import { COVER, Q, coverGeometry, alphaThreshold, luminancePeel, opaqueBBox }
+import { COVER, Q, coverGeometry, alphaThreshold, luminancePeel, opaqueBBox, stripCaBX }
   from './lib/art-pipeline.mjs';
 
 const [mode, src, dest] = process.argv.slice(2);
@@ -25,14 +25,10 @@ if (!(mode === 'cutout' || Object.hasOwn(COVER, mode)) || !src || !dest) {
   process.exit(2);
 }
 
-// If this decode throws `Error: Invalid SVG image` (code 'InvalidArg') on a PNG that
-// opens fine everywhere else, the file is not corrupt — it carries a C2PA / Content
-// Credentials `caBX` chunk whose metadata contains the literal text `<svg`, and
-// @napi-rs/canvas's format sniffer scans the whole buffer for that substring instead
-// of trusting the leading magic bytes. Strip the chunk (pure provenance metadata; no
-// pixel data) and retry. Recipe and background: docs/assets/prompts.md, "Decode trap".
+// Freshly generated PNGs can carry a C2PA `caBX` chunk that makes @napi-rs/canvas
+// misidentify the file as SVG. stripCaBX removes it; see its comment for the detail.
 const img = new Image();
-img.src = readFileSync(src);
+img.src = stripCaBX(readFileSync(src));
 await img.decode();
 
 if (Object.hasOwn(COVER, mode)) {

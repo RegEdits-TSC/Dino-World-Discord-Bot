@@ -77,3 +77,28 @@ export function opaqueBBox(px, w, h) {
   }
   return x1 < 0 ? null : { x0, y0, x1, y1 };
 }
+
+const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+// A freshly generated PNG can carry a `caBX` chunk — an ancillary, private,
+// safe-to-copy chunk holding a C2PA / Content Credentials (JUMBF) manifest whose
+// payload contains the literal text `<svg`. @napi-rs/canvas's format sniffer scans
+// the whole buffer for that substring instead of trusting the leading magic bytes,
+// concludes the file is SVG, and fails with `Error: Invalid SVG image`
+// (code 'InvalidArg') on a file that opens fine in every viewer.
+//
+// The chunk is pure provenance metadata, is read nowhere in this codebase, and would
+// not survive re-encoding to WebP anyway, so removing it is content-neutral.
+export function stripCaBX(buf) {
+  if (buf.length < 8 || !buf.subarray(0, 8).equals(PNG_SIG)) return buf;
+  const out = [buf.subarray(0, 8)];
+  let stripped = false;
+  for (let p = 8; p + 8 <= buf.length; ) {
+    const end = p + 12 + buf.readUInt32BE(p);
+    if (end > buf.length || end <= p) break;   // malformed length: stop, don't overrun
+    if (buf.toString('latin1', p + 4, p + 8) === 'caBX') stripped = true;
+    else out.push(buf.subarray(p, end));
+    p = end;
+  }
+  return stripped ? Buffer.concat(out) : buf;
+}
