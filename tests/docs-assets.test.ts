@@ -3,7 +3,11 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const svgCount = readdirSync(resolve(process.cwd(), 'assets/emojis/svg')).filter((f) => f.endsWith('.svg')).length;
-const bannerCount = readdirSync(resolve(process.cwd(), 'assets/images/banners')).length;
+// Base banners only: a `-vN` file is another face of an existing banner, not a new
+// one, so it must not move the figure quoted in prompts.md. Counting files instead
+// of banners would make the prose churn on every variant with nothing gained.
+const bannerCount = readdirSync(resolve(process.cwd(), 'assets/images/banners'))
+  .filter((f) => f.endsWith('.webp') && !/-v\d+\.webp$/.test(f)).length;
 const ops = readFileSync(resolve(process.cwd(), 'docs/ops.md'), 'utf8');
 const prompts = readFileSync(resolve(process.cwd(), 'docs/assets/prompts.md'), 'utf8');
 

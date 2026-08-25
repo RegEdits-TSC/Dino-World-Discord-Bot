@@ -165,8 +165,12 @@ describe('banner art', () => {
   it('references every committed non-event banner (guards the scrape itself)', () => {
     const onDisk = readdirSync(resolve(process.cwd(), 'assets/images/banners'))
       .filter((f) => f.endsWith('.webp') && !f.startsWith('event-'))
-      .map((f) => f.replace(/\.webp$/, ''));
-    expect(onDisk.filter((n) => !BANNERS.includes(n))).toEqual([]);
+      .map((f) => f.replace(/\.webp$/, ''))
+      // A `-vN` variant is another face of its base, not a banner of its own. It is
+      // deliberately unreferenced from src/ until the resolver ships (spec 6b);
+      // tests/asset-variants.test.ts is what proves its base exists.
+      .map((n) => n.replace(/-v\d+$/, ''));
+    expect([...new Set(onDisk)].filter((n) => !BANNERS.includes(n))).toEqual([]);
   });
 
   // Discord scales an embed image to the embed width, so an off-size banner
