@@ -1832,11 +1832,23 @@ image-edit off a reference that itself shows forelimbs inherits them —
 clawed hand actually visible in frame. The clause alone was not sufficient
 this round: four of the first twelve generations in this batch (allosaurus,
 ceratosaurus, nanuqsaurus, sinosaurus — all `bruiser-carnivore`) still came
-back with a hand or claw visible. A second, more literal sentence fixed all
-four on one retry and was carried into every remaining generation in the
-batch as a precaution:
+back with a hand or claw visible. A second, more literal sentence was added
+and carried into every remaining generation in the batch as a precaution:
 
 > Crop the frame tight at the base of the neck and the very top of the shoulders so that no forelimb, hand, finger, or claw is visible anywhere in the image.
+
+That sentence cleared three of the four. **`sinosaurus` was not fixed by it**
+and shipped with a bent forelimb visible at the lower left, which review
+caught after the batch had already been committed. What finally cleared it
+was harder still — an explicit crop instruction plus an enumeration of the
+parts being excluded, rather than a single negative clause:
+
+> CROP AT THE CHEST: show only the head, the neck, and the very top of the shoulders. The image must contain NO forelimbs of any kind - no arms, no upper arms, no elbows, no forearms, no wrists, no hands, no claws, no fingers - and no chest, no belly, no torso below the shoulder line. The lower edge of the picture cuts straight across the base of the neck.
+
+Prefer that wording for any future `bruiser-carnivore` edit. The lesson is
+that a negative clause ("no arms") competes with what the reference image
+actually shows, while naming the crop line gives the model something
+positive to satisfy.
 
 It sits immediately after the "no arms, no hands, no torso" sentence and
 before the no-glow sentence. `deinosuchus` (`bruiser-carnivore`) is the one
@@ -1849,7 +1861,7 @@ visible inside it. It ships on the shared `dinos/bruiser-carnivore.webp`
 fallback rather than a fourth generation on one file.
 
 **CRITICAL FRAMING block**, for any species whose silhouette grows past the
-reference — used for 16 of the 44 rows below, wherever the Framing column is
+reference — used for 17 of the 44 rows below, wherever the Framing column is
 not `—`:
 
 > CRITICAL FRAMING: zoom out so the ENTIRE creature - {PARTS} - sits well inside the frame, small in the canvas, surrounded by a wide band of empty background on all four sides. Nothing may touch, run off, or be cropped by any edge of the image, especially the {THREATENED} edges.
@@ -1879,7 +1891,7 @@ species, coloring and framing.
 | ceratosaurus | dinos/ceratosaurus.webp | bruiser-carnivore | a Ceratosaurus | a single blade-like nasal horn above the snout, small bony ridges over the eyes, and a row of small bumpy osteoderms down the neck, teal-green hide with dark charcoal mottling and a pale yellow-cream underside | — |
 | deinosuchus | *(not shipped — see above)* | bruiser-carnivore | a Deinosuchus | a giant prehistoric crocodilian with a broad flat armor-plated snout, heavy overlapping bony scutes, small eyes set high on the head and massive conical teeth, swamp-green plated hide with dark olive-black banding and a pale khaki throat | — |
 | nanuqsaurus | dinos/nanuqsaurus.webp | bruiser-carnivore | a Nanuqsaurus | a small Arctic tyrannosaur with a compact deep skull, thick brow ridges and a short snout, white-and-frost-blue mottled hide with a pale icy gray-blue underside | — |
-| sinosaurus | dinos/sinosaurus.webp | bruiser-carnivore | a Sinosaurus | a crested early tyrannosauroid with a pair of low ridge-crests running from above the eyes back along the skull and a slender jaw of fine teeth, deep forest-green hide with dark bronze-brown crest ridges and a pale sage underside | — |
+| sinosaurus | dinos/sinosaurus.webp | bruiser-carnivore | a Sinosaurus | a mid-sized theropod head with a pair of thin bony crests running lengthwise along the top of the snout, a long narrow jaw with prominent teeth, an alert forward-set eye, and deep forest-green scales with a pale sage throat | — (regenerated with the CROP AT THE CHEST wording above — the plain no-arms clause did not clear its forelimb) |
 | spinosaurus | dinos/spinosaurus.webp | bruiser-carnivore | a Spinosaurus | a long crocodile-like snout lined with conical teeth and a tall sail of skin rising from the back of the neck and shoulders, sandy ochre-tan hide with a dark maroon-red sail membrane and a pale cream throat | the whole head, the full neck and the complete tall sail rising off the shoulders / top and left |
 | tylosaurus | dinos/tylosaurus.webp | bruiser-carnivore | a Tylosaurus | a giant mosasaur with a long paddle-shaped snout, rows of conical teeth and smooth streamlined skin, countershaded steel-gray-blue back and a pale silvery-white throat and jaw | — |
 | iguanodon | dinos/iguanodon.webp | bruiser-herbivore | an Iguanodon | a long horse-like skull with a toothless beak-like tip and a broad muscular cheek pouch, warm olive-brown hide with a pale sandy-tan underside and faint darker striping | — |
