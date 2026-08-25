@@ -441,7 +441,26 @@ const DINO_ART_FILES = readdirSync(resolve(process.cwd(), 'assets/images/dinos')
   .map((f) => f.replace(/\.webp$/, ''))
   .sort();
 const SPECIES_IDS = new Set(allSpecies().map((s) => s.id));
-const SPECIES_ART_FILES = DINO_ART_FILES.filter((n) => SPECIES_IDS.has(n));
+
+// Art banked ahead of its species data (spec 6a). Each of these ships a portrait so
+// that adding the species later stays a data-only change. This is an explicit
+// allowlist, not a relaxation: a misspelled filename is in neither this list nor
+// SPECIES_IDS, so it still fails — the guard keeps its full protective value.
+// When a species here ships as data, delete its entry; SPECIES_IDS will cover it.
+// Declared here (not down by 'dino art file names', where it is also used) because
+// SPECIES_ART_FILES below needs it in scope — a `const` used before its own
+// declaration is a TDZ ReferenceError, not a hoist.
+const BANKED_SPECIES_ART = [
+  'amargasaurus', 'apatosaurus', 'concavenator', 'corythosaurus', 'dimorphodon',
+  'herrerasaurus', 'nodosaurus', 'sinoceratops', 'styracosaurus', 'suchomimus',
+  'troodon', 'utahraptor',
+];
+
+// Includes banked art: a portrait for a species that does not exist yet must meet the
+// same bar as one that does, or the bank is 12 files nobody ever checked.
+const SPECIES_ART_FILES = DINO_ART_FILES.filter(
+  (n) => SPECIES_IDS.has(n) || BANKED_SPECIES_ART.includes(n),
+);
 
 describe('dino archetype prompts', () => {
   // Same precedent as tests/battle-content.test.ts's bossId cross-check:
@@ -486,8 +505,14 @@ describe('hero species art', () => {
   // This case is what makes a missing or short hero-portrait set red. The reverse
   // direction — a dinos/ file that is neither an archetype-diet pair nor a real
   // species id — is covered once, by 'dino art file names' below, not duplicated here.
-  it('ships exactly the hero portraits', () => {
-    expect(SPECIES_ART_FILES, 'per-species override files on disk').toEqual(HERO_SPECIES);
+  // Was an exact-set assertion against an 8-name list. Spec 6a banks a portrait for
+  // every species, so the set is no longer fixed — but the eight originals must still
+  // be present, and every file must still be a real species id. The per-file quality
+  // bar is enforced by the it.each below, which registers from disk.
+  it('still ships every hero portrait', () => {
+    for (const id of HERO_SPECIES) {
+      expect(SPECIES_ART_FILES, `hero portrait ${id} went missing`).toContain(id);
+    }
   });
 
   // The gap this closes: expectTransparentCutout was reachable for the dinos kind
@@ -499,14 +524,16 @@ describe('hero species art', () => {
   it.each(SPECIES_ART_FILES)('%s is a 1024×1024 transparent cutout at the 31px margin',
     (name) => expectTransparentCutout('dinos', name));
 
-  // The override must be an override, not a replacement: the other 44 species ship
-  // no file of their own and must keep resolving archetype art through dinoImage's
-  // fallback arm, or "adding a species is a data-only change" stops being true.
-  it('every non-hero species still resolves to a shipped archetype image', () => {
+  // The archetype×diet set must stay complete: it is what a species with no committed
+  // portrait falls back to, and it is what keeps "adding a species is a data-only
+  // change" true. The old companion assertion — that non-hero species ship NO file of
+  // their own — was removed deliberately in spec 6a, which banks a portrait for every
+  // species. After 6a the fallback arm is reachable only for species with no committed
+  // file, i.e. future ones; the 'dinoImage' describe below covers that arm directly,
+  // with a synthetic id that can never gain committed art of its own.
+  it('every species still resolves to a shipped archetype image', () => {
     for (const s of allSpecies()) {
-      if (HERO_SPECIES.includes(s.id)) continue;
       expect(assetImage('dinos', `${s.archetype}-${s.diet}`), s.id).not.toBeNull();
-      expect(assetImage('dinos', s.id), `${s.id} unexpectedly ships its own portrait`).toBeNull();
     }
   });
 });
@@ -581,20 +608,31 @@ describe('cross-kind basename collisions', () => {
   });
 });
 
-// The inverse of the banner orphan check above, for the one directory with TWO
-// naming families: `<archetype>-<diet>` (the fixed set of 8) and `<speciesId>`
-// (the optional per-species override). Both sides are derived — DINO_ART_KEYS
+// The inverse of the banner orphan check above, for the one directory with THREE
+// naming families: `<archetype>-<diet>` (the fixed set of 8), `<speciesId>` (a
+// committed per-species portrait, hero or ordinary), and a BANKED id (art shipped
+// ahead of its species data, spec 6a). All three sides are derived — DINO_ART_KEYS
 // from the real Archetype/Diet unions, SPECIES_IDS (declared above, alongside
-// HERO_SPECIES) from allSpecies() — so a typo'd or retired name is caught here
-// rather than null-degrading to an imageless embed, which is silent everywhere
-// else.
+// HERO_SPECIES) from allSpecies(), BANKED_SPECIES_ART (declared above, alongside
+// SPECIES_ART_FILES) hand-typed — so a typo'd or retired name is caught here rather
+// than null-degrading to an imageless embed, which is silent everywhere else.
 describe('dino art file names', () => {
-  it('every committed dinos/ file is an archetype-diet pair or a real species id', () => {
+  it('every committed dinos/ file is an archetype-diet pair, a real species id, or banked art', () => {
     const names = readdirSync(resolve(process.cwd(), 'assets/images/dinos'))
       .filter((f) => f.endsWith('.webp'))
       .map((f) => f.replace(/\.webp$/, ''));
     expect(names.length, 'no dino art found — wrong root?').toBeGreaterThan(0);
-    const strays = names.filter((n) => !DINO_ART_KEYS.includes(n) && !SPECIES_IDS.has(n));
-    expect(strays, `neither an archetype-diet pair nor a species id: ${strays.join(', ')}`).toEqual([]);
+    const strays = names.filter((n) => !DINO_ART_KEYS.includes(n)
+      && !SPECIES_IDS.has(n) && !BANKED_SPECIES_ART.includes(n));
+    expect(strays, `neither an archetype-diet pair, a species id, nor banked: ${strays.join(', ')}`)
+      .toEqual([]);
+  });
+
+  // A banked id that has since shipped as data is dead weight in the allowlist and
+  // hides a real stray behind a stale entry.
+  it('no banked id has since shipped as species data', () => {
+    const shipped = BANKED_SPECIES_ART.filter((id) => SPECIES_IDS.has(id));
+    expect(shipped, `remove from BANKED_SPECIES_ART, now real species: ${shipped.join(', ')}`)
+      .toEqual([]);
   });
 });
