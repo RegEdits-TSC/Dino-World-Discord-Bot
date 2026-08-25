@@ -164,6 +164,20 @@ them meanwhile: `tests/asset-variants.test.ts` proves every variant has a base,
 and the disk-registered dimension checks in `tests/images.test.ts` hold them to
 their family's size and transparency contract.
 
+**A variant takes its base's own `fit-art.mjs` mode, never a different one.**
+The two cutout modes are not interchangeable (see the divergence table in Egg
+rarities), so the wrong mode on a variant ships a margin that silently
+disagrees with its own base's siblings:
+
+| Family | Mode |
+|---|---|
+| `assets/images/banners/<name>-vN.webp` | `banner` |
+| `assets/images/sites/<id>-banner-vN.webp` | `banner` |
+| `assets/images/eggs/<rarity>-vN.webp` | `portrait --axis=egg` |
+| `assets/images/hatch/<rarity>-crack-vN.webp` | `cutout` |
+| `assets/images/dinos/<key>-vN.webp` | `cutout` |
+| `assets/images/battles/boss-<id>-portrait-vN.webp` | `portrait` (no flag) |
+
 ---
 
 ## Egg rarities
@@ -208,8 +222,23 @@ bbox, so asymmetric nest dressing doesn't push the egg off-center. Verify: all
 border pixels transparent, exactly one connected region.
 
 **This 5-step pass is now `scripts/fit-art.mjs portrait`** (add `--axis=egg` for
-step (5)'s egg-axis variant; omit it for the whole-bbox battles variant). `cutout`
-remains a deliberately different, looser pass — alpha threshold, the 3-pass
+step (5)'s egg-axis variant; omit it for the whole-bbox battles variant).
+
+**Order note.** The implementation does not run steps (1)-(5) in the order just
+described: `fit-art.mjs` runs the alpha threshold and luminance peel (steps
+(2)-(3), shared with `cutout`) *before* the largest-region step (1), then
+border-floods and shaves — largest-region last, not first. This was checked
+byte-for-byte against the documented order on the four committed egg/battle
+files it was tested against and is inert on those, but it is **unverified on
+raw generated art**: a peel that severs a thin bridge before the largest-region
+step runs could delete real subject matter as a spurious second region, rather
+than an actual stray island being peeled first and never reaching the
+largest-region step at all. Phase D runs `portrait` on 21 files of raw
+generated art that have never been through either ordering — watch for an
+unexpectedly small or notched silhouette on the first few and compare against
+the source before trusting the pass on the rest of the batch.
+
+`cutout` remains a deliberately different, looser pass — alpha threshold, the 3-pass
 luminance peel of step (2), then a whole-bbox fit at 0.94 (a 31px margin) — with
 no largest-region step, no border flood, no 2px shave, and no egg-axis bias,
 because the hatch cracks it processes must keep every disconnected shell
@@ -217,8 +246,8 @@ fragment. The two remain not interchangeable:
 
 | | margin on tight axis | centering | regions kept |
 |---|---|---|---|
-| `assets/images/eggs/` (this one-off pass) | 24px | egg axis — L/R margins are asymmetric on purpose (e.g. `common.webp` L74/R53) | 1 |
-| `assets/images/battles/` (same pass, whole-bbox variant) | 24px | whole bbox | 1 |
+| `assets/images/eggs/` (`fit-art.mjs portrait --axis=egg`) | 24px | egg axis — L/R margins are asymmetric on purpose (e.g. `common.webp` L74/R53) | 1 |
+| `assets/images/battles/` (`fit-art.mjs portrait`, no flag) | 24px | whole bbox | 1 |
 | `assets/images/hatch/` (`fit-art.mjs cutout`) | 31px | whole bbox | all (see Hatch cracks) |
 | `assets/images/dinos/` (`fit-art.mjs cutout`) | 31px | whole bbox | all (a clean portrait cutout lands at 1) |
 
@@ -227,7 +256,7 @@ Consequences when reusing either pass on a new or regenerated asset:
 - Running `fit-art.mjs cutout` on a regenerated **egg** or **boss portrait**
   yields a slightly smaller, whole-bbox-centred subject than the committed set —
   visible side by side in an embed thumbnail row. Either accept the shift for the
-  whole family or redo the one-off pass; do not mix the two within one family.
+  whole family or run `portrait`; do not mix the two within one family.
 - Steps (1) and the "exactly one connected region" verification assume a single
   silhouette. They must **not** be applied to the hatch cracks, whose falling
   shell fragments are legitimately disconnected — see the Hatch cracks section.
@@ -1107,11 +1136,10 @@ portrait directly, never from each other. The remaining three —
 `abyssal_trench`, `containment_site`, and `founders_park`, all shipped later
 — are generated as standalone prompts instead, not image-edits of the
 coastal reference (see their own bullets below). Post-process each with
-`remove_background` plus the one-off defringe + fit pass described in the
-Egg rarities section (not `scripts/fit-art.mjs`, which fits to 31px), with
-one difference: portraits fit and center on the **whole silhouette bbox**
-(there is no egg axis to bias toward), 24px margin on a 1024×1024 transparent
-canvas — the margin all seven committed portraits measure at.
+`remove_background`, then `node scripts/fit-art.mjs portrait <src> <dest>` —
+the whole-bbox variant (there is no egg axis to bias toward, so omit
+`--axis=egg`, which applies only to the eggs): 24px margin on a 1024×1024
+transparent canvas — the margin all seven committed portraits measure at.
 
 **boss-coastal_dig — Old Riptooth (reference portrait):**
 
@@ -1442,8 +1470,8 @@ glow, rays, embers, sparkles, or light effects may extend beyond the dinosaur
 silhouette. Emissive detail is allowed only ON surfaces. Every prompt below
 carries both rules.
 
-**Margin: 31px — `node scripts/fit-art.mjs cutout`, never the boss portraits'
-one-off pass.** These render beside the archetype art in the same embeds, so they
+**Margin: 31px — `node scripts/fit-art.mjs cutout`, never `portrait`'s 24px.**
+These render beside the archetype art in the same embeds, so they
 must match that family, not `assets/images/battles/`. The divergence between the
 two families is recorded in the table in Egg rarities; this set sits on the
 `fit-art.mjs` side of it. `tests/images.test.ts` asserts the fitted margin to
