@@ -27,6 +27,12 @@ function namesUnder(kind: string): string[] {
     .map((f) => f.replace(/\.webp$/, ''));
 }
 
+// Extracted so the predicate can be tested against SYNTHETIC input (see 'banner art'
+// below) rather than only the live banner set. No -vN banner is committed yet, so a
+// mutated or broken regex here would match zero real files either way — same as the
+// correct one — and go undetected by anything that only reads assets/images/banners.
+const isVariantName = (n: string) => /-v\d+$/.test(n);
+
 // BANNERS is SCRAPED from src/, never hand-typed. A hand-typed list can only
 // ever verify that what exists, exists: it stayed green when daily/embeds.ts
 // referenced 'daily' and 'achievements' banners neither of which had a shipped
@@ -184,6 +190,17 @@ describe('banner art', () => {
     expect([...new Set(onDisk)].filter((n) => !BANNERS.includes(n))).toEqual([]);
   });
 
+  // The predicate itself, not the live file set: no -vN banner exists on disk yet, so
+  // a floor assertion built on the current banner set would read the same before and
+  // after a broken regex. Synthetic input is what makes this fail under mutation.
+  // event-blood_moon and battle_victory are real committed banners that must NOT
+  // match, so an over-matching predicate fails here too, not just an under-matching
+  // one.
+  it('the variant predicate selects variants and nothing else', () => {
+    expect(['care', 'care-v2', 'care-v10', 'event-blood_moon', 'battle_victory']
+      .filter(isVariantName)).toEqual(['care-v2', 'care-v10']);
+  });
+
   // Discord scales an embed image to the embed width, so an off-size banner
   // letterboxes or crops; 1536×1024 matches the site banners already shipping.
   // Covers all 33 committed banners, not just the 24 the static scrape can see:
@@ -200,7 +217,7 @@ describe('banner art', () => {
       // Variants are unreferenced from src/ until spec 6b, so neither the scrape nor
       // WORLD_EVENTS can see them. An unfitted variant would letterbox on the /world
       // hub exactly like an unfitted base, so register it from disk instead.
-      ...namesUnder('banners').filter((n) => /-v\d+$/.test(n)),
+      ...namesUnder('banners').filter(isVariantName),
     ]),
   ];
   it.each(DIMENSION_CHECKED_BANNERS)('%s is 1536×1024', async (name) => {
