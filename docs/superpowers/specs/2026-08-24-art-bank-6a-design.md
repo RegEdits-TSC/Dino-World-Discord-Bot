@@ -159,9 +159,30 @@ distinguishes these three from seven biome sites.
 
 ### Model
 
-`nano_banana_pro` at `resolution: 2k`. It offers `3:2` (banners), `1:1`
+Request `nano_banana_pro` at `resolution: 2k`. It offers `3:2` (banners), `1:1`
 (cutouts) and `16:9` (crop source for 270×150 bands) — every aspect this bank
 needs.
+
+**The requested model is not the served model, and the routing moves.** Do not
+trust the model id recorded in a past prompt entry, and do not trust the one in
+this spec either. Check each generation response's `model` field and record what
+actually served it.
+
+`prompts.md` asserts `nano_banana_pro → nano_banana_2` in twelve places, but
+`git blame` shows those are boilerplate copied forward across five commits over
+eighteen days, not twelve observations. A *contradictory* routing was recorded
+at line 397 on 2026-08-13 — `nano_banana_2 → nano_banana_flash` — and seven of
+the twelve `pro → 2` statements were written **after** that date without
+acknowledging it. The routing was observed as `pro → 2` across ~20 generations
+on 2026-07-28 and as `2 → flash` on every call on 2026-08-13. Neither is a
+standing fact.
+
+**Verify the media role before the first batch.** `prompts.md:2337-2339` records
+that `models_explore` once declared this model's only accepted role as `image`,
+explicitly "not `image_references`". A `models_explore` call on 2026-08-24
+returned `roles: ["image_references"]`. The role name has changed since the
+shipped art was made, and every reference chain in this bank depends on passing
+the right one. Query the model and use what it currently declares.
 
 ### Reference chains
 
@@ -177,22 +198,56 @@ and must be reused verbatim:
 | Crack variants | the committed crack of that rarity |
 | Banner variants | the committed base banner |
 | Site banner variants | the committed base site banner |
-| New chapter banners/thumbs | one generated 3:2 source per chapter; thumb is a centre crop of it |
+| New chapter banners | a generated 3:2 source per chapter |
+| New chapter thumbs | generated separately per chapter — see the note under Post-processing |
 | New boss portraits | `battles/boss-coastal_dig-portrait.webp` |
 
-Rules carried verbatim into every prompt, all recorded in `prompts.md`:
+Rules to carry into new prompts, all recorded in `prompts.md`:
 
-- the shared glossy-cartoon style block
-- the hard no-glow rule (no glow, rays, embers or sparkles beyond the
-  silhouette — off-silhouette glow survives background removal as floating
-  islands or a halo)
+- the shared glossy-cartoon style block (`prompts.md:25-27`)
+- the expanded no-text form, "No text, no lettering, no words, no numbers, no
+  signage writing anywhere in the scene" — plain "No text" is documented as
+  insufficient, having produced a carved "PARK ENTRANCE" sign on `collect.webp`
+- the Founder's Park `CRITICAL:` no-writing block, which exists because a prompt
+  *already* asking for a blank surface still rendered a legible "WELCOME"
 - facing right, snout right, for every portrait — two shipped bosses came back
   mirrored and needed flipping in post, so every generation is checked against
   the reference before shipping
 - the "NOT an app icon — no rounded-rectangle tile, no border, no rounded
   corners" phrasing for thumbs
-- the Founder's Park no-writing block, which exists because a prompt already
-  asking for a blank surface still rendered a legible "WELCOME"
+
+**Two of these are traps, and both were caught by verification rather than by
+reading.**
+
+**The no-glow rule paragraph is prose ABOUT the rule, not the text any prompt
+carries.** Do not paste `prompts.md:1067-1071` into a prompt. The reusable
+clause is:
+
+> No glow, rays, embers, sparkles, or light effects extending beyond the
+> dinosaur silhouette; glowing details may appear only on the surfaces
+> themselves.
+
+The document's own claim that "every prompt carries this rule verbatim" does not
+hold literally: the three standalone boss prompts write *creature* silhouette
+rather than *dinosaur*, and `boss-founders_park` omits the second half entirely.
+The "(lava cracks, frost sheen, wet scales)" parenthetical belongs to the battle
+-boss rule only — the archetype and hatch-crack statements of the same rule end
+at "allowed only ON surfaces."
+
+**The `CRITICAL FRAMING` block is adapted per silhouette, never pasted.** The
+invariant middle is reused —
+
+> …sits well inside the frame, small in the canvas, surrounded by a wide band of
+> empty background on all four sides. Nothing may touch, run off, or be cropped
+> by any edge of the image, especially the …
+
+— but the em-dashed part list must be rewritten to name that creature's own
+oversized features, and the closing clause must name the edges that specific
+design actually threatens. The three shipped hero portraits each carry a
+different part list and a different pair of edges. This block exists because
+`boss-founders_park` came back cropped at the bottom and right on its first
+attempt; if a generation still touches an edge, regenerate rather than
+re-cropping.
 
 ### Post-processing
 
@@ -203,9 +258,18 @@ Rules carried verbatim into every prompt, all recorded in `prompts.md`:
 | cracks, species portraits | `remove_background` → `fit-art.mjs cutout` (31px) |
 | boss portraits | `remove_background` → `fit-art.mjs portrait` (24px, **new**) |
 | eggs | `remove_background` → `fit-art.mjs portrait --axis=egg` (24px, **new**) |
-| site thumbs | centre square crop to 1024×1024 |
+| site thumbs | generated separately, then centre square crop to 1024×1024 |
 
 Every final write is WebP q95.
+
+**New chapter thumbs are generated, not cropped from the banner.** `prompts.md`
+contradicts itself here: line 138 states the rule — a thumb is "readable at 80px
+— do not just crop the banner" — while the three most recent chapters (Abyssal
+Trench, Containment Site, Founder's Park) each ship a thumb that is exactly a
+centre crop of the banner source. 6a follows the stated rule rather than recent
+practice, because a wide establishing shot cropped square rarely has one legible
+central subject at thumbnail size. The credits for this are already in the §2
+estimate.
 
 ### Batch mechanics
 
@@ -238,8 +302,8 @@ art for content that does not exist rather than art for 44 species that do.
 
 ## §4 Guards
 
-Findings below come from a six-dimension reconnaissance sweep with adversarial
-verification of each claim: 94 confirmed, 29 refuted.
+Findings below are all verified — see Evidence at the end of this document for
+the sweep that produced them.
 
 ### A. Species gap-fill re-resolves existing test fixtures
 
@@ -295,7 +359,16 @@ More dangerous than the breakages, because nothing goes red:
   derives from `CAMPAIGN`, which will not contain those chapters until 6d.
 - `landmark-d/e/f` escape the hand-typed 270×150 list at
   `tests/park-art-assets.test.ts:33` and the hand-typed prompts-coverage list at
-  `tests/docs-assets.test.ts:33`.
+  `tests/docs-assets.test.ts:32-42` — which covers **15** park rasters (four
+  grounds, both plates, three landmark bands, six attraction bands), not just
+  the three bands.
+
+There are **four** `prompts.md`-reading guards, not the two originally counted:
+`tests/images.test.ts:237` (both Gene Lab banners), `:446` (all 8 archetype×diet
+targets), `:457` (all 8 hero portraits), and `tests/battle-content.test.ts:147`
+(every `bossId`). `tests/park-art-assets.test.ts:49-58` additionally asserts set
+equality between `attraction-*.webp` basenames and `Object.keys(ATTRACTIONS)` —
+`landmark-d/e/f` do not carry that prefix, so they pass it untouched.
 
 6a closes each of these by registering cases **from disk** for the families it
 extends, so a banked file is checked exactly as a wired one is.
@@ -338,10 +411,41 @@ shell fragments, and no guard as it stands today would catch that on a variant.
 2. `scripts/fit-art.mjs`: caBX strip implemented; new `portrait` mode with its
    `--axis` flag.
 3. `docs/assets/prompts.md`: a regeneration entry for every new file; every
-   count updated; the two cutout modes and their divergence documented.
-4. Test guards adapted per §4 A–C.
-5. A note in the repo's `CLAUDE.md` recording that `dinoImage`'s fallback arm is
+   count updated; the two cutout modes and their divergence documented; the
+   `-vN` variant convention documented, since the file currently describes no
+   such convention anywhere.
+4. `docs/assets/prompts.md` staleness reconciled. The document has accumulated
+   contradictions that a regenerator would act on:
+   - line 1276 says "all 40 species files"; the repo has 52
+   - lines 2241-2244 say "No test catches that loss" of the cracks' falling
+     shell fragments — `tests/images.test.ts:321-354` is a real machine gate
+     that does exactly that
+   - "the other three" is stale in five places, written when there were four
+     bosses and four site thumbs; line 1291 correctly says seven, so the file
+     disagrees with itself about the size of its own boss set
+   - the intro's reference-chain list names two chained banners; the body
+     documents six
+   - the intro's provenance list names four sites; seven have shipped
+   - the title still reads "egg, expedition site, and banner art" for a document
+     that now covers nine families
+5. Test guards adapted per §4 A–C.
+6. A note in the repo's `CLAUDE.md` recording that `dinoImage`'s fallback arm is
    now reachable only for future species.
+
+## Evidence
+
+The guard and pipeline findings in §3 and §4 come from a six-dimension
+reconnaissance sweep with adversarial verification of every claim: 154 agents
+across three runs, 117 claims, **0 left unverified**. 94 confirmed and 6 refuted
+in the first run; 23 verifiers died mid-run on a spend-limit error and were
+re-run separately, returning 15 upheld and 8 corrected. A completeness critic
+then read `prompts.md` in full and found three asset families the sweep had
+missed entirely, plus the ten self-contradictions listed under Deliverables.
+
+Three findings in this spec exist only because a claim was checked rather than
+read: the no-glow paragraph being prose about the rule rather than the rule
+text, the `CRITICAL FRAMING` block being adapted per silhouette rather than
+pasted, and the model routing being copied boilerplate rather than observation.
 
 ## Verification
 
