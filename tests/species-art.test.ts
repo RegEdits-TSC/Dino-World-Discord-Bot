@@ -41,17 +41,6 @@ const HERO_FALLBACK: Record<string, string> = {
 };
 const HERO_IDS = Object.keys(HERO_FALLBACK);
 
-// The species that DO appear in existing pinned art fixtures, none of which ships
-// an override — which is why nothing existing moved when the heroes landed, and
-// equally why the override would otherwise ship completely untested.
-const NON_HERO: Array<[string, string]> = [
-  ['velociraptor', 'swift-carnivore'],
-  ['triceratops', 'tank-herbivore'],
-  ['compsognathus', 'swift-carnivore'],
-  ['othnielia', 'swift-herbivore'],
-  ['microceratus', 'support-herbivore'],
-];
-
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => {
   ctx = makeCtx();
@@ -69,13 +58,15 @@ describe('/dex view carries the species art override', () => {
     expect(payload.files!.map((f) => f.name)).toEqual([`${id}.webp`]);
   });
 
-  // The half that proves it is an OVERRIDE and not a replacement: 44 species ship
-  // no file of their own and must still land on the archetype art, or "adding a
-  // species is a data-only change" stops being true.
-  it.each(NON_HERO)('%s still resolves the shared %s art', (id, key) => {
-    const payload = dexViewPayload(ctx, 'u1', id);
-    expect(payload.embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${key}.webp`);
-    expect(payload.files!.map((f) => f.name)).toEqual([`${key}.webp`]);
+  // Before spec 6a these five species shipped no portrait, so this block asserted the
+  // archetype fallback through a real species. Every species now ships its own art, so
+  // the fallback is only reachable for a species with no committed file. Asserting it
+  // through a synthetic id is what keeps the case about the FALLBACK rather than about
+  // which species happened to lack art on the day it was written.
+  it('falls back to archetype art for a species with no committed portrait', () => {
+    const ref = dinoImage('no-such-species', 'swift', 'carnivore');
+    expect(ref).not.toBeNull();
+    expect(ref!.url).toBe('attachment://swift-carnivore.webp');
   });
 
   // Without this, the hero cases above could pass on a call site that had simply
@@ -127,8 +118,16 @@ describe('the hatch reveal carries the species art override', () => {
     expect(p.files.map((f) => f.name)).toEqual(['legendary-crack.webp', 'quetzalcoatlus.webp']);
   });
 
-  it('a non-hero species still hatches under the shared archetype art', () => {
-    const p = revealPayload(getSpecies('velociraptor'));   // rare, swift/carnivore
+  // velociraptor ships its own portrait as of Task 10, same as every other former
+  // NON_HERO case above. getSpecies() only resolves real roster ids, so the fallback
+  // path is modelled with a hand-built Species object carrying a synthetic id instead —
+  // same rarity/diet/archetype as velociraptor, so the crack and thumbnail expectations
+  // below are unchanged.
+  it('falls back to the shared archetype art when no species portrait is committed', () => {
+    const p = revealPayload({
+      id: 'no-such-species', name: 'Test Dino', rarity: 'rare', diet: 'carnivore',
+      archetype: 'swift', biomeTags: [], flavor: 'x',
+    });
     const embed = p.embeds[0].toJSON();
     expect(embed.image?.url).toBe('attachment://rare-crack.webp');
     expect(embed.thumbnail?.url).toBe('attachment://swift-carnivore.webp');

@@ -88,11 +88,13 @@ describe('fightFrames', () => {
     expect(frames[1].files).toBeUndefined();
     expect(frames[2].files).toBeUndefined();
     // F4 replaces the whole attachment set, so it re-uploads the thumb it shows.
-    expect(frames[3].files?.map((f) => f.name)).toEqual(['battle_victory.webp', 'swift-carnivore.webp']);
+    // coastal_dig_1's weakest-first roster leads with compsognathus, which ships its
+    // own portrait as of Task 10 — it no longer falls back to swift-carnivore.
+    expect(frames[3].files?.map((f) => f.name)).toEqual(['battle_victory.webp', 'compsognathus.webp']);
     expect(frames[0].attachments).toEqual([]);   // F1 and F4 both replace the whole set
     expect(frames[3].attachments).toEqual([]);
     expect(frames[3].embeds[0].toJSON().image?.url).toBe('attachment://battle_victory.webp');
-    expect(frames[3].embeds[0].toJSON().thumbnail?.url).toBe('attachment://swift-carnivore.webp');
+    expect(frames[3].embeds[0].toJSON().thumbnail?.url).toBe('attachment://compsognathus.webp');
   });
   it('F2/F3 come straight from the result beats', () => {
     const frames = fightFrames(makeOutcome(), skipStub);
@@ -128,24 +130,29 @@ describe('fightFrames', () => {
     expect(boss[3].files?.map((f) => f.name)).toContain(`${bossId}-portrait.webp`);   // re-uploaded, not re-referenced
     expect(boss[1].files).toBeUndefined();
     // A boss stage never carries archetype art: the boss is a named individual,
-    // and rosterFor's lead entry on a 1-dino squad is the boss itself.
-    expect(boss[0].files?.map((f) => f.name)).not.toContain('swift-carnivore.webp');
+    // and rosterFor's lead entry on a 1-dino squad is the boss itself. compsognathus
+    // ships its own portrait as of Task 10, so this checks for that filename now
+    // rather than the swift-carnivore fallback it used to share.
+    expect(boss[0].files?.map((f) => f.name)).not.toContain('compsognathus.webp');
     expect(JSON.stringify(boss[3].embeds[0].toJSON().fields)).toContain('egg');
     // The rendered enemy line, not just the thumbnail/files wiring, names the boss.
     const enemiesField = boss[0].embeds[0].toJSON().fields!.find((f) => f.name === 'Enemies')!.value;
     expect(enemiesField).toContain('👑 Old Riptooth');
-    // coastal_dig_1's weakest-first roster leads with compsognathus (swift/carnivore).
+    // coastal_dig_1's weakest-first roster leads with compsognathus (swift/carnivore),
+    // which ships its own portrait as of Task 10 — no longer the shared archetype art.
     const normal = fightFrames(makeOutcome(), skipStub);
-    for (const f of normal) expect(f.embeds[0].toJSON().thumbnail?.url).toBe('attachment://swift-carnivore.webp');
+    for (const f of normal) expect(f.embeds[0].toJSON().thumbnail?.url).toBe('attachment://compsognathus.webp');
   });
   it('the non-boss thumbnail is computed per stage from rosterFor[0], not a constant', () => {
     // coastal_dig_2 leads with othnielia (swift/herbivore), coastal_dig_3 with
     // microceratus (support/herbivore) — different keys down the same code path.
+    // Both ship their own portrait as of Task 10, so this now pins the species
+    // filename rather than the shared archetype fallback each used to resolve to.
     const s2 = fightFrames(makeOutcome({ stageId: 'coastal_dig_2' }), skipStub);
-    expect(s2[0].embeds[0].toJSON().thumbnail?.url).toBe('attachment://swift-herbivore.webp');
+    expect(s2[0].embeds[0].toJSON().thumbnail?.url).toBe('attachment://othnielia.webp');
     const s3 = fightFrames(makeOutcome({ stageId: 'coastal_dig_3' }), skipStub);
-    expect(s3[0].embeds[0].toJSON().thumbnail?.url).toBe('attachment://support-herbivore.webp');
-    expect(s3[0].files?.map((f) => f.name)).toContain('support-herbivore.webp');
+    expect(s3[0].embeds[0].toJSON().thumbnail?.url).toBe('attachment://microceratus.webp');
+    expect(s3[0].files?.map((f) => f.name)).toContain('microceratus.webp');
   });
   it('boss stage with no portrait art degrades cleanly: no thumbnail anywhere, no portrait file, banner still ships', () => {
     // No boss stage lacks committed art any more, so the absent-art branch is
@@ -223,7 +230,8 @@ describe('fightFrames', () => {
     assertFrameContract('coastal_dig_boss', { rarity: 'rare' }, ['battle_victory.webp', `${bossId}-portrait.webp`]);
   });
   it('frame contract (non-boss stage): the archetype thumb is uploaded by both attaching frames', () => {
-    assertFrameContract('coastal_dig_1', null, ['battle_victory.webp', 'swift-carnivore.webp']);
+    // coastal_dig_1's lead enemy, compsognathus, ships its own portrait as of Task 10.
+    assertFrameContract('coastal_dig_1', null, ['battle_victory.webp', 'compsognathus.webp']);
   });
 });
 

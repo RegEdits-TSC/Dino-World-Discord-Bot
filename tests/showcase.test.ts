@@ -244,10 +244,12 @@ describe('the owner sees their own showcase', () => {
     };
     expect(p.embeds[0].toJSON().fields!.find((f) => f.name === '🦖 Featured')!.value)
       .toBe('Triceratops');
-    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://tank-herbivore.webp');
+    // triceratops ships its own portrait as of Task 10; it no longer falls back to
+    // the shared tank-herbivore archetype art.
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://triceratops.webp');
     // The two-files-on-one-embed pairing (roster banner, then the featured dino's own art)
     // is call order, i.e. upload order — see the repo CLAUDE.md note on attach().
-    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster.webp', 'tank-herbivore.webp']);
+    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster.webp', 'triceratops.webp']);
   });
 
   it('carries no Next park button — that belongs to the visitor branch only', async () => {
