@@ -10,40 +10,20 @@
 // (for the eggs) an egg-axis bias. It also deliberately keeps every opaque region,
 // not just the largest — the cracks' falling shell fragments are disconnected on
 // purpose. prompts.md records the divergence and the numbers.
+//
+// The pure geometry/pixel helpers (COVER, Q, coverGeometry, alphaThreshold,
+// luminancePeel, opaqueBBox) live in scripts/lib/art-pipeline.mjs so they can be
+// tested — this file stays a thin CLI wrapper around them.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createCanvas, Image } from '@napi-rs/canvas';
+import { COVER, Q, coverGeometry, alphaThreshold, luminancePeel, opaqueBBox }
+  from './lib/art-pipeline.mjs';
 
-// The cover-scaled modes. `banner` and `ground` are both 3:2 and differ only in
-// pixel size, because the park renderer's ground is cover-scaled onto a canvas
-// that is at most 752px tall (gridDims in src/core/render/draw.ts: height =
-// 88 + 166*rows, and rows maxes out at 4 — lotSlots caps at 10 in
-// src/data/progression.ts, over a 3-wide grid), so 1536x1024 would ship ~64%
-// more bytes than the renderer can ever use. 1200x800 is what the committed
-// park/ground.webp already is; the season variants must match it exactly or
-// they crop differently from each other at the same row count.
-//
-// `band` is 270x150 — TILE_W x TILE_H in src/core/render/draw.ts — and 1.8:1, an
-// aspect ratio no generator offers, so the source is generated at 16:9 and
-// cropped down. Committing at exactly the tile size is what the mode is for:
-// drawTile and drawLandmark call drawImage(img, x, y, TILE_W, TILE_H) with an
-// explicit destination size, so an off-size raster is silently squashed to fit
-// and never throws — a 1024-square source ships stretched from 1.0 to 1.8 and
-// still renders "successfully". Every 270x150 asset committed before this mode
-// existed (the two plates, the three landmark bands) was fitted by a separate
-// one-off pass; the plates additionally cropped to the plate object's own
-// bounding box FIRST, which this mode does not do — see docs/assets/prompts.md.
-const COVER = { banner: [1536, 1024], ground: [1200, 800], band: [270, 150] };
 const [mode, src, dest] = process.argv.slice(2);
 if (!(mode === 'cutout' || Object.hasOwn(COVER, mode)) || !src || !dest) {
   console.error('usage: node scripts/fit-art.mjs <banner|ground|band|cutout> <src> <dest.webp>');
   process.exit(2);
 }
-
-// q95 is the committed setting for every asset under assets/images — the pass that
-// introduced WebP took the 40 files committed at the time from 63.4 MB to 8.9 MB
-// (~86% smaller), visually indistinguishable at the sizes Discord renders. Keep in
-// sync with prompts.md.
-const Q = 95;
 
 // If this decode throws `Error: Invalid SVG image` (code 'InvalidArg') on a PNG that
 // opens fine everywhere else, the file is not corrupt — it carries a C2PA / Content
@@ -57,10 +37,9 @@ await img.decode();
 
 if (Object.hasOwn(COVER, mode)) {
   const [W, H] = COVER[mode];
-  const scale = Math.max(W / img.width, H / img.height);
-  const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+  const { w, h, dx, dy } = coverGeometry(img.width, img.height, W, H);
   const canvas = createCanvas(W, H);
-  canvas.getContext('2d').drawImage(img, Math.round((W - w) / 2), Math.round((H - h) / 2), w, h);
+  canvas.getContext('2d').drawImage(img, dx, dy, w, h);
   writeFileSync(dest, canvas.toBuffer('image/webp', Q));
   console.log(`${mode} ${dest} ${W}x${H} (source ${img.width}x${img.height})`);
   process.exit(0);
@@ -74,38 +53,12 @@ const wctx = work.getContext('2d');
 wctx.drawImage(img, 0, 0);
 const data = wctx.getImageData(0, 0, w, h);
 const px = data.data;
-const at = (x, y) => (y * w + x) * 4;
-for (let i = 3; i < px.length; i += 4) if (px[i] < 32) px[i] = 0;
-for (let pass = 0; pass < 3; pass++) {
-  const doomed = [];
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const i = at(x, y);
-      if (px[i + 3] === 0) continue;
-      const edge = x === 0 || y === 0 || x === w - 1 || y === h - 1
-        || px[at(x - 1, y) + 3] === 0 || px[at(x + 1, y) + 3] === 0
-        || px[at(x, y - 1) + 3] === 0 || px[at(x, y + 1) + 3] === 0;
-      if (!edge) continue;
-      const r = px[i], g = px[i + 1], b = px[i + 2];
-      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      if (lum > 180 && Math.max(r, g, b) - Math.min(r, g, b) < 40) doomed.push(i + 3);
-    }
-  }
-  if (!doomed.length) break;
-  for (const a of doomed) px[a] = 0;
-}
+alphaThreshold(px);
+luminancePeel(px, w, h);
 wctx.putImageData(data, 0, 0);
-let x0 = w, y0 = h, x1 = -1, y1 = -1;
-for (let y = 0; y < h; y++) {
-  for (let x = 0; x < w; x++) {
-    if (px[at(x, y) + 3] === 0) continue;
-    if (x < x0) x0 = x;
-    if (x > x1) x1 = x;
-    if (y < y0) y0 = y;
-    if (y > y1) y1 = y;
-  }
-}
-if (x1 < 0) { console.error('cutout: image is fully transparent'); process.exit(1); }
+const box = opaqueBBox(px, w, h);
+if (!box) { console.error('cutout: image is fully transparent'); process.exit(1); }
+const { x0, y0, x1, y1 } = box;
 // 0.94 of 1024 = 962px on the tight axis, i.e. a 31px margin — what the six
 // committed hatch cracks were fitted at. The eggs and boss portraits sit at 24px
 // (0.953); do not "unify" this number without re-fitting the cracks, which would
