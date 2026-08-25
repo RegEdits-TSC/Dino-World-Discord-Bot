@@ -2455,6 +2455,49 @@ the light studio rim must be peeled, and all border pixels must end transparent.
 > glossy highlights, clean cel shading with smooth gradients, polished
 > game-asset look. No text, no characters, no UI elements.
 
+### Variants (`-v2`, `-v3`, `-v4`)
+
+Each rarity carries three variants beside its untouched base, for eighteen files
+in total. Every one is an image-edit of **its own committed crack**, never of
+another variant or another rarity, so the shell design and nest stay recognisably
+the same egg. Post-processed exactly like the base: `remove_background`, then
+`node scripts/fit-art.mjs cutout` at 31px — **never `portrait`**, which keeps only
+the largest region and would delete every fragment.
+
+What varies is the **fracture pattern and the scatter of the falling fragments**:
+where the shell splits, how many pieces clear the nest, and where they land.
+What must never vary is the **rarity's colour identity** — the shell palette is
+what carries the rarity read, and `mythic` in particular stays obsidian-and-lava
+to match `volcano_core`.
+
+Append to the base prompt above, in place of nothing else:
+
+> Vary only the break: {FRACTURE} Keep the shell colours, the speckling, the nest
+> and the framing exactly as the reference.
+
+Measured region counts after post-processing — the fragment check this family
+lives or dies on, since the automated guard covers the six base files only:
+
+| Rarity | base | v2 | v3 | v4 |
+|---|---|---|---|---|
+| common | 3 | 4 | 8 | 6 |
+| uncommon | 6 | 12 | 17 | 6 |
+| rare | 5 | 8 | 12 | 5 |
+| epic | 4 | 9 | 11 | 3 |
+| legendary | 5 | 9 | 10 | 5 |
+| mythic | 1 | 8 | 10 | 6 |
+
+Every variant lands above one region, so no variant lost its fragments. Note the
+`mythic` row reads oddly on purpose: its **base** is the one committed crack that
+happens to sit at a single region, and all three of its variants carry more
+fragments than it does. That is fine — more fragments is the intended look, and
+the base is the outlier, not the variants.
+
+Re-measure with `.superpowers/sdd/2026-08-25-art-bank-6a/count-regions.mjs` (a
+4-connected flood fill over the alpha channel) if any of these is ever
+regenerated. A count of **1** on a non-`mythic` file means the fragments were
+lost and the file must be regenerated rather than shipped.
+
 ## Emoji icons
 
 The 57 application emojis in `assets/emojis/` are **not** generated — they are
