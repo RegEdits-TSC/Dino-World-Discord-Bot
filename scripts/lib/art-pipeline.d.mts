@@ -5,7 +5,7 @@
 // declaration from a sibling .d.mts file only — a .d.ts file of the same name is
 // silently ignored and the import falls back to implicit any (TS7016).
 export declare const Q: number;
-export declare const COVER: Record<'banner' | 'ground' | 'band', [number, number]>;
+export declare const COVER: Record<'banner' | 'ground' | 'band' | 'square', [number, number]>;
 export declare function coverGeometry(
   srcW: number, srcH: number, W: number, H: number,
 ): { w: number; h: number; dx: number; dy: number };

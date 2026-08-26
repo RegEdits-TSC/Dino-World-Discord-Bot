@@ -27,7 +27,14 @@ export const Q = 95;
 // existed (the two plates, the three landmark bands) was fitted by a separate
 // one-off pass; the plates additionally cropped to the plate object's own
 // bounding box FIRST, which this mode does not do — see docs/assets/prompts.md.
-export const COVER = { banner: [1536, 1024], ground: [1200, 800], band: [270, 150] };
+// `square` is a plain centred crop-and-resize to 1024x1024 — cover-scaling a 3:2
+// source to 1:1 IS a centred square crop resized, reproducing the hand pass every
+// site thumb before it used (docs/assets/prompts.md's "centered square crop of the
+// same source, resized to 1024x1024" note on abyssal_trench, containment_site and
+// founders_park). It is the producer for `assets/images/sites/<id>-thumb.webp` when
+// the thumb is generated as its own square composition rather than cropped from a
+// banner — see the site-thumb generation note in prompts.md for when each applies.
+export const COVER = { banner: [1536, 1024], ground: [1200, 800], band: [270, 150], square: [1024, 1024] };
 
 // Cover, not contain: scale so the image covers BOTH axes, then centre the overflow.
 export function coverGeometry(srcW, srcH, W, H) {

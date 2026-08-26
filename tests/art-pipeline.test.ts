@@ -20,6 +20,7 @@ describe('constants', () => {
     expect(COVER.banner).toEqual([1536, 1024]);
     expect(COVER.ground).toEqual([1200, 800]);
     expect(COVER.band).toEqual([270, 150]);
+    expect(COVER.square).toEqual([1024, 1024]);
   });
 });
 
@@ -39,6 +40,17 @@ describe('coverGeometry', () => {
     expect(g.h).toBe(150);
     expect(g.w).toBe(300);
     expect(g.dy).toBe(0);
+  });
+
+  // COVER.square reproduces the documented hand-pass recipe for site thumbs: a 3:2
+  // source cover-scaled to 1:1 is a centred square crop resized — scale on the taller
+  // axis, keep the full height, and split the horizontal overflow evenly.
+  it('crops a 3:2 source to a centred square for the square mode', () => {
+    const g = coverGeometry(1536, 1024, 1024, 1024);
+    expect(g.h).toBe(1024);
+    expect(g.w).toBe(1536);
+    expect(g.dy).toBe(0);
+    expect(g.dx).toBe(-256);
   });
 });
 

@@ -2,6 +2,7 @@
 //   node scripts/fit-art.mjs banner   <src> <dest>            -> 1536x1024, cover-scaled, center-cropped, WebP q95
 //   node scripts/fit-art.mjs ground   <src> <dest>            -> 1200x800, cover-scaled, center-cropped, WebP q95
 //   node scripts/fit-art.mjs band     <src> <dest>            -> 270x150, cover-scaled, center-cropped, WebP q95
+//   node scripts/fit-art.mjs square   <src> <dest>            -> 1024x1024, cover-scaled, center-cropped, WebP q95
 //   node scripts/fit-art.mjs cutout   <src> <dest>            -> 1024x1024 transparent, defringed and centered
 //                                                                 at a 31px margin, every opaque region kept, WebP q95
 //   node scripts/fit-art.mjs portrait [--axis=egg] <src> <dest> -> 1024x1024 transparent, largest-region-only,
@@ -11,6 +12,11 @@
 // `cutout` is the processor for the hatch cracks and for any future cutout family. It
 // deliberately keeps every opaque region, not just the largest — the cracks' falling
 // shell fragments are disconnected on purpose.
+//
+// `square` is the producer for a site thumb generated as its own square composition
+// (not cropped from the banner) — cover-scaling a 3:2-ish source to 1:1 reproduces the
+// "centered square crop of the same source, resized to 1024x1024" hand pass every site
+// thumb before it used. Opaque, not transparent — unrelated to `cutout`/`portrait`.
 //
 // `portrait` implements the one-off pass that produced assets/images/eggs/ and
 // assets/images/battles/: single silhouette only, a tighter 24px margin, a border
@@ -36,7 +42,7 @@ const flags = new Set(process.argv.slice(2).filter((a) => a.startsWith('--')));
 const [mode, src, dest] = argv;
 const CUTOUTS = new Set(['cutout', 'portrait']);
 if (!(CUTOUTS.has(mode) || Object.hasOwn(COVER, mode)) || !src || !dest) {
-  console.error('usage: node scripts/fit-art.mjs <banner|ground|band|cutout|portrait> [--axis=egg] <src> <dest.webp>');
+  console.error('usage: node scripts/fit-art.mjs <banner|ground|band|square|cutout|portrait> [--axis=egg] <src> <dest.webp>');
   process.exit(2);
 }
 // A misspelled flag (e.g. --axis=eggs) would otherwise be silently ignored: it lands
