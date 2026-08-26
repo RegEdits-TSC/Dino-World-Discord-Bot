@@ -148,8 +148,7 @@ describe('park dino commands', () => {
       embeds: Array<{ toJSON(): { image?: { url: string } } }>; files?: Array<{ name: string | null }>;
     };
     // Banners are seeded on the viewer's Discord id, so this pins the dino_roster face
-    // 'u1' resolves to. The collect pins further down stay on their base file: 'u1'
-    // hashes to index 0 for that banner, which is the base, not a variant.
+    // 'u1' resolves to.
     expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://dino_roster-v3.webp');
     expect(payload.files!.map((f) => f.name)).toEqual(['dino_roster-v3.webp']);
     // An unenriched dino (enrichment exactly 1.0) must carry NO rung: the mark is gated
@@ -285,6 +284,10 @@ describe('/dino unassign and park:collect execute', () => {
     await comp.execute(ctx, b1.asInteraction() as unknown as ButtonInteraction);
     const first = b1.replies[0] as CollectPayload;
     expect(first.embeds[0].toJSON().description).toContain('Collected');
+    // The collect banner IS seeded (on the clicker), and 'u1' hashes to index 0 — index 0
+    // is the base file, so these three names read exactly as they did before seeding. That
+    // makes them unable to tell a seeded call from an unseeded one, which is why the test
+    // below clicks as a different player, where the face does move.
     expect(first.embeds[0].toJSON().image?.url).toBe('attachment://collect.webp');
     expect(first.files!.map((f) => f.name)).toEqual(['collect.webp']);
     expect(first.flags).toBe(MessageFlags.Ephemeral);   // stays private
@@ -293,6 +296,21 @@ describe('/dino unassign and park:collect execute', () => {
     const second = b2.replies[0] as CollectPayload;
     expect(second.embeds[0].toJSON().description).toContain('Nothing to collect');
     expect(second.files!.map((f) => f.name)).toEqual(['collect.webp']);
+  });
+
+  it('park:collect picks the banner face from the clicker, not a constant', async () => {
+    // Guards the seed at collectPayload's own call site: every other collect pin in this
+    // file uses a user id that resolves to the base file, so deleting the seed argument
+    // would leave all of them green. 'u2' is one that actually moves. No park setup at
+    // all — collectPayload attaches the banner on the nothing-to-collect branch too, and
+    // the handler mints the users row itself.
+    const ctx = makeCtx();
+    const comp = parkModule.components.find((c) => c.prefix === 'park')!;
+    const b = fakeButton({ customId: 'park:collect', user: 'u2' });
+    await comp.execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
+    const p = b.replies[0] as CollectPayload;
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://collect-v3.webp');
+    expect(p.files!.map((f) => f.name)).toEqual(['collect-v3.webp']);
   });
 
   // S2 finding: park:collect is the only customId with no owner segment, so the

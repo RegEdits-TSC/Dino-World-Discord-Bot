@@ -19,9 +19,13 @@ import { assetImage, attach } from '../../core/images.js';
 //
 // userId seeds the banner: a banner has no object to key on, so it keys on who is
 // looking, and each player gets one stable face of this surface. The seed rides the
-// whole ternary rather than just the `care` arm — care_neglect ships no -vN siblings,
-// so its seed is inert and returns the base file, and splitting the call to avoid
-// that would break tests/images.test.ts's one-line-at-a-time banner-name scrape.
+// WHOLE ternary, including the care_neglect arm, which ships no -vN siblings today:
+// assetImage returns the base file unchanged when a name has no faces (see
+// pickVariant's `count === 0` early return in src/core/images.ts), so that arm's seed
+// is a contract no-op rather than a mistake — and it starts working on its own the day
+// care_neglect-v2 ships, with no edit here. One call also keeps this readable; what
+// must never happen is hoisting the NAME into a `const`, which
+// tests/images.test.ts's banner-name scrape cannot follow.
 function carePayload(ctx: Ctx, userId: string, description: string) {
   const embed = new EmbedBuilder().setTitle(`${emojiTag('dw_food')} Care`).setColor(0x3ba55c).setDescription(description);
   const now = ctx.now();

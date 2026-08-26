@@ -109,6 +109,10 @@ describe('notification handler buttons', () => {
     const { dms, sender } = capture();
     await breedingReadyHandler(sender, ctx)({ userId: 'u1', refId: b.id, originGuildId: null });
     expect(customIds(dms[0])).toEqual([`breed:claim:${b.id}`]);
+    // ...and the Gene Lab banner, seeded on the player the DM is addressed to. This is the
+    // only assertion covering that call site's seed argument: /breed's own screens are
+    // pinned separately in tests/genelab-module.test.ts and would not notice this one going.
+    expect(fileNames(dms[0])).toContain('gene_lab-v2.webp');
   });
 
   it('the expedition-return notification carries a Claim button', async () => {

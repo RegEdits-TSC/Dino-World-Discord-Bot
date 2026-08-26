@@ -5,7 +5,7 @@ import { schema } from '../src/core/db/index.js';
 import { geneLabModule } from '../src/modules/genelab/index.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { BREED_FEE, BREED_MS, SPLICE_SHARD_COST } from '../src/data/breeding.js';
-import { claimPayload } from '../src/modules/genelab/embeds.js';
+import { claimPayload, confirmPayload, statusPayload } from '../src/modules/genelab/embeds.js';
 
 const breedCmd = geneLabModule.commands.find((c) => c.data.name === 'breed')!;
 const breedBtn = geneLabModule.components.find((c) => c.prefix === 'breed')!;
@@ -266,8 +266,7 @@ describe('claimPayload', () => {
 
   it('banners the lab on the viewer, a different seed from the egg thumbnail', () => {
     // Two seeds in one builder, keying two different things: eggId picks the egg's face,
-    // userId picks the player's Gene Lab. This is the only pin on a gene_lab face in the
-    // suite, so without it every gene_lab seed in this feature would be unobservable.
+    // userId picks the player's Gene Lab.
     const p = claimPayload({
       rarity: 'rare', traits: [], upgraded: false, speciesName: null, remaining: 0, eggId: 7,
       userId: 'u1',
@@ -275,6 +274,29 @@ describe('claimPayload', () => {
     expect(p.embeds[0].toJSON().image?.url).toBe('attachment://gene_lab-v2.webp');
     // Call order is upload order: banner first, egg thumbnail second.
     expect(p.files!.map((f) => f.name)).toEqual(['gene_lab-v2.webp', 'rare-v3.webp']);
+  });
+});
+
+// One seed guard per gene_lab call site, not one per banner base. All three builders ship
+// the same base and resolve to the same face for a given player, so a single shared pin
+// would go green with the seed deleted from two of the three — the argument at the CALL
+// SITE is what a refactor drops, so each site needs its own assertion.
+describe('the Gene Lab banner is seeded at every builder that ships it', () => {
+  it('confirmPayload banners the lab on the viewer', () => {
+    const p = confirmPayload({
+      aId: 1, bId: 2, aName: 'A', bName: 'B', aTraits: [], bTraits: [],
+      rarity: 'common', fee: 100, durationMs: 3_600_000, upgradeChance: 0.1, userId: 'u1',
+    });
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://gene_lab-v2.webp');
+    expect(p.files!.map((f) => f.name)).toEqual(['gene_lab-v2.webp']);
+  });
+
+  it('statusPayload banners the lab on the viewer, including with no pairings', () => {
+    // Empty rows on purpose: the banner attaches on the no-pairings branch too, so this
+    // needs no breeding fixture at all.
+    const p = statusPayload([], 'u1');
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://gene_lab-v2.webp');
+    expect(p.files!.map((f) => f.name)).toEqual(['gene_lab-v2.webp']);
   });
 });
 
