@@ -8,7 +8,7 @@ import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { WORLD_EVENTS } from '../src/data/world-events.js';
 import type { Archetype, Diet } from '../src/data/types.js';
-import { interiorBackdropPx } from './lib/backdrop.js';
+import { largestBackdropBlobPx } from './lib/backdrop.js';
 
 function srcFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -470,9 +470,15 @@ describe('hatch crack art', () => {
   // portraits an unfiltered pass flagged a gallimimus's cream throat and a
   // tank-carnivore's chest, both perfect. The cracks are an egg in a nest with
   // no such cut edge, which is what makes the signature trustworthy here.
+  // Asserts the LARGEST region, never the total: hairline anti-aliasing seams are
+  // also interior and also pale, and summing them makes a clean file trip the
+  // threshold (`epic-crack-v2` sums to 432px of seam across blobs of 172/97/90).
+  // Real backdrop arrives as one contiguous region — the files repaired here
+  // measured 447 to 2906px in a single blob. See tests/lib/backdrop.ts for both
+  // false-positive classes.
   it.each(CRACK_FILES)('%s has no studio backdrop left in its crack gaps', async (name) => {
-    const px = await interiorBackdropPx(resolve(process.cwd(), 'assets/images/hatch', `${name}.webp`));
-    expect(px, `${name} carries ${px}px of opaque backdrop inside the subject`).toBeLessThan(400);
+    const px = await largestBackdropBlobPx(resolve(process.cwd(), 'assets/images/hatch', `${name}.webp`));
+    expect(px, `${name} carries a ${px}px opaque backdrop region inside the subject`).toBeLessThan(300);
   });
 
   // The multi-region guard below is DELIBERATELY still keyed to the six base RARITIES,

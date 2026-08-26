@@ -18,12 +18,25 @@ import { readFileSync } from 'node:fs';
  * pixel sitting directly against transparency with no dark pixel between is
  * backdrop that survived.
  *
- * The `atCrop` flag is not optional bookkeeping — it is what makes the check
- * usable at all. Where the subject is cut flat by the frame (house style, and
- * the archetype references are cut exactly that way) the art simply ends with no
- * outline, so a pale throat at the crop edge has the identical local signature.
- * An unfiltered pass over the dino portraits flagged 74,903px of a gallimimus's
- * cream throat and 69,101px of a tank-carnivore's chest, both perfect art.
+ * TWO FALSE-POSITIVE CLASSES, both measured on real committed art. Neither is a
+ * defect, and a reader who does not know about them will "fix" good pictures.
+ *
+ * 1. ART CUT FLAT BY THE FRAME — what `atCrop` exists for. Where the subject is
+ *    cut by the canvas edge (house style; the archetype references are cut
+ *    exactly that way) the art simply ends with no outline, so a pale throat at
+ *    the crop edge has the identical local signature as backdrop. An unfiltered
+ *    pass over the dino portraits flagged 74,903px of a gallimimus's cream
+ *    throat and 69,101px of a tank-carnivore's chest, both perfect art.
+ *
+ * 2. HAIRLINE ANTI-ALIASING SEAMS — why callers must judge the LARGEST blob and
+ *    not the total. `luminancePeel` erodes the matte rim three passes deep, so a
+ *    rim locally deeper than that along a diagonal or curved boundary survives as
+ *    a 1-3px sliver lying against the outline it belongs to. These are interior,
+ *    so `atCrop` does not exclude them. They are distinguishable by SHAPE: real
+ *    backdrop is one contiguous region of several hundred to several thousand
+ *    pixels (measured 447-2906 across the files that had it), while seams are
+ *    many separate slivers none of which exceeds ~200px. `epic-crack-v2` totals
+ *    432px of seam across three blobs of 172/97/90 and is perfectly good art.
  */
 export interface BackdropBlob {
   px: number;
@@ -52,7 +65,7 @@ export async function findBackdrop(absPath: string): Promise<BackdropBlob[]> {
 
   const alpha = (i: number): number => p[i * 4 + 3]!;
   const pale = (i: number): boolean => {
-    if (alpha(i) < 100) return false;
+    if (alpha(i) < 25) return false;
     const r = p[i * 4]!, g = p[i * 4 + 1]!, b = p[i * 4 + 2]!;
     return lum(r, g, b) >= LUM_WHITE && Math.max(r, g, b) - Math.min(r, g, b) <= CHROMA_MAX;
   };
@@ -100,8 +113,16 @@ export async function findBackdrop(absPath: string): Promise<BackdropBlob[]> {
   return blobs.sort((a, b) => b.px - a.px);
 }
 
-/** Total interior backdrop, i.e. excluding art legitimately cut by the frame. */
-export async function interiorBackdropPx(absPath: string): Promise<number> {
-  const blobs = await findBackdrop(absPath);
-  return blobs.filter((b) => !b.atCrop).reduce((sum, b) => sum + b.px, 0);
+/**
+ * Size of the LARGEST interior backdrop region — the number to assert against.
+ *
+ * Deliberately not the total. Summing counts hairline anti-aliasing seams
+ * (false-positive class 2 above) together until a clean file trips the
+ * threshold: `epic-crack-v2` sums to 432px of seam while its biggest blob is
+ * 172px. Real backdrop arrives as one contiguous region, so the largest blob is
+ * what actually separates the two.
+ */
+export async function largestBackdropBlobPx(absPath: string): Promise<number> {
+  const blobs = (await findBackdrop(absPath)).filter((b) => !b.atCrop);
+  return blobs.length ? blobs[0]!.px : 0;
 }
