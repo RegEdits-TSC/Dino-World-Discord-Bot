@@ -52,14 +52,16 @@ describe('/battle fight cinematic', () => {
       embeds: Array<{ toJSON(): { image?: { url: string }; thumbnail?: { url: string } } }>;
     };
     expect(f4.attachments).toEqual([]);                // drops F1's chapter banner
-    // Two files: the outcome banner (image) and the lead enemy's archetype art
+    // Two files: the outcome banner (image) and the lead enemy's own portrait
     // (thumbnail). Asserted as a set — append order is not a contract.
+    // compsognathus ships its own portrait as of Task 10 — no longer the shared
+    // swift-carnivore archetype art.
     const names = f4.files!.map((f) => f.name);
     expect(names).toHaveLength(2);
-    expect(names).toContain('swift-carnivore.webp');   // coastal_dig_1 leads with compsognathus
+    expect(names).toContain('compsognathus.webp');   // coastal_dig_1 leads with compsognathus
     const json = f4.embeds[0].toJSON();
     expect(json.image!.url).toMatch(/^attachment:\/\/battle_(victory|defeat)\.webp$/);
-    expect(json.thumbnail?.url).toBe('attachment://swift-carnivore.webp');
+    expect(json.thumbnail?.url).toBe('attachment://compsognathus.webp');
     expect(names).toContain(json.image!.url.replace('attachment://', ''));
   });
   it('rejects ephemerally with no defer when energy is empty', async () => {

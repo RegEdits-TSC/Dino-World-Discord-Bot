@@ -265,27 +265,32 @@ describe('hatchery visuals', () => {
     // attachments: [] is load-bearing — discord.js pushes the new descriptors into
     // the array we pass, so the pre-hatch egg upload is dropped and only these two
     // survive on the edited message.
+    // velociraptor ships its own portrait as of Task 10, so dinoImage (a pass-through
+    // spy here) now resolves velociraptor.webp instead of the swift-carnivore fallback.
     const p = revealPayload(getSpecies('velociraptor'));   // rare, swift/carnivore
     const embed = p.embeds[0].toJSON();
     expect(embed.image?.url).toBe('attachment://rare-crack.webp');
-    expect(embed.thumbnail?.url).toBe('attachment://swift-carnivore.webp');
-    expect(p.files.map((f) => f.name)).toEqual(['rare-crack.webp', 'swift-carnivore.webp']);
+    expect(embed.thumbnail?.url).toBe('attachment://velociraptor.webp');
+    expect(p.files.map((f) => f.name)).toEqual(['rare-crack.webp', 'velociraptor.webp']);
     expect(p.attachments).toEqual([]);
   });
   it('revealPayload keys the thumbnail off the hatched species, not a constant', () => {
+    // triceratops ships its own portrait as of Task 10; it no longer falls back to
+    // the shared tank-herbivore archetype art.
     const p = revealPayload(getSpecies('triceratops'));   // common, tank/herbivore
-    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://tank-herbivore.webp');
-    expect(p.files.map((f) => f.name)).toEqual(['common-crack.webp', 'tank-herbivore.webp']);
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://triceratops.webp');
+    expect(p.files.map((f) => f.name)).toEqual(['common-crack.webp', 'triceratops.webp']);
   });
   it('revealPayload still ships the archetype thumb when the crack art is missing', () => {
     // Degrade path 1/2: two files on one payload, two independent attach calls —
     // a miss on the crack must not suppress the thumb.
+    // velociraptor ships its own portrait as of Task 10 — see above.
     vi.mocked(assetImage).mockImplementationOnce(() => null);   // crack call (1st) -> missing
     const p = revealPayload(getSpecies('velociraptor'));
     const embed = p.embeds[0].toJSON();
     expect(embed.image).toBeUndefined();
-    expect(embed.thumbnail?.url).toBe('attachment://swift-carnivore.webp');
-    expect(p.files.map((f) => f.name)).toEqual(['swift-carnivore.webp']);
+    expect(embed.thumbnail?.url).toBe('attachment://velociraptor.webp');
+    expect(p.files.map((f) => f.name)).toEqual(['velociraptor.webp']);
   });
   it('revealPayload still ships the crack when the archetype art is missing', () => {
     // Degrade path 2/2: the mirror case — a miss on the thumb must not drop the

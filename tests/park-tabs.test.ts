@@ -115,8 +115,10 @@ describe('Animals tab', () => {
       featured: { name: 'Trixie', speciesId: 'triceratops', archetype: 'tank', diet: 'herbivore' },
     });
     // Call order is upload order, and several tests across the suite pin files by name.
-    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster.webp', 'tank-herbivore.webp']);
-    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://tank-herbivore.webp');
+    // triceratops ships its own portrait as of Task 10; it no longer falls back to
+    // tank-herbivore. Call order is upload order, so the roster banner stays first.
+    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster.webp', 'triceratops.webp']);
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://triceratops.webp');
   });
 
   it('drops the action buttons on a visited card but keeps the tab row', () => {

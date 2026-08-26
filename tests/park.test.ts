@@ -1191,7 +1191,9 @@ describe('dashboard showcase', () => {
       featured: { name: 'Trixie', speciesId: 'triceratops', archetype: 'tank', diet: 'herbivore' },
     });
     expect(fieldsOf(p).find((f) => f.name === '🦖 Featured')!.value).toBe('Trixie');
-    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://tank-herbivore.webp');
+    // triceratops ships its own portrait as of Task 10; it no longer falls back to
+    // the shared tank-herbivore archetype art.
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://triceratops.webp');
     // Two files now: the roster banner plus the featured dino. Was 1 when this field
     // lived on the single dashboard card.
     expect(p.files).toHaveLength(2);

@@ -1,21 +1,54 @@
-# Image generation prompts — egg, expedition site, and banner art
+# Image generation prompts — egg, expedition site, banner, boss, archetype, hero portrait, park, hatch crack, and branding art
 
 The volcano/frozen banners and volcano thumb were generated with ChatGPT image
 generation; the remaining coastal/amber banners and the coastal/amber/frozen
-thumbs were generated with Higgsfield Nano Banana Pro. The six egg rarities were
-generated with Higgsfield Nano Banana Pro as a reference chain (see the Egg
-rarities section). The 33 embed banners were generated with Higgsfield
-Nano Banana Pro, `care_neglect` as a reference chain off `care` and
-`battle_defeat` off `battle_victory`. The six hatch cracks were generated as
-reference-chain edits of their own egg icons. These prompts are the source of
-truth for regenerating or extending the set — keep them in sync with any new
-assets.
+thumbs were generated with Higgsfield Nano Banana Pro. The three sites that
+shipped later — Abyssal Trench, Containment Site, and Founder's Park — were
+also generated with Higgsfield, each with its own model and pipeline (see each
+site's own section below). The six egg rarities were generated with Higgsfield
+Nano Banana Pro as a reference chain (see the Egg rarities section). The 33
+embed banners were generated with Higgsfield Nano Banana Pro, `care_neglect`
+as a reference chain off `care`, `battle_defeat` off `battle_victory`, and
+`guests`, `dex`, `landmark`, and `season` each generated as a reference chain
+off two existing banners (see Embed banners for each pairing). The six hatch
+cracks were generated as reference-chain edits of their own egg icons. These
+prompts are the source of truth for regenerating or extending the set — keep
+them in sync with any new assets.
 
 Note on thumbs: some models render a "square cartoon game icon of …" prompt as
-a rounded-rectangle app-icon tile with a border. To force a full-bleed square
-(artwork to all four edges, no tile), phrase the thumb as a "close-up cartoon
-scene filling the entire square frame edge to edge … NOT an app icon — no
-rounded-rectangle tile, no border, no rounded corners" rather than "game icon".
+a rounded-rectangle app-icon tile with a border. The remedy this file used to
+recommend — phrasing the thumb as a "close-up cartoon scene filling the entire
+square frame edge to edge … NOT an app icon — no rounded-rectangle tile, no
+border, no rounded corners" — **was measured failing** on the
+`continental_divide` thumb: that prompt carried the full negative clause
+verbatim and still came back as a rounded-rectangle tile on a white ground.
+
+Naming the thing appears to summon it. What works is to **never write "icon",
+"tile", "app" or "game icon" anywhere in the prompt**, and to describe the
+framing positively instead — as a crop of something bigger:
+
+> The painting is a continuous scene that bleeds off all four edges of the
+> square, like a cropped detail of a much larger canvas: the artwork must run
+> right into every corner and every edge of the image with the subject cut off
+> by the frame, filling the picture completely. Every corner of the square is
+> painted scene. The background is solid painted sky and rock all the way to
+> the boundary, never white, never blank, never a plain flat margin, and the
+> composition has no surrounding frame, no border, no outline, no rounded
+> corners, no drop shadow and no background panel of any kind.
+
+That produced a correct full-bleed square on the first attempt. Note it still
+carries "no border / no rounded corners" negatives — what changed is dropping
+the words that name the unwanted artefact as a *kind of object*.
+
+**Six thumb prompts below still break this rule, and they are recorded as run
+rather than rewritten.** Four legacy ones — Coastal Dig, Amber Ridge, Frozen
+Cliffs, Volcano Core — open with "A square cartoon game icon of …", the exact
+pattern named above as the cause. Two more — Mainland Ferry and Ruined City —
+carry the retired "NOT an app icon" clause and nevertheless came back correct.
+Every one of the six is flagged where it sits. The rule stands; those six are a
+record of what actually produced the committed file, not a counter-example to it,
+and the honest reading is that the phrasing is a strong tilt rather than a
+switch. Convert any of them before rerunning it.
 
 ## Shared style block
 
@@ -41,6 +74,9 @@ icons in `assets/images/eggs/` (glossy cartoon game style):
 | `assets/images/park/landmark-a.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 1–2 (Stone Marker, Fossil Plinth) |
 | `assets/images/park/landmark-b.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 3–4 (Bronze Sentinel, Amber Obelisk) |
 | `assets/images/park/landmark-c.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 5–6 (Grand Rotunda, Titan Monument) |
+| `assets/images/park/landmark-d.webp` | 270×150 | banked landmark cell art, above Titan Monument — `drawLandmark` does not read this file yet; wiring a seventh+ tier to it is a later spec |
+| `assets/images/park/landmark-e.webp` | 270×150 | banked landmark cell art, above Titan Monument — not yet wired, see `landmark-d` |
+| `assets/images/park/landmark-f.webp` | 270×150 | banked landmark cell art, above Titan Monument — not yet wired, see `landmark-d` |
 | `assets/images/park/attraction-picnic_lawn.webp` | 270×150 | `/park view` attraction cell art, `picnic_lawn` |
 | `assets/images/park/attraction-gift_shop.webp` | 270×150 | `/park view` attraction cell art, `gift_shop` |
 | `assets/images/park/attraction-viewing_platform.webp` | 270×150 | `/park view` attraction cell art, `viewing_platform` |
@@ -52,7 +88,9 @@ icons in `assets/images/eggs/` (glossy cartoon game style):
 **1254×1254** — a discrepancy from the original PNG's IHDR that predates the
 WebP conversion, not something that conversion introduced. Not resized as
 part of that pass; a future regeneration should target 1024×1024 to match the
-other three site thumbs.
+other six site thumbs (verified on disk: `coastal_dig`, `amber_ridge`,
+`frozen_cliffs`, `abyssal_trench`, `containment_site`, and `founders_park`
+all ship at 1024×1024 — `volcano_core` is the sole outlier).
 
 **Output format.** Every committed file under `assets/images/` is **WebP, quality 95**,
 encoded through `@napi-rs/canvas`'s `canvas.toBuffer('image/webp', 95)`, and
@@ -74,8 +112,20 @@ takes whatever the generator emitted (usually PNG) as its source.
 |---|---|---|---|
 | `node scripts/fit-art.mjs banner <src> <dest>` | 1536×1024 (3:2) | cover-scale, center-crop | `assets/images/sites/<id>-banner.webp`, `assets/images/banners/` |
 | `node scripts/fit-art.mjs ground <src> <dest>` | 1200×800 (3:2) | cover-scale, center-crop | `assets/images/park/ground{,-wet,-dry,-cold}.webp` |
-| `node scripts/fit-art.mjs band <src> <dest>` | 270×150 (1.8:1) | cover-scale, center-crop | `assets/images/park/attraction-<kind>.webp`, `assets/images/park/landmark-{a,b,c}.webp` — anything the park renderer draws 1:1 at `TILE_W`×`TILE_H` |
+| `node scripts/fit-art.mjs band <src> <dest>` | 270×150 (1.8:1) | cover-scale, center-crop | `assets/images/park/attraction-<kind>.webp`, `assets/images/park/landmark-{a,b,c,d,e,f}.webp` — anything the park renderer draws 1:1 at `TILE_W`×`TILE_H` |
+| `node scripts/fit-art.mjs square <src> <dest>` | 1024×1024 | cover-scale, center-crop | `assets/images/sites/<id>-thumb.webp` |
 | `node scripts/fit-art.mjs cutout <src> <dest>` | 1024×1024 transparent | defringe, then whole-bbox fit at a 31px margin | `assets/images/hatch/`, `assets/images/dinos/` |
+| `node scripts/fit-art.mjs portrait <src> <dest>` | 1024×1024 transparent | largest region only, border flood, 2px shave, whole-bbox fit at a 24px margin (`--axis=egg` re-centres on the egg's own axis instead) | `assets/images/eggs/` (with `--axis=egg`), `assets/images/battles/` |
+
+`cutout` and `portrait` are not interchangeable — see the divergence table and
+the consequences list in the Egg rarities section for the numbers and what
+goes wrong if either is run on the other's family.
+
+`square` shares their output size and nothing else: it is a COVER mode, opaque,
+with no background removal, no defringe and no margin — the `banner` arithmetic
+at 1:1. It is the producer for a site thumb generated as its own square
+composition, and it reproduces the centred-square-crop hand pass the older site
+thumbs were made with. Do not reach for `cutout` because both write 1024×1024.
 
 `band` exists because 270×150 is 1.8:1 and no generator offers that aspect ratio:
 generate at 16:9 and let the mode crop. It is the `ground` mode's arithmetic with
@@ -103,24 +153,15 @@ substring instead of trusting only the leading magic bytes, concludes the whole
 file is SVG, and fails parsing it as one. Hence the misleading error, which
 names a format the file has nothing to do with.
 
-*Remedy:* drop the chunk before decoding. It is pure provenance metadata, is
-read nowhere in this codebase, and would not survive re-encoding to WebP in any
-case, so removing it is pixel-for-pixel content-neutral. Walk the chunk stream
-and copy everything except `caBX`:
-
-```js
-// PNG = 8-byte signature, then [4B length][4B type][data][4B CRC] chunks.
-function stripCaBX(buf) {
-  const out = [buf.subarray(0, 8)];
-  for (let p = 8; p + 8 <= buf.length; ) {
-    const end = p + 12 + buf.readUInt32BE(p);
-    if (buf.toString('latin1', p + 4, p + 8) !== 'caBX') out.push(buf.subarray(p, end));
-    p = end;
-  }
-  return Buffer.concat(out);
-}
-img.src = stripCaBX(readFileSync(src));   // instead of readFileSync(src)
-```
+*Remedy:* `scripts/fit-art.mjs` now strips the chunk before decoding — see
+`stripCaBX` in `scripts/lib/art-pipeline.mjs`, called before every `img.decode()`
+in that script. No hand-patching is needed. `tests/art-pipeline.test.ts` covers
+it directly: it removes only the `caBX` chunk(s) and leaves every other chunk
+byte-identical, is a no-op on a PNG that carries none, and returns a non-PNG
+buffer (WebP, JPEG) untouched rather than mangling it. The chunk is pure
+provenance metadata, is read nowhere in this codebase, and would not survive
+re-encoding to WebP in any case, so removing it is pixel-for-pixel
+content-neutral.
 
 Three of the 40 files in the WebP conversion pass were affected
 (`sites/frozen_cliffs-banner`, `sites/volcano_core-banner`,
@@ -137,7 +178,57 @@ Banner = wide establishing shot of the site. Thumb = square icon-style
 composition with one central landmark and a simple background (readable at
 80px — do not just crop the banner).
 
-Site ids: `coastal_dig`, `amber_ridge`, `frozen_cliffs`, `volcano_core`.
+Site ids: `coastal_dig`, `amber_ridge`, `frozen_cliffs`, `volcano_core`,
+`abyssal_trench`, `containment_site`, `founders_park` — the last three shipped
+later and have their own sections below with their own generation notes.
+Three more — `mainland_ferry`, `ruined_city`, `continental_divide` — are
+banked ahead of their chapter data; see "Chapters 8–10 (banked, unshipped)"
+below.
+
+## Art variants (`-v2`, `-v3`, `-v4`)
+
+A surface with more than one committed face carries `<base>-v2.webp`,
+`<base>-v3.webp`, `<base>-v4.webp` beside an untouched `<base>.webp`. The base
+file is never renamed, moved or regenerated.
+
+**One committed base has been edited in place, deliberately, and it is the only
+one.** `assets/images/hatch/common-crack.webp` shipped with un-removed studio
+backdrop smeared across its crack opening (see "Backdrop in the crack gaps"),
+which is a defect in the file rather than a different take on it. It was repaired
+by `scripts/clear-backdrop.mjs` — same filename, same subject, same composition,
+no regeneration and no generator credit spent. That is the bar for touching a
+base at all: a measured defect in a shipped file, repaired by a tracked pass,
+recorded here. Wanting a better picture is not that bar; that is what a variant
+is for.
+
+The `v` is load-bearing: no committed filename and no species id contains a digit
+or a `-v` suffix, so `-vN` can never be read as part of a base name. A bare `-2`
+would carry no such guarantee for a future id.
+
+**Every variant is generated as an image-edit of its own base**, with the base
+attached as the media reference — never from another variant, and never from a
+bare prompt. This is the same reference-chain discipline the egg rarities and the
+dino archetypes use, and for the same reason: a variant that drifts off its base
+reads as a different asset rather than another view of the same one.
+
+Variants are unreferenced from `src/` until the resolver ships. Two guards cover
+them meanwhile: `tests/asset-variants.test.ts` proves every variant has a base,
+and the disk-registered dimension checks in `tests/images.test.ts` hold them to
+their family's size and transparency contract.
+
+**A variant takes its base's own `fit-art.mjs` mode, never a different one.**
+The two cutout modes are not interchangeable (see the divergence table in Egg
+rarities), so the wrong mode on a variant ships a margin that silently
+disagrees with its own base's siblings:
+
+| Family | Mode |
+|---|---|
+| `assets/images/banners/<name>-vN.webp` | `banner` |
+| `assets/images/sites/<id>-banner-vN.webp` | `banner` |
+| `assets/images/eggs/<rarity>-vN.webp` | `portrait --axis=egg` |
+| `assets/images/hatch/<rarity>-crack-vN.webp` | `cutout` |
+| `assets/images/dinos/<key>-vN.webp` | `cutout` |
+| `assets/images/battles/boss-<id>-portrait-vN.webp` | `portrait` (no flag) |
 
 ---
 
@@ -182,16 +273,40 @@ center on the **egg's own axis** (top ~45% of the silhouette), not the whole
 bbox, so asymmetric nest dressing doesn't push the egg off-center. Verify: all
 border pixels transparent, exactly one connected region.
 
-**This 5-step pass is a one-off, NOT `scripts/fit-art.mjs`.** The committed
-script's `cutout` mode implements a subset — alpha threshold, the 3-pass
+**This 5-step pass is now `scripts/fit-art.mjs portrait`** (add `--axis=egg` for
+step (5)'s egg-axis variant; omit it for the whole-bbox battles variant).
+
+**Order note — settled, no longer an open question.** The implementation does not
+run steps (1)-(5) in the order just described: `fit-art.mjs` runs the alpha
+threshold and luminance peel (steps (2)-(3), shared with `cutout`) *before* the
+largest-region step (1), then border-floods and shaves — largest-region last, not
+first. The hazard that ordering carries is real in principle: a peel that severs
+a thin bridge before the largest-region step runs would delete real subject
+matter as a spurious second region, where the documented order would have peeled
+a stray island that never reached the largest-region step at all. On a synthetic
+subject built to trigger it — two saturated parts joined by a 4px pale
+desaturated bridge — the two orderings genuinely diverge, and the CLI exits 0
+either way, so the failure would be silent.
+
+It does not fire on this art. **Both orderings were run over all 24 raw
+background-removed sources this repository's `portrait` pass has ever seen** —
+the four original committed egg/battle files (byte-identical) and the 21 raw
+files the bank added, 18 egg variants and 3 boss portraits — and produce an
+identical opaque mask on every one: same pixel area, same bounding box, 21 of 21
+with zero mismatches. Nothing is owed here. Re-run the comparison only if the
+peel constants change, and expect a difference only on art whose silhouette is
+held together by a pale, low-contrast bridge.
+
+`cutout` remains a deliberately different, looser pass — alpha threshold, the 3-pass
 luminance peel of step (2), then a whole-bbox fit at 0.94 (a 31px margin) — with
-no largest-region step, no border flood, no 2px shave, and no egg-axis bias.
-That is deliberate, and the two are not interchangeable:
+no largest-region step, no border flood, no 2px shave, and no egg-axis bias,
+because the hatch cracks it processes must keep every disconnected shell
+fragment. The two remain not interchangeable:
 
 | | margin on tight axis | centering | regions kept |
 |---|---|---|---|
-| `assets/images/eggs/` (this one-off pass) | 24px | egg axis — L/R margins are asymmetric on purpose (e.g. `common.webp` L74/R53) | 1 |
-| `assets/images/battles/` (same pass, whole-bbox variant) | 24px | whole bbox | 1 |
+| `assets/images/eggs/` (`fit-art.mjs portrait --axis=egg`) | 24px | egg axis — L/R margins are asymmetric on purpose (e.g. `common.webp` L74/R53) | 1 |
+| `assets/images/battles/` (`fit-art.mjs portrait`, no flag) | 24px | whole bbox | 1 |
 | `assets/images/hatch/` (`fit-art.mjs cutout`) | 31px | whole bbox | all (see Hatch cracks) |
 | `assets/images/dinos/` (`fit-art.mjs cutout`) | 31px | whole bbox | all (a clean portrait cutout lands at 1) |
 
@@ -200,7 +315,7 @@ Consequences when reusing either pass on a new or regenerated asset:
 - Running `fit-art.mjs cutout` on a regenerated **egg** or **boss portrait**
   yields a slightly smaller, whole-bbox-centred subject than the committed set —
   visible side by side in an embed thumbnail row. Either accept the shift for the
-  whole family or redo the one-off pass; do not mix the two within one family.
+  whole family or run `portrait`; do not mix the two within one family.
 - Steps (1) and the "exactly one connected region" verification assume a single
   silhouette. They must **not** be applied to the hatch cracks, whose falling
   shell fragments are legitimately disconnected — see the Hatch cracks section.
@@ -260,6 +375,142 @@ reference). Prompt frame:
   pebbles or loose objects — the model repeatedly scattered them on the ground
   outside the nest, where they become floating islands after matting.
 
+### Variants (`-v2`, `-v3`, `-v4`)
+
+Each rarity carries three variants beside its untouched base, for eighteen files
+in total. Every one is an image-edit of **its own committed egg**, never of
+another variant or another rarity, so the silhouette and nest read as
+recognisably the same egg. Post-processed exactly like the base:
+`remove_background`, then `node scripts/fit-art.mjs portrait --axis=egg` —
+**never `cutout`**, which fits the whole bbox at a 31px margin, symmetric and
+nest-centred, and would ship a variant that silently disagrees with its own
+base's egg-axis 24px margin (see the divergence table above).
+
+What varies is the **shell's pattern and surface detail** (speckling, banding,
+mottling, sheen) and the **nest dressing**. What must never vary is the
+**rarity's colour identity** — the shell palette is what tells a player what
+they are holding, and `mythic` in particular stays obsidian-and-lava to match
+`volcano_core`; none of its three variants add pebbles or loose objects, for
+the same floating-island reason the base prompt excludes them.
+
+Reskin edits follow the same prompt frame as the base reskins above, with a
+distinct `{SHELL}` / `{NEST}` pair per variant:
+
+- **common** — v2 SHELL: gray-white eggshell with larger oval brown speckles
+  clustered toward the top of the shell, thinning out near the base. NEST: tuck
+  a single small brown feather into the twigs alongside the leaves.
+  v3 SHELL: gray-white eggshell with fine brown speckling arranged in soft
+  freckled bands wrapping horizontally around the shell. NEST: add two small
+  dry acorns resting in the twigs.
+  v4 SHELL: gray-white eggshell with tiny dark-brown speckles clustered into a
+  few small patches instead of an even scatter. NEST: weave one dry brown twig
+  fork into the rim in place of one of the leaves.
+- **uncommon** — v2 SHELL: moss-green eggshell (around #2ecc71) with a pattern
+  of thin darker-green vine-like stripes curling around the shell instead of
+  leaf shapes, subtle glossy highlight. NEST: weave a few fresh green leaves
+  into the twigs and tuck in a single small pale-yellow wildflower.
+  v3 SHELL: moss-green eggshell with small darker-green dappled spots
+  scattered evenly across the surface, subtle glossy highlight. NEST: weave a
+  few fresh green leaves and tiny white flowers into the twigs, and add one
+  small curled fern frond among them.
+  v4 SHELL: moss-green eggshell with a marbled swirl pattern of darker green
+  woven through the surface, subtle glossy highlight. NEST: weave a few fresh
+  green leaves and tiny white flowers into the twigs, with one small green
+  vine tendril looping around the base of the nest.
+- **rare** — v2 SHELL: ocean-blue eggshell (around #3498db) with a fine
+  fish-scale pattern of overlapping pale-blue curves covering the surface,
+  glossy wet-look highlights. NEST: tuck a smooth blue pebble and a single
+  small pearlescent seashell spiral among the twigs.
+  v3 SHELL: ocean-blue eggshell scattered with small round water-bubble
+  droplets of varying sizes clustered near the top, glossy wet-look
+  highlights. NEST: tuck a few smooth blue pebbles and a small pale coral
+  fragment between the twigs.
+  v4 SHELL: ocean-blue eggshell with horizontal wavy stripe bands of deeper
+  blue wrapping the shell, glossy wet-look highlights. NEST: tuck a smooth
+  blue pebble and a tiny cartoon starfish among the twigs.
+- **epic** — v2 SHELL: violet eggshell (around #9b59b6) with a few large
+  angular crystal facets clustered near the top of the shell and smoother
+  violet surface below, the facets catching bright glossy highlights on the
+  shell surface; no glowing aura or halo around the egg, the outline against
+  the background must be crisp. NEST: place one small violet amethyst crystal
+  shard tucked deeper into the twigs.
+  v3 SHELL: violet eggshell covered edge to edge in a fine cracked-glass
+  mosaic of tiny angular facets, the facets catching bright glossy highlights
+  on the shell surface; no glowing aura or halo around the egg, the outline
+  against the background must be crisp. NEST: place a couple of small violet
+  amethyst crystal shards among the twigs.
+  v4 SHELL: violet eggshell with spiraling bands of angular crystal facets
+  winding around the shell from top to base, the facets catching bright
+  glossy highlights on the shell surface; no glowing aura or halo around the
+  egg, the outline against the background must be crisp. NEST: place a single
+  larger violet amethyst crystal shard leaning against the nest rim.
+- **legendary** — v2 SHELL: polished golden eggshell (around #f1c40f) engraved
+  with a radiating sunburst pattern of straight gold lines spreading from the
+  top of the shell, the engraving gleaming on the shell surface only, no rays
+  of light. NEST: weave a thin gold ribbon through the twigs, tied in a small
+  bow.
+  v3 SHELL: polished golden eggshell engraved with a fine lattice of
+  interlocking filigree lines covering the whole surface, the engraving
+  gleaming on the shell surface only, no rays of light. NEST: weave a thin
+  gold ribbon and a single small gold coin trinket through the twigs.
+  v4 SHELL: polished golden eggshell engraved with bold zigzag chevron bands
+  wrapping around the shell, the engraving gleaming on the shell surface only,
+  no rays of light. NEST: weave a thin gold ribbon and a tiny gold star
+  trinket through the twigs.
+- **mythic** — v2 SHELL: jet-black obsidian eggshell with a few wide jagged
+  lava cracks concentrated near the top of the shell, each crack glowing
+  bright molten orange from within, no floating embers. NEST: charred dark
+  twigs with a few ember-orange glowing tips, no pebbles or loose objects.
+  v3 SHELL: jet-black obsidian eggshell covered in a dense network of fine
+  spiderweb-thin glowing orange lava cracks spreading evenly across the whole
+  surface, no floating embers. NEST: charred dark twigs with a few
+  ember-orange glowing tips, no pebbles or loose objects.
+  v4 SHELL: jet-black obsidian eggshell with glowing orange lava cracks
+  forming a spiral pattern winding from the top of the shell down to the
+  base, no floating embers. NEST: charred dark twigs with a few ember-orange
+  glowing tips, no pebbles or loose objects.
+
+Measured margins after post-processing — the tight-axis figure this family
+lives or dies on, since the automated guard (`tests/images.test.ts`) checks
+`min(top, bottom)` against 24px ± 1 on every file registered from disk, but a
+31px reading (the `cutout` mode's whole-bbox margin) is the diagnostic to
+watch for by hand on any future regeneration:
+
+| Rarity | file | L | R | T | B |
+|---|---|---|---|---|---|
+| common | base | 74 | 53 | 24 | 24 |
+| common | v2 | 14 | 110 | 24 | 24 |
+| common | v3 | 73 | 54 | 24 | 24 |
+| common | v4 | 72 | 59 | 24 | 24 |
+| uncommon | base | 32 | 55 | 24 | 24 |
+| uncommon | v2 | 30 | 49 | 24 | 24 |
+| uncommon | v3 | 31 | 50 | 24 | 24 |
+| uncommon | v4 | 38 | 61 | 24 | 24 |
+| rare | base | 73 | 54 | 24 | 24 |
+| rare | v2 | 73 | 53 | 24 | 24 |
+| rare | v3 | 73 | 78 | 24 | 24 |
+| rare | v4 | 73 | 56 | 24 | 24 |
+| epic | base | 73 | 54 | 24 | 24 |
+| epic | v2 | 73 | 78 | 24 | 24 |
+| epic | v3 | 73 | 55 | 24 | 24 |
+| epic | v4 | 67 | 58 | 24 | 24 |
+| legendary | base | 74 | 53 | 24 | 24 |
+| legendary | v2 | 72 | 48 | 24 | 24 |
+| legendary | v3 | 73 | 78 | 24 | 24 |
+| legendary | v4 | 73 | 50 | 24 | 24 |
+| mythic | base | 73 | 79 | 24 | 24 |
+| mythic | v2 | 73 | 79 | 24 | 24 |
+| mythic | v3 | 74 | 78 | 24 | 24 |
+| mythic | v4 | 73 | 78 | 24 | 24 |
+
+Every one of the 24 files (six bases, eighteen variants) lands at T=24 B=24
+exactly. L/R stay asymmetric and vary per file on purpose — the egg-axis fit
+centres on the egg's own silhouette, not the whole nest bbox, so a variant
+whose nest dressing sits further to one side (`common-v2`'s feather, for
+example, at L=14 R=110) shifts the horizontal margin without moving the
+vertical one. Re-measure with `scripts/measure-margins.mjs` if any of these is
+ever regenerated; a 31/31 symmetric reading means `cutout` was used by mistake.
+
 ## Coastal Dig (`coastal_dig`)
 
 **Banner (1536×1024):**
@@ -273,7 +524,10 @@ reference). Prompt frame:
 > highlights, clean cel shading with smooth gradients, polished game-asset
 > look. No text, no characters, no UI elements.
 
-**Thumb (1024×1024):**
+**Thumb (1024×1024)** — legacy prompt, recorded as run. It opens with the exact
+"square cartoon game icon" phrasing the note on thumbs at the top of this file
+identifies as the cause of rounded-rectangle app-icon output; convert it to the
+positive full-bleed paragraph quoted there before rerunning it:
 
 > A square cartoon game icon of a single large dinosaur skull fossil sitting
 > in golden beach sand with a small palm leaf beside it, simple turquoise sky
@@ -294,7 +548,10 @@ reference). Prompt frame:
 > highlights, clean cel shading with smooth gradients, polished game-asset
 > look. No text, no characters, no UI elements.
 
-**Thumb (1024×1024):**
+**Thumb (1024×1024)** — legacy prompt, recorded as run. It opens with the exact
+"square cartoon game icon" phrasing the note on thumbs at the top of this file
+identifies as the cause of rounded-rectangle app-icon output; convert it to the
+positive full-bleed paragraph quoted there before rerunning it:
 
 > A square cartoon game icon of one large glowing amber gemstone with a
 > mosquito silhouette inside, resting on orange sandstone rocks, simple warm
@@ -316,7 +573,10 @@ reference). Prompt frame:
 > smooth gradients, polished game-asset look. No text, no characters, no UI
 > elements.
 
-**Thumb (1024×1024):**
+**Thumb (1024×1024)** — legacy prompt, recorded as run. It opens with the exact
+"square cartoon game icon" phrasing the note on thumbs at the top of this file
+identifies as the cause of rounded-rectangle app-icon output; convert it to the
+positive full-bleed paragraph quoted there before rerunning it:
 
 > A square cartoon game icon of a single translucent ice block with a dinosaur
 > skeleton silhouette frozen inside, sitting on snow, simple pale-blue arctic
@@ -340,7 +600,10 @@ shell with glowing orange cracks).
 > glossy highlights, clean cel shading with smooth gradients, polished
 > game-asset look. No text, no characters, no UI elements.
 
-**Thumb (1024×1024):**
+**Thumb (1024×1024)** — legacy prompt, recorded as run. It opens with the exact
+"square cartoon game icon" phrasing the note on thumbs at the top of this file
+identifies as the cause of rounded-rectangle app-icon output; convert it to the
+positive full-bleed paragraph quoted there before rerunning it:
 
 > A square cartoon game icon of a single black obsidian volcano peak with
 > glowing orange lava cracks and a small lava eruption at the top, simple dark
@@ -353,7 +616,9 @@ shell with glowing orange cracks).
 
 Generated at 2528×1696 (3:2, resolution `2k`), fitted to 1536×1024 for the
 banner; the thumb is a centered square crop of the same source, resized to
-1024×1024 (not a squash).
+1024×1024 (not a squash). That crop was a hand pass at the time. It is now
+`node scripts/fit-art.mjs square <src> <dest>`, which does exactly the same
+cover-scale and centre-crop — run the mode on any regeneration.
 
 **Banner (1536×1024) and Thumb (1024×1024), same source:**
 
@@ -379,7 +644,8 @@ clauses that fixed it.
 
 Generated at 1264×848, upscaled to 3216×2160 (`bytedance_image_upscale`, 2k),
 fitted to 1536×1024 for the banner; the thumb is a centered square crop of the
-same upscaled source, resized to 1024×1024 (not a squash).
+same upscaled source, resized to 1024×1024 (not a squash) — a hand pass then,
+`node scripts/fit-art.mjs square` now.
 
 **Banner (1536×1024) and Thumb (1024×1024), same source:**
 
@@ -397,9 +663,11 @@ same upscaled source, resized to 1024×1024 (not a squash).
 Generated at 1264×848 (3:2, `nano_banana_2`, routed by the service to
 `nano_banana_flash`), fitted to 1536×1024 for the banner via
 `node scripts/fit-art.mjs banner`; the thumb is a centered square crop of the
-same source, resized to 1024×1024 with `drawImage` (not a squash — no
-`fit-art.mjs` mode produces a site thumb, so this one is a hand pass, same
-recipe as the Abyssal Trench and Containment Site thumbs above).
+same source, resized to 1024×1024 with `drawImage` (not a squash), same recipe
+as the Abyssal Trench and Containment Site thumbs above. This was a hand pass
+because no `fit-art.mjs` mode produced a site thumb when it was written; the
+`square` mode this bank added is that pass, so a regeneration runs
+`node scripts/fit-art.mjs square <src> <dest>` rather than repeating it by hand.
 
 **Banner (1536×1024) and Thumb (1024×1024), same source:**
 
@@ -424,6 +692,371 @@ surface — the plain "blank peeling surface" phrase was not enough on its own.
 The explicit CRITICAL no-writing block (no letters/words/numbers/inscriptions/
 signage/symbols/logos, every sign and surface blank and wordless) is what
 fixed it; keep that block verbatim on any future regeneration of this scene.
+
+### Variants (`-v2`, `-v3`)
+
+Each of the seven sites carries two variants beside its untouched base, for
+fourteen files in total. Every one is an image-edit of **its own committed
+banner** (uploaded via `media_upload`, referenced with role
+`image_references`), never of another variant or another site's banner,
+generated at `3:2` (`resolution: 2k`) and post-processed with
+`node scripts/fit-art.mjs banner <src> <dest>` — no `remove_background`, since
+this family ships full-bleed opaque scenes, not cutouts, the same rule the ten
+hot-banner variant sets above follow.
+
+What varies is the vantage point, the weather and the time of day — a
+different view of the same location. What must never vary is the site's
+colour identity, which is how a player recognises where they are:
+`volcano_core`'s two variants both restate "the palette stays black obsidian
+rock with glowing orange lava throughout, never any other color dominating
+the scene" verbatim from its own identity rule, and `abyssal_trench`'s two
+both restate "Cold blue palette dominates overall; the amber vents stay small
+and secondary, never lava-like, never orange-dominant anywhere in the frame" —
+the same clause that fixed that site's own first generation, carried forward
+into every variant edit rather than assumed to survive on its own.
+
+Every prompt carries the expanded no-text clause ("No text, no lettering, no
+words, no numbers, no signage writing anywhere in the scene") uniformly. The
+two `founders_park` variants additionally carry the CRITICAL no-writing block
+from that site's own base prompt, since both keep the toppled signboard in
+frame. The `volcano_core` and `abyssal_trench` variants also carry a no-glow-
+beyond-silhouette clause naming their own emissive surfaces (lava and rock;
+vents and creatures) — the same hard no-glow rule the egg family states in
+general terms, restated here against the specific surfaces each scene adds.
+
+Each prompt follows the same edit-instruction shape as the hot-banner variants
+above: "Keep the exact same scene: [the base's own held-constant objects,
+named individually]. Change only the vantage point and the weather/time of
+day: [the one specific change]."
+
+- **coastal_dig** — v2: higher elevated dune view, soft pastel dawn, calm
+  glassy water. v3: lower ground-level view close to the dig stakes, a
+  gathering tropical storm with choppier waves and foam.
+- **amber_ridge** — v2: pulled back to a wider view, bright clear midday sun.
+  v3: closer lower angle near the rock face, damp rain-darkened stone, cool
+  violet-blue dusk.
+- **frozen_cliffs** — v2: wider elevated view, deep polar night sky with
+  brighter, more vivid aurora. v3: closer lower angle, gentle falling snow,
+  flat overcast sky with no aurora.
+- **volcano_core** — v2: higher rocky-ledge view looking down into the
+  caldera. v3: lower ground-level view close to a lava river, a small
+  eruption burst at the distant cave mouth.
+- **abyssal_trench** — v2: higher vantage looking down the chasm, a shaft of
+  pale cyan light. v3: closer lower angle near the vent cluster, a second
+  submersible lamp beam crossing in the background.
+- **containment_site** — v2: wider elevated view, heavier rain streaking
+  through the floodlight beams, deeper teal-black night. v3: lower
+  ground-level view close to the bent steel bars, pale dawn breaking through
+  the mist instead of full night.
+- **founders_park** — v2: pulled back to a wider view, bright clean midday
+  light instead of golden hour. v3: closer lower angle near the vines and the
+  toppled signboard, cool pale morning mist instead of warm amber haze.
+
+All 14 generated images were accepted on the first attempt — zero
+regenerations, zero colour-identity drift on `volcano_core`/`abyssal_trench`,
+zero text leaks anywhere in the set.
+
+---
+
+## Chapters 8–10 (banked, unshipped)
+
+Speculative art for three campaign chapters that do not exist in `src/data/`
+today and may never ship. Banked because the generator access that produced
+every asset under `assets/images/` was expiring and could not be revisited
+later — worthless if these chapters never ship, and unobtainable afterward if
+they do. **Nothing in `src/` reads any of these nine files yet.** Chapter ids
+double as expedition-site ids per the campaign's chapter-id ≡ site-id
+invariant, so each also forces an expedition site whenever (if ever) the
+chapter is actually written.
+
+The arc escalates outward from the park in three beats — the mainland, the
+city, then wilderness the breach never reaches — and chapter 10's banner
+deliberately carries no human wreckage at all: that absence is the argument
+of the arc, distinguishing it from every biome site documented above.
+
+**Pipeline.** Banners were generated at 2528×1696 (3:2, `nano_banana_pro`
+routed by the service to `nano_banana_2`, `resolution: 2k`) and fitted to
+1536×1024 with `node scripts/fit-art.mjs banner`. Thumbs were generated
+SEPARATELY as their own close-up square compositions — not cropped from the
+banner, per the "do not just crop the banner" rule stated earlier in this
+document — at 2048×2048 (1:1, `resolution: 2k`) and fitted to 1024×1024 with
+`node scripts/fit-art.mjs square`, the cover-scale mode this bank added
+specifically because no producer existed for a generated site thumb before
+now (it reproduces the centred-square-crop hand pass the last three site
+thumbs used). Boss portraits were generated as image-edits of the committed
+`assets/images/battles/boss-coastal_dig-portrait.webp` (uploaded via
+`media_upload`, referenced with role `image_references` — `prompts.md` says
+plain `image` elsewhere in this document; that is stale for this model),
+background-removed, and fitted with `node scripts/fit-art.mjs portrait` —
+the whole-bbox 24px-margin variant, no `--axis=egg` — matching the seven
+committed boss portraits rather than `fit-art.mjs cutout`'s 31px.
+
+Unlike the archetype and species portraits, a boss must read as a **named
+individual** — scarring, chipped teeth, individuating damage — so every boss
+prompt below asks for exactly that, the same framing the seven shipped boss
+prompts use. Every prompt in this section carries the escalated no-text
+clause ("No text, no lettering, no words, no numbers, no signage writing
+anywhere in the scene"); banners and thumbs additionally carry the Founder's
+Park CRITICAL no-writing block verbatim, since a ferry terminal, city
+signage and open wilderness (nothing to write on, kept anyway for
+consistency) are exactly the kind of surface that has rendered spurious
+lettering before.
+
+### Mainland Ferry (`mainland_ferry`)
+
+The harbour the breach reaches the mainland through.
+
+**Banner (1536×1024):**
+
+> A wide cartoon landscape of a mainland ferry terminal breach: a large car
+> ferry listing at a steep angle, half-beached against a cracked concrete
+> pier at dusk, its loading ramp buckled and twisted, tall gantry cranes
+> standing dark and idle behind it, harsh floodlights on tall poles raking
+> long white beams across choppy dark water, scattered shipping containers
+> tipped on the dock, a deep orange-purple dusk sky reflecting on the water's
+> surface. Wide cinematic establishing shot filling the entire canvas edge to
+> edge with no letterboxing. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no
+> lettering, no words, no numbers, no signage writing anywhere in the scene.
+> CRITICAL: absolutely no writing anywhere in the image — no letters, no
+> words, no numbers, no carved inscriptions, no painted signage, no symbols,
+> no logos. Every sign, plaque and surface is blank and wordless. No human
+> characters, no UI elements.
+
+**Thumb (1024×1024):**
+
+> A close-up cartoon scene filling the entire square frame edge to edge of a
+> single rusted ferry ramp gate, buckled and half-lowered, mooring cables
+> snapped and coiled on wet concrete beside it, a hazy dusk-orange sky and
+> dark water glimpsed behind. Centered composition, one large readable
+> landmark, simple background. Glossy cartoon mobile-game art style, bold
+> dark outlines, vibrant saturated colors, strong glossy highlights, clean
+> cel shading with smooth gradients, polished game-asset look. NOT an app
+> icon — no rounded-rectangle tile, no border, no rounded corners. No text,
+> no lettering, no words, no numbers, no signage writing anywhere in the
+> scene. CRITICAL: absolutely no writing anywhere in the image — no letters,
+> no words, no numbers, no carved inscriptions, no painted signage, no
+> symbols, no logos. Every sign, plaque and surface is blank and wordless. No
+> human characters, no UI elements.
+
+**These two thumb prompts still carry the retired "NOT an app icon" clause**, and
+that is deliberate rather than an oversight: both came back as correct full-bleed
+squares WITH it, so they are recorded as run. But the same clause is what failed
+on the `continental_divide` thumb one section later — see the note on thumbs at
+the top of this file — so on any regeneration, strip every mention of "app icon",
+"tile", "icon" and "game icon" and use the positive full-bleed paragraph quoted
+there instead. Do not read these two prompts as evidence that the clause works.
+
+**Boss — `boss-mainland_ferry`, the Harbormaster:** a barnacle-crusted
+semiaquatic apex that took the terminal, hide scarred by mooring cable,
+framed against wet steel. Generated as an image-edit of the coastal_dig
+reference portrait.
+
+> Keep the exact same head-and-shoulders boss portrait: same pose, same
+> framing, same plain flat light-gray studio background, facing right with
+> the snout pointing right, matching the reference portrait's profile
+> direction. Change the dinosaur to a fierce cartoon semiaquatic apex
+> predator called the Harbormaster: a barnacle-crusted hide over broad wet
+> gray-green scales, thick ropy scarring cut deep across the neck and jaw
+> where mooring cable dragged against it over years, a few small barnacle
+> clusters clinging to the brow and jawline, a cold metallic-wet glossy sheen
+> like rain on dockyard steel, one chipped and broken tooth visible in a
+> snarling jaw, a pale watchful eye. Individuating damage and scarring are
+> wanted here — this is a named individual, not a species type. CRITICAL
+> FRAMING: zoom out so the ENTIRE creature — the broad head, the thick
+> scarred neck, and both shoulders — sits well inside the frame, small in
+> the canvas, surrounded by a wide band of empty background on all four
+> sides. Nothing may touch, run off, or be cropped by any edge of the image,
+> especially the left and bottom edges. No glow, rays, embers, sparkles, or
+> light effects extending beyond the creature silhouette; glowing details
+> may appear only on the surfaces themselves. Glossy cartoon mobile-game art
+> style, bold dark outlines, vibrant saturated colors, strong glossy
+> highlights, clean cel shading with smooth gradients, polished game-asset
+> look. No drawn border, no frame, no panel edge, no letterboxing. No text,
+> no numbers, no lettering, no signage writing, no human characters, no UI
+> elements.
+
+### Ruined City (`ruined_city`)
+
+Downtown, long reclaimed.
+
+**Banner (1536×1024):**
+
+> A wide cartoon landscape of a downtown city canyon long reclaimed by
+> nature: a collapsed elevated overpass with its broken slab ends dangling
+> in mid-air, a tall glass office tower with shattered windows and thick
+> vines cascading down its face, a large earthen nesting mound built inside
+> a cracked plaza fountain surrounded by wild grass pushing through the
+> pavement, hazy golden haze and a low sun glowing between silhouetted
+> skyscrapers, birds circling high above. Wide cinematic establishing shot
+> filling the entire canvas edge to edge with no letterboxing. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated
+> colors, strong glossy highlights, clean cel shading with smooth gradients,
+> polished game-asset look. No text, no lettering, no words, no numbers, no
+> signage writing anywhere in the scene. CRITICAL: absolutely no writing
+> anywhere in the image — no letters, no words, no numbers, no carved
+> inscriptions, no painted signage, no symbols, no logos. Every sign, plaque
+> and surface is blank and wordless. No human characters, no UI elements.
+
+**Thumb (1024×1024):**
+
+> A close-up cartoon scene filling the entire square frame edge to edge of a
+> single moss-covered nesting mound built inside a cracked stone plaza
+> fountain, thick vines climbing the fountain's rim, wild grass pushing
+> through the stone, a hazy glass skyscraper silhouette glimpsed behind
+> through golden haze. Centered composition, one large readable landmark,
+> simple background. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. NOT an app icon —
+> no rounded-rectangle tile, no border, no rounded corners. No text, no
+> lettering, no words, no numbers, no signage writing anywhere in the scene.
+> CRITICAL: absolutely no writing anywhere in the image — no letters, no
+> words, no numbers, no carved inscriptions, no painted signage, no symbols,
+> no logos. Every sign, plaque and surface is blank and wordless. No human
+> characters, no UI elements.
+
+**Same caveat as the Mainland Ferry thumb above:** the "NOT an app icon" clause
+is recorded because it is what ran, not because it is what to run again. Convert
+it to the positive full-bleed paragraph on any regeneration.
+
+**Boss — `boss-ruined_city`, the Tower Nester:** a large flier whose
+wingspan reads against skyline, perched crest-forward on a broken cornice.
+Generated as an image-edit of the coastal_dig reference portrait.
+
+> Keep the exact same head-and-shoulders boss portrait: same pose, same
+> framing, same plain flat light-gray studio background, facing right with
+> the beak pointing right, matching the reference portrait's profile
+> direction. Change the dinosaur to a fierce cartoon apex flier called the
+> Tower Nester: a tall crest sweeping back from the skull, a long hooked
+> beak with chipped notches along the edge from old fights, mottled
+> slate-gray and rust-orange plumage, a torn ragged edge along the folded
+> wing shoulder from a healed old wound, sharp watchful eyes, snarling with
+> territorial menace. Individuating damage and scarring are wanted here —
+> this is a named individual, not a species type. CRITICAL FRAMING: zoom out
+> so the ENTIRE creature — the tall crest, the long beak, and the folded
+> wing shoulder — sits well inside the frame, small in the canvas,
+> surrounded by a wide band of empty background on all four sides. Nothing
+> may touch, run off, or be cropped by any edge of the image, especially the
+> top and side edges. No glow, rays, embers, sparkles, or light effects
+> extending beyond the creature silhouette; glowing details may appear only
+> on the surfaces themselves. Glossy cartoon mobile-game art style, bold
+> dark outlines, vibrant saturated colors, strong glossy highlights, clean
+> cel shading with smooth gradients, polished game-asset look. No drawn
+> border, no frame, no panel edge, no letterboxing. No text, no numbers, no
+> lettering, no signage writing, no human characters, no UI elements.
+
+### Continental Divide (`continental_divide`)
+
+High open wilderness past any human structure, no ruins at all.
+
+**Both of this chapter's scenes were regenerated once, and the reason is worth
+reading before touching them.** The first pass followed a brief that said
+"migrating herd silhouettes" without saying *of what*, and leaned hard on the
+absence of human structures. It produced a pastoral alpine meadow with **bison**
+on the ridge, and a thumb that was the Matterhorn with **goats** — no dinosaurs
+anywhere in either, in a dinosaur game. Nothing in the checklist caught it: no
+text, no humans, correct dimensions, and a defensible reading of the brief.
+
+Two lessons, both in the prompts below. **Name the animals.** An absence
+("no human structures") does not imply a presence; the model fills the gap with
+generic wildlife, and every scene in this document that contains creatures now
+says explicitly that every one of them is a dinosaur, with the plausible
+mammals named as exclusions. **And never write "icon" or "tile"** — see the note
+on thumbs at the top of this file.
+
+**Banner (1536×1024):**
+
+> A wide establishing shot of a vast high-altitude mountain pass at storm-break
+> dawn, deep in wild country far beyond any human structure. A herd of enormous
+> long-necked sauropod DINOSAURS — huge four-legged brachiosaur-like giants with
+> towering necks and long tails — walks in dark silhouette along a distant
+> ridgeline, dwarfed by the peaks yet unmistakably colossal. In the mid-ground,
+> more dinosaurs graze a windswept alpine valley: hadrosaurs and horned
+> ceratopsians in scattered groups. Jagged snow-streaked granite peaks rise on
+> both sides, torn cloud and shafts of cold light breaking between them, a
+> glacial river threading the valley floor far below. The mood is awe, scale and
+> untamed wilderness — the world after the fences failed, belonging entirely to
+> dinosaurs. Absolutely no buildings, no roads, no fences, no vehicles, no ruins,
+> no wreckage and no human structures of any kind anywhere in the scene. No
+> mammals, no goats, no cattle, no bison, no deer, no birds — every animal in the
+> image is a dinosaur. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no human characters, no UI elements. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated colors,
+> strong glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look.
+
+**Thumb (1024×1024):**
+
+> A full-bleed square painting, cropped in close, of the head and towering neck
+> of a single colossal long-necked sauropod DINOSAUR rising in the foreground
+> against a jagged snow-capped mountain pass at storm-break dawn. Its skin is
+> weathered slate-green with a pale underside; it is seen from slightly below so
+> it reads as enormous. Behind it two smaller sauropod necks rise along the
+> distant ridge, and shafts of cold light break through torn cloud between
+> granite peaks. Simple uncluttered background so the animal reads instantly at
+> small size. The mood is awe and untamed scale, wilderness that belongs to
+> dinosaurs. The painting is a continuous scene that bleeds off all four edges of
+> the square, like a cropped detail of a much larger canvas: the artwork must run
+> right into every corner and every edge of the image with the subject cut off by
+> the frame, filling the picture completely. Every corner of the square is
+> painted scene. The background is solid painted sky and rock all the way to the
+> boundary, never white, never blank, never a plain flat margin, and the
+> composition has no surrounding frame, no border, no outline, no rounded
+> corners, no drop shadow and no background panel of any kind. Absolutely no
+> buildings, no roads, no fences, no vehicles, no ruins and no human structures.
+> No mammals, no goats, no cattle, no bison, no deer, every animal is a dinosaur.
+> No text, no lettering, no words, no numbers, no signage writing anywhere in the
+> scene, no human characters, no UI elements. Glossy cartoon mobile-game art
+> style, bold dark outlines, vibrant saturated colors, strong glossy highlights,
+> clean cel shading with smooth gradients, polished game-asset look.
+
+Post-processed with `node scripts/fit-art.mjs banner` and
+`node scripts/fit-art.mjs square` respectively.
+
+**Boss — `boss-continental_divide`, the Divide Alpha:** the apex of a
+wild-born generation, the first that never saw a fence. Generated as an
+image-edit of the coastal_dig reference portrait.
+
+> Keep the exact same head-and-shoulders boss portrait: same pose, same
+> framing, same plain flat light-gray studio background, facing right with
+> the snout pointing right, matching the reference portrait's profile
+> direction. Change the dinosaur to a fierce cartoon apex predator called
+> the Divide Alpha, the largest and oldest of a wild-born generation that
+> never saw a fence: a heavy weathered hide in deep slate and burnt-umber
+> tones, a broad battle-worn brow ridge, several parallel claw-rake scars
+> across the cheek and neck from rival combat, one notched and broken horn
+> tip, a wind-roughened natural texture to the hide with no tag, no collar,
+> and no trace of any human marking anywhere, snarling with primal
+> dominance. Individuating damage and scarring are wanted here — this is a
+> named individual, not a species type. CRITICAL FRAMING: zoom out so the
+> ENTIRE creature — the broad brow ridge, the horn, and both complete
+> shoulders — sits well inside the frame, small in the canvas, surrounded by
+> a wide band of empty background on all four sides. Nothing may touch, run
+> off, or be cropped by any edge of the image, especially the top and
+> bottom edges. No glow, rays, embers, sparkles, or light effects extending
+> beyond the creature silhouette; glowing details may appear only on the
+> surfaces themselves. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. No drawn border,
+> no frame, no panel edge, no letterboxing. No text, no numbers, no
+> lettering, no signage writing, no human characters, no UI elements.
+
+Deliberately no tag or collar on the Divide Alpha, unlike Asset 47 and
+Ultimasaurus — this boss carries no trace of the park at all, the same
+argument its banner makes.
+
+**Measured margins**
+(`scripts/measure-margins.mjs`):
+`boss-mainland_ferry` L24/R24/T69/B69, `boss-ruined_city` L24/R24/T82/B82,
+`boss-continental_divide` L24/R24/T131/B131 — the house invariant
+`min(L,R,T,B) === 24`, symmetric on both axes, holds for all three, matching
+the seven committed boss portraits.
+
+Two of the five generation retries in this batch failed with no error detail
+from the service (not a content or style rejection — a bare `failed` status);
+resubmitting the identical request succeeded both times, and neither retry
+was charged.
 
 ---
 
@@ -699,7 +1332,7 @@ plaza has to read as the same park as both.
 **The no-human clause is doubled on this one prompt, and that is load-bearing.**
 Every banner in this section forbids human characters, but a scene whose whole
 subject is *visitors* is the one that will render people anyway; a single human
-figure makes the banner unusable beside the other 26, and no test can see it.
+figure makes the banner unusable beside the other 32, and no test can see it.
 Keep "no human characters, no people, no human visitors of any kind" verbatim on
 any regeneration. The visitors are cartoon dinosaurs, the same way `trading.webp`
 staffs its market stall.
@@ -1046,6 +1679,114 @@ references.
 > characters of any script. Any board, sign, plan, flag or panel that appears
 > must be blank or plain coloured. No people, no human figures.
 
+### Variants (`-v2`, `-v3`, `-v4`)
+
+The ten most-seen banners each carry three variants beside their untouched
+base, for thirty files in total: `care`, `collect`, `dino_roster`,
+`eggs_incubator`, `shop_food_market`, `sell`, `gene_lab`, `battle_victory`,
+`battle_defeat`, `daily`. Every one is an image-edit of **its own committed
+banner**, never another banner or another variant, generated with the base
+`.webp` attached as the `image_references` medium. Post-processed exactly
+like the base: `node scripts/fit-art.mjs banner <src> <dest>` — **no
+`remove_background` step**, since this family ships full-bleed opaque scenes,
+not cutouts.
+
+What varies is camera angle, time of day, weather and staging — a different
+view of the same scene. What must never vary is the subject and its purpose:
+`battle_victory` must still read as a win, `care` as feeding, `sell` as a
+transaction, and a player must recognise the command from the picture alone
+without reading the embed text. The two mood pairs this section documents
+above (`care`/`care_neglect`, `battle_victory`/`battle_defeat`) are pairs of
+BASE files, not of variants — only `care`, `battle_victory` and
+`battle_defeat` were varied here, and each variant was held to its own base's
+mood: every `care` variant stays a cheerful, well-fed scene, every
+`battle_victory` variant stays triumphant, every `battle_defeat` variant
+stays downcast. A cheerful `battle_defeat` variant would have broken the pair
+exactly as a cheerful base would have.
+
+Every one of the thirty prompts carries the expanded no-text clause used
+elsewhere in this section ("No text, no lettering, no words, no numbers, no
+signage writing anywhere in the scene") **and** the `collect.webp`/Founder's
+Park CRITICAL block ("CRITICAL: absolutely no writing anywhere in the image —
+no letters, no words, no numbers, no carved inscriptions, no painted
+signage, no symbols, no logos. Every sign, plaque and surface is blank and
+wordless."), applied uniformly rather than only on the banners judged
+highest-risk — cheap insurance against the class of failure `collect.webp`'s
+own note above documents. Each prompt also names the specific signable prop
+it's most likely to letter and states in the positive that it stays blank:
+the chalkboard sign on `collect`, the ledger pages on `sell`, the scroll tags
+and board on `daily`, the temperature dial and analogue dials on
+`eggs_incubator`/`gene_lab`, the banners and pennants on `battle_victory`/
+`battle_defeat`, and price tags/labels on `shop_food_market`. **The result
+was a clean sweep: all 30 generated accepted on the first attempt, zero
+regenerations, zero text leaks** — the first time this section has reported a
+0% leak rate on a signage-adjacent batch this size. Recorded here for
+whoever generates banners next: applying both defences everywhere, not just
+where a scene "looks risky," is what bought that number.
+
+Each prompt follows the same edit-instruction shape as the `care_neglect` /
+`battle_defeat` base pairing above: "Keep the exact same scene: [the base's
+own held-constant objects, named individually]. Change only the camera angle
+and the time of day: [the one specific change]." Held-constant naming, not a
+bare "keep it the same," is what keeps the model from drifting the subject
+across three sequential edits of one reference.
+
+- **care** — v2: low three-quarter angle close to the ground, warm golden
+  late-afternoon light. v3: pulled back to a wide elevated angle showing the
+  whole feeding station, bright midday sun. v4: dusk under a soft blue sky,
+  lit lanterns along the fence posts.
+- **collect** — v2: camera low and close along the counter so the coins loom
+  large, soft early-morning light with mist on the path. v3: pulled back to a
+  wide elevated angle showing more of the path, bright midday sun. v4: golden
+  dusk with a lit lantern beside the cash box.
+- **dino_roster** — v2: lower angle looking slightly up along the row for a
+  heroic head-count view, warm golden late-afternoon light. v3: wider
+  elevated angle showing more of the fence line, soft bright high daylight.
+  v4: dusk, lit lanterns along the fence posts, the lineup settling for the
+  evening.
+- **eggs_incubator** — v2: camera low and close along the row so the nearest
+  dome looms large, a warmer amber-orange heat-lamp glow. v3: pulled back to
+  a wide elevated angle, a cooler blue-white ambient light mixed with the
+  amber. v4: viewed from the opposite end of the bench, one dome in sharp
+  foreground focus with the rest blurred, deep late-night dark.
+- **shop_food_market** — v2: camera low and close along the counter so the
+  baskets and fish loom large, warm golden late-afternoon light. v3: pulled
+  back to a wide elevated angle showing the whole stall and awning, bright
+  clear midday sun. v4: viewed from the opposite side of the stall (meat side
+  foreground), dusk with a lit lantern over the counter.
+- **sell** — v2: camera low and close along the counter so the scale and coin
+  pouch loom large, warm early-morning light. v3: pulled back to a wide
+  elevated angle showing the whole stall and the path behind, bright overhead
+  midday sun. v4: dusk, a lit lantern beside the ledger.
+- **gene_lab** — v2: lower angle looking up the row of glowing tanks, a
+  deeper blue-violet night-shift light mixed with the amber glow. v3: pulled
+  back to a wide establishing angle showing more of the workbenches, brighter
+  daylight through the high windows. v4: viewed from the opposite end of the
+  room, one tank in sharp foreground focus, warm late-evening god-rays.
+- **battle_victory** — v2: lower angle looking up at the dinosaur for a more
+  heroic pose, bright midday sun. v3: pulled back to a wide elevated angle
+  showing more of the arena, warm sunset light. v4: side three-quarter angle,
+  the pennants snapping in a stronger breeze.
+- **battle_defeat** — v2: lower angle looking up at the lowered head for a
+  somber close view, heavier overcast with a light drizzle beginning. v3:
+  pulled back to a wide elevated angle showing more of the arena, dim
+  late-afternoon overcast light. v4: side three-quarter angle, thick dust and
+  mist hanging low, the torn pennants hanging limp.
+- **daily** — v2: camera low and close so the lit lantern and hourglass loom
+  large, warm golden late-afternoon light. v3: pulled back to a wide elevated
+  angle showing more of the path, bright clear midday sun. v4: dusk under a
+  soft blue sky, the lantern now lit.
+
+`gene_lab`'s three variants carry forward a carved hieroglyph-style stone
+panel visible in the top corners of the committed `gene_lab.webp` base — an
+element the base's own prompt in this file never asked for, so it must have
+been a model addition on that original generation that shipped anyway. It is
+inherited, not introduced: the variant prompts instruct the model to "keep
+the exact same laboratory," and the panel is part of that scene now.
+Regenerating a `gene_lab` variant will very likely keep reproducing it; that
+is expected, not a defect to chase, unless the base itself is ever
+regenerated to remove it first.
+
 ---
 
 ## Battle bosses
@@ -1072,15 +1813,18 @@ scales). Every prompt carries this rule verbatim.
 
 **Workflow (reference chain):** generate the coastal portrait first on a
 plain flat light-gray studio background, head-and-shoulders three-quarter
-framing filling the square with a small even margin. Generate the other three
-as image-edits of the approved coastal portrait (Nano Banana Pro, `medias`
-role `image`) so pose, framing, and rendering read as a set — all three edit
-from the coastal portrait directly, never from each other. Post-process each
-with `remove_background` plus the one-off defringe + fit pass described in the Egg
-rarities section (not `scripts/fit-art.mjs`, which fits to 31px), with one
-difference: portraits fit and center on the **whole silhouette bbox** (there is
-no egg axis to bias toward), 24px margin on a 1024×1024 transparent canvas — the
-margin all seven committed portraits measure at.
+framing filling the square with a small even margin. Generate the next three
+— `amber_ridge`, `frozen_cliffs`, and `volcano_core` — as image-edits of the
+approved coastal portrait (Nano Banana Pro, `medias` role `image`) so pose,
+framing, and rendering read as a set — all three edit from the coastal
+portrait directly, never from each other. The remaining three —
+`abyssal_trench`, `containment_site`, and `founders_park`, all shipped later
+— are generated as standalone prompts instead, not image-edits of the
+coastal reference (see their own bullets below). Post-process each with
+`remove_background`, then `node scripts/fit-art.mjs portrait <src> <dest>` —
+the whole-bbox variant (there is no egg axis to bias toward, so omit
+`--axis=egg`, which applies only to the eggs): 24px margin on a 1024×1024
+transparent canvas — the margin all seven committed portraits measure at.
 
 **boss-coastal_dig — Old Riptooth (reference portrait):**
 
@@ -1116,7 +1860,8 @@ margin all seven committed portraits measure at.
 - **boss-frozen_cliffs — Stormwing:** a towering cartoon Quetzalcoatlus with
   pale ice-blue and white plumage, a long crested head, frost sheen gleaming
   on the beak surface, and one folded wing shoulder visible. The first
-  generation attempt drifted off-model against the other three bosses — thin
+  generation attempt drifted off-model against the other three bosses in that
+  reference-chain batch (coastal_dig, amber_ridge, volcano_core) — thin
   light blue-grey outlines and washed-out fills instead of matching bold
   near-black linework and saturated color — so the icy palette is not enough
   on its own; insert this before the no-glow sentence: "Every outline on the
@@ -1131,14 +1876,15 @@ margin all seven committed portraits measure at.
   clean cel-shaded gradients, not a flat muted look."
 
   The regeneration above (correct on outline weight and saturation) still
-  came back facing left, mirrored against the other three bosses, which all
-  face right — snout/beak pointing right — matching the coastal_dig
-  reference. Rather than risk losing the now-approved outline/saturation fix
-  on a third generation, the committed `boss-frozen_cliffs-portrait.webp` is
-  that same approved asset horizontally flipped in post (alpha-preserving,
-  1024×1024 dimensions unchanged) to restore right-facing orientation. A
-  future regeneration from this prompt is not guaranteed to land right-facing
-  either — check orientation against the other three bosses before shipping,
+  came back facing left, mirrored against the other three bosses in that same
+  batch, which all face right — snout/beak pointing right — matching the
+  coastal_dig reference. Rather than risk losing the now-approved
+  outline/saturation fix on a third generation, the committed
+  `boss-frozen_cliffs-portrait.webp` is that same approved asset horizontally
+  flipped in post (alpha-preserving, 1024×1024 dimensions unchanged) to
+  restore right-facing orientation. A future regeneration from this prompt is
+  not guaranteed to land right-facing either — check orientation against the
+  other six committed portraits before shipping,
   and either add an explicit "facing right, mirroring the reference
   portrait's profile direction" clause to the prompt or re-apply the same
   horizontal-flip post-process.
@@ -1273,7 +2019,7 @@ outliers. `swift-carnivore` covers both `velociraptor` and `quetzalcoatlus` —
 a beaked pterosaur — and the shared portrait is a scaled toothy theropod, not
 anything pterosaur-shaped. Accepted deliberately, not an oversight: a
 per-species `silhouette` field was considered and declined, since it would
-have traded eight images for roughly twelve plus a migration across all 40
+have traded eight images for roughly twelve plus a migration across all 52
 species files, to fix fidelity for a handful of outliers like this one.
 
 **Style: deliberately simpler than the seven boss portraits.** Same house
@@ -1379,8 +2125,13 @@ battle thumbnail.
 
 **Override, never replacement.** `dinoImage(speciesId, archetype, diet)` tries
 `dinos/<speciesId>.webp` first and falls back to `dinos/<archetype>-<diet>.webp`,
-so the other 44 species keep the shared archetype art and adding a species stays
-a data-only change. Deleting any one of these eight files restores that species'
+so a species with no file of its own keeps the shared archetype art and adding a
+species stays a data-only change. That sentence used to read "the other 44
+species keep the shared archetype art", which was true when these eight were the
+only per-species files in the repo and is not any more: the Species portraits
+section below shipped 43 of those 44, leaving `deinosuchus` the sole species
+still resolving to archetype art. The mechanism is what matters and has not
+changed — the count moves every time a portrait lands, so do not write one here. Deleting any one of these eight files restores that species'
 archetype art with no code change and no error — the same null-degrade every
 family here relies on.
 
@@ -1409,8 +2160,8 @@ glow, rays, embers, sparkles, or light effects may extend beyond the dinosaur
 silhouette. Emissive detail is allowed only ON surfaces. Every prompt below
 carries both rules.
 
-**Margin: 31px — `node scripts/fit-art.mjs cutout`, never the boss portraits'
-one-off pass.** These render beside the archetype art in the same embeds, so they
+**Margin: 31px — `node scripts/fit-art.mjs cutout`, never `portrait`'s 24px.**
+These render beside the archetype art in the same embeds, so they
 must match that family, not `assets/images/battles/`. The divergence between the
 two families is recorded in the table in Egg rarities; this set sits on the
 `fit-art.mjs` side of it. `tests/images.test.ts` asserts the fitted margin to
@@ -1737,6 +2488,206 @@ tagged and fitted at 24px; the two must not be confused or reused for each other
 > game-asset look. No text, no lettering, no words, no numbers, no signage
 > writing anywhere in the scene, no human characters, no UI elements.
 
+## Species portraits
+
+44 per-species portraits attempted and **43 shipped** — every species that shared
+archetype-only art before this pass, less `deinosuchus`, which is a deliberate
+gap documented below — one `dinos/<speciesId>.webp` each, 1024×1024 transparent, resolved
+by `dinoImage(speciesId, archetype, diet)` (`src/core/images.ts`) ahead of the
+shared `dinos/<archetype>-<diet>.webp` fallback. Same override-not-replacement
+guarantee as Hero species portraits above: deleting any one file here restores
+that species' archetype art with no code change and no error.
+
+**Workflow (reference chain):** each portrait is an image-edit of the
+archetype cutout that species currently falls back to (`nano_banana_pro`
+requested; the account was served `nano_banana_2` for every generation in this
+batch — served-model routing has moved before, so treat this as a record of
+what actually ran, not a promise for a future run). `medias` role is
+**`image_references`**, verified against `models_explore` on 2026-08-25 —
+the Hero species portraits workflow note above says `image`, which is stale
+for this model as of that date. Post-process each with `remove_background`,
+then `node scripts/fit-art.mjs cutout <src> assets/images/dinos/<speciesId>.webp`
+— **`cutout`, never `portrait`**: this set renders beside the archetype
+cutouts at the 31px margin, not beside the 24px boss-portrait family.
+
+**Shared prompt template** — substitute `{SPECIES}` and `{FEATURES}` per row
+in the table below:
+
+> Keep the exact same head-and-shoulders three-quarter portrait framing as the reference image: same camera angle, same scale in frame, same small even margin, facing right with the snout pointing right, on a plain flat light-gray studio background with no scenery and no ground shadow. Change the dinosaur to {SPECIES}: {FEATURES}. Render it as a species type rather than a named individual: clean unblemished hide, no scars, no chipped teeth, no battle damage. Show only the head, neck and the top of the shoulders - no arms, no hands, no torso. No glow, rays, embers, sparkles, or light effects extending beyond the dinosaur silhouette; glowing details may appear only on the surfaces themselves. Glossy cartoon mobile-game art style, bold dark outlines, vibrant saturated colors, strong glossy highlights, clean cel shading with smooth gradients, polished game-asset look. No text, no lettering, no words, no numbers, no signage writing anywhere in the scene, no human characters, no UI elements.
+
+**The clause that earned its place** (same finding as Hero species portraits
+above, independently reconfirmed here): *"Show only the head, neck and the
+top of the shoulders - no arms, no hands, no torso."* Without it, an
+image-edit off a reference that itself shows forelimbs inherits them —
+`bruiser-carnivore.webp` is the one archetype cutout of the eight with a
+clawed hand actually visible in frame. The clause alone was not sufficient
+this round: four of the first twelve generations in this batch (allosaurus,
+ceratosaurus, nanuqsaurus, sinosaurus — all `bruiser-carnivore`) still came
+back with a hand or claw visible. A second, more literal sentence was added
+and carried into every remaining generation in the batch as a precaution:
+
+> Crop the frame tight at the base of the neck and the very top of the shoulders so that no forelimb, hand, finger, or claw is visible anywhere in the image.
+
+That sentence cleared three of the four. **`sinosaurus` was not fixed by it**
+and shipped with a bent forelimb visible at the lower left, which review
+caught after the batch had already been committed. What finally cleared it
+was harder still — an explicit crop instruction plus an enumeration of the
+parts being excluded, rather than a single negative clause:
+
+> CROP AT THE CHEST: show only the head, the neck, and the very top of the shoulders. The image must contain NO forelimbs of any kind - no arms, no upper arms, no elbows, no forearms, no wrists, no hands, no claws, no fingers - and no chest, no belly, no torso below the shoulder line. The lower edge of the picture cuts straight across the base of the neck.
+
+Prefer that wording for any future `bruiser-carnivore` edit. The lesson is
+that a negative clause ("no arms") competes with what the reference image
+actually shows, while naming the crop line gives the model something
+positive to satisfy.
+
+It sits immediately after the "no arms, no hands, no torso" sentence and
+before the no-glow sentence. `deinosuchus` (`bruiser-carnivore`) is the one
+species this batch could not clear and is the one deliberate gap in the 44:
+its first generation carried an unrelated duplicate-image ghosting artifact;
+its second, with the sentence above added, came back with a hand again; its
+third, with both an anti-hand and an explicit anti-ghosting sentence, came
+back worse — a blurred band across the bottom of the frame with a hand still
+visible inside it. It ships on the shared `dinos/bruiser-carnivore.webp`
+fallback rather than a fourth generation on one file.
+
+**CRITICAL FRAMING block**, for any species whose silhouette grows past the
+reference — used for 17 of the 44 rows below, wherever the Framing column is
+not `—`:
+
+> CRITICAL FRAMING: zoom out so the ENTIRE creature - {PARTS} - sits well inside the frame, small in the canvas, surrounded by a wide band of empty background on all four sides. Nothing may touch, run off, or be cropped by any edge of the image, especially the {THREATENED} edges.
+
+It sits after the no-glow sentence and before the "Glossy cartoon mobile-game
+art style" sentence.
+
+**A shoulder running off the left or bottom edge is house style, not a
+defect** — the same rule the archetype cutouts and the Containment Site boss
+portrait are already held to; do not regenerate for this alone.
+
+**Provenance of the first three rows:** triceratops, velociraptor and
+giganotosaurus were generated as a pilot, one per reference family, before
+the anti-forelimb crop sentence above existed — triceratops needed the
+CRITICAL FRAMING block (its frill grows past the reference), the other two
+did not. Their `{FEATURES}` text below is reconstructed from the committed
+files rather than a preserved original prompt; regenerating from it will not
+reproduce those three files pixel-for-pixel, but will reproduce the same
+species, coloring and framing.
+
+| Species | File | Reference | `{SPECIES}` | `{FEATURES}` | Framing (parts / threatened edges) |
+|---|---|---|---|---|---|
+| triceratops | dinos/triceratops.webp | tank-herbivore | a Triceratops | two long brow horns and a shorter nose horn, a broad bony frill rimmed with small triangular points, a hooked beak, a slate-gray-blue face and neck with a warm tan-brown frill and horns | the whole head and the complete frill with all of its rim points / top and left |
+| velociraptor | dinos/velociraptor.webp | swift-carnivore | a Velociraptor | a slender toothy snout, a feathered crest along the back of the head and neck, a keen yellow eye, two-tone rust-orange mottled hide fading to a pale cream throat and underside | — |
+| giganotosaurus | dinos/giganotosaurus.webp | bruiser-carnivore | a Giganotosaurus | a boxy apex-predator skull with banded teeth showing at the lip line and heavy brow ridges, two-tone olive-green hide with dark charcoal-green mottling and a pale cream throat and jaw | — |
+| allosaurus | dinos/allosaurus.webp | bruiser-carnivore | an Allosaurus | a boxy skull with low twin bony ridges above the eyes and a deep S-curved neck, coarse pebbled hide in burnt-orange and rust with dark umber-brown striping and a pale cream throat | — |
+| ceratosaurus | dinos/ceratosaurus.webp | bruiser-carnivore | a Ceratosaurus | a single blade-like nasal horn above the snout, small bony ridges over the eyes, and a row of small bumpy osteoderms down the neck, teal-green hide with dark charcoal mottling and a pale yellow-cream underside | — |
+| deinosuchus | *(not shipped — see above)* | bruiser-carnivore | a Deinosuchus | a giant prehistoric crocodilian with a broad flat armor-plated snout, heavy overlapping bony scutes, small eyes set high on the head and massive conical teeth, swamp-green plated hide with dark olive-black banding and a pale khaki throat | — |
+| nanuqsaurus | dinos/nanuqsaurus.webp | bruiser-carnivore | a Nanuqsaurus | a small Arctic tyrannosaur with a compact deep skull, thick brow ridges and a short snout, white-and-frost-blue mottled hide with a pale icy gray-blue underside | — |
+| sinosaurus | dinos/sinosaurus.webp | bruiser-carnivore | a Sinosaurus | a mid-sized theropod head with a pair of thin bony crests running lengthwise along the top of the snout, a long narrow jaw with prominent teeth, an alert forward-set eye, and deep forest-green scales with a pale sage throat | — (regenerated with the CROP AT THE CHEST wording above — the plain no-arms clause did not clear its forelimb) |
+| spinosaurus | dinos/spinosaurus.webp | bruiser-carnivore | a Spinosaurus | a long crocodile-like snout lined with conical teeth and a tall sail of skin rising from the back of the neck and shoulders, sandy ochre-tan hide with a dark maroon-red sail membrane and a pale cream throat | the whole head, the full neck and the complete tall sail rising off the shoulders / top and left |
+| tylosaurus | dinos/tylosaurus.webp | bruiser-carnivore | a Tylosaurus | a giant mosasaur with a long paddle-shaped snout, rows of conical teeth and smooth streamlined skin, countershaded steel-gray-blue back and a pale silvery-white throat and jaw | — |
+| iguanodon | dinos/iguanodon.webp | bruiser-herbivore | an Iguanodon | a long horse-like skull with a toothless beak-like tip and a broad muscular cheek pouch, warm olive-brown hide with a pale sandy-tan underside and faint darker striping | — |
+| pachycephalosaurus | dinos/pachycephalosaurus.webp | bruiser-herbivore | a Pachycephalosaurus | a tall thick dome of solid bone on top of the skull ringed by small bony knobs and spikes along the brow and snout, rust-red domed skull with dark charcoal knobs and a warm tan face and throat | the whole domed skull and every brow spike / top |
+| archelon | dinos/archelon.webp | support-carnivore | an Archelon | a giant prehistoric sea turtle with a toothless hooked beak, smooth rubbery hide and a leathery ridged shell edge just visible at the back of the shoulders, deep olive-green shell tone with a pale cream-yellow beak and throat | — |
+| dryosaurus | dinos/dryosaurus.webp | support-herbivore | a Dryosaurus | a small nimble early ornithopod with a short beaked snout, large round eyes and a slender neck, two-tone leaf-green back with a pale creamy-white throat and faint darker green speckling | — |
+| maiasaura | dinos/maiasaura.webp | support-herbivore | a Maiasaura | a duck-billed hadrosaur with a small bony ridge above the eyes and a broad flat duck-like beak, warm caramel-brown back with a pale honey-tan underside and faint darker brown speckling | — |
+| massospondylus | dinos/massospondylus.webp | support-herbivore | a Massospondylus | an early long-necked sauropodomorph with a small blunt head, a slender elongated neck and tiny leaf-shaped teeth just visible at the jaw line, dusty lilac-mauve back with a pale lavender-cream throat | — |
+| microceratus | dinos/microceratus.webp | support-herbivore | a Microceratus | a tiny early ceratopsian with a small bony frill shelf at the back of the skull and a sharp parrot-like beak, no horns yet, mottled moss-green hide with a pale beige belly and a small tan frill | — |
+| ouranosaurus | dinos/ouranosaurus.webp | support-herbivore | an Ouranosaurus | a duck-billed iguanodontian with a low sail of skin running along the neck and back supported by tall spines and a pair of small bony bumps above the eyes, warm terracotta-orange sail with dusky purple-brown webbing and a pale cream throat | the whole head, neck and the complete low sail running along the back / top and left |
+| parasaurolophus | dinos/parasaurolophus.webp | support-herbivore | a Parasaurolophus | a long tubular crest sweeping back from the top of the skull well past the shoulders, and a duck-like beak, two-tone sky-blue crest fading to a warm honey-tan face and throat | the whole head and the complete backswept crest / top and left |
+| stegoceratops | dinos/stegoceratops.webp | support-herbivore | a Stegoceratops | a hybrid ceratopsian with a broad spiked frill, a pair of long brow horns and a short nose horn, deep violet-plum frill with golden-tan horns and a pale lilac face | the whole head, the spiked frill and both brow horns / top and left |
+| therizinosaurus | dinos/therizinosaurus.webp | support-herbivore | a Therizinosaurus | a small toothless beaked head on an unusually long slender neck with light feather-down fuzz along the back of the neck, two-tone slate-teal feathered neck with a warm rust-orange head and beak | the whole head and the complete long slender neck / left and top |
+| baryonyx | dinos/baryonyx.webp | swift-carnivore | a Baryonyx | a fish-eating spinosaurid with a long narrow crocodile-like snout lined with many small conical teeth and a low bony crest above the eyes, river-green hide with dark olive banding and a pale sandy-cream throat | — |
+| carnotaurus | dinos/carnotaurus.webp | swift-carnivore | a Carnotaurus | a pair of short thick bull-like horns above the eyes, an unusually short deep skull and rough pebbled hide, two-tone crimson-red hide with dark charcoal-black horns and a pale ash-gray throat | — |
+| compsognathus | dinos/compsognathus.webp | swift-carnivore | a Compsognathus | a tiny agile theropod with a slender delicate skull, large eyes, fine sharp teeth and a light downy fuzz along the neck, two-tone emerald-green hide with fine dark speckling and a pale cream throat | — |
+| cryolophosaurus | dinos/cryolophosaurus.webp | swift-carnivore | a Cryolophosaurus | a distinctive crest sweeping up and forward crosswise over the top of the skull like a pompadour, icy blue-gray crest with a deep navy face and a pale frost-white throat | the whole head and the complete crosswise crest / top |
+| dilophosaurus | dinos/dilophosaurus.webp | swift-carnivore | a Dilophosaurus | twin thin rounded crests running parallel along the top of the skull, two-tone teal-turquoise crests with a warm golden-yellow face and a pale cream throat | the whole head and both parallel crests / top |
+| elasmosaurus | dinos/elasmosaurus.webp | swift-carnivore | an Elasmosaurus | a plesiosaur with an extremely long slender neck and a small narrow head lined with fine needle-like teeth, deep ocean-blue back with a pale silvery-white throat and smooth wet-looking hide | the small head and the complete extremely long neck / left and bottom |
+| hesperornis | dinos/hesperornis.webp | swift-carnivore | a Hesperornis | a flightless diving bird with a long slender tooth-lined beak, a sleek streamlined head and a small crest of feathers at the back of the skull, two-tone charcoal-black head with a pale white throat like a loon | the whole head and the complete long slender beak / right |
+| pteranodon | dinos/pteranodon.webp | swift-carnivore | a Pteranodon | a pterosaur with a long toothless beak and a tall backward-sweeping bony crest off the back of the skull, warm tan-orange crest and beak with a pale cream head and throat | the whole head, the backward-sweeping crest and the long beak / top and right |
+| scorpios_rex | dinos/scorpios_rex.webp | swift-carnivore | a Scorpios rex | a sharp scorpion-like ridged brow, small hooked spines running down the back of the neck and a narrow jaw with curved teeth, two-tone amber-yellow hide with dark scorpion-black banding and a pale bone-white throat | — |
+| gallimimus | dinos/gallimimus.webp | swift-herbivore | a Gallimimus | an ostrich-like omnivore with a small toothless beaked head, large round eyes and a slender neck, warm sandy-tan back with a pale cream throat and faint darker tan speckling | — |
+| leaellynasaura | dinos/leaellynasaura.webp | swift-herbivore | a Leaellynasaura | a small polar ornithopod with unusually large eyes and a short blunt beak, two-tone rust-red back with a pale cream underside | — |
+| lesothosaurus | dinos/lesothosaurus.webp | swift-herbivore | a Lesothosaurus | a small primitive ornithischian with a short triangular skull, small leaf-shaped cheek teeth and a narrow beak tip, dusty olive-tan back with a pale sandy-cream throat | — |
+| othnielia | dinos/othnielia.webp | swift-herbivore | an Othnielia | a small fast bipedal ornithopod with a slender pointed skull, large eyes and a narrow beak, two-tone honey-gold back with a pale ivory throat and faint darker speckling | — |
+| struthiomimus | dinos/struthiomimus.webp | swift-herbivore | a Struthiomimus | an ostrich-mimic with a toothless beaked head, a long slender neck and large eyes, two-tone slate-gray-blue back with a pale cream throat | — |
+| kronosaurus | dinos/kronosaurus.webp | tank-carnivore | a Kronosaurus | a giant short-necked pliosaur with a massive elongated jaw lined with huge conical teeth and small eyes set high on smooth hide, deep steel-blue back with a pale silvery-white throat and jaw | — |
+| ankylodocus | dinos/ankylodocus.webp | tank-herbivore | an Ankylodocus | a hybrid sauropod-ankylosaur with a long neck ending in a small blunt head crowned with bony armor knobs and a low crest at the back of the skull, two-tone moss-green armor plating with a pale stone-gray throat | the whole head, the complete long neck and the crown of armor knobs and crest / top and left |
+| ankylosaurus | dinos/ankylosaurus.webp | tank-herbivore | an Ankylosaurus | a heavily armored broad low triangular skull covered in bony plates, small horn-like knobs at the back corners of the skull and a beaked mouth, warm olive-brown armor with a pale tan underside and dark bronze plate edges | — |
+| brachiosaurus | dinos/brachiosaurus.webp | tank-herbivore | a Brachiosaurus | a giant sauropod with an extremely long neck and a small blunt head topped by a raised bony nasal crest, two-tone slate-blue back with a pale dove-gray throat | the small head, the complete extremely long neck and the raised nasal crest / top and left |
+| henodus | dinos/henodus.webp | tank-herbivore | a Henodus | an armored placodont, a flat turtle-like marine reptile with a broad flat toothless beak and a low armored plate shell edge visible at the shoulders, sandy-beige armor plating with a pale cream beak and throat | — |
+| nasutoceratops | dinos/nasutoceratops.webp | tank-herbivore | a Nasutoceratops | a broad frill, unusually long forward-curving brow horns and an oversized bulbous nose, deep burgundy-red frill with warm tan horns and a pale rose-tan face | the whole head, the wide frill and both long forward-curving horns / top and left |
+| pachyrhinosaurus | dinos/pachyrhinosaurus.webp | tank-herbivore | a Pachyrhinosaurus | a thick flat bony boss over the nose instead of a horn and a wide frill edged with small hooked spikes, two-tone slate-gray frill with a pale bone-tan boss and face | the whole head, the wide spiked frill and the nasal boss / top and left |
+| stegosaurus | dinos/stegosaurus.webp | tank-herbivore | a Stegosaurus | a row of tall triangular bony plates running from the back of the head down the neck, with small bumpy osteoderms on the cheeks, warm olive-green plates with dark umber-brown edges and a pale sage-cream throat | the whole head, neck and the complete row of tall back plates / top and left |
+| thescelosaurus | dinos/thescelosaurus.webp | tank-herbivore | a Thescelosaurus | a sturdy small-bodied ornithopod with a blunt short beaked snout, small cheek teeth and a thick sturdy build, two-tone forest-green back with a pale cream underside | — |
+
+### Banked species (not yet in the roster)
+
+Twelve more portraits, generated the same way as the 44 above but for species
+that do not exist in `src/data/species/` yet — `assets/images/dinos/<id>.webp`
+ships ahead of the data so that adding each species later is a data-only
+change. Each id is allowlisted individually as `BANKED_SPECIES_ART` in
+`tests/images.test.ts`, separately from `SPECIES_IDS` (which is derived from
+`allSpecies()`), so a typo here still fails the stray-file guard rather than
+silently passing.
+
+**When one of these species ships as real data:** move its row into the main
+table above and delete its id from `BANKED_SPECIES_ART` in
+`tests/images.test.ts` — the companion test there
+("no banked id has since shipped as species data") turns red until that
+deletion happens, which is the intended nudge.
+
+**Workflow and shared prompt template:** identical to the 44 above — same
+reference-chain image-edit off the archetype cutout, same `image_references`
+role, same `remove_background` + `cutout` (31px) post-processing pipeline.
+
+One prompt change from the original 44: the **CROP AT THE CHEST** wording
+(the strongest anti-forelimb clause found while regenerating `sinosaurus`,
+quoted above) was used for **all twelve** of these, not only the
+`bruiser-carnivore` edits — the original 44 only reached for it after the
+weaker "no arms, no hands, no torso" sentence alone let four `bruiser-carnivore`
+generations through with a visible forelimb. Both sentences appear in every
+one of these twelve prompts, back to back, with the CROP AT THE CHEST sentence
+second:
+
+> Show only the head, neck and the top of the shoulders - no arms, no hands, no torso. CROP AT THE CHEST: show only the head, the neck, and the very top of the shoulders. The image must contain NO forelimbs of any kind - no arms, no upper arms, no elbows, no forearms, no wrists, no hands, no claws, no fingers - and no chest, no belly, no torso below the shoulder line. The lower edge of the picture cuts straight across the base of the neck.
+
+It worked cleanly this round: all twelve generations, including the three
+edited from `bruiser-carnivore` (`concavenator`, `herrerasaurus`,
+`suchomimus` — the one archetype reference that itself shows a clawed hand),
+cleared inspection with no forelimb visible and needed zero regenerations.
+
+`concavenator`'s real diagnostic feature — a tall squared hump over the
+hips — sits well below this crop's shoulder line and cannot be shown here at
+all; its `{FEATURES}` text instead describes the hump's leading edge just
+beginning to rise at the base of the neck, the furthest down the body the
+crop line permits, rather than asking the model to render torso it must also
+refuse.
+
+Seven of these twelve needed the CRITICAL FRAMING block (same wording and
+placement as documented above) for a silhouette that grows past the
+archetype reference: `amargasaurus` (paired neck spines), `apatosaurus`
+(extremely long neck), `corythosaurus` (rounded head crest), `dimorphodon`
+(beak and both folded wings), `nodosaurus` (paired shoulder spikes),
+`sinoceratops` (frill and nose horn), `styracosaurus` (frill and radiating
+spikes). The other five — `concavenator`, `herrerasaurus`, `suchomimus`,
+`troodon`, `utahraptor` — stayed within the reference's existing silhouette
+and needed no framing block.
+
+| Species | File | Reference | `{SPECIES}` | `{FEATURES}` | Framing (parts / threatened edges) |
+|---|---|---|---|---|---|
+| amargasaurus | dinos/amargasaurus.webp *(banked)* | tank-herbivore | an Amargasaurus | a long slender sauropod neck with two parallel rows of very tall slender bony spines running down its top like a spiny sail, and a small blunt head with a squared snout and tiny peg-like teeth, dusty amber-gold neck and head skin with a deep burgundy-red spine sail and a pale cream throat | the small head, the complete long neck and every one of the tall paired neck spines / top and left |
+| apatosaurus | dinos/apatosaurus.webp *(banked)* | tank-herbivore | an Apatosaurus | a small elongated horse-like head with blunt peg-shaped teeth at the jaw tip and a bulging nostril set high on the snout, carried on an extremely long slender neck, dusty sage-green neck and head with a pale ivory-cream throat and faint darker green mottling | the small head and the complete extremely long neck / top and left |
+| concavenator | dinos/concavenator.webp *(banked)* | bruiser-carnivore | a Concavenator | a tall narrow carcharodontosaurid skull with a deep snout and prominent serrated teeth, a shallow bony ridge above each eye, and the leading edge of a tall bony hump just beginning to rise where the neck meets the shoulders, two-tone burnt-sienna hide with dark umber-brown banding and a pale tan throat | — |
+| corythosaurus | dinos/corythosaurus.webp *(banked)* | support-herbivore | a Corythosaurus | a broad flat duck-like beak and a tall rounded dinner-plate-shaped crest rising vertically off the top of the skull, two-tone dusty rose-pink crest fading to a warm honey-tan face and throat | the whole head and the complete rounded crest / top and left |
+| dimorphodon | dinos/dimorphodon.webp *(banked)* | swift-carnivore | a Dimorphodon | a deep puffin-like beak with a large hooked tip and big round eyes, and the tops of two leathery folded wing membranes just visible rising from the shoulders, mottled slate-gray head with a warm rust-orange beak and a pale cream throat | the whole head, the deep beak and both folded wings rising from the shoulders / top, left and right |
+| herrerasaurus | dinos/herrerasaurus.webp *(banked)* | bruiser-carnivore | a Herrerasaurus | a long narrow primitive theropod skull with a slight kink partway down the jaw, sharp recurved teeth and a shallow bony ridge above the eye, two-tone dusty clay-brown hide with dark rust-red mottling and a pale sandy-tan throat | — |
+| nodosaurus | dinos/nodosaurus.webp *(banked)* | tank-herbivore | a Nodosaurus | a low broad triangular skull covered in small bony armor plates, a beaked mouth and rows of hard oval osteoderms studding the neck, with a pair of long lateral spikes projecting outward from the top of the shoulders, warm olive-drab armor plating with dark bronze-brown plate edges and a pale tan underside | the whole head, the armored neck and both long shoulder spikes / left and right |
+| sinoceratops | dinos/sinoceratops.webp *(banked)* | tank-herbivore | a Sinoceratops | a single short thick nose horn, small blunt brow horns, and a broad frill rimmed with a row of forward-curling hooked horns, two-tone rust-orange frill with warm golden-tan horns and a pale amber face | the whole head, the wide hooked frill and the nose horn / top and left |
+| styracosaurus | dinos/styracosaurus.webp *(banked)* | tank-herbivore | a Styracosaurus | one long straight nose horn and a frill ringed with a crown of very long straight spikes radiating outward, two-tone deep coral-red frill with warm bronze-tan spikes and a pale peach face | the whole head, the nose horn and every one of the long radiating frill spikes / top and left |
+| suchomimus | dinos/suchomimus.webp *(banked)* | bruiser-carnivore | a Suchomimus | a very long narrow crocodile-like snout lined with many small conical teeth and a shallow bony ridge running along the back of the neck, sandy khaki-tan hide with dark olive-brown banding and a pale cream throat | — |
+| troodon | dinos/troodon.webp *(banked)* | swift-carnivore | a Troodon | unusually large forward-facing eyes for keen binocular vision, a slender delicate snout lined with fine serrated teeth, and a smooth narrow skull, two-tone dusky teal-gray hide with dark charcoal speckling and a pale silver-cream throat | — |
+| utahraptor | dinos/utahraptor.webp *(banked)* | swift-carnivore | a Utahraptor | a long slender toothy snout, a low feathered crest along the back of the head and neck, and a heavier more robust skull than a typical raptor, two-tone deep slate-blue hide with dark charcoal-blue banding and a pale frost-gray throat | — |
+
 ## Park map
 
 Three opaque rasters drawn by the park renderer (`src/core/render/draw.ts`)
@@ -1943,6 +2894,25 @@ in the 200×18 label band (roughly tile-local y+118 to y+136) at tile-local
 (14, 118) against `#f5e6b8`: **band a 7.06:1, band b 10.23:1, band c
 11.09:1** — all above the ~6:1 target the plates set.
 
+`scripts/check-band-contrast.mjs` reproduces
+this measurement on demand, taking the glyph box from `drawLandmark`'s own
+constants rather than estimating it. Re-run it against any regenerated band:
+
+```
+node scripts/check-band-contrast.mjs assets/images/park/landmark-*.webp
+```
+
+It reports the mean over the text box and the worst 24px-wide window inside
+it — the second number is the one that matters, since a band can average dark
+and still wash out under a single word. All six committed bands clear AAA
+(7:1) by that measure: **a 8.01, b 13.04, c 12.93, d 9.03, e 10.13, f 7.28**.
+Those figures read slightly higher than the worst-*pixel* numbers above
+because a 24px window averages across the stroke rather than sampling the
+single brightest pixel; both methods agree on the verdict, and neither is a
+substitute for the other. **Sample the real glyph box, not the lower third of
+the band** — a window taller than the text takes in bright upper scenery and
+will fail bands that are demonstrably fine, including the committed ones.
+
 **park/landmark-a — Stone Marker / Fossil Plinth:**
 
 > Wide landscape ground-level view inside a dinosaur park, filling the ENTIRE
@@ -1999,6 +2969,127 @@ attempt — passed with no rework needed. Also worth recording: band a's MEAN
 contrast in the failed first pass was a healthy 5.53:1 while its WORST pixel
 was 1.14:1 — judging by eye, or by an average rather than the worst pixel, on
 the final WebP would have shipped an illegible label.
+
+**park/landmark-{d,e,f} — banked bands above Titan Monument.** The ladder in
+`src/data/landmarks.ts` names only six tiers (Stone Marker through Titan
+Monument), and `drawLandmark` still resolves every one of them to bands
+`a`/`b`/`c` — these three are banked ahead of that wiring, read by nothing yet.
+Same pipeline as a-c: model `nano_banana_pro` (routed to `nano_banana_2`) at
+aspect ratio `16:9`, `resolution: 2k`, cover-scaled and center-cropped to
+270×150 with `node scripts/fit-art.mjs band <src> <dest>`. No background
+removal — opaque, same as a-c.
+
+**Workflow (reference chain):** each of the three is an independent image-edit
+of the already-committed `landmark-c.webp` (uploaded via `media_upload`,
+referenced with role `image_references`) — never chained off one another — so
+all three share light direction, outline weight and the "wide landscape
+ground-level view … filling the ENTIRE frame" composition band c already
+established, while each escalates its own monument independently rather than
+compounding drift across three sequential edits the way a chain would.
+
+Bands d/e/f read as the **upper end** of the prestige ladder — grander and
+more monumental than a/b/c, continuing the escalation from a's modest
+standing stone, through b's statue-and-obelisk pair, to c's domed rotunda: d
+is an open colonnade plaza, e a domed observatory, f a summit ziggurat.
+
+**Contrast requirement (hard gate, not a style preference):** same reasoning
+and sample region as bands a-c above — tile-local (14, 118), the 200×18 label
+band, worst pixel against `#f5e6b8`. Measured: **band d 7.72:1, band e
+9.90:1, band f 6.93:1** — all above the ~6:1 target the other three bands
+settled on.
+
+**park/landmark-d — Grand Colonnade:**
+
+> Keep the same wide landscape ground-level view inside a dinosaur park,
+> filling the ENTIRE frame edge to edge with no border, no plain background
+> margin and no framing device, and the same solid dark slate kerb band
+> running the full width across the BOTTOM FIFTH of the frame, calm and
+> untextured with no detail, clearly darker than everything above it, so pale
+> cream text can sit on it legibly. Replace the monument with an even grander
+> scene: a monumental open-air colonnade of tall pale marble columns lines
+> both sides of a wide paved plaza, twin gilded obelisks rise at the center
+> flanking a complete dinosaur skeleton mounted on a raised stone dais, rows
+> of tall banners hang between the columns, manicured hedges frame the plaza
+> edges. Even flat lighting, no cast shadows. Glossy cartoon mobile-game art
+> style, bold dark outlines, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no characters, no UI elements. CRITICAL:
+> absolutely no writing anywhere in the image — no letters, no words, no
+> numbers, no carved inscriptions, no painted signage, no symbols, no logos.
+> Every sign, plaque and surface is blank and wordless.
+
+**park/landmark-e — Amber Observatory:**
+
+Passed on the THIRD generation; recorded in full because the first two each
+failed the contrast gate a different way, and neither failure was visible at
+a glance.
+
+> Keep the same wide landscape ground-level view inside a dinosaur park,
+> filling the ENTIRE frame edge to edge with no border, no plain background
+> margin and no framing device. Replace the monument with an even grander
+> scene: a vast glass-and-gold domed observatory rises at the center, its
+> curved glass panels showing a fully articulated dinosaur skeleton suspended
+> mid-stride inside, tall bronze support ribs frame the dome, warm amber
+> crystal accents line the dome's base with their glow confined strictly to
+> the crystal surfaces themselves and never spreading past them. The BOTTOM
+> QUARTER of the frame, running the full width edge to edge, is a single
+> solid dark slate kerb band — a perfectly flat, completely uniform dark tone
+> with no grass, no paving, no fountains, no pale stone, no light-colored
+> object of any kind crossing into it anywhere — clearly darker than
+> everything above it, calm and untextured with no detail, so pale cream text
+> can sit on it legibly anywhere across its full width and its full height.
+> Even flat lighting, no cast shadows. Glossy cartoon mobile-game art style,
+> bold dark outlines, clean cel shading with smooth gradients, polished
+> game-asset look. No glow, rays, embers, or sparkles extending beyond the
+> crystal surfaces themselves. No text, no lettering, no words, no numbers, no
+> signage writing anywhere in the scene, no characters, no UI elements.
+> CRITICAL: absolutely no writing anywhere in the image — no letters, no
+> words, no numbers, no carved inscriptions, no painted signage, no symbols,
+> no logos. Every sign, plaque and surface is blank and wordless.
+
+Note for future regeneration — two failure rounds, neither obvious on a
+glance at full size. The FIRST attempt used the same "BOTTOM FIFTH … dark
+slate kerb band" clause that worked cleanly for bands d and f, but its own
+scene also asked for "a wide paved forecourt with ornamental fountains on
+either side" — the fountains sat pale stone right inside the sampled label
+band and measured **1.22:1**, the worst failure this family has produced.
+Dropping the fountains for the SECOND attempt fixed that specific prop but
+not the underlying issue: with no foreground object left to blame, the dark
+band's own upper edge still landed lower than the stated "BOTTOM FIFTH"
+promised — a strip of grass and paving crossed into the sampled y 118–136
+region, and the second attempt still measured **1.25:1**, functionally
+identical to the first. This is the same "a fractional band height renders
+shorter in practice than the fraction says" finding the attraction bands'
+Lesson records above, showing up a third time in a third family. The THIRD
+attempt (the version above) fixed it by widening the stated fraction from
+"BOTTOM FIFTH" to "BOTTOM QUARTER" and by naming the specific intruders
+explicitly ("no grass, no paving, no fountains, no pale stone"), landing at
+**9.90:1**. Judging by eye caught none of this — all three attempts read as
+"a dark band at the bottom" at a glance; only sampling the actual label
+rectangle and taking the worst pixel, never the mean, surfaced either
+failure.
+
+**park/landmark-f — Eternal Ziggurat:**
+
+> Keep the same wide landscape ground-level view inside a dinosaur park,
+> filling the ENTIRE frame edge to edge with no border, no plain background
+> margin and no framing device, and the same solid dark slate kerb band
+> running the full width across the BOTTOM FIFTH of the frame, calm and
+> untextured with no detail, clearly darker than everything above it, so pale
+> cream text can sit on it legibly. Replace the monument with the grandest
+> scene yet: a colossal stepped golden ziggurat rises at the center, tiered
+> stone platforms lined with lit torches and banners climbing toward a
+> towering bronze-and-gold dinosaur statue at its summit silhouetted against
+> the sky, a broad ceremonial staircase of pale stone leads up to it, flanking
+> rows of tall stone pillars line the approach. Even flat lighting, no cast
+> shadows. Glossy cartoon mobile-game art style, bold dark outlines, clean cel
+> shading with smooth gradients, polished game-asset look. No glow, rays,
+> embers, or sparkles extending beyond the torch flames themselves. No text,
+> no lettering, no words, no numbers, no signage writing anywhere in the
+> scene, no characters, no UI elements. CRITICAL: absolutely no writing
+> anywhere in the image — no letters, no words, no numbers, no carved
+> inscriptions, no painted signage, no symbols, no logos. Every sign, plaque
+> and surface is blank and wordless.
 
 **park/attraction-{picnic_lawn,gift_shop,viewing_platform,amber_carousel,sky_gondola,grand_atrium}**
 — the guest attraction cell (`drawAttraction`, `draw.ts`), one raster per
@@ -2233,16 +3324,104 @@ bbox, 31px margin (see the table in Egg rarities; the eggs themselves sit at
 **Multiple disconnected regions are intentional here — never reduce a crack to
 one region.** The prompt asks for shell fragments falling away from the egg, and
 a fragment that has cleared the nest silhouette is its own opaque island. Five of
-the six committed cracks have 3–6 regions (`uncommon` 6, `legendary` and `rare` 5,
-`epic` 4, `common` 3; only `mythic` happens to land at 1). Step (1) of the Egg
-rarities pass — "keep only the largest connected region" — and its "exactly one
-connected region" verification are therefore **not** part of this family's
-post-processing: applying either would silently delete the fragments and leave a
-plain open egg, and `fit-art.mjs cutout` correctly keeps every region. No test
-catches that loss (`tests/images.test.ts` checks size and corner transparency
-only), so it is a review-by-eye property: after regenerating, confirm the falling
-fragments survived. What still applies from that pass is the *defringe* half —
-the light studio rim must be peeled, and all border pixels must end transparent.
+the six committed cracks carry 4–6 fragments (`common` and `uncommon` 6,
+`legendary` and `rare` 5, `epic` 4; only `mythic` happens to land at 1). Step (1)
+of the Egg rarities pass — "keep only the largest connected region" — and its
+"exactly one connected region" verification are therefore **not** part of this
+family's post-processing: applying either would silently delete the fragments and
+leave a plain open egg, and `fit-art.mjs cutout` correctly keeps every region.
+`tests/images.test.ts`'s "keeps its falling shell fragments" case is the real
+guard against that loss: it registers **every** committed hatch file from disk,
+bases and variants alike, and fails any one of them that drops below two
+fragments. `mythic-crack` — genuinely a single region — is exempt by name; its
+three variants are not. Two details of that guard are load-bearing if it is ever
+rewritten. It counts regions **over 40px**, never the raw region total: the
+backdrop repair below leaves tens of single-pixel matte specks behind on the
+files it touched, so `common-crack` raw-counts 68 regions against its 6 real
+fragments, and a raw count would pass a file that had lost every fragment it
+owns. And it is **per file**, not across the set — the version it replaced
+asserted only that at least ONE of the six bases had more than one region, which
+four of them could fail while it stayed green, and which never opened a single
+variant. It is still not a substitute for review: after regenerating, confirm by
+eye that the crack you touched kept its own fragments. What still applies from
+the egg pass is the *defringe* half — the light studio rim must be peeled, and
+all border pixels must end transparent.
+
+### Backdrop in the crack gaps — the defect this family is most prone to
+
+**Symptom.** A pale opaque smear across the crack opening, where the embed should
+show through. It survives every other check: the file is 1024×1024, its corners
+are transparent, its margin is 31px, and it has plenty of disconnected regions.
+It is only visible against a non-white background, which is why it shipped in
+`common-crack` — one of the original six — and went unnoticed until someone
+looked at the set over a coloured ground.
+
+**Cause, measured at each stage rather than inferred.** The generator draws the
+egg on a light-grey studio backdrop, and that backdrop is visible *through the
+gaps between shell pieces* — the V between the two upper halves, the zigzag
+between upper and lower. `remove_background` does not clear it, because a region
+enclosed by subject reads as foreground: on `mythic-crack-v2`, **7040 backdrop px
+went in and 6791 came out**, a 3.5% reduction. `fit-art.mjs cutout` cannot clear
+it either — its luminance peel only removes pixels already adjacent to
+transparency, three passes deep, so it cannot reach into a blob tens of thousands
+of pixels across.
+
+**Prevention, for a new or regenerated crack.** Ask for the gaps explicitly:
+
+> Everything visible through the gaps between the shell pieces is deep black
+> shadow — the empty inside of the egg — never the background, never a light or
+> grey area.
+
+**Repair, for art already committed.** `scripts/clear-backdrop.mjs` floods from
+each backdrop seed through connected pale, desaturated pixels and stops at the
+art's own dark outlines, then zeroes the alpha. Run it with `--preview` first and
+*look at the mask*: it renders what would be cleared in magenta over a dimmed
+copy. Seven files were repaired this way — the four `common-crack` files
+(46k–53k px each), `mythic-crack-v2` (2.9k), and `rare-crack-v2`/`-v3` (a few
+hundred each) — all to zero, with every shell fragment intact. Region counts
+*rose* afterwards, because the backdrop had been bridging pieces that are meant
+to be separate.
+
+**It took two passes, and the reason is worth carrying.** The first pass and the
+first guard both gated "pale" on `alpha >= 100`, so both were blind to
+PARTIAL-alpha residue. Four of the seven files still carried a visible pale ghost
+in the crack gap at alpha 10–99 — up to 1669px on `common-crack-v3` — and the
+guard reported them clean, which is worse than no guard, because it also tells
+the next reader the file was checked. The opacity gate is 25 in both the repair
+and the detector now, and all seven files were re-run at that gate. If either
+number is ever moved, move it in both — they are the same predicate.
+
+**The guard.** `tests/images.test.ts` asserts that the LARGEST interior backdrop
+region on every hatch file and every egg file is under 300px, using
+`tests/lib/backdrop.ts`. Largest, never the total — summing counts hairline
+anti-aliasing seams until a clean file trips the threshold. Read that file's
+header before reusing the detector on another family; it documents three
+false-positive classes, and only the first is excluded automatically:
+
+1. **Art cut flat by the frame.** The house style ends the art at the canvas edge
+   with no outline, so a pale throat there has backdrop's exact local signature.
+   The detector's `atCrop` flag excludes these. Measured on `dinos/gallimimus.webp`:
+   74,957px flagged unfiltered, of which a single 74,803px blob is `atCrop` and
+   drops out, leaving 154px.
+2. **Hairline anti-aliasing seams.** Interior, so `atCrop` cannot help; they are
+   told apart by SHAPE — many slivers of 1–3px width rather than one contiguous
+   region. `hatch/epic-crack-v2.webp` carries 172px in its largest such blob and
+   is perfectly good art.
+3. **Pale art meeting an interior HOLE through the silhouette** — an open mouth,
+   a gap between a limb and the body. `atCrop` cannot help here either, because
+   the hole is nowhere near the frame. Two live examples: `dinos/tank-carnivore.webp`
+   reads its entire 69,304px chest as interior (box (305,488)–(623,949)), and
+   `battles/boss-founders_park-portrait.webp` reads 376px of the pale shine
+   inside its open jaw, over the 300 threshold.
+
+Class 3 is why the guard covers **eggs and hatch and nothing else**. Both are the
+same egg-in-a-nest composition with no cut edge and no hole through the subject,
+and both measure clean with enormous margin — all 24 eggs at 0px, the worst hatch
+file at 172px against 300. The dino portraits and the boss portraits are exactly
+the composition class 3 describes, and `boss-founders_park-portrait.webp` is the
+proof: extending the guard to `battles/` would fail on a correct picture. Do not
+widen the threshold to admit it — widen the family only when the family measures
+clean.
 
 **Prompt (identical for all six; only the attached reference changes):**
 
@@ -2256,6 +3435,154 @@ the light studio rim must be peeled, and all border pixels must end transparent.
 > mobile-game art style, bold dark outlines, vibrant saturated colors, strong
 > glossy highlights, clean cel shading with smooth gradients, polished
 > game-asset look. No text, no characters, no UI elements.
+
+### Variants (`-v2`, `-v3`, `-v4`)
+
+Each rarity carries three variants beside its untouched base, for eighteen files
+in total. Every one is an image-edit of **its own committed crack**, never of
+another variant or another rarity, so the shell design and nest stay recognisably
+the same egg. Post-processed exactly like the base: `remove_background`, then
+`node scripts/fit-art.mjs cutout` at 31px — **never `portrait`**, which keeps only
+the largest region and would delete every fragment.
+
+What varies is the **fracture pattern and the scatter of the falling fragments**:
+where the shell splits, how many pieces clear the nest, and where they land.
+What must never vary is the **rarity's colour identity** — the shell palette is
+what carries the rarity read, and `mythic` in particular stays obsidian-and-lava
+to match `volcano_core`.
+
+Append to the base prompt above, in place of nothing else:
+
+> Vary only the break: {FRACTURE} Keep the shell colours, the speckling, the nest
+> and the framing exactly as the reference.
+
+**Provenance of the `{FRACTURE}` list below — read this before regenerating.**
+The exact strings used at generation time were not recorded. Every entry here is
+**reconstructed by eye from the committed file**, the same disclosure the three
+pilot species rows carry in the Species portraits section: regenerating from
+these will not reproduce the eighteen files pixel-for-pixel, but will reproduce
+the same break, the same fragment count and the same scatter. Each description is
+written as an instruction relative to that rarity's own committed BASE crack,
+which is what the edit was chained off. Where a description says "the base's two
+caps", look at the base file — the two upper shell pieces the split leaves
+hanging above the bowl.
+
+Across all six rarities the three variants follow one shape, which is the thing
+to preserve if any single entry reads oddly: **v2 breaks the same way as the base
+but throws more debris outward, v3 is the widest and most airborne of the three,
+and v4 is the heaviest and lowest — fewer pieces in the air, bigger pieces on the
+ground.** Fragment counts follow it too (see the table below): v3 is the peak on
+five of the six rarities.
+
+- **common** — v2: the same two caps, but the right-hand cap tips lower and
+  closer to the bowl's rim, and the rim's teeth are taller and sharper. Throw
+  several more chips outward so two or three land on the ground clear of the
+  nest, one at the left and a larger flake at the lower right.
+  v3: hold both caps higher and further apart than the base, with a spray of
+  small shards suspended in the gap between them and around their edges. Cut the
+  bowl's rim into a deep jagged crown with several tall notches, and scatter
+  chips widely to both sides, several of them clearing the nest onto the ground.
+  v4: bring the two caps closer together so the gap between them is narrow, and
+  make the bowl's rim a shallower, more even zigzag. Almost nothing in the air —
+  the fragments are larger and rest low, in the nest and on the ground beside it
+  at the left and right.
+- **uncommon** — v2: the same two caps, with the fine shards between them fanned
+  up and out to the right past the nest's edge, and two or three flakes landed on
+  the ground on each side.
+  v3: caps higher and wider apart with more small shards in flight around them,
+  the bowl's rim cut into deep notches, and chips scattered all the way around
+  the nest.
+  v4: a single wide sweeping crescent of shell above the egg, tilted to the
+  left — the base's two caps merged into one piece, with no second cap at all.
+  Nothing in the air. The bowl's rim is a broad, blunt-toothed wave with one
+  chunk broken out of its right side, and the fragments are large and resting on
+  the ground at the left and right of the nest.
+- **rare** — v2: the same two caps, with one small shard suspended in the gap
+  between them, and the bowl's rim taller and more sharply peaked. A large
+  fragment leans against the nest at the right and a flat chip lies on the ground
+  at the lower left.
+  v3: both caps lifted higher and further apart, with a burst of small shards
+  scattered between them and off to the right, and a few more floating to the
+  left of the egg. The bowl's rim is a tall jagged crown.
+  v4: only one cap remains, a crescent tipped over the upper left; the second is
+  gone. The bowl's rim is a wide, deeply V-notched crown, and the fragments are
+  large, low and still — resting on the ground to the left and right of the nest
+  rather than in the air.
+- **epic** — v2: break the base's single domed lid into pieces. Keep the wide
+  arc on the left, then a gap, then a loose cluster of three or four separate
+  crystal chunks, then the small piece at the right. Throw more chips outward,
+  with a large flat shard on the ground at the right and two more at the lower
+  left.
+  v3: keep the lid as one wide arc as in the base but hang more crystal points
+  from its underside, and let chips fall in a curtain down both sides of the
+  egg, dense with small shards all around the nest.
+  v4: a single narrower crescent lid tipped to the right, the rest of it gone.
+  Open the bowl's rim wider, and make the fragments chunky and low — heavy
+  pieces on the ground at the left and right rather than small chips in the air.
+- **legendary** — v2: crack the base's domed cap across itself into blocky
+  plates, so fault lines run over the lid without separating it. Add more
+  flakes, two flat ones on the ground at the lower left and a larger one at the
+  lower right.
+  v3: keep the cap's shape but break one shard off its right edge, and scatter
+  the flakes further down both sides onto the ground.
+  v4: split the cap into two separate pieces — a taller half tipped to the left
+  and a smaller half tipped to the right, with a clear gap between them. The
+  bowl's rim is a shallower ridge, and flat gold flakes lie strewn on the ground
+  to the left and right of the nest.
+- **mythic** — v2: keep the base's single tilted cap and add the fragments the
+  base does not have: several chunky obsidian shards floating clear of the shell
+  at the left and right, one flake resting on the ground at the lower left, and
+  a small chip up near the top right.
+  v3: the same cap, with the fragments spread into a wider halo to the left and
+  right and more small pieces gathered around the base of the nest. The lava
+  glow inside the open shell is brighter than the base's.
+  v4: split the cap into two — a larger piece over the left and a separate
+  rounded piece at the upper right. More chunks, and heavier ones, in and around
+  the nest and on the ground to the right.
+
+Measured fragment counts, **as committed today** — `scripts/count-regions.mjs`'s
+`significant` column, i.e. opaque regions over 40px:
+
+| Rarity | base | v2 | v3 | v4 |
+|---|---|---|---|---|
+| common | 6 | 6 | 15 | 5 |
+| uncommon | 6 | 12 | 17 | 6 |
+| rare | 5 | 8 | 12 | 5 |
+| epic | 4 | 9 | 11 | 3 |
+| legendary | 5 | 9 | 10 | 5 |
+| mythic | 1 | 7 | 10 | 6 |
+
+**Read `significant`, not `regions`.** `count-regions.mjs` prints the raw region
+total first, and on the seven files the backdrop repair rewrote that total is
+dominated by matte dust the repair leaves behind — `common-crack` reads 68
+regions, `common-crack-v4` 188, against the 6 and 5 real fragments above. Every
+other file's two columns agree exactly. This table is the second column on every
+row; comparing a regenerated file's `regions=` against it will look like a
+catastrophic change that did not happen.
+
+The seven repaired files were re-measured afterwards. The repair severs pale
+bridges the backdrop had been forming between pieces meant to be separate, so
+fragment counts **rose**: the `common` row went 3 → 6, 4 → 6, 8 → 15 and 3 → 5
+across base and variants, while `mythic-crack-v2` (7), `rare-crack-v2` (8) and
+`rare-crack-v3` (12) were unchanged. Nothing was lost — every fragment survived.
+One caution if a future repair is ever measured mid-flight: between the two
+passes the `common` counts read higher still (7, 8, 17, 6), because
+partial-alpha residue blobs of over 40px were themselves being counted as
+fragments until the second pass cleared them. A count that rises after a repair
+is not automatically good news; look at the picture.
+
+Every variant lands above one fragment, so no variant lost its shell pieces. Note
+the `mythic` row reads oddly on purpose: its **base** is the one committed crack
+that genuinely sits at a single region, and all three of its variants carry more
+fragments than it does. That is fine — more fragments is the intended look, and
+the base is the outlier, not the variants.
+
+Re-measure with `scripts/count-regions.mjs` (a 4-connected flood fill over the
+alpha channel) if any of these is ever regenerated. A `significant` count of
+**1** on a non-`mythic-crack` file means the fragments were lost and the file
+must be regenerated rather than shipped — which is exactly what
+`tests/images.test.ts` asserts per file, so a regeneration that loses them fails
+the suite rather than waiting to be noticed.
 
 ## Emoji icons
 

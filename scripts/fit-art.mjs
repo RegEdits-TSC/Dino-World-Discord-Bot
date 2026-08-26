@@ -1,120 +1,148 @@
 // Post-processing for generated art (see docs/assets/prompts.md).
-//   node scripts/fit-art.mjs banner <src> <dest>   -> 1536x1024, cover-scaled, center-cropped, WebP q95
-//   node scripts/fit-art.mjs ground <src> <dest>   -> 1200x800, cover-scaled, center-cropped, WebP q95
-//   node scripts/fit-art.mjs band   <src> <dest>   -> 270x150, cover-scaled, center-cropped, WebP q95
-//   node scripts/fit-art.mjs cutout <src> <dest>   -> 1024x1024 transparent, defringed and centered, WebP q95
+//   node scripts/fit-art.mjs banner   <src> <dest>            -> 1536x1024, cover-scaled, center-cropped, WebP q95
+//   node scripts/fit-art.mjs ground   <src> <dest>            -> 1200x800, cover-scaled, center-cropped, WebP q95
+//   node scripts/fit-art.mjs band     <src> <dest>            -> 270x150, cover-scaled, center-cropped, WebP q95
+//   node scripts/fit-art.mjs square   <src> <dest>            -> 1024x1024, cover-scaled, center-cropped, WebP q95
+//   node scripts/fit-art.mjs cutout   <src> <dest>            -> 1024x1024 transparent, defringed and centered
+//                                                                 at a 31px margin, every opaque region kept, WebP q95
+//   node scripts/fit-art.mjs portrait [--axis=egg] <src> <dest> -> 1024x1024 transparent, largest-region-only,
+//                                                                 border-flooded and shaved, fitted at a 24px
+//                                                                 margin, WebP q95
 //
-// `cutout` is the processor for the hatch cracks and for any future cutout family.
-// It is NOT the pass that produced assets/images/eggs/ or assets/images/battles/:
-// those predate this script and were fitted by a one-off with a tighter margin and
-// (for the eggs) an egg-axis bias. It also deliberately keeps every opaque region,
-// not just the largest — the cracks' falling shell fragments are disconnected on
-// purpose. prompts.md records the divergence and the numbers.
+// `cutout` is the processor for the hatch cracks and for any future cutout family. It
+// deliberately keeps every opaque region, not just the largest — the cracks' falling
+// shell fragments are disconnected on purpose.
+//
+// `square` is the producer for a site thumb generated as its own square composition
+// (not cropped from the banner) — cover-scaling a 3:2-ish source to 1:1 reproduces the
+// "centered square crop of the same source, resized to 1024x1024" hand pass every site
+// thumb before it used. Opaque, not transparent — unrelated to `cutout`/`portrait`.
+//
+// `portrait` implements the one-off pass that produced assets/images/eggs/ and
+// assets/images/battles/: single silhouette only, a tighter 24px margin, a border
+// flood pass and a 2px shave. `--axis=egg` re-centres on the egg's own axis (top ~45%
+// of the silhouette) instead of the whole bbox, matching the committed eggs — it is
+// inert for every other mode. `cutout` and `portrait` are NOT interchangeable: running
+// `portrait` on a hatch crack would silently delete its disconnected shell fragments.
+// prompts.md records the divergence and the numbers.
+//
+// The pure geometry/pixel helpers (COVER, Q, coverGeometry, alphaThreshold,
+// luminancePeel, opaqueBBox, largestRegion, borderFlood, shave, eggAxisBBox, fitDraw,
+// FIT_31, FIT_24) live in scripts/lib/art-pipeline.mjs so they can be tested — this
+// file stays a thin CLI wrapper around them.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createCanvas, Image } from '@napi-rs/canvas';
+import {
+  COVER, Q, coverGeometry, alphaThreshold, luminancePeel, opaqueBBox, stripCaBX,
+  largestRegion, borderFlood, shave, eggAxisBBox, fitDraw, FIT_31, FIT_24,
+} from './lib/art-pipeline.mjs';
 
-// The cover-scaled modes. `banner` and `ground` are both 3:2 and differ only in
-// pixel size, because the park renderer's ground is cover-scaled onto a canvas
-// that is at most 752px tall (gridDims in src/core/render/draw.ts: height =
-// 88 + 166*rows, and rows maxes out at 4 — lotSlots caps at 10 in
-// src/data/progression.ts, over a 3-wide grid), so 1536x1024 would ship ~64%
-// more bytes than the renderer can ever use. 1200x800 is what the committed
-// park/ground.webp already is; the season variants must match it exactly or
-// they crop differently from each other at the same row count.
-//
-// `band` is 270x150 — TILE_W x TILE_H in src/core/render/draw.ts — and 1.8:1, an
-// aspect ratio no generator offers, so the source is generated at 16:9 and
-// cropped down. Committing at exactly the tile size is what the mode is for:
-// drawTile and drawLandmark call drawImage(img, x, y, TILE_W, TILE_H) with an
-// explicit destination size, so an off-size raster is silently squashed to fit
-// and never throws — a 1024-square source ships stretched from 1.0 to 1.8 and
-// still renders "successfully". Every 270x150 asset committed before this mode
-// existed (the two plates, the three landmark bands) was fitted by a separate
-// one-off pass; the plates additionally cropped to the plate object's own
-// bounding box FIRST, which this mode does not do — see docs/assets/prompts.md.
-const COVER = { banner: [1536, 1024], ground: [1200, 800], band: [270, 150] };
-const [mode, src, dest] = process.argv.slice(2);
-if (!(mode === 'cutout' || Object.hasOwn(COVER, mode)) || !src || !dest) {
-  console.error('usage: node scripts/fit-art.mjs <banner|ground|band|cutout> <src> <dest.webp>');
+const argv = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+const flags = new Set(process.argv.slice(2).filter((a) => a.startsWith('--')));
+const [mode, src, dest] = argv;
+const CUTOUTS = new Set(['cutout', 'portrait']);
+if (!(CUTOUTS.has(mode) || Object.hasOwn(COVER, mode)) || !src || !dest) {
+  console.error('usage: node scripts/fit-art.mjs <banner|ground|band|square|cutout|portrait> [--axis=egg] <src> <dest.webp>');
+  process.exit(2);
+}
+// A misspelled flag (e.g. --axis=eggs) would otherwise be silently ignored: it lands
+// unvalidated in `flags`, the egg-axis branch below never matches it, and the run
+// exits 0 with a whole-bbox-centred subject instead of the intended egg-axis one.
+const KNOWN_FLAGS = new Set(['--axis=egg']);
+for (const f of flags) {
+  if (!KNOWN_FLAGS.has(f)) { console.error(`unknown flag ${f}`); process.exit(2); }
+}
+// The same failure the loop above exists to prevent, one step further in: a CORRECTLY
+// spelled --axis=egg on a mode that ignores it. The egg-axis branch is gated on
+// `mode === 'portrait'`, and the four cover modes return before reaching it at all, so
+// `cutout --axis=egg` used to exit 0 having silently centred on the whole bbox — the
+// wrong-mode signature the eggs' 24px margin check exists to catch, arriving on a file
+// the operator believes was fitted on the egg's own axis.
+if (flags.has('--axis=egg') && mode !== 'portrait') {
+  console.error(`--axis=egg applies to portrait only, not ${mode}`);
   process.exit(2);
 }
 
-// q95 is the committed setting for every asset under assets/images — the pass that
-// introduced WebP took the 40 files committed at the time from 63.4 MB to 8.9 MB
-// (~86% smaller), visually indistinguishable at the sizes Discord renders. Keep in
-// sync with prompts.md.
-const Q = 95;
-
-// If this decode throws `Error: Invalid SVG image` (code 'InvalidArg') on a PNG that
-// opens fine everywhere else, the file is not corrupt — it carries a C2PA / Content
-// Credentials `caBX` chunk whose metadata contains the literal text `<svg`, and
-// @napi-rs/canvas's format sniffer scans the whole buffer for that substring instead
-// of trusting the leading magic bytes. Strip the chunk (pure provenance metadata; no
-// pixel data) and retry. Recipe and background: docs/assets/prompts.md, "Decode trap".
+// Freshly generated PNGs can carry a C2PA `caBX` chunk that makes @napi-rs/canvas
+// misidentify the file as SVG. stripCaBX removes it; see its comment for the detail.
 const img = new Image();
-img.src = readFileSync(src);
+img.src = stripCaBX(readFileSync(src));
 await img.decode();
 
 if (Object.hasOwn(COVER, mode)) {
   const [W, H] = COVER[mode];
-  const scale = Math.max(W / img.width, H / img.height);
-  const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+  const { w, h, dx, dy } = coverGeometry(img.width, img.height, W, H);
   const canvas = createCanvas(W, H);
-  canvas.getContext('2d').drawImage(img, Math.round((W - w) / 2), Math.round((H - h) / 2), w, h);
+  canvas.getContext('2d').drawImage(img, dx, dy, w, h);
   writeFileSync(dest, canvas.toBuffer('image/webp', Q));
   console.log(`${mode} ${dest} ${W}x${H} (source ${img.width}x${img.height})`);
   process.exit(0);
 }
 
-// cutout runs AFTER remove_background. The studio backdrop is light gray, so the
-// matte leaves a light rim where the art's dark outline should be — peel it.
+// cutout/portrait both run AFTER remove_background. The studio backdrop is light
+// gray, so the matte leaves a light rim where the art's dark outline should be — peel
+// it. portrait then narrows to a single silhouette (largestRegion), strips border
+// matte a border-following flood can reach (borderFlood) and shaves 2px of residual
+// edge (shave) — cutout does none of that, which is what lets the hatch cracks' loose
+// shell fragments survive.
 const w = img.width, h = img.height;
 const work = createCanvas(w, h);
 const wctx = work.getContext('2d');
 wctx.drawImage(img, 0, 0);
 const data = wctx.getImageData(0, 0, w, h);
 const px = data.data;
-const at = (x, y) => (y * w + x) * 4;
-for (let i = 3; i < px.length; i += 4) if (px[i] < 32) px[i] = 0;
-for (let pass = 0; pass < 3; pass++) {
-  const doomed = [];
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const i = at(x, y);
-      if (px[i + 3] === 0) continue;
-      const edge = x === 0 || y === 0 || x === w - 1 || y === h - 1
-        || px[at(x - 1, y) + 3] === 0 || px[at(x + 1, y) + 3] === 0
-        || px[at(x, y - 1) + 3] === 0 || px[at(x, y + 1) + 3] === 0;
-      if (!edge) continue;
-      const r = px[i], g = px[i + 1], b = px[i + 2];
-      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      if (lum > 180 && Math.max(r, g, b) - Math.min(r, g, b) < 40) doomed.push(i + 3);
-    }
-  }
-  if (!doomed.length) break;
-  for (const a of doomed) px[a] = 0;
+alphaThreshold(px);
+luminancePeel(px, w, h);
+
+// portrait implements the one-off pass that produced assets/images/eggs/ and
+// assets/images/battles/: single silhouette, 24px margin. cutout keeps every opaque
+// region at 31px, which is what the hatch cracks need. The two are NOT interchangeable
+// — running portrait on a crack silently deletes its falling shell fragments.
+//
+// Order deviates from prompts.md's documented one-off pass, which runs the
+// largest-region step BEFORE the luminance peel: here alphaThreshold + luminancePeel
+// run first (shared with cutout, above), then largestRegion + borderFlood + shave.
+// The two can differ in principle — a peel that severs a thin bridge before
+// largestRegion runs deletes real subject matter as a "spurious" second region, where
+// the documented order would have peeled a stray island that never reached
+// largestRegion at all — and on a synthetic subject joined by a 4px pale bridge they
+// demonstrably do, silently, with exit 0 either way.
+// They do not differ on this art. Both orderings were run over every raw
+// background-removed source this pass has ever been given: the four committed
+// egg/battle files (byte-identical) plus the 21 the art bank added (18 egg variants,
+// 3 boss portraits), and the resulting opaque mask matches on all of them — same
+// area, same bbox, zero mismatches. Re-run that comparison if the peel constants
+// move; nothing else is owed.
+if (mode === 'portrait') {
+  largestRegion(px, w, h);
+  borderFlood(px, w, h);
+  shave(px, w, h, 2);
 }
 wctx.putImageData(data, 0, 0);
-let x0 = w, y0 = h, x1 = -1, y1 = -1;
-for (let y = 0; y < h; y++) {
-  for (let x = 0; x < w; x++) {
-    if (px[at(x, y) + 3] === 0) continue;
-    if (x < x0) x0 = x;
-    if (x > x1) x1 = x;
-    if (y < y0) y0 = y;
-    if (y > y1) y1 = y;
-  }
+
+const box = opaqueBBox(px, w, h);
+if (!box) { console.error(`${mode}: image is fully transparent`); process.exit(1); }
+// --axis=egg re-centres on the egg's own axis (top ~45% of the silhouette) instead of
+// the whole bbox, so asymmetric nest dressing along the bottom doesn't push the egg
+// off-centre. Inert for cutout and the cover modes — only portrait reaches this branch.
+const fitBox = (mode === 'portrait' && flags.has('--axis=egg'))
+  ? eggAxisBBox(px, w, h, box) : box;
+const FIT = mode === 'portrait' ? FIT_24 : FIT_31;
+
+const S = 1024;
+const bw = box.x1 - box.x0 + 1, bh = box.y1 - box.y0 + 1;
+// Centre the FIT box, then draw the whole opaque box at the same scale around it.
+const { scale, cx, cy } = fitDraw(box, fitBox, FIT, S);
+// --axis=egg's stated purpose is to shift the egg WITHOUT cropping the nest, so a
+// fitBox narrower than the whole box can drive the whole box's drawn rect off the
+// canvas — verified with a synthetic 300px egg centred in a 900px nest (scale 1.22,
+// cx -37.00, 37px clipped on each side). There is no legitimate case to let through.
+const R = cx + bw * scale, B = cy + bh * scale;
+if (cx < -0.5 || cy < -0.5 || R > S + 0.5 || B > S + 0.5) {
+  console.error(`${mode}: subject does not fit — drawn rect x:[${cx.toFixed(1)},${R.toFixed(1)}] y:[${cy.toFixed(1)},${B.toFixed(1)}] on a ${S}px canvas`);
+  process.exit(1);
 }
-if (x1 < 0) { console.error('cutout: image is fully transparent'); process.exit(1); }
-// 0.94 of 1024 = 962px on the tight axis, i.e. a 31px margin — what the six
-// committed hatch cracks were fitted at. The eggs and boss portraits sit at 24px
-// (0.953); do not "unify" this number without re-fitting the cracks, which would
-// mean regenerating committed art. Centering is on the whole opaque bbox.
-const FIT = 0.94;
-const S = 1024, bw = x1 - x0 + 1, bh = y1 - y0 + 1;
-const scale = Math.min((S * FIT) / bw, (S * FIT) / bh);
 const out = createCanvas(S, S);
-out.getContext('2d').drawImage(work, x0, y0, bw, bh,
-  (S - bw * scale) / 2, (S - bh * scale) / 2, bw * scale, bh * scale);
+out.getContext('2d').drawImage(work, box.x0, box.y0, bw, bh, cx, cy, bw * scale, bh * scale);
 writeFileSync(dest, out.toBuffer('image/webp', Q));
-console.log(`cutout ${dest} ${S}x${S} (opaque bbox ${bw}x${bh})`);
+console.log(`${mode} ${dest} ${S}x${S} (opaque bbox ${bw}x${bh})`);

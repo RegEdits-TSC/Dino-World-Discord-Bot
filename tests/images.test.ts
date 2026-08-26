@@ -8,6 +8,7 @@ import { CAMPAIGN } from '../src/data/battle/chapters/index.js';
 import { allSpecies } from '../src/data/species/index.js';
 import { WORLD_EVENTS } from '../src/data/world-events.js';
 import type { Archetype, Diet } from '../src/data/types.js';
+import { largestBackdropBlobPx } from './lib/backdrop.js';
 
 function srcFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -15,6 +16,25 @@ function srcFiles(dir: string): string[] {
     return e.isDirectory() ? srcFiles(p) : e.name.endsWith('.ts') ? [p] : [];
   });
 }
+
+// Registers checks from the FILESYSTEM, not from src/ or a data table. A hardcoded
+// list or a scrape can only ever prove "what it names, exists" — a file nobody named
+// (a -vN variant, a portrait banked for a chapter that doesn't exist as data yet)
+// gets zero checking and the suite stays green. Reading the directory means a file is
+// checked because it EXISTS.
+function namesUnder(kind: string): string[] {
+  return readdirSync(resolve(process.cwd(), 'assets/images', kind))
+    .filter((f) => f.endsWith('.webp'))
+    .map((f) => f.replace(/\.webp$/, ''));
+}
+
+// Extracted so the predicate can be tested against SYNTHETIC input (see 'banner art'
+// below) rather than only the live banner set. It is load-bearing now that -vN banners
+// are committed: it is what registers each of them into DIMENSION_CHECKED_BANNERS, so
+// a mutated or broken regex would silently DROP their dimension cases rather than fail
+// any — an it.each over a shorter array registers fewer tests and reports nothing.
+// Nothing that only reads assets/images/banners can see that; synthetic input can.
+const isVariantName = (n: string) => /-v\d+$/.test(n);
 
 // BANNERS is SCRAPED from src/, never hand-typed. A hand-typed list can only
 // ever verify that what exists, exists: it stayed green when daily/embeds.ts
@@ -165,8 +185,24 @@ describe('banner art', () => {
   it('references every committed non-event banner (guards the scrape itself)', () => {
     const onDisk = readdirSync(resolve(process.cwd(), 'assets/images/banners'))
       .filter((f) => f.endsWith('.webp') && !f.startsWith('event-'))
-      .map((f) => f.replace(/\.webp$/, ''));
-    expect(onDisk.filter((n) => !BANNERS.includes(n))).toEqual([]);
+      .map((f) => f.replace(/\.webp$/, ''))
+      // A `-vN` variant is another face of its base, not a banner of its own. It is
+      // deliberately unreferenced from src/ until the resolver ships (spec 6b);
+      // tests/asset-variants.test.ts is what proves its base exists.
+      .map((n) => n.replace(/-v\d+$/, ''));
+    expect([...new Set(onDisk)].filter((n) => !BANNERS.includes(n))).toEqual([]);
+  });
+
+  // The predicate itself, not the live file set. A floor assertion over the live
+  // banners would read the same before and after a broken regex, because the failure
+  // is a SHORTER it.each below — dropped cases, not failing ones. Synthetic input is
+  // what makes this fail under mutation.
+  // event-blood_moon and battle_victory are real committed banners that must NOT
+  // match, so an over-matching predicate fails here too, not just an under-matching
+  // one.
+  it('the variant predicate selects variants and nothing else', () => {
+    expect(['care', 'care-v2', 'care-v10', 'event-blood_moon', 'battle_victory']
+      .filter(isVariantName)).toEqual(['care-v2', 'care-v10']);
   });
 
   // Discord scales an embed image to the embed width, so an off-size banner
@@ -179,7 +215,14 @@ describe('banner art', () => {
   // generator's native output is 1264×848) would letterbox on the /world hub with
   // this suite green.
   const DIMENSION_CHECKED_BANNERS = [
-    ...BANNERS, ...WORLD_EVENTS.map((e) => `event-${e.id}`),
+    ...new Set([
+      ...BANNERS,
+      ...WORLD_EVENTS.map((e) => `event-${e.id}`),
+      // Variants are unreferenced from src/ until spec 6b, so neither the scrape nor
+      // WORLD_EVENTS can see them. An unfitted variant would letterbox on the /world
+      // hub exactly like an unfitted base, so register it from disk instead.
+      ...namesUnder('banners').filter(isVariantName),
+    ]),
   ];
   it.each(DIMENSION_CHECKED_BANNERS)('%s is 1536×1024', async (name) => {
     const img = new Image();
@@ -227,6 +270,30 @@ describe('banner art', () => {
     await img.decode();
     expect(img.width).toBe(1536);
     expect(img.height).toBe(1024);
+  });
+});
+
+describe('site art dimensions', () => {
+  // Registered from disk rather than from CAMPAIGN: the forward direction (every
+  // CAMPAIGN site HAS a banner and a thumb) is already covered by 'resolves every
+  // asset kind the bot references' below. This is the reverse and stricter check —
+  // every committed file, including any banked ahead of its chapter's data, ships at
+  // the right size for its family.
+  const SITE_FILES = namesUnder('sites');
+  it('found site art', () => expect(SITE_FILES.length).toBeGreaterThanOrEqual(14));
+  it.each(SITE_FILES)('%s ships at its family size', async (name) => {
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/sites', `${name}.webp`));
+    await img.decode();
+    if (name.includes('-banner')) {
+      expect([img.width, img.height], name).toEqual([1536, 1024]);
+    } else {
+      // volcano_core-thumb is a known 1254×1254 outlier that predates the WebP
+      // conversion; docs/assets/prompts.md records it as an open item. Every other
+      // thumb is square at 1024 — assert squareness for all, and 1024 for the rest.
+      expect(img.width, name).toBe(img.height);
+      if (name !== 'volcano_core-thumb') expect(img.width, name).toBe(1024);
+    }
   });
 });
 
@@ -279,24 +346,98 @@ async function expectTransparentCutout(kind: 'battles' | 'dinos', name: string):
   expect(Math.abs(margin - expected), `${name} margin ${margin}, expected ~${expected}`).toBeLessThanOrEqual(1);
 }
 
-const PORTRAIT_BOSS_IDS = CAMPAIGN.map((c) => c.stages[4].boss!.bossId);
+// Registered from DISK, not from CAMPAIGN: spec 6a banks portraits for chapters that
+// do not exist as data yet (PORTRAIT_BOSS_IDS = CAMPAIGN.map(...) cannot see them), and
+// a CAMPAIGN-derived list would give them zero checking. The forward direction — every
+// CAMPAIGN boss HAS a portrait — is covered separately by 'resolves every asset kind
+// the bot references' below.
+const PORTRAIT_FILES = namesUnder('battles');
 
 describe('boss portrait art', () => {
-  it.each(PORTRAIT_BOSS_IDS)('%s is a 1024×1024 transparent cutout',
-    (bossId) => expectTransparentCutout('battles', `${bossId}-portrait`));
+  it('found boss portraits', () => expect(PORTRAIT_FILES.length).toBeGreaterThanOrEqual(7));
+  it.each(PORTRAIT_FILES)('%s is a 1024×1024 transparent cutout',
+    (name) => expectTransparentCutout('battles', name));
 });
 
 const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] as const;
 
+describe('egg art', () => {
+  // eggs/ had no dimension, corner-transparency or margin check at all before spec 6a
+  // — the expectTransparentCutout kind union excludes it (eggs share boss portraits'
+  // 24px margin family per docs/assets/prompts.md, but with an egg-axis bias that the
+  // symmetric min/max margin measurement in expectTransparentCutout isn't shaped for,
+  // so this stays a simpler dimension + corner check rather than widening that helper).
+  // Registered from disk so every rarity AND every future -vN variant is covered.
+  const EGG_FILES = namesUnder('eggs');
+  it('found egg art', () => expect(EGG_FILES.length).toBeGreaterThanOrEqual(6));
+  it.each(EGG_FILES)('%s is 1024×1024 with transparent corners', async (name) => {
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/eggs', `${name}.webp`));
+    await img.decode();
+    expect(img.width, name).toBe(1024);
+    expect(img.height, name).toBe(1024);
+    const canvas = createCanvas(1024, 1024);
+    const c = canvas.getContext('2d');
+    c.drawImage(img, 0, 0);
+    for (const [x, y] of [[0, 0], [1023, 0], [0, 1023], [1023, 1023]] as const) {
+      expect(c.getImageData(x, y, 1, 1).data[3], `${name} corner ${x},${y}`).toBe(0);
+    }
+    // No L/R check here — the egg-axis bias makes the horizontal margin asymmetric on
+    // purpose (docs/assets/prompts.md's divergence table, e.g. common.webp L74/R53).
+    // But `--axis=egg` only re-centres HORIZONTALLY: fitDraw keeps fitBox.y0 === box.y0
+    // and the fit height equal to the box height, so top and bottom both land at exactly
+    // (1024 - 976) / 2 = 24px for every committed egg. That IS checkable, and checking it
+    // is what catches `fit-art.mjs cutout` (31px, whole-bbox) run on an egg by mistake —
+    // the wrong mode still yields 1024×1024 with transparent corners and would otherwise
+    // pass every assertion above unchanged.
+    const px = c.getImageData(0, 0, 1024, 1024).data;
+    let minY = 1024, maxY = -1;
+    for (let y = 0; y < 1024; y++) {
+      for (let x = 0; x < 1024; x++) {
+        if (px[(y * 1024 + x) * 4 + 3] === 0) continue;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    const topMargin = minY, bottomMargin = 1023 - maxY;
+    const margin = Math.min(topMargin, bottomMargin);
+    expect(Math.abs(margin - 24), `${name} vertical margin ${margin} (top ${topMargin}, bottom ${bottomMargin}), expected ~24`).toBeLessThanOrEqual(1);
+  });
+
+  // The same un-removed studio backdrop the hatch cracks are guarded against below,
+  // and the eggs are structurally exposed to it for the same reason: they are the
+  // SAME egg-in-a-nest composition the cracks are edited from, and `fit-art.mjs
+  // portrait`'s borderFlood only reaches inward from the canvas border, so a pale
+  // blob enclosed between egg and nest twigs survives on an egg exactly as it does
+  // on a crack. 18 of these 24 files are banked art that carried no backdrop check
+  // at all before this.
+  //
+  // This is the widest the guard can honestly go. tests/lib/backdrop.ts's third
+  // false-positive class — pale art meeting an interior HOLE through the silhouette,
+  // which `atCrop` cannot exclude because the hole is nowhere near the frame — makes
+  // it unusable on dinos/ and battles/: boss-founders_park-portrait.webp reads 376px
+  // of the pale shine inside its open jaw and is a correct picture. Measured today,
+  // every one of the 24 eggs reads 0px, so this passes with the whole budget spare.
+  it.each(EGG_FILES)('%s has no studio backdrop left between egg and nest', async (name) => {
+    const px = await largestBackdropBlobPx(resolve(process.cwd(), 'assets/images/eggs', `${name}.webp`));
+    expect(px, `${name} carries a ${px}px opaque backdrop region inside the subject`).toBeLessThan(300);
+  });
+});
+
 describe('hatch crack art', () => {
+  // Registered from disk, not from RARITIES, so a future -vN variant gets the same
+  // dimension, corner-transparency, backdrop and fragment-count bar as the six base
+  // cracks. Every case in this block runs off this one list.
+  const CRACK_FILES = namesUnder('hatch');
+  it('found crack art', () => expect(CRACK_FILES.length).toBeGreaterThanOrEqual(6));
   // 1024×1024 transparent, same square as the eggs they are edited from — NOT
   // banner-sized, so they never belong in the BANNERS size loop above.
-  it.each(RARITIES)('%s-crack ships at 1024x1024 with transparent corners', async (rarity) => {
-    const ref = assetImage('hatch', `${rarity}-crack`);
-    expect(ref, rarity).not.toBeNull();
-    expect(ref!.url).toBe(`attachment://${rarity}-crack.webp`);
+  it.each(CRACK_FILES)('%s ships at 1024x1024 with transparent corners', async (name) => {
+    const ref = assetImage('hatch', name);
+    expect(ref, name).not.toBeNull();
+    expect(ref!.url).toBe(`attachment://${name}.webp`);
     const img = new Image();
-    img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${rarity}-crack.webp`));
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${name}.webp`));
     await img.decode();
     expect(img.width).toBe(1024);
     expect(img.height).toBe(1024);
@@ -307,50 +448,115 @@ describe('hatch crack art', () => {
     for (const [x, y] of [[0, 0], [1023, 0], [0, 1023], [1023, 1023]] as const) {
       expect(px[(y * img.width + x) * 4 + 3], `corner ${x},${y}`).toBe(0);
     }
+    // The margin is a SECOND, independent way to catch the wrong-mode mistake, and it
+    // is strictly stronger than the fragment count below for that one mistake: running
+    // `fit-art.mjs portrait` on a crack (instead of `cutout`) deletes every disconnected
+    // shell fragment AND moves the margin from 31px to 24px, so it is caught here even
+    // on mythic-crack, the one file the fragment count cannot speak for. Whole-bbox,
+    // matching `cutout`'s fit — never axis-biased like the eggs.
+    let minX = 1024, minY = 1024, maxX = -1, maxY = -1;
+    for (let y = 0; y < img.height; y++) {
+      for (let x = 0; x < img.width; x++) {
+        if (px[(y * img.width + x) * 4 + 3] === 0) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    const margin = Math.min(minX, minY, img.width - 1 - maxX, img.height - 1 - maxY);
+    expect(Math.abs(margin - 31), `${name} margin ${margin}, expected ~31`).toBeLessThanOrEqual(1);
   });
 
-  // The cracks are the one cutout family that MUST keep several disconnected
-  // alpha regions: the prompt asks for shell fragments falling away, and a
-  // fragment clear of the nest is its own opaque island. prompts.md's egg pass
-  // opens with "keep only the largest connected region" and verifies "exactly
-  // one connected region" — applying either step here silently deletes the
-  // fragments and leaves a plain open egg, which every size/corner check above
-  // still passes. This is the gate for that: a blanket single-region pass over
-  // the set takes the count below to 0. Individual cracks may legitimately land
-  // at one region (`mythic` does), so the assertion is on the set, not per file.
-  it('keeps the falling shell fragments — the set is not reduced to one region each', async () => {
-    const counts: Record<string, number> = {};
-    for (const rarity of RARITIES) {
-      const img = new Image();
-      img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${rarity}-crack.webp`));
-      await img.decode();
-      const canvas = createCanvas(img.width, img.height);
-      const c2d = canvas.getContext('2d');
-      c2d.drawImage(img, 0, 0);
-      const px = c2d.getImageData(0, 0, img.width, img.height).data;
-      const w = img.width, total = w * img.height;
-      const seen = new Uint8Array(total);
-      const stack = new Int32Array(total);
-      let regions = 0;
-      for (let start = 0; start < total; start++) {
-        if (seen[start] || px[start * 4 + 3] === 0) continue;
-        regions++;
-        let top = 0;
-        stack[top++] = start;
-        seen[start] = 1;
-        while (top > 0) {
-          const p = stack[--top];
-          const x = p % w;
-          if (x > 0 && !seen[p - 1] && px[(p - 1) * 4 + 3] !== 0) { seen[p - 1] = 1; stack[top++] = p - 1; }
-          if (x < w - 1 && !seen[p + 1] && px[(p + 1) * 4 + 3] !== 0) { seen[p + 1] = 1; stack[top++] = p + 1; }
-          if (p >= w && !seen[p - w] && px[(p - w) * 4 + 3] !== 0) { seen[p - w] = 1; stack[top++] = p - w; }
-          if (p + w < total && !seen[p + w] && px[(p + w) * 4 + 3] !== 0) { seen[p + w] = 1; stack[top++] = p + w; }
-        }
+  // Un-removed studio backdrop showing through the gaps BETWEEN shell fragments.
+  // Every check above passes on a crack with this defect: it is 1024×1024, its
+  // corners are transparent, its margin is 31px, and it has plenty of regions —
+  // the backdrop is simply opaque where the embed should show through, and it
+  // renders as a pale smear across the crack opening.
+  //
+  // Nothing caught it because nothing was looking. `remove_background` keeps a
+  // region enclosed by subject (it reads as foreground), and `fit-art.mjs
+  // cutout`'s luminance peel only removes pixels already adjacent to
+  // transparency, three passes deep, so it cannot reach into the blob. Measured
+  // on one file at the time it was found: 7040 backdrop px entering background
+  // removal, 6791 still there afterwards.
+  //
+  // Scoped to the hatch and egg families on purpose, and that scope is measured
+  // rather than assumed. The detector cannot tell backdrop from pale art that
+  // ends without an outline — at the crop edge (gallimimus's cream throat, which
+  // `atCrop` does exclude) or against an interior HOLE through the silhouette
+  // (tank-carnivore's chest at 69,304px and boss-founders_park-portrait's open
+  // jaw at 376px, neither of which `atCrop` touches). Both are correct pictures,
+  // and the second pair is why dinos/ and battles/ stay out: a battles guard
+  // would fail on art that deserves to pass. The cracks and the eggs are one
+  // egg-in-a-nest composition with neither a cut edge nor a hole.
+  // Asserts the LARGEST region, never the total: hairline anti-aliasing seams are
+  // also interior and also pale, and summing them makes a clean file trip the
+  // threshold (`epic-crack-v2` sums to 432px of seam across blobs of 172/97/90).
+  // Real backdrop arrives as one contiguous region — the files repaired here
+  // measured 447 to 2906px in a single blob. See tests/lib/backdrop.ts for both
+  // false-positive classes.
+  it.each(CRACK_FILES)('%s has no studio backdrop left in its crack gaps', async (name) => {
+    const px = await largestBackdropBlobPx(resolve(process.cwd(), 'assets/images/hatch', `${name}.webp`));
+    expect(px, `${name} carries a ${px}px opaque backdrop region inside the subject`).toBeLessThan(300);
+  });
+
+  // The cracks are the one cutout family that MUST keep several disconnected alpha
+  // regions: the prompt asks for shell fragments falling away, and a fragment clear
+  // of the nest is its own opaque island. prompts.md's egg pass opens with "keep only
+  // the largest connected region" and verifies "exactly one connected region" —
+  // applying either step here silently deletes the fragments and leaves a plain open
+  // egg, which every size and corner check above still passes.
+  //
+  // PER FILE, and registered from disk. This used to be one case over the six base
+  // RARITIES asserting that AT LEAST ONE of them had more than one region — an OR
+  // across the set, which four of the six could fail while it stayed green (measured:
+  // it survives mutation to `> 5`), and which never opened the 18 committed variants
+  // at all. prompts.md states the real criterion per file: "a count of 1 on a
+  // non-mythic file means the fragments were lost and the file must be regenerated
+  // rather than shipped."
+  //
+  // COUNTS REGIONS OVER 40px, never the raw region total. The backdrop repair
+  // (scripts/clear-backdrop.mjs) severs pale bridges and leaves tens of single-pixel
+  // matte specks behind on the seven files it rewrote: common-crack.webp raw-counts 68
+  // regions and has 6 fragments. A raw `> 1` would therefore pass on a repaired file
+  // that had lost every fragment it owns, which is the exact failure this exists to
+  // catch. The 40px floor is count-regions.mjs's `significant` column.
+  //
+  // mythic-crack is exempt BY NAME — the one committed crack whose art genuinely
+  // lands at a single region, same single-filename exemption shape as
+  // volcano_core-thumb above. Its three variants are not exempt and carry 6 to 10.
+  it.each(CRACK_FILES)('%s keeps its falling shell fragments', async (name) => {
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${name}.webp`));
+    await img.decode();
+    const canvas = createCanvas(img.width, img.height);
+    const c2d = canvas.getContext('2d');
+    c2d.drawImage(img, 0, 0);
+    const px = c2d.getImageData(0, 0, img.width, img.height).data;
+    const w = img.width, total = w * img.height;
+    const seen = new Uint8Array(total);
+    const stack = new Int32Array(total);
+    let fragments = 0;
+    for (let start = 0; start < total; start++) {
+      if (seen[start] || px[start * 4 + 3] === 0) continue;
+      let top = 0, size = 0;
+      stack[top++] = start;
+      seen[start] = 1;
+      while (top > 0) {
+        const p = stack[--top];
+        size++;
+        const x = p % w;
+        if (x > 0 && !seen[p - 1] && px[(p - 1) * 4 + 3] !== 0) { seen[p - 1] = 1; stack[top++] = p - 1; }
+        if (x < w - 1 && !seen[p + 1] && px[(p + 1) * 4 + 3] !== 0) { seen[p + 1] = 1; stack[top++] = p + 1; }
+        if (p >= w && !seen[p - w] && px[(p - w) * 4 + 3] !== 0) { seen[p - w] = 1; stack[top++] = p - w; }
+        if (p + w < total && !seen[p + w] && px[(p + w) * 4 + 3] !== 0) { seen[p + w] = 1; stack[top++] = p + w; }
       }
-      counts[rarity] = regions;
+      if (size > 40) fragments++;
     }
-    const multiRegion = RARITIES.filter((r) => counts[r] > 1);
-    expect(multiRegion.length, `region counts: ${JSON.stringify(counts)}`).toBeGreaterThan(0);
+    const floor = name === 'mythic-crack' ? 1 : 2;
+    expect(fragments, `${name} has ${fragments} fragment(s) over 40px — the falling shell pieces were lost`)
+      .toBeGreaterThanOrEqual(floor);
   });
 });
 
@@ -437,7 +643,26 @@ const DINO_ART_FILES = readdirSync(resolve(process.cwd(), 'assets/images/dinos')
   .map((f) => f.replace(/\.webp$/, ''))
   .sort();
 const SPECIES_IDS = new Set(allSpecies().map((s) => s.id));
-const SPECIES_ART_FILES = DINO_ART_FILES.filter((n) => SPECIES_IDS.has(n));
+
+// Art banked ahead of its species data (spec 6a). Each of these ships a portrait so
+// that adding the species later stays a data-only change. This is an explicit
+// allowlist, not a relaxation: a misspelled filename is in neither this list nor
+// SPECIES_IDS, so it still fails — the guard keeps its full protective value.
+// When a species here ships as data, delete its entry; SPECIES_IDS will cover it.
+// Declared here (not down by 'dino art file names', where it is also used) because
+// SPECIES_ART_FILES below needs it in scope — a `const` used before its own
+// declaration is a TDZ ReferenceError, not a hoist.
+const BANKED_SPECIES_ART = [
+  'amargasaurus', 'apatosaurus', 'concavenator', 'corythosaurus', 'dimorphodon',
+  'herrerasaurus', 'nodosaurus', 'sinoceratops', 'styracosaurus', 'suchomimus',
+  'troodon', 'utahraptor',
+];
+
+// Includes banked art: a portrait for a species that does not exist yet must meet the
+// same bar as one that does, or the bank is 12 files nobody ever checked.
+const SPECIES_ART_FILES = DINO_ART_FILES.filter(
+  (n) => SPECIES_IDS.has(n) || BANKED_SPECIES_ART.includes(n),
+);
 
 describe('dino archetype prompts', () => {
   // Same precedent as tests/battle-content.test.ts's bossId cross-check:
@@ -482,8 +707,14 @@ describe('hero species art', () => {
   // This case is what makes a missing or short hero-portrait set red. The reverse
   // direction — a dinos/ file that is neither an archetype-diet pair nor a real
   // species id — is covered once, by 'dino art file names' below, not duplicated here.
-  it('ships exactly the hero portraits', () => {
-    expect(SPECIES_ART_FILES, 'per-species override files on disk').toEqual(HERO_SPECIES);
+  // Was an exact-set assertion against an 8-name list. Spec 6a banks a portrait for
+  // every species, so the set is no longer fixed — but the eight originals must still
+  // be present, and every file must still be a real species id. The per-file quality
+  // bar is enforced by the it.each below, which registers from disk.
+  it('still ships every hero portrait', () => {
+    for (const id of HERO_SPECIES) {
+      expect(SPECIES_ART_FILES, `hero portrait ${id} went missing`).toContain(id);
+    }
   });
 
   // The gap this closes: expectTransparentCutout was reachable for the dinos kind
@@ -495,14 +726,16 @@ describe('hero species art', () => {
   it.each(SPECIES_ART_FILES)('%s is a 1024×1024 transparent cutout at the 31px margin',
     (name) => expectTransparentCutout('dinos', name));
 
-  // The override must be an override, not a replacement: the other 44 species ship
-  // no file of their own and must keep resolving archetype art through dinoImage's
-  // fallback arm, or "adding a species is a data-only change" stops being true.
-  it('every non-hero species still resolves to a shipped archetype image', () => {
+  // The archetype×diet set must stay complete: it is what a species with no committed
+  // portrait falls back to, and it is what keeps "adding a species is a data-only
+  // change" true. The old companion assertion — that non-hero species ship NO file of
+  // their own — was removed deliberately in spec 6a, which banks a portrait for every
+  // species. After 6a the fallback arm is reachable only for species with no committed
+  // file, i.e. future ones; the 'dinoImage' describe below covers that arm directly,
+  // with a synthetic id that can never gain committed art of its own.
+  it('every species still resolves to a shipped archetype image', () => {
     for (const s of allSpecies()) {
-      if (HERO_SPECIES.includes(s.id)) continue;
       expect(assetImage('dinos', `${s.archetype}-${s.diet}`), s.id).not.toBeNull();
-      expect(assetImage('dinos', s.id), `${s.id} unexpectedly ships its own portrait`).toBeNull();
     }
   });
 });
@@ -577,20 +810,85 @@ describe('cross-kind basename collisions', () => {
   });
 });
 
-// The inverse of the banner orphan check above, for the one directory with TWO
-// naming families: `<archetype>-<diet>` (the fixed set of 8) and `<speciesId>`
-// (the optional per-species override). Both sides are derived — DINO_ART_KEYS
+// The inverse of the banner orphan check above, for the one directory with THREE
+// naming families: `<archetype>-<diet>` (the fixed set of 8), `<speciesId>` (a
+// committed per-species portrait, hero or ordinary), and a BANKED id (art shipped
+// ahead of its species data, spec 6a). All three sides are derived — DINO_ART_KEYS
 // from the real Archetype/Diet unions, SPECIES_IDS (declared above, alongside
-// HERO_SPECIES) from allSpecies() — so a typo'd or retired name is caught here
-// rather than null-degrading to an imageless embed, which is silent everywhere
-// else.
+// HERO_SPECIES) from allSpecies(), BANKED_SPECIES_ART (declared above, alongside
+// SPECIES_ART_FILES) hand-typed — so a typo'd or retired name is caught here rather
+// than null-degrading to an imageless embed, which is silent everywhere else.
 describe('dino art file names', () => {
-  it('every committed dinos/ file is an archetype-diet pair or a real species id', () => {
+  it('every committed dinos/ file is an archetype-diet pair, a real species id, or banked art', () => {
     const names = readdirSync(resolve(process.cwd(), 'assets/images/dinos'))
       .filter((f) => f.endsWith('.webp'))
       .map((f) => f.replace(/\.webp$/, ''));
     expect(names.length, 'no dino art found — wrong root?').toBeGreaterThan(0);
-    const strays = names.filter((n) => !DINO_ART_KEYS.includes(n) && !SPECIES_IDS.has(n));
-    expect(strays, `neither an archetype-diet pair nor a species id: ${strays.join(', ')}`).toEqual([]);
+    const strays = names.filter((n) => !DINO_ART_KEYS.includes(n)
+      && !SPECIES_IDS.has(n) && !BANKED_SPECIES_ART.includes(n));
+    expect(strays, `neither an archetype-diet pair, a species id, nor banked: ${strays.join(', ')}`)
+      .toEqual([]);
+  });
+
+  // A banked id that has since shipped as data is dead weight in the allowlist and
+  // hides a real stray behind a stale entry.
+  it('no banked id has since shipped as species data', () => {
+    const shipped = BANKED_SPECIES_ART.filter((id) => SPECIES_IDS.has(id));
+    expect(shipped, `remove from BANKED_SPECIES_ART, now real species: ${shipped.join(', ')}`)
+      .toEqual([]);
+  });
+
+  // The mirror of the stray check above, and the direction that was missing entirely:
+  // an entry in BANKED_SPECIES_ART whose file is absent is completely SILENT.
+  // SPECIES_ART_FILES intersects the allowlist with what is on disk, so a listed but
+  // missing id simply registers no cases — measured by adding a nonsense id, which
+  // left the whole file byte-identical at 291/291 passed. The hero portraits have this
+  // assertion ('still ships every hero portrait'); all twelve banked ids had nothing.
+  // Without it, a banked portrait deleted or never committed reads as fine forever,
+  // which for art that cannot be regenerated is the expensive direction to get wrong.
+  it('still ships every banked species portrait', () => {
+    for (const id of BANKED_SPECIES_ART) {
+      expect(DINO_ART_FILES, `banked portrait ${id} is listed but not committed`).toContain(id);
+    }
+  });
+});
+
+// The same closed-allowlist treatment dinos/ has had all along, for the two directories
+// that bank art ahead of the data that will name it. Both are registered from disk for
+// their dimension and margin checks, so a MISSPELLED file gets every one of those checks
+// and passes them all — the picture is the right size and shape, it just resolves from
+// no id anyone will ever ask for, and assetImage null-degrades to an imageless embed
+// rather than erroring. Nothing else in this suite reads these filenames: CAMPAIGN
+// cannot name a chapter that does not exist as data yet, which is the whole point of
+// banking them.
+describe('site and boss portrait file names', () => {
+  // Chapters 8-10, banked ahead of their CAMPAIGN data (spec 6a). Delete an entry when
+  // its chapter ships — EXPEDITION_SITES will cover it — and the case below fails until
+  // someone does, so the allowlist cannot rot into a hiding place for a real stray.
+  const BANKED_CHAPTER_ART = ['mainland_ferry', 'ruined_city', 'continental_divide'];
+  const SITE_IDS = new Set(CAMPAIGN.map((c) => c.id));
+
+  it('every committed sites/ file names a real or banked chapter', () => {
+    const ids = namesUnder('sites').map((n) => n.replace(/-v\d+$/, '').replace(/-(banner|thumb)$/, ''));
+    expect(ids.length, 'no site art found — wrong root?').toBeGreaterThan(0);
+    const strays = [...new Set(ids)].filter((id) => !SITE_IDS.has(id) && !BANKED_CHAPTER_ART.includes(id));
+    expect(strays, `neither a campaign site id nor banked: ${strays.join(', ')}`).toEqual([]);
+  });
+
+  it('every committed battles/ file is boss-<chapter>-portrait for a real or banked chapter', () => {
+    const names = namesUnder('battles');
+    expect(names.length, 'no boss portraits found — wrong root?').toBeGreaterThan(0);
+    const strays = names.filter((n) => {
+      const m = /^boss-(.+)-portrait$/.exec(n.replace(/-v\d+$/, ''));
+      return !m || (!SITE_IDS.has(m[1]!) && !BANKED_CHAPTER_ART.includes(m[1]!));
+    });
+    expect(strays, `not boss-<known chapter>-portrait: ${strays.join(', ')}`).toEqual([]);
+  });
+
+  // Same reasoning as 'no banked id has since shipped as species data' above.
+  it('no banked chapter has since shipped as campaign data', () => {
+    const shipped = BANKED_CHAPTER_ART.filter((id) => SITE_IDS.has(id));
+    expect(shipped, `remove from BANKED_CHAPTER_ART, now real chapters: ${shipped.join(', ')}`)
+      .toEqual([]);
   });
 });

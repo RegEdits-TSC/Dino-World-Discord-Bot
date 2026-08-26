@@ -3,7 +3,11 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const svgCount = readdirSync(resolve(process.cwd(), 'assets/emojis/svg')).filter((f) => f.endsWith('.svg')).length;
-const bannerCount = readdirSync(resolve(process.cwd(), 'assets/images/banners')).length;
+// Base banners only: a `-vN` file is another face of an existing banner, not a new
+// one, so it must not move the figure quoted in prompts.md. Counting files instead
+// of banners would make the prose churn on every variant with nothing gained.
+const bannerCount = readdirSync(resolve(process.cwd(), 'assets/images/banners'))
+  .filter((f) => f.endsWith('.webp') && !/-v\d+\.webp$/.test(f)).length;
 const ops = readFileSync(resolve(process.cwd(), 'docs/ops.md'), 'utf8');
 const prompts = readFileSync(resolve(process.cwd(), 'docs/assets/prompts.md'), 'utf8');
 
@@ -29,15 +33,54 @@ describe('docs track the committed assets', () => {
     for (const n of quoted) expect(n).toBe(bannerCount);
   });
 
+  // prompts.md writes a prompt once as a frame with {PLACEHOLDER} slots, then
+  // substitutes them per file below. A frame whose placeholder is never substituted
+  // reads as a complete prompt and is not one — the files it governs cannot be
+  // regenerated from it at all.
+  //
+  // That is not hypothetical. {FRACTURE} shipped exactly that way: one occurrence, in
+  // the frame, with no substitution list anywhere, leaving all 18 hatch-crack variants
+  // unreproducible on a branch whose stated reason to exist is that the generator is
+  // gone. Nothing was watching, because every other check in this file counts assets
+  // rather than reading the prompts.
+  //
+  // A substituted placeholder necessarily appears at least twice: once in its frame,
+  // once introducing the list that fills it. The two exemptions are the two halves of
+  // the CRITICAL FRAMING block, whose substitutions are a TABLE COLUMN ("parts /
+  // threatened edges") rather than a repeated token — so they are checked by asserting
+  // that column still exists instead.
+  it('every prompt placeholder in prompts.md is substituted somewhere', () => {
+    const BY_TABLE_COLUMN = ['{PARTS}', '{THREATENED}'];
+    const counts = new Map<string, number>();
+    for (const m of prompts.matchAll(/\{[A-Z][A-Z_]+\}/g)) {
+      counts.set(m[0], (counts.get(m[0]) ?? 0) + 1);
+    }
+    expect(counts.size, 'no placeholders found in prompts.md — did the convention change?')
+      .toBeGreaterThan(0);
+    const unsubstituted = [...counts]
+      .filter(([token, n]) => n < 2 && !BY_TABLE_COLUMN.includes(token))
+      .map(([token]) => token);
+    expect(unsubstituted, `these appear only in a prompt frame, with nothing filling them: ${unsubstituted.join(', ')}`)
+      .toEqual([]);
+    for (const token of BY_TABLE_COLUMN) {
+      expect(counts.has(token), `${token} is gone — drop it from BY_TABLE_COLUMN`).toBe(true);
+    }
+    expect(prompts, 'the CRITICAL FRAMING substitution column is what stands in for {PARTS}/{THREATENED}')
+      .toContain('Framing (parts / threatened edges)');
+  });
+
+  // Registered from DISK, not hand-typed: a hand-typed list can only prove that what
+  // it names has a prompt row, and would give a newly committed park raster (e.g. a
+  // future landmark-d/e/f band) zero checking the moment it lands with no matching
+  // prompts.md row — silently, since nothing else in this suite checks prompts.md
+  // coverage for assets/images/park/. tests/park-art-assets.test.ts derives its
+  // landmark-band list from disk for the same reason.
   it('prompts.md carries a regeneration target for every generated park raster', () => {
-    for (const f of [
-      'park/ground.webp', 'park/ground-wet.webp', 'park/ground-dry.webp', 'park/ground-cold.webp',
-      'park/plate-paddock.webp', 'park/plate-facility.webp',
-      'park/landmark-a.webp', 'park/landmark-b.webp', 'park/landmark-c.webp',
-      'park/attraction-picnic_lawn.webp', 'park/attraction-gift_shop.webp',
-      'park/attraction-viewing_platform.webp', 'park/attraction-amber_carousel.webp',
-      'park/attraction-sky_gondola.webp', 'park/attraction-grand_atrium.webp',
-    ]) {
+    const files = readdirSync(resolve(process.cwd(), 'assets/images/park'))
+      .filter((f) => f.endsWith('.webp'))
+      .map((f) => `park/${f}`);
+    expect(files.length, 'no park art found — wrong root?').toBeGreaterThan(0);
+    for (const f of files) {
       expect(prompts, `prompts.md is missing the regeneration target ${f}`).toContain(f);
     }
   });
