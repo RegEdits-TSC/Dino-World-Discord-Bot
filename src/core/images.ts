@@ -37,12 +37,14 @@ function variantCount(kind: string, name: string): number {
 // unseeded one wherever no variant exists.
 //
 // The hashed string is COMPOSITE — `kind:name:seed` — and that is load-bearing,
-// not stylistic. eggs and hatch both ship 18 variants over 6 bases, so hashing a
-// bare egg id would select the same index in both: egg #42 would show common-v2
-// and then common-crack-v2, halving the variety for a consistency nobody can
-// perceive. Same reasoning as WORLD_SALT (src/core/world.ts) and DEAL_SALT
-// (src/modules/shop/service.ts), which exist to stop two features keying off one
-// input from moving together.
+// not stylistic. eggs and hatch each ship one variant set per rarity, with equal
+// counts, so hashing a bare egg id would select the same index in both: egg #42
+// would show common-v2 and then common-crack-v2, collapsing two independent picks
+// into one for a consistency nobody can perceive. No count here on purpose: the
+// equal-counts fact is what the argument needs, and a number goes stale silently
+// the first time a -v5 ships. Same reasoning as WORLD_SALT (src/core/world.ts)
+// and DEAL_SALT (src/modules/shop/service.ts), which exist to stop two features
+// keying off one input from moving together.
 //
 // The hash goes through mulberry32 rather than `% (count + 1)`. No code in src/
 // takes FNV-1a output modulo anything — its low bits carry less avalanche than a
@@ -66,8 +68,11 @@ function pickVariant(kind: string, name: string, seed: string): string {
 //
 // `seed` is any string already in scope at the call site — an egg's row id, a
 // viewer's Discord id. OMITTING IT RETURNS THE BASE FILE, and that default is a
-// compatibility contract rather than a convenience: roughly 180 filename pins
-// across the suite, and every call site that never gains a seed, rely on it.
+// compatibility contract rather than a convenience: every call site that never
+// gains a seed relies on it, as does every filename pin in the suite written
+// against a base name. Deliberately no count here — a figure written into prose
+// is wrong the next time a pin lands, and wrong silently. Derive it if you
+// actually need it: `grep -rho '[A-Za-z0-9_-]*\.webp' tests/`.
 export function assetImage(
   kind: 'eggs' | 'sites' | 'banners' | 'battles' | 'hatch' | 'dinos',
   name: string,

@@ -185,11 +185,15 @@ Three more — `mainland_ferry`, `ruined_city`, `continental_divide` — are
 banked ahead of their chapter data; see "Chapters 8–10 (banked, unshipped)"
 below.
 
-## Art variants (`-v2`, `-v3`, `-v4`)
+## Art variants (`-vN`)
 
 A surface with more than one committed face carries `<base>-v2.webp`,
-`<base>-v3.webp`, `<base>-v4.webp` beside an untouched `<base>.webp`. The base
-file is never renamed, moved or regenerated.
+`<base>-v3.webp`, … beside an untouched `<base>.webp`. **How many faces a base
+carries varies by family and by base**, and most bases carry none at all: the
+per-family sections below state what each set ships, and
+`ls assets/images/<kind> | grep -- '-v'` answers it for any one family. Never
+assume a uniform count — nothing in the codebase hardcodes one, and the resolver
+derives it (see below). The base file is never renamed, moved or regenerated.
 
 **One committed base has been edited in place, deliberately, and it is the only
 one.** `assets/images/hatch/common-crack.webp` shipped with un-removed studio
@@ -211,10 +215,33 @@ bare prompt. This is the same reference-chain discipline the egg rarities and th
 dino archetypes use, and for the same reason: a variant that drifts off its base
 reads as a different asset rather than another view of the same one.
 
-Variants are unreferenced from `src/` until the resolver ships. Two guards cover
-them meanwhile: `tests/asset-variants.test.ts` proves every variant has a base,
-and the disk-registered dimension checks in `tests/images.test.ts` hold them to
-their family's size and transparency contract.
+**The resolver is live.** `assetImage(kind, name, seed?)` (`src/core/images.ts`)
+takes an optional `seed` — any string already in scope at the call site, an egg's
+row id or a viewer's Discord id — and resolves it to one of the base's committed
+faces; omitting it returns the base file, unchanged, forever. Nothing here
+hardcodes how many faces a base has: `variantCount` scans `-v2`, `-v3`, … and
+stops at the first gap, so shipping a face costs no code edit. It is not inert,
+though, and this is the part to plan for: a seed's draw is fixed and only
+`floor(draw * (count + 1))` moves, so adding a face re-partitions that draw and
+**half of the base's seeds land on a different face** — exactly half, provably, at
+every count. The step that gives a variant-free base its FIRST face is the same
+rule, not a gentler one; it differs only in having no other variant to move
+between, so its moving half simply leaves the base file, which is the whole point
+of shipping it. Two real seeds that did move: `banners/dino_roster` seed `u1` goes
+`-v3` to `-v4` when a fourth variant lands, and `sites/coastal_dig-banner` seed
+`u2` goes `-v2` to `-v3` when a third does. Which half moves is not knowable by
+eye, so **every committed `-vN` pin in `tests/` for that base has to be re-derived
+from the real `assetImage` in the same change that ships the file** — half of them
+staying put is not something you can find out without checking all of them. See the
+art-variants bullet in `CLAUDE.md` for which surfaces are seeded on what, and why.
+
+Two guards cover the committed files, and the resolver now **depends** on both
+rather than merely agreeing with them: `tests/asset-variants.test.ts` proves every
+variant has a committed base and that numbering starts at 2 with no gaps — a gap
+would make a face unreachable, since the scan stops there, and an orphan would
+make a resolved name miss and the embed silently ship without its image — and the
+disk-registered dimension checks in `tests/images.test.ts` hold every variant to
+its family's size and transparency contract.
 
 **A variant takes its base's own `fit-art.mjs` mode, never a different one.**
 The two cutout modes are not interchangeable (see the divergence table in Egg
