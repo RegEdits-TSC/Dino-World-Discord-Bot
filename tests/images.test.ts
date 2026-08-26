@@ -400,6 +400,25 @@ describe('egg art', () => {
     const margin = Math.min(topMargin, bottomMargin);
     expect(Math.abs(margin - 24), `${name} vertical margin ${margin} (top ${topMargin}, bottom ${bottomMargin}), expected ~24`).toBeLessThanOrEqual(1);
   });
+
+  // The same un-removed studio backdrop the hatch cracks are guarded against below,
+  // and the eggs are structurally exposed to it for the same reason: they are the
+  // SAME egg-in-a-nest composition the cracks are edited from, and `fit-art.mjs
+  // portrait`'s borderFlood only reaches inward from the canvas border, so a pale
+  // blob enclosed between egg and nest twigs survives on an egg exactly as it does
+  // on a crack. 18 of these 24 files are banked art that carried no backdrop check
+  // at all before this.
+  //
+  // This is the widest the guard can honestly go. tests/lib/backdrop.ts's third
+  // false-positive class — pale art meeting an interior HOLE through the silhouette,
+  // which `atCrop` cannot exclude because the hole is nowhere near the frame — makes
+  // it unusable on dinos/ and battles/: boss-founders_park-portrait.webp reads 376px
+  // of the pale shine inside its open jaw and is a correct picture. Measured today,
+  // every one of the 24 eggs reads 0px, so this passes with the whole budget spare.
+  it.each(EGG_FILES)('%s has no studio backdrop left between egg and nest', async (name) => {
+    const px = await largestBackdropBlobPx(resolve(process.cwd(), 'assets/images/eggs', `${name}.webp`));
+    expect(px, `${name} carries a ${px}px opaque backdrop region inside the subject`).toBeLessThan(300);
+  });
 });
 
 describe('hatch crack art', () => {
@@ -464,12 +483,15 @@ describe('hatch crack art', () => {
   // on one file at the time it was found: 7040 backdrop px entering background
   // removal, 6791 still there afterwards.
   //
-  // Scoped to the hatch family on purpose. The detector cannot tell backdrop
-  // from pale art that is cut flat by the frame, because the art simply ends
-  // there with no outline to meet transparency through — over the dino
-  // portraits an unfiltered pass flagged a gallimimus's cream throat and a
-  // tank-carnivore's chest, both perfect. The cracks are an egg in a nest with
-  // no such cut edge, which is what makes the signature trustworthy here.
+  // Scoped to the hatch and egg families on purpose, and that scope is measured
+  // rather than assumed. The detector cannot tell backdrop from pale art that
+  // ends without an outline — at the crop edge (gallimimus's cream throat, which
+  // `atCrop` does exclude) or against an interior HOLE through the silhouette
+  // (tank-carnivore's chest at 69,304px and boss-founders_park-portrait's open
+  // jaw at 376px, neither of which `atCrop` touches). Both are correct pictures,
+  // and the second pair is why dinos/ and battles/ stay out: a battles guard
+  // would fail on art that deserves to pass. The cracks and the eggs are one
+  // egg-in-a-nest composition with neither a cut edge nor a hole.
   // Asserts the LARGEST region, never the total: hairline anti-aliasing seams are
   // also interior and also pale, and summing them makes a clean file trip the
   // threshold (`epic-crack-v2` sums to 432px of seam across blobs of 172/97/90).

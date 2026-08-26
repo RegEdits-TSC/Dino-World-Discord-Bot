@@ -474,10 +474,8 @@ exactly. L/R stay asymmetric and vary per file on purpose — the egg-axis fit
 centres on the egg's own silhouette, not the whole nest bbox, so a variant
 whose nest dressing sits further to one side (`common-v2`'s feather, for
 example, at L=14 R=110) shifts the horizontal margin without moving the
-vertical one. Re-measure with
-`.superpowers/sdd/2026-08-25-art-bank-6a/measure-margins.mjs` if any of these
-is ever regenerated; a 31/31 symmetric reading means `cutout` was used by
-mistake.
+vertical one. Re-measure with `scripts/measure-margins.mjs` if any of these is
+ever regenerated; a 31/31 symmetric reading means `cutout` was used by mistake.
 
 ## Coastal Dig (`coastal_dig`)
 
@@ -986,7 +984,7 @@ Ultimasaurus — this boss carries no trace of the park at all, the same
 argument its banner makes.
 
 **Measured margins**
-(`.superpowers/sdd/2026-08-25-art-bank-6a/measure-margins.mjs`):
+(`scripts/measure-margins.mjs`):
 `boss-mainland_ferry` L24/R24/T69/B69, `boss-ruined_city` L24/R24/T82/B82,
 `boss-continental_divide` L24/R24/T131/B131 — the house invariant
 `min(L,R,T,B) === 24`, symmetric on both axes, holds for all three, matching
@@ -2827,12 +2825,12 @@ in the 200×18 label band (roughly tile-local y+118 to y+136) at tile-local
 (14, 118) against `#f5e6b8`: **band a 7.06:1, band b 10.23:1, band c
 11.09:1** — all above the ~6:1 target the plates set.
 
-`.superpowers/sdd/2026-08-25-art-bank-6a/check-band-contrast.mjs` reproduces
+`scripts/check-band-contrast.mjs` reproduces
 this measurement on demand, taking the glyph box from `drawLandmark`'s own
 constants rather than estimating it. Re-run it against any regenerated band:
 
 ```
-node .superpowers/sdd/2026-08-25-art-bank-6a/check-band-contrast.mjs assets/images/park/landmark-*.webp
+node scripts/check-band-contrast.mjs assets/images/park/landmark-*.webp
 ```
 
 It reports the mean over the text box and the worst 24px-wide window inside
@@ -3299,24 +3297,56 @@ of pixels across.
 > shadow — the empty inside of the egg — never the background, never a light or
 > grey area.
 
-**Repair, for art already committed.** `clear-backdrop.mjs` in this plan's
-workspace floods from each backdrop seed through connected pale, desaturated
-pixels and stops at the art's own dark outlines, then zeroes the alpha. Run it
-with `--preview` first and *look at the mask*: it renders what would be cleared
-in magenta over a dimmed copy. Seven files were repaired this way — the four
-`common-crack` files (46k–53k px each), `mythic-crack-v2` (2.9k), and
-`rare-crack-v2`/`-v3` (a few hundred each) — all to zero, with every shell
-fragment intact. Region counts *rose* afterwards, because the backdrop had been
-bridging pieces that are meant to be separate.
+**Repair, for art already committed.** `scripts/clear-backdrop.mjs` floods from
+each backdrop seed through connected pale, desaturated pixels and stops at the
+art's own dark outlines, then zeroes the alpha. Run it with `--preview` first and
+*look at the mask*: it renders what would be cleared in magenta over a dimmed
+copy. Seven files were repaired this way — the four `common-crack` files
+(46k–53k px each), `mythic-crack-v2` (2.9k), and `rare-crack-v2`/`-v3` (a few
+hundred each) — all to zero, with every shell fragment intact. Region counts
+*rose* afterwards, because the backdrop had been bridging pieces that are meant
+to be separate.
 
-**The guard.** `tests/images.test.ts` now asserts every hatch file carries under
-400px of interior backdrop, using `tests/lib/backdrop.ts`. Read that file's
-header before reusing the detector on another family: it cannot tell backdrop
-from pale art that is **cut flat by the frame**, because such art ends with no
-outline to meet transparency through. An unfiltered pass over the dino portraits
-flagged a gallimimus's cream throat (74,903px) and a tank-carnivore's chest
-(69,101px), both perfect. The cracks are an egg in a nest with no cut edge, which
-is what makes the signature trustworthy there and nowhere else without checking.
+**It took two passes, and the reason is worth carrying.** The first pass and the
+first guard both gated "pale" on `alpha >= 100`, so both were blind to
+PARTIAL-alpha residue. Four of the seven files still carried a visible pale ghost
+in the crack gap at alpha 10–99 — up to 1669px on `common-crack-v3` — and the
+guard reported them clean, which is worse than no guard, because it also tells
+the next reader the file was checked. The opacity gate is 25 in both the repair
+and the detector now, and all seven files were re-run at that gate. If either
+number is ever moved, move it in both — they are the same predicate.
+
+**The guard.** `tests/images.test.ts` asserts that the LARGEST interior backdrop
+region on every hatch file and every egg file is under 300px, using
+`tests/lib/backdrop.ts`. Largest, never the total — summing counts hairline
+anti-aliasing seams until a clean file trips the threshold. Read that file's
+header before reusing the detector on another family; it documents three
+false-positive classes, and only the first is excluded automatically:
+
+1. **Art cut flat by the frame.** The house style ends the art at the canvas edge
+   with no outline, so a pale throat there has backdrop's exact local signature.
+   The detector's `atCrop` flag excludes these. Measured on `dinos/gallimimus.webp`:
+   74,957px flagged unfiltered, of which a single 74,803px blob is `atCrop` and
+   drops out, leaving 154px.
+2. **Hairline anti-aliasing seams.** Interior, so `atCrop` cannot help; they are
+   told apart by SHAPE — many slivers of 1–3px width rather than one contiguous
+   region. `hatch/epic-crack-v2.webp` carries 172px in its largest such blob and
+   is perfectly good art.
+3. **Pale art meeting an interior HOLE through the silhouette** — an open mouth,
+   a gap between a limb and the body. `atCrop` cannot help here either, because
+   the hole is nowhere near the frame. Two live examples: `dinos/tank-carnivore.webp`
+   reads its entire 69,304px chest as interior (box (305,488)–(623,949)), and
+   `battles/boss-founders_park-portrait.webp` reads 376px of the pale shine
+   inside its open jaw, over the 300 threshold.
+
+Class 3 is why the guard covers **eggs and hatch and nothing else**. Both are the
+same egg-in-a-nest composition with no cut edge and no hole through the subject,
+and both measure clean with enormous margin — all 24 eggs at 0px, the worst hatch
+file at 172px against 300. The dino portraits and the boss portraits are exactly
+the composition class 3 describes, and `boss-founders_park-portrait.webp` is the
+proof: extending the guard to `battles/` would fail on a correct picture. Do not
+widen the threshold to admit it — widen the family only when the family measures
+clean.
 
 **Prompt (identical for all six; only the attached reference changes):**
 
@@ -3369,7 +3399,7 @@ happens to sit at a single region, and all three of its variants carry more
 fragments than it does. That is fine — more fragments is the intended look, and
 the base is the outlier, not the variants.
 
-Re-measure with `.superpowers/sdd/2026-08-25-art-bank-6a/count-regions.mjs` (a
+Re-measure with `scripts/count-regions.mjs` (a
 4-connected flood fill over the alpha channel) if any of these is ever
 regenerated. A count of **1** on a non-`mythic` file means the fragments were
 lost and the file must be regenerated rather than shipped.

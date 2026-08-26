@@ -18,15 +18,17 @@ import { readFileSync } from 'node:fs';
  * pixel sitting directly against transparency with no dark pixel between is
  * backdrop that survived.
  *
- * TWO FALSE-POSITIVE CLASSES, both measured on real committed art. Neither is a
+ * THREE FALSE-POSITIVE CLASSES, all measured on real committed art. None is a
  * defect, and a reader who does not know about them will "fix" good pictures.
+ * Only the first is excluded automatically — the other two are why the caller
+ * has to choose the family, not just the threshold.
  *
  * 1. ART CUT FLAT BY THE FRAME — what `atCrop` exists for. Where the subject is
  *    cut by the canvas edge (house style; the archetype references are cut
  *    exactly that way) the art simply ends with no outline, so a pale throat at
- *    the crop edge has the identical local signature as backdrop. An unfiltered
- *    pass over the dino portraits flagged 74,903px of a gallimimus's cream
- *    throat and 69,101px of a tank-carnivore's chest, both perfect art.
+ *    the crop edge has the identical local signature as backdrop. `gallimimus`
+ *    flags 74,957px unfiltered, of which one 74,803px blob is `atCrop` and drops
+ *    out, leaving 154px. Perfect art, and the filter handles it.
  *
  * 2. HAIRLINE ANTI-ALIASING SEAMS — why callers must judge the LARGEST blob and
  *    not the total. `luminancePeel` erodes the matte rim three passes deep, so a
@@ -37,6 +39,23 @@ import { readFileSync } from 'node:fs';
  *    pixels (measured 447-2906 across the files that had it), while seams are
  *    many separate slivers none of which exceeds ~200px. `epic-crack-v2` totals
  *    432px of seam across three blobs of 172/97/90 and is perfectly good art.
+ *
+ * 3. PALE ART MEETING AN INTERIOR HOLE THROUGH THE SILHOUETTE — an open mouth, a
+ *    gap between a limb and the body. Transparency there is legitimate, the art
+ *    beside it ends in a highlight rather than an outline, and the hole is
+ *    nowhere near the canvas margin, so `atCrop` is no help at all. This is the
+ *    class `atCrop` is routinely — and wrongly — credited with handling:
+ *    `tank-carnivore`'s 69,304px chest blob is NOT `atCrop`, so the filter does
+ *    nothing for it, and `battles/boss-founders_park-portrait` reads 376px of the
+ *    pale shine inside its open jaw. Both are correct pictures.
+ *
+ * WHICH FAMILIES THIS IS SAFE ON: `hatch` and `eggs` only, and that is a measured
+ * claim, not a scoping convenience. Both are the same egg-in-a-nest composition —
+ * no cut edge, no hole through the subject — and both clear the guard with room
+ * (all 24 eggs at 0px, the worst hatch file at 172px against a 300 threshold).
+ * `dinos` and `battles` are exactly the class-3 composition, and
+ * `boss-founders_park-portrait` would fail a guard it does not deserve to fail.
+ * Widen the FAMILY only after measuring it; never widen the threshold to fit one.
  */
 export interface BackdropBlob {
   px: number;
