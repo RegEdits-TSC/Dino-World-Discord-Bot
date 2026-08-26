@@ -52,6 +52,16 @@ const KNOWN_FLAGS = new Set(['--axis=egg']);
 for (const f of flags) {
   if (!KNOWN_FLAGS.has(f)) { console.error(`unknown flag ${f}`); process.exit(2); }
 }
+// The same failure the loop above exists to prevent, one step further in: a CORRECTLY
+// spelled --axis=egg on a mode that ignores it. The egg-axis branch is gated on
+// `mode === 'portrait'`, and the four cover modes return before reaching it at all, so
+// `cutout --axis=egg` used to exit 0 having silently centred on the whole bbox — the
+// wrong-mode signature the eggs' 24px margin check exists to catch, arriving on a file
+// the operator believes was fitted on the egg's own axis.
+if (flags.has('--axis=egg') && mode !== 'portrait') {
+  console.error(`--axis=egg applies to portrait only, not ${mode}`);
+  process.exit(2);
+}
 
 // Freshly generated PNGs can carry a C2PA `caBX` chunk that makes @napi-rs/canvas
 // misidentify the file as SVG. stripCaBX removes it; see its comment for the detail.
