@@ -2553,6 +2553,74 @@ species, coloring and framing.
 | stegosaurus | dinos/stegosaurus.webp | tank-herbivore | a Stegosaurus | a row of tall triangular bony plates running from the back of the head down the neck, with small bumpy osteoderms on the cheeks, warm olive-green plates with dark umber-brown edges and a pale sage-cream throat | the whole head, neck and the complete row of tall back plates / top and left |
 | thescelosaurus | dinos/thescelosaurus.webp | tank-herbivore | a Thescelosaurus | a sturdy small-bodied ornithopod with a blunt short beaked snout, small cheek teeth and a thick sturdy build, two-tone forest-green back with a pale cream underside | — |
 
+### Banked species (not yet in the roster)
+
+Twelve more portraits, generated the same way as the 44 above but for species
+that do not exist in `src/data/species/` yet — `assets/images/dinos/<id>.webp`
+ships ahead of the data so that adding each species later is a data-only
+change. Each id is allowlisted individually as `BANKED_SPECIES_ART` in
+`tests/images.test.ts`, separately from `SPECIES_IDS` (which is derived from
+`allSpecies()`), so a typo here still fails the stray-file guard rather than
+silently passing.
+
+**When one of these species ships as real data:** move its row into the main
+table above and delete its id from `BANKED_SPECIES_ART` in
+`tests/images.test.ts` — the companion test there
+("no banked id has since shipped as species data") turns red until that
+deletion happens, which is the intended nudge.
+
+**Workflow and shared prompt template:** identical to the 44 above — same
+reference-chain image-edit off the archetype cutout, same `image_references`
+role, same `remove_background` + `cutout` (31px) post-processing pipeline.
+
+One prompt change from the original 44: the **CROP AT THE CHEST** wording
+(the strongest anti-forelimb clause found while regenerating `sinosaurus`,
+quoted above) was used for **all twelve** of these, not only the
+`bruiser-carnivore` edits — the original 44 only reached for it after the
+weaker "no arms, no hands, no torso" sentence alone let four `bruiser-carnivore`
+generations through with a visible forelimb. Both sentences appear in every
+one of these twelve prompts, back to back, with the CROP AT THE CHEST sentence
+second:
+
+> Show only the head, neck and the top of the shoulders - no arms, no hands, no torso. CROP AT THE CHEST: show only the head, the neck, and the very top of the shoulders. The image must contain NO forelimbs of any kind - no arms, no upper arms, no elbows, no forearms, no wrists, no hands, no claws, no fingers - and no chest, no belly, no torso below the shoulder line. The lower edge of the picture cuts straight across the base of the neck.
+
+It worked cleanly this round: all twelve generations, including the three
+edited from `bruiser-carnivore` (`concavenator`, `herrerasaurus`,
+`suchomimus` — the one archetype reference that itself shows a clawed hand),
+cleared inspection with no forelimb visible and needed zero regenerations.
+
+`concavenator`'s real diagnostic feature — a tall squared hump over the
+hips — sits well below this crop's shoulder line and cannot be shown here at
+all; its `{FEATURES}` text instead describes the hump's leading edge just
+beginning to rise at the base of the neck, the furthest down the body the
+crop line permits, rather than asking the model to render torso it must also
+refuse.
+
+Half of these twelve needed the CRITICAL FRAMING block (same wording and
+placement as documented above) for a silhouette that grows past the
+archetype reference: `amargasaurus` (paired neck spines), `apatosaurus`
+(extremely long neck), `corythosaurus` (rounded head crest), `dimorphodon`
+(beak and both folded wings), `nodosaurus` (paired shoulder spikes),
+`sinoceratops` (frill and nose horn), `styracosaurus` (frill and radiating
+spikes). The other five — `concavenator`, `herrerasaurus`, `suchomimus`,
+`troodon`, `utahraptor` — stayed within the reference's existing silhouette
+and needed no framing block.
+
+| Species | File | Reference | `{SPECIES}` | `{FEATURES}` | Framing (parts / threatened edges) |
+|---|---|---|---|---|---|
+| amargasaurus | dinos/amargasaurus.webp *(banked)* | tank-herbivore | an Amargasaurus | a long slender sauropod neck with two parallel rows of very tall slender bony spines running down its top like a spiny sail, and a small blunt head with a squared snout and tiny peg-like teeth, dusty amber-gold neck and head skin with a deep burgundy-red spine sail and a pale cream throat | the small head, the complete long neck and every one of the tall paired neck spines / top and left |
+| apatosaurus | dinos/apatosaurus.webp *(banked)* | tank-herbivore | an Apatosaurus | a small elongated horse-like head with blunt peg-shaped teeth at the jaw tip and a bulging nostril set high on the snout, carried on an extremely long slender neck, dusty sage-green neck and head with a pale ivory-cream throat and faint darker green mottling | the small head and the complete extremely long neck / top and left |
+| concavenator | dinos/concavenator.webp *(banked)* | bruiser-carnivore | a Concavenator | a tall narrow carcharodontosaurid skull with a deep snout and prominent serrated teeth, a shallow bony ridge above each eye, and the leading edge of a tall bony hump just beginning to rise where the neck meets the shoulders, two-tone burnt-sienna hide with dark umber-brown banding and a pale tan throat | — |
+| corythosaurus | dinos/corythosaurus.webp *(banked)* | support-herbivore | a Corythosaurus | a broad flat duck-like beak and a tall rounded dinner-plate-shaped crest rising vertically off the top of the skull, two-tone dusty rose-pink crest fading to a warm honey-tan face and throat | the whole head and the complete rounded crest / top and left |
+| dimorphodon | dinos/dimorphodon.webp *(banked)* | swift-carnivore | a Dimorphodon | a deep puffin-like beak with a large hooked tip and big round eyes, and the tops of two leathery folded wing membranes just visible rising from the shoulders, mottled slate-gray head with a warm rust-orange beak and a pale cream throat | the whole head, the deep beak and both folded wings rising from the shoulders / top, left and right |
+| herrerasaurus | dinos/herrerasaurus.webp *(banked)* | bruiser-carnivore | a Herrerasaurus | a long narrow primitive theropod skull with a slight kink partway down the jaw, sharp recurved teeth and a shallow bony ridge above the eye, two-tone dusty clay-brown hide with dark rust-red mottling and a pale sandy-tan throat | — |
+| nodosaurus | dinos/nodosaurus.webp *(banked)* | tank-herbivore | a Nodosaurus | a low broad triangular skull covered in small bony armor plates, a beaked mouth and rows of hard oval osteoderms studding the neck, with a pair of long lateral spikes projecting outward from the top of the shoulders, warm olive-drab armor plating with dark bronze-brown plate edges and a pale tan underside | the whole head, the armored neck and both long shoulder spikes / left and right |
+| sinoceratops | dinos/sinoceratops.webp *(banked)* | tank-herbivore | a Sinoceratops | a single short thick nose horn, small blunt brow horns, and a broad frill rimmed with a row of forward-curling hooked horns, two-tone rust-orange frill with warm golden-tan horns and a pale amber face | the whole head, the wide hooked frill and the nose horn / top and left |
+| styracosaurus | dinos/styracosaurus.webp *(banked)* | tank-herbivore | a Styracosaurus | one long straight nose horn and a frill ringed with a crown of very long straight spikes radiating outward, two-tone deep coral-red frill with warm bronze-tan spikes and a pale peach face | the whole head, the nose horn and every one of the long radiating frill spikes / top and left |
+| suchomimus | dinos/suchomimus.webp *(banked)* | bruiser-carnivore | a Suchomimus | a very long narrow crocodile-like snout lined with many small conical teeth and a shallow bony ridge running along the back of the neck, sandy khaki-tan hide with dark olive-brown banding and a pale cream throat | — |
+| troodon | dinos/troodon.webp *(banked)* | swift-carnivore | a Troodon | unusually large forward-facing eyes for keen binocular vision, a slender delicate snout lined with fine serrated teeth, and a smooth narrow skull, two-tone dusky teal-gray hide with dark charcoal speckling and a pale silver-cream throat | — |
+| utahraptor | dinos/utahraptor.webp *(banked)* | swift-carnivore | a Utahraptor | a long slender toothy snout, a low feathered crest along the back of the head and neck, and a heavier more robust skull than a typical raptor, two-tone deep slate-blue hide with dark charcoal-blue banding and a pale frost-gray throat | — |
+
 ## Park map
 
 Three opaque rasters drawn by the park renderer (`src/core/render/draw.ts`)
