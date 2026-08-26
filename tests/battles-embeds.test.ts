@@ -309,6 +309,9 @@ describe('chaptersPayload', () => {
       .mockImplementationOnce(() => null);                                 // thumb call (2nd) -> missing
     const p = chaptersPayload('u1', 0, baseView());
     const embed = p.embeds[0].toJSON();
+    // Seeded on 'u1' like every chaptersPayload call above, and 'u1' hashes
+    // coastal_dig-banner to index 0 (the base file), so this literal is unchanged —
+    // see 'seeds the chapter banner on the viewer' above for the pin that moves.
     expect(embed.image?.url).toBe('attachment://coastal_dig-banner.webp');
     expect(embed.thumbnail).toBeUndefined();
     expect(p.files!.map((f) => f.name)).toEqual(['coastal_dig-banner.webp']);
