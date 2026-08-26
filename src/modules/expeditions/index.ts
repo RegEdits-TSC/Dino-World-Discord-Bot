@@ -118,7 +118,8 @@ export const expeditionsModule: ModuleManifest = {
                 { name: `${emojiTag('dw_cash')} Cash`, value: `+${loot.cash}`, inline: true },
                 { name: `${emojiTag(FOODS[loot.food.foodId].emoji)} ${FOODS[loot.food.foodId].name}`, value: `+${loot.food.qty}`, inline: true });
             const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-            attach(embed, payload, 'image', assetImage('sites', `${site.id}-banner`));
+            // i.user.id seeds the banner — the viewer, same rule as every other banner call.
+            attach(embed, payload, 'image', assetImage('sites', `${site.id}-banner`, i.user.id));
             attach(embed, payload, 'thumbnail', assetImage('sites', `${site.id}-thumb`));
             await i.reply(payload);
           }

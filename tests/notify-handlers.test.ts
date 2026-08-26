@@ -65,6 +65,10 @@ describe('scheduler notification handlers', () => {
     await handler({ userId: 'u1', refId: exp.id, originGuildId: null });
     expect(dms).toHaveLength(1);
     expect(embedJson(dms[0]).title).toContain('has returned');
+    // The banner is seeded on t.userId ('u1' here), but coastal_dig-banner hashes to
+    // index 0 for 'u1' and index 0 IS the base file, so this literal is unchanged —
+    // see 'the expedition-return notification's banner is seeded on the addressee'
+    // below for an assertion that actually moves with the seed.
     expect(embedJson(dms[0]).image?.url).toBe('attachment://coastal_dig-banner.webp');
     expect(fileNames(dms[0])).toContain('coastal_dig-banner.webp');
     ctx.db.update(schema.expeditions).set({ claimedAt: 2 }).run();
@@ -124,6 +128,20 @@ describe('notification handler buttons', () => {
     const { dms, sender } = capture();
     await expeditionReturnHandler(sender, ctx)({ userId: 'u1', refId: exp.id, originGuildId: null });
     expect(customIds(dms[0])).toEqual(['exp:claim:u1']);
+  });
+
+  it('the expedition-return notification\'s banner is seeded on the addressee, not fixed to the base face', async () => {
+    const ctx = makeCtx();
+    ctx.db.insert(schema.users).values({ discordId: 'u2', lastCollectAt: 0, createdAt: 0 }).run();
+    const exp = ctx.db.insert(schema.expeditions).values({
+      userId: 'u2', siteId: 'coastal_dig', departedAt: 0, returnsAt: 0,
+    }).returning().get();
+    const { dms, sender } = capture();
+    await expeditionReturnHandler(sender, ctx)({ userId: 'u2', refId: exp.id, originGuildId: null });
+    // 'u2' hashes coastal_dig-banner to -v2, unlike 'u1' above — this is the pin that
+    // actually goes red if the seed argument at the call site is removed.
+    expect(embedJson(dms[0]).image?.url).toBe('attachment://coastal_dig-banner-v2.webp');
+    expect(fileNames(dms[0])).toContain('coastal_dig-banner-v2.webp');
   });
 });
 

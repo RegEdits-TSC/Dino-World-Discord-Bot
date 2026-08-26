@@ -202,7 +202,8 @@ export function chaptersPayload(userId: string, chapterIndex: number, view: Chap
   );
   const payload: FramePayload = { embeds: [embed], components: [nav] };
   // chapterId === siteId invariant (content test) makes the site art legal here.
-  attach(embed, payload, 'image', assetImage('sites', `${ch.id}-banner`));
+  // userId seeds the banner — the viewer, same rule as every other banner call.
+  attach(embed, payload, 'image', assetImage('sites', `${ch.id}-banner`, userId));
   attach(embed, payload, 'thumbnail', assetImage('sites', `${ch.id}-thumb`));
   return payload;
 }

@@ -270,6 +270,9 @@ describe('chaptersPayload', () => {
     // chapterId === siteId, so both site assets are legal here. This pins the
     // append: assigning payload.files twice would drop the banner file while the
     // embed still points at attachment://coastal_dig-banner.webp.
+    // The banner is seeded on chaptersPayload's userId ('u1' here), but
+    // coastal_dig-banner hashes to index 0 for 'u1' and index 0 IS the base file,
+    // so this literal is unchanged — see the 'u2' pin below for one that moves.
     const p = chaptersPayload('u1', 0, baseView());
     const embed = p.embeds[0].toJSON();
     expect(embed.image?.url).toBe('attachment://coastal_dig-banner.webp');
@@ -278,6 +281,14 @@ describe('chaptersPayload', () => {
     expect(names).toContain('coastal_dig-banner.webp');
     expect(names).toContain('coastal_dig-thumb.webp');
     expect(names).toHaveLength(2);   // nothing uploaded that the embed does not reference
+  });
+  it('seeds the chapter banner on the viewer, not fixed to the base face', () => {
+    // 'u2' hashes coastal_dig-banner to -v2, unlike 'u1' above — this is the pin
+    // that actually goes red if the seed argument at the call site is removed.
+    const p = chaptersPayload('u2', 0, baseView());
+    const embed = p.embeds[0].toJSON();
+    expect(embed.image?.url).toBe('attachment://coastal_dig-banner-v2.webp');
+    expect(p.files!.map((f) => f.name)).toContain('coastal_dig-banner-v2.webp');
   });
   it('chaptersPayload still ships the thumb when the banner is missing', () => {
     // Degrade path 1/2: the two assetImage lookups are independent `if`

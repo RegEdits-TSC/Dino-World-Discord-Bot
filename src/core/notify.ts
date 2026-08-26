@@ -112,7 +112,9 @@ export function expeditionReturnHandler(sender: Sender, ctx: Ctx) {
         .setTitle(`🧭 ${site.name} — your expedition has returned!`)
         .setDescription('Use `/expedition claim` to collect the egg, cash, and food.');
       const payload: NotifyPayload & { embeds: EmbedBuilder[] } = { embeds: [embed] };
-      attach(embed, payload, 'image', assetImage('sites', `${exp.siteId}-banner`));
+      // t.userId seeds the banner — the player this DM is addressed to, the same seed
+      // /expedition's own screens use, so the notification and the command agree on the face.
+      attach(embed, payload, 'image', assetImage('sites', `${exp.siteId}-banner`, t.userId));
       payload.components = [new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId(`exp:claim:${t.userId}`)
           .setLabel('🧭 Claim').setStyle(ButtonStyle.Primary))];
