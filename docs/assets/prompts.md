@@ -145,6 +145,9 @@ composition with one central landmark and a simple background (readable at
 Site ids: `coastal_dig`, `amber_ridge`, `frozen_cliffs`, `volcano_core`,
 `abyssal_trench`, `containment_site`, `founders_park` — the last three shipped
 later and have their own sections below with their own generation notes.
+Three more — `mainland_ferry`, `ruined_city`, `continental_divide` — are
+banked ahead of their chapter data; see "Chapters 8–10 (banked, unshipped)"
+below.
 
 ## Art variants (`-v2`, `-v3`, `-v4`)
 
@@ -684,6 +687,267 @@ day: [the one specific change]."
 All 14 generated images were accepted on the first attempt — zero
 regenerations, zero colour-identity drift on `volcano_core`/`abyssal_trench`,
 zero text leaks anywhere in the set.
+
+---
+
+## Chapters 8–10 (banked, unshipped)
+
+Speculative art for three campaign chapters that do not exist in `src/data/`
+today and may never ship. Banked because the generator access that produced
+every asset under `assets/images/` was expiring and could not be revisited
+later — worthless if these chapters never ship, and unobtainable afterward if
+they do. **Nothing in `src/` reads any of these nine files yet.** Chapter ids
+double as expedition-site ids per the campaign's chapter-id ≡ site-id
+invariant, so each also forces an expedition site whenever (if ever) the
+chapter is actually written.
+
+The arc escalates outward from the park in three beats — the mainland, the
+city, then wilderness the breach never reaches — and chapter 10's banner
+deliberately carries no human wreckage at all: that absence is the argument
+of the arc, distinguishing it from every biome site documented above.
+
+**Pipeline.** Banners were generated at 2528×1696 (3:2, `nano_banana_pro`
+routed by the service to `nano_banana_2`, `resolution: 2k`) and fitted to
+1536×1024 with `node scripts/fit-art.mjs banner`. Thumbs were generated
+SEPARATELY as their own close-up square compositions — not cropped from the
+banner, per the "do not just crop the banner" rule stated earlier in this
+document — at 2048×2048 (1:1, `resolution: 2k`) and fitted to 1024×1024 with
+`node scripts/fit-art.mjs square`, the cover-scale mode this bank added
+specifically because no producer existed for a generated site thumb before
+now (it reproduces the centred-square-crop hand pass the last three site
+thumbs used). Boss portraits were generated as image-edits of the committed
+`assets/images/battles/boss-coastal_dig-portrait.webp` (uploaded via
+`media_upload`, referenced with role `image_references` — `prompts.md` says
+plain `image` elsewhere in this document; that is stale for this model),
+background-removed, and fitted with `node scripts/fit-art.mjs portrait` —
+the whole-bbox 24px-margin variant, no `--axis=egg` — matching the seven
+committed boss portraits rather than `fit-art.mjs cutout`'s 31px.
+
+Unlike the archetype and species portraits, a boss must read as a **named
+individual** — scarring, chipped teeth, individuating damage — so every boss
+prompt below asks for exactly that, the same framing the seven shipped boss
+prompts use. Every prompt in this section carries the escalated no-text
+clause ("No text, no lettering, no words, no numbers, no signage writing
+anywhere in the scene"); banners and thumbs additionally carry the Founder's
+Park CRITICAL no-writing block verbatim, since a ferry terminal, city
+signage and open wilderness (nothing to write on, kept anyway for
+consistency) are exactly the kind of surface that has rendered spurious
+lettering before.
+
+### Mainland Ferry (`mainland_ferry`)
+
+The harbour the breach reaches the mainland through.
+
+**Banner (1536×1024):**
+
+> A wide cartoon landscape of a mainland ferry terminal breach: a large car
+> ferry listing at a steep angle, half-beached against a cracked concrete
+> pier at dusk, its loading ramp buckled and twisted, tall gantry cranes
+> standing dark and idle behind it, harsh floodlights on tall poles raking
+> long white beams across choppy dark water, scattered shipping containers
+> tipped on the dock, a deep orange-purple dusk sky reflecting on the water's
+> surface. Wide cinematic establishing shot filling the entire canvas edge to
+> edge with no letterboxing. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. No text, no
+> lettering, no words, no numbers, no signage writing anywhere in the scene.
+> CRITICAL: absolutely no writing anywhere in the image — no letters, no
+> words, no numbers, no carved inscriptions, no painted signage, no symbols,
+> no logos. Every sign, plaque and surface is blank and wordless. No human
+> characters, no UI elements.
+
+**Thumb (1024×1024):**
+
+> A close-up cartoon scene filling the entire square frame edge to edge of a
+> single rusted ferry ramp gate, buckled and half-lowered, mooring cables
+> snapped and coiled on wet concrete beside it, a hazy dusk-orange sky and
+> dark water glimpsed behind. Centered composition, one large readable
+> landmark, simple background. Glossy cartoon mobile-game art style, bold
+> dark outlines, vibrant saturated colors, strong glossy highlights, clean
+> cel shading with smooth gradients, polished game-asset look. NOT an app
+> icon — no rounded-rectangle tile, no border, no rounded corners. No text,
+> no lettering, no words, no numbers, no signage writing anywhere in the
+> scene. CRITICAL: absolutely no writing anywhere in the image — no letters,
+> no words, no numbers, no carved inscriptions, no painted signage, no
+> symbols, no logos. Every sign, plaque and surface is blank and wordless. No
+> human characters, no UI elements.
+
+**Boss — `boss-mainland_ferry`, the Harbormaster:** a barnacle-crusted
+semiaquatic apex that took the terminal, hide scarred by mooring cable,
+framed against wet steel. Generated as an image-edit of the coastal_dig
+reference portrait.
+
+> Keep the exact same head-and-shoulders boss portrait: same pose, same
+> framing, same plain flat light-gray studio background, facing right with
+> the snout pointing right, matching the reference portrait's profile
+> direction. Change the dinosaur to a fierce cartoon semiaquatic apex
+> predator called the Harbormaster: a barnacle-crusted hide over broad wet
+> gray-green scales, thick ropy scarring cut deep across the neck and jaw
+> where mooring cable dragged against it over years, a few small barnacle
+> clusters clinging to the brow and jawline, a cold metallic-wet glossy sheen
+> like rain on dockyard steel, one chipped and broken tooth visible in a
+> snarling jaw, a pale watchful eye. Individuating damage and scarring are
+> wanted here — this is a named individual, not a species type. CRITICAL
+> FRAMING: zoom out so the ENTIRE creature — the broad head, the thick
+> scarred neck, and both shoulders — sits well inside the frame, small in
+> the canvas, surrounded by a wide band of empty background on all four
+> sides. Nothing may touch, run off, or be cropped by any edge of the image,
+> especially the left and bottom edges. No glow, rays, embers, sparkles, or
+> light effects extending beyond the creature silhouette; glowing details
+> may appear only on the surfaces themselves. Glossy cartoon mobile-game art
+> style, bold dark outlines, vibrant saturated colors, strong glossy
+> highlights, clean cel shading with smooth gradients, polished game-asset
+> look. No drawn border, no frame, no panel edge, no letterboxing. No text,
+> no numbers, no lettering, no signage writing, no human characters, no UI
+> elements.
+
+### Ruined City (`ruined_city`)
+
+Downtown, long reclaimed.
+
+**Banner (1536×1024):**
+
+> A wide cartoon landscape of a downtown city canyon long reclaimed by
+> nature: a collapsed elevated overpass with its broken slab ends dangling
+> in mid-air, a tall glass office tower with shattered windows and thick
+> vines cascading down its face, a large earthen nesting mound built inside
+> a cracked plaza fountain surrounded by wild grass pushing through the
+> pavement, hazy golden haze and a low sun glowing between silhouetted
+> skyscrapers, birds circling high above. Wide cinematic establishing shot
+> filling the entire canvas edge to edge with no letterboxing. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated
+> colors, strong glossy highlights, clean cel shading with smooth gradients,
+> polished game-asset look. No text, no lettering, no words, no numbers, no
+> signage writing anywhere in the scene. CRITICAL: absolutely no writing
+> anywhere in the image — no letters, no words, no numbers, no carved
+> inscriptions, no painted signage, no symbols, no logos. Every sign, plaque
+> and surface is blank and wordless. No human characters, no UI elements.
+
+**Thumb (1024×1024):**
+
+> A close-up cartoon scene filling the entire square frame edge to edge of a
+> single moss-covered nesting mound built inside a cracked stone plaza
+> fountain, thick vines climbing the fountain's rim, wild grass pushing
+> through the stone, a hazy glass skyscraper silhouette glimpsed behind
+> through golden haze. Centered composition, one large readable landmark,
+> simple background. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. NOT an app icon —
+> no rounded-rectangle tile, no border, no rounded corners. No text, no
+> lettering, no words, no numbers, no signage writing anywhere in the scene.
+> CRITICAL: absolutely no writing anywhere in the image — no letters, no
+> words, no numbers, no carved inscriptions, no painted signage, no symbols,
+> no logos. Every sign, plaque and surface is blank and wordless. No human
+> characters, no UI elements.
+
+**Boss — `boss-ruined_city`, the Tower Nester:** a large flier whose
+wingspan reads against skyline, perched crest-forward on a broken cornice.
+Generated as an image-edit of the coastal_dig reference portrait.
+
+> Keep the exact same head-and-shoulders boss portrait: same pose, same
+> framing, same plain flat light-gray studio background, facing right with
+> the beak pointing right, matching the reference portrait's profile
+> direction. Change the dinosaur to a fierce cartoon apex flier called the
+> Tower Nester: a tall crest sweeping back from the skull, a long hooked
+> beak with chipped notches along the edge from old fights, mottled
+> slate-gray and rust-orange plumage, a torn ragged edge along the folded
+> wing shoulder from a healed old wound, sharp watchful eyes, snarling with
+> territorial menace. Individuating damage and scarring are wanted here —
+> this is a named individual, not a species type. CRITICAL FRAMING: zoom out
+> so the ENTIRE creature — the tall crest, the long beak, and the folded
+> wing shoulder — sits well inside the frame, small in the canvas,
+> surrounded by a wide band of empty background on all four sides. Nothing
+> may touch, run off, or be cropped by any edge of the image, especially the
+> top and side edges. No glow, rays, embers, sparkles, or light effects
+> extending beyond the creature silhouette; glowing details may appear only
+> on the surfaces themselves. Glossy cartoon mobile-game art style, bold
+> dark outlines, vibrant saturated colors, strong glossy highlights, clean
+> cel shading with smooth gradients, polished game-asset look. No drawn
+> border, no frame, no panel edge, no letterboxing. No text, no numbers, no
+> lettering, no signage writing, no human characters, no UI elements.
+
+### Continental Divide (`continental_divide`)
+
+High open wilderness past any human structure, no ruins at all.
+
+**Banner (1536×1024):**
+
+> A wide cartoon landscape of a vast high mountain pass far beyond any human
+> structure: towering snow-dusted peaks framing a sweeping alpine valley, a
+> winding river far below catching the light, a long line of migrating herd
+> silhouettes crossing a distant ridge against the sky, tall grass and
+> wildflowers in the foreground, enormous open scale, crisp clear daylight
+> with scattered clouds, no roads, no buildings, no ruins, no fences
+> anywhere in the scene. Wide cinematic establishing shot filling the entire
+> canvas edge to edge with no letterboxing. Glossy cartoon mobile-game art
+> style, bold dark outlines, vibrant saturated colors, strong glossy
+> highlights, clean cel shading with smooth gradients, polished game-asset
+> look. No text, no lettering, no words, no numbers, no signage writing
+> anywhere in the scene. CRITICAL: absolutely no writing anywhere in the
+> image — no letters, no words, no numbers, no carved inscriptions, no
+> painted signage, no symbols, no logos. Every sign, plaque and surface is
+> blank and wordless. No human characters, no UI elements.
+
+**Thumb (1024×1024):**
+
+> A close-up cartoon scene filling the entire square frame edge to edge of a
+> single dramatic snow-capped mountain peak rising above a sweeping alpine
+> valley, a line of migrating herd silhouettes crossing a ridge in the
+> middle distance, tall grass in the foreground, simple crisp blue sky
+> background with scattered clouds. Centered composition, one large readable
+> landmark, simple background. Glossy cartoon mobile-game art style, bold
+> dark outlines, vibrant saturated colors, strong glossy highlights, clean
+> cel shading with smooth gradients, polished game-asset look. NOT an app
+> icon — no rounded-rectangle tile, no border, no rounded corners. No text,
+> no lettering, no words, no numbers, no signage writing anywhere in the
+> scene. CRITICAL: absolutely no writing anywhere in the image — no letters,
+> no words, no numbers, no carved inscriptions, no painted signage, no
+> symbols, no logos. Every sign, plaque and surface is blank and wordless.
+> No human characters, no UI elements.
+
+**Boss — `boss-continental_divide`, the Divide Alpha:** the apex of a
+wild-born generation, the first that never saw a fence. Generated as an
+image-edit of the coastal_dig reference portrait.
+
+> Keep the exact same head-and-shoulders boss portrait: same pose, same
+> framing, same plain flat light-gray studio background, facing right with
+> the snout pointing right, matching the reference portrait's profile
+> direction. Change the dinosaur to a fierce cartoon apex predator called
+> the Divide Alpha, the largest and oldest of a wild-born generation that
+> never saw a fence: a heavy weathered hide in deep slate and burnt-umber
+> tones, a broad battle-worn brow ridge, several parallel claw-rake scars
+> across the cheek and neck from rival combat, one notched and broken horn
+> tip, a wind-roughened natural texture to the hide with no tag, no collar,
+> and no trace of any human marking anywhere, snarling with primal
+> dominance. Individuating damage and scarring are wanted here — this is a
+> named individual, not a species type. CRITICAL FRAMING: zoom out so the
+> ENTIRE creature — the broad brow ridge, the horn, and both complete
+> shoulders — sits well inside the frame, small in the canvas, surrounded by
+> a wide band of empty background on all four sides. Nothing may touch, run
+> off, or be cropped by any edge of the image, especially the top and
+> bottom edges. No glow, rays, embers, sparkles, or light effects extending
+> beyond the creature silhouette; glowing details may appear only on the
+> surfaces themselves. Glossy cartoon mobile-game art style, bold dark
+> outlines, vibrant saturated colors, strong glossy highlights, clean cel
+> shading with smooth gradients, polished game-asset look. No drawn border,
+> no frame, no panel edge, no letterboxing. No text, no numbers, no
+> lettering, no signage writing, no human characters, no UI elements.
+
+Deliberately no tag or collar on the Divide Alpha, unlike Asset 47 and
+Ultimasaurus — this boss carries no trace of the park at all, the same
+argument its banner makes.
+
+**Measured margins**
+(`.superpowers/sdd/2026-08-25-art-bank-6a/measure-margins.mjs`):
+`boss-mainland_ferry` L24/R24/T69/B69, `boss-ruined_city` L24/R24/T82/B82,
+`boss-continental_divide` L24/R24/T131/B131 — the house invariant
+`min(L,R,T,B) === 24`, symmetric on both axes, holds for all three, matching
+the seven committed boss portraits.
+
+Two of the five generation retries in this batch failed with no error detail
+from the service (not a content or style rejection — a bare `failed` status);
+resubmitting the identical request succeeded both times, and neither retry
+was charged.
 
 ---
 
