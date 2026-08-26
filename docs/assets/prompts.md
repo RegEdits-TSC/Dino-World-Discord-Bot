@@ -3274,6 +3274,50 @@ regenerating, still confirm by eye that the crack you touched kept its own
 fragments. What still applies from that pass is the *defringe* half —
 the light studio rim must be peeled, and all border pixels must end transparent.
 
+### Backdrop in the crack gaps — the defect this family is most prone to
+
+**Symptom.** A pale opaque smear across the crack opening, where the embed should
+show through. It survives every other check: the file is 1024×1024, its corners
+are transparent, its margin is 31px, and it has plenty of disconnected regions.
+It is only visible against a non-white background, which is why it shipped in
+`common-crack` — one of the original six — and went unnoticed until someone
+looked at the set over a coloured ground.
+
+**Cause, measured at each stage rather than inferred.** The generator draws the
+egg on a light-grey studio backdrop, and that backdrop is visible *through the
+gaps between shell pieces* — the V between the two upper halves, the zigzag
+between upper and lower. `remove_background` does not clear it, because a region
+enclosed by subject reads as foreground: on `mythic-crack-v2`, **7040 backdrop px
+went in and 6791 came out**, a 3.5% reduction. `fit-art.mjs cutout` cannot clear
+it either — its luminance peel only removes pixels already adjacent to
+transparency, three passes deep, so it cannot reach into a blob tens of thousands
+of pixels across.
+
+**Prevention, for a new or regenerated crack.** Ask for the gaps explicitly:
+
+> Everything visible through the gaps between the shell pieces is deep black
+> shadow — the empty inside of the egg — never the background, never a light or
+> grey area.
+
+**Repair, for art already committed.** `clear-backdrop.mjs` in this plan's
+workspace floods from each backdrop seed through connected pale, desaturated
+pixels and stops at the art's own dark outlines, then zeroes the alpha. Run it
+with `--preview` first and *look at the mask*: it renders what would be cleared
+in magenta over a dimmed copy. Seven files were repaired this way — the four
+`common-crack` files (46k–53k px each), `mythic-crack-v2` (2.9k), and
+`rare-crack-v2`/`-v3` (a few hundred each) — all to zero, with every shell
+fragment intact. Region counts *rose* afterwards, because the backdrop had been
+bridging pieces that are meant to be separate.
+
+**The guard.** `tests/images.test.ts` now asserts every hatch file carries under
+400px of interior backdrop, using `tests/lib/backdrop.ts`. Read that file's
+header before reusing the detector on another family: it cannot tell backdrop
+from pale art that is **cut flat by the frame**, because such art ends with no
+outline to meet transparency through. An unfiltered pass over the dino portraits
+flagged a gallimimus's cream throat (74,903px) and a tank-carnivore's chest
+(69,101px), both perfect. The cracks are an egg in a nest with no cut edge, which
+is what makes the signature trustworthy there and nowhere else without checking.
+
 **Prompt (identical for all six; only the attached reference changes):**
 
 > Keep the exact same cartoon dinosaur egg and the exact same woven twig nest:
