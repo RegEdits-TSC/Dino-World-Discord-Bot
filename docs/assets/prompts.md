@@ -16,10 +16,29 @@ prompts are the source of truth for regenerating or extending the set — keep
 them in sync with any new assets.
 
 Note on thumbs: some models render a "square cartoon game icon of …" prompt as
-a rounded-rectangle app-icon tile with a border. To force a full-bleed square
-(artwork to all four edges, no tile), phrase the thumb as a "close-up cartoon
-scene filling the entire square frame edge to edge … NOT an app icon — no
-rounded-rectangle tile, no border, no rounded corners" rather than "game icon".
+a rounded-rectangle app-icon tile with a border. The remedy this file used to
+recommend — phrasing the thumb as a "close-up cartoon scene filling the entire
+square frame edge to edge … NOT an app icon — no rounded-rectangle tile, no
+border, no rounded corners" — **was measured failing** on the
+`continental_divide` thumb: that prompt carried the full negative clause
+verbatim and still came back as a rounded-rectangle tile on a white ground.
+
+Naming the thing appears to summon it. What works is to **never write "icon",
+"tile", "app" or "game icon" anywhere in the prompt**, and to describe the
+framing positively instead — as a crop of something bigger:
+
+> The painting is a continuous scene that bleeds off all four edges of the
+> square, like a cropped detail of a much larger canvas: the artwork must run
+> right into every corner and every edge of the image with the subject cut off
+> by the frame, filling the picture completely. Every corner of the square is
+> painted scene. The background is solid painted sky and rock all the way to
+> the boundary, never white, never blank, never a plain flat margin, and the
+> composition has no surrounding frame, no border, no outline, no rounded
+> corners, no drop shadow and no background panel of any kind.
+
+That produced a correct full-bleed square on the first attempt. Note it still
+carries "no border / no rounded corners" negatives — what changed is dropping
+the words that name the unwanted artefact as a *kind of object*.
 
 ## Shared style block
 
@@ -870,40 +889,69 @@ Generated as an image-edit of the coastal_dig reference portrait.
 
 High open wilderness past any human structure, no ruins at all.
 
+**Both of this chapter's scenes were regenerated once, and the reason is worth
+reading before touching them.** The first pass followed a brief that said
+"migrating herd silhouettes" without saying *of what*, and leaned hard on the
+absence of human structures. It produced a pastoral alpine meadow with **bison**
+on the ridge, and a thumb that was the Matterhorn with **goats** — no dinosaurs
+anywhere in either, in a dinosaur game. Nothing in the checklist caught it: no
+text, no humans, correct dimensions, and a defensible reading of the brief.
+
+Two lessons, both in the prompts below. **Name the animals.** An absence
+("no human structures") does not imply a presence; the model fills the gap with
+generic wildlife, and every scene in this document that contains creatures now
+says explicitly that every one of them is a dinosaur, with the plausible
+mammals named as exclusions. **And never write "icon" or "tile"** — see the note
+on thumbs at the top of this file.
+
 **Banner (1536×1024):**
 
-> A wide cartoon landscape of a vast high mountain pass far beyond any human
-> structure: towering snow-dusted peaks framing a sweeping alpine valley, a
-> winding river far below catching the light, a long line of migrating herd
-> silhouettes crossing a distant ridge against the sky, tall grass and
-> wildflowers in the foreground, enormous open scale, crisp clear daylight
-> with scattered clouds, no roads, no buildings, no ruins, no fences
-> anywhere in the scene. Wide cinematic establishing shot filling the entire
-> canvas edge to edge with no letterboxing. Glossy cartoon mobile-game art
-> style, bold dark outlines, vibrant saturated colors, strong glossy
-> highlights, clean cel shading with smooth gradients, polished game-asset
-> look. No text, no lettering, no words, no numbers, no signage writing
-> anywhere in the scene. CRITICAL: absolutely no writing anywhere in the
-> image — no letters, no words, no numbers, no carved inscriptions, no
-> painted signage, no symbols, no logos. Every sign, plaque and surface is
-> blank and wordless. No human characters, no UI elements.
+> A wide establishing shot of a vast high-altitude mountain pass at storm-break
+> dawn, deep in wild country far beyond any human structure. A herd of enormous
+> long-necked sauropod DINOSAURS — huge four-legged brachiosaur-like giants with
+> towering necks and long tails — walks in dark silhouette along a distant
+> ridgeline, dwarfed by the peaks yet unmistakably colossal. In the mid-ground,
+> more dinosaurs graze a windswept alpine valley: hadrosaurs and horned
+> ceratopsians in scattered groups. Jagged snow-streaked granite peaks rise on
+> both sides, torn cloud and shafts of cold light breaking between them, a
+> glacial river threading the valley floor far below. The mood is awe, scale and
+> untamed wilderness — the world after the fences failed, belonging entirely to
+> dinosaurs. Absolutely no buildings, no roads, no fences, no vehicles, no ruins,
+> no wreckage and no human structures of any kind anywhere in the scene. No
+> mammals, no goats, no cattle, no bison, no deer, no birds — every animal in the
+> image is a dinosaur. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no human characters, no UI elements. Glossy
+> cartoon mobile-game art style, bold dark outlines, vibrant saturated colors,
+> strong glossy highlights, clean cel shading with smooth gradients, polished
+> game-asset look.
 
 **Thumb (1024×1024):**
 
-> A close-up cartoon scene filling the entire square frame edge to edge of a
-> single dramatic snow-capped mountain peak rising above a sweeping alpine
-> valley, a line of migrating herd silhouettes crossing a ridge in the
-> middle distance, tall grass in the foreground, simple crisp blue sky
-> background with scattered clouds. Centered composition, one large readable
-> landmark, simple background. Glossy cartoon mobile-game art style, bold
-> dark outlines, vibrant saturated colors, strong glossy highlights, clean
-> cel shading with smooth gradients, polished game-asset look. NOT an app
-> icon — no rounded-rectangle tile, no border, no rounded corners. No text,
-> no lettering, no words, no numbers, no signage writing anywhere in the
-> scene. CRITICAL: absolutely no writing anywhere in the image — no letters,
-> no words, no numbers, no carved inscriptions, no painted signage, no
-> symbols, no logos. Every sign, plaque and surface is blank and wordless.
-> No human characters, no UI elements.
+> A full-bleed square painting, cropped in close, of the head and towering neck
+> of a single colossal long-necked sauropod DINOSAUR rising in the foreground
+> against a jagged snow-capped mountain pass at storm-break dawn. Its skin is
+> weathered slate-green with a pale underside; it is seen from slightly below so
+> it reads as enormous. Behind it two smaller sauropod necks rise along the
+> distant ridge, and shafts of cold light break through torn cloud between
+> granite peaks. Simple uncluttered background so the animal reads instantly at
+> small size. The mood is awe and untamed scale, wilderness that belongs to
+> dinosaurs. The painting is a continuous scene that bleeds off all four edges of
+> the square, like a cropped detail of a much larger canvas: the artwork must run
+> right into every corner and every edge of the image with the subject cut off by
+> the frame, filling the picture completely. Every corner of the square is
+> painted scene. The background is solid painted sky and rock all the way to the
+> boundary, never white, never blank, never a plain flat margin, and the
+> composition has no surrounding frame, no border, no outline, no rounded
+> corners, no drop shadow and no background panel of any kind. Absolutely no
+> buildings, no roads, no fences, no vehicles, no ruins and no human structures.
+> No mammals, no goats, no cattle, no bison, no deer, every animal is a dinosaur.
+> No text, no lettering, no words, no numbers, no signage writing anywhere in the
+> scene, no human characters, no UI elements. Glossy cartoon mobile-game art
+> style, bold dark outlines, vibrant saturated colors, strong glossy highlights,
+> clean cel shading with smooth gradients, polished game-asset look.
+
+Post-processed with `node scripts/fit-art.mjs banner` and
+`node scripts/fit-art.mjs square` respectively.
 
 **Boss — `boss-continental_divide`, the Divide Alpha:** the apex of a
 wild-born generation, the first that never saw a fence. Generated as an
