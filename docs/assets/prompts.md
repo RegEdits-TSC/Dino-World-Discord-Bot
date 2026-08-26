@@ -45,6 +45,9 @@ icons in `assets/images/eggs/` (glossy cartoon game style):
 | `assets/images/park/landmark-a.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 1–2 (Stone Marker, Fossil Plinth) |
 | `assets/images/park/landmark-b.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 3–4 (Bronze Sentinel, Amber Obelisk) |
 | `assets/images/park/landmark-c.webp` | 270×150 | `/park view` landmark cell art, prestige tiers 5–6 (Grand Rotunda, Titan Monument) |
+| `assets/images/park/landmark-d.webp` | 270×150 | banked landmark cell art, above Titan Monument — `drawLandmark` does not read this file yet; wiring a seventh+ tier to it is a later spec |
+| `assets/images/park/landmark-e.webp` | 270×150 | banked landmark cell art, above Titan Monument — not yet wired, see `landmark-d` |
+| `assets/images/park/landmark-f.webp` | 270×150 | banked landmark cell art, above Titan Monument — not yet wired, see `landmark-d` |
 | `assets/images/park/attraction-picnic_lawn.webp` | 270×150 | `/park view` attraction cell art, `picnic_lawn` |
 | `assets/images/park/attraction-gift_shop.webp` | 270×150 | `/park view` attraction cell art, `gift_shop` |
 | `assets/images/park/attraction-viewing_platform.webp` | 270×150 | `/park view` attraction cell art, `viewing_platform` |
@@ -618,6 +621,69 @@ surface — the plain "blank peeling surface" phrase was not enough on its own.
 The explicit CRITICAL no-writing block (no letters/words/numbers/inscriptions/
 signage/symbols/logos, every sign and surface blank and wordless) is what
 fixed it; keep that block verbatim on any future regeneration of this scene.
+
+### Variants (`-v2`, `-v3`)
+
+Each of the seven sites carries two variants beside its untouched base, for
+fourteen files in total. Every one is an image-edit of **its own committed
+banner** (uploaded via `media_upload`, referenced with role
+`image_references`), never of another variant or another site's banner,
+generated at `3:2` (`resolution: 2k`) and post-processed with
+`node scripts/fit-art.mjs banner <src> <dest>` — no `remove_background`, since
+this family ships full-bleed opaque scenes, not cutouts, the same rule the ten
+hot-banner variant sets above follow.
+
+What varies is the vantage point, the weather and the time of day — a
+different view of the same location. What must never vary is the site's
+colour identity, which is how a player recognises where they are:
+`volcano_core`'s two variants both restate "the palette stays black obsidian
+rock with glowing orange lava throughout, never any other color dominating
+the scene" verbatim from its own identity rule, and `abyssal_trench`'s two
+both restate "Cold blue palette dominates overall; the amber vents stay small
+and secondary, never lava-like, never orange-dominant anywhere in the frame" —
+the same clause that fixed that site's own first generation, carried forward
+into every variant edit rather than assumed to survive on its own.
+
+Every prompt carries the expanded no-text clause ("No text, no lettering, no
+words, no numbers, no signage writing anywhere in the scene") uniformly. The
+two `founders_park` variants additionally carry the CRITICAL no-writing block
+from that site's own base prompt, since both keep the toppled signboard in
+frame. The `volcano_core` and `abyssal_trench` variants also carry a no-glow-
+beyond-silhouette clause naming their own emissive surfaces (lava and rock;
+vents and creatures) — the same hard no-glow rule the egg family states in
+general terms, restated here against the specific surfaces each scene adds.
+
+Each prompt follows the same edit-instruction shape as the hot-banner variants
+above: "Keep the exact same scene: [the base's own held-constant objects,
+named individually]. Change only the vantage point and the weather/time of
+day: [the one specific change]."
+
+- **coastal_dig** — v2: higher elevated dune view, soft pastel dawn, calm
+  glassy water. v3: lower ground-level view close to the dig stakes, a
+  gathering tropical storm with choppier waves and foam.
+- **amber_ridge** — v2: pulled back to a wider view, bright clear midday sun.
+  v3: closer lower angle near the rock face, damp rain-darkened stone, cool
+  violet-blue dusk.
+- **frozen_cliffs** — v2: wider elevated view, deep polar night sky with
+  brighter, more vivid aurora. v3: closer lower angle, gentle falling snow,
+  flat overcast sky with no aurora.
+- **volcano_core** — v2: higher rocky-ledge view looking down into the
+  caldera. v3: lower ground-level view close to a lava river, a small
+  eruption burst at the distant cave mouth.
+- **abyssal_trench** — v2: higher vantage looking down the chasm, a shaft of
+  pale cyan light. v3: closer lower angle near the vent cluster, a second
+  submersible lamp beam crossing in the background.
+- **containment_site** — v2: wider elevated view, heavier rain streaking
+  through the floodlight beams, deeper teal-black night. v3: lower
+  ground-level view close to the bent steel bars, pale dawn breaking through
+  the mist instead of full night.
+- **founders_park** — v2: pulled back to a wider view, bright clean midday
+  light instead of golden hour. v3: closer lower angle near the vines and the
+  toppled signboard, cool pale morning mist instead of warm amber haze.
+
+All 14 generated images were accepted on the first attempt — zero
+regenerations, zero colour-identity drift on `volcano_core`/`abyssal_trench`,
+zero text leaks anywhere in the set.
 
 ---
 
@@ -2437,6 +2503,127 @@ attempt — passed with no rework needed. Also worth recording: band a's MEAN
 contrast in the failed first pass was a healthy 5.53:1 while its WORST pixel
 was 1.14:1 — judging by eye, or by an average rather than the worst pixel, on
 the final WebP would have shipped an illegible label.
+
+**park/landmark-{d,e,f} — banked bands above Titan Monument.** The ladder in
+`src/data/landmarks.ts` names only six tiers (Stone Marker through Titan
+Monument), and `drawLandmark` still resolves every one of them to bands
+`a`/`b`/`c` — these three are banked ahead of that wiring, read by nothing yet.
+Same pipeline as a-c: model `nano_banana_pro` (routed to `nano_banana_2`) at
+aspect ratio `16:9`, `resolution: 2k`, cover-scaled and center-cropped to
+270×150 with `node scripts/fit-art.mjs band <src> <dest>`. No background
+removal — opaque, same as a-c.
+
+**Workflow (reference chain):** each of the three is an independent image-edit
+of the already-committed `landmark-c.webp` (uploaded via `media_upload`,
+referenced with role `image_references`) — never chained off one another — so
+all three share light direction, outline weight and the "wide landscape
+ground-level view … filling the ENTIRE frame" composition band c already
+established, while each escalates its own monument independently rather than
+compounding drift across three sequential edits the way a chain would.
+
+Bands d/e/f read as the **upper end** of the prestige ladder — grander and
+more monumental than a/b/c, continuing the escalation from a's modest
+standing stone, through b's statue-and-obelisk pair, to c's domed rotunda: d
+is an open colonnade plaza, e a domed observatory, f a summit ziggurat.
+
+**Contrast requirement (hard gate, not a style preference):** same reasoning
+and sample region as bands a-c above — tile-local (14, 118), the 200×18 label
+band, worst pixel against `#f5e6b8`. Measured: **band d 7.72:1, band e
+9.90:1, band f 6.93:1** — all above the ~6:1 target the other three bands
+settled on.
+
+**park/landmark-d — Grand Colonnade:**
+
+> Keep the same wide landscape ground-level view inside a dinosaur park,
+> filling the ENTIRE frame edge to edge with no border, no plain background
+> margin and no framing device, and the same solid dark slate kerb band
+> running the full width across the BOTTOM FIFTH of the frame, calm and
+> untextured with no detail, clearly darker than everything above it, so pale
+> cream text can sit on it legibly. Replace the monument with an even grander
+> scene: a monumental open-air colonnade of tall pale marble columns lines
+> both sides of a wide paved plaza, twin gilded obelisks rise at the center
+> flanking a complete dinosaur skeleton mounted on a raised stone dais, rows
+> of tall banners hang between the columns, manicured hedges frame the plaza
+> edges. Even flat lighting, no cast shadows. Glossy cartoon mobile-game art
+> style, bold dark outlines, clean cel shading with smooth gradients, polished
+> game-asset look. No text, no lettering, no words, no numbers, no signage
+> writing anywhere in the scene, no characters, no UI elements. CRITICAL:
+> absolutely no writing anywhere in the image — no letters, no words, no
+> numbers, no carved inscriptions, no painted signage, no symbols, no logos.
+> Every sign, plaque and surface is blank and wordless.
+
+**park/landmark-e — Amber Observatory:**
+
+Passed on the THIRD generation; recorded in full because the first two each
+failed the contrast gate a different way, and neither failure was visible at
+a glance.
+
+> Keep the same wide landscape ground-level view inside a dinosaur park,
+> filling the ENTIRE frame edge to edge with no border, no plain background
+> margin and no framing device. Replace the monument with an even grander
+> scene: a vast glass-and-gold domed observatory rises at the center, its
+> curved glass panels showing a fully articulated dinosaur skeleton suspended
+> mid-stride inside, tall bronze support ribs frame the dome, warm amber
+> crystal accents line the dome's base with their glow confined strictly to
+> the crystal surfaces themselves and never spreading past them. The BOTTOM
+> QUARTER of the frame, running the full width edge to edge, is a single
+> solid dark slate kerb band — a perfectly flat, completely uniform dark tone
+> with no grass, no paving, no fountains, no pale stone, no light-colored
+> object of any kind crossing into it anywhere — clearly darker than
+> everything above it, calm and untextured with no detail, so pale cream text
+> can sit on it legibly anywhere across its full width and its full height.
+> Even flat lighting, no cast shadows. Glossy cartoon mobile-game art style,
+> bold dark outlines, clean cel shading with smooth gradients, polished
+> game-asset look. No glow, rays, embers, or sparkles extending beyond the
+> crystal surfaces themselves. No text, no lettering, no words, no numbers, no
+> signage writing anywhere in the scene, no characters, no UI elements.
+> CRITICAL: absolutely no writing anywhere in the image — no letters, no
+> words, no numbers, no carved inscriptions, no painted signage, no symbols,
+> no logos. Every sign, plaque and surface is blank and wordless.
+
+Note for future regeneration — two failure rounds, neither obvious on a
+glance at full size. The FIRST attempt used the same "BOTTOM FIFTH … dark
+slate kerb band" clause that worked cleanly for bands d and f, but its own
+scene also asked for "a wide paved forecourt with ornamental fountains on
+either side" — the fountains sat pale stone right inside the sampled label
+band and measured **1.22:1**, the worst failure this family has produced.
+Dropping the fountains for the SECOND attempt fixed that specific prop but
+not the underlying issue: with no foreground object left to blame, the dark
+band's own upper edge still landed lower than the stated "BOTTOM FIFTH"
+promised — a strip of grass and paving crossed into the sampled y 118–136
+region, and the second attempt still measured **1.25:1**, functionally
+identical to the first. This is the same "a fractional band height renders
+shorter in practice than the fraction says" finding the attraction bands'
+Lesson records above, showing up a third time in a third family. The THIRD
+attempt (the version above) fixed it by widening the stated fraction from
+"BOTTOM FIFTH" to "BOTTOM QUARTER" and by naming the specific intruders
+explicitly ("no grass, no paving, no fountains, no pale stone"), landing at
+**9.90:1**. Judging by eye caught none of this — all three attempts read as
+"a dark band at the bottom" at a glance; only sampling the actual label
+rectangle and taking the worst pixel, never the mean, surfaced either
+failure.
+
+**park/landmark-f — Eternal Ziggurat:**
+
+> Keep the same wide landscape ground-level view inside a dinosaur park,
+> filling the ENTIRE frame edge to edge with no border, no plain background
+> margin and no framing device, and the same solid dark slate kerb band
+> running the full width across the BOTTOM FIFTH of the frame, calm and
+> untextured with no detail, clearly darker than everything above it, so pale
+> cream text can sit on it legibly. Replace the monument with the grandest
+> scene yet: a colossal stepped golden ziggurat rises at the center, tiered
+> stone platforms lined with lit torches and banners climbing toward a
+> towering bronze-and-gold dinosaur statue at its summit silhouetted against
+> the sky, a broad ceremonial staircase of pale stone leads up to it, flanking
+> rows of tall stone pillars line the approach. Even flat lighting, no cast
+> shadows. Glossy cartoon mobile-game art style, bold dark outlines, clean cel
+> shading with smooth gradients, polished game-asset look. No glow, rays,
+> embers, or sparkles extending beyond the torch flames themselves. No text,
+> no lettering, no words, no numbers, no signage writing anywhere in the
+> scene, no characters, no UI elements. CRITICAL: absolutely no writing
+> anywhere in the image — no letters, no words, no numbers, no carved
+> inscriptions, no painted signage, no symbols, no logos. Every sign, plaque
+> and surface is blank and wordless.
 
 **park/attraction-{picnic_lawn,gift_shop,viewing_platform,amber_carousel,sky_gondola,grand_atrium}**
 — the guest attraction cell (`drawAttraction`, `draw.ts`), one raster per
