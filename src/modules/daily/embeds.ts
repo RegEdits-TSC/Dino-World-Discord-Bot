@@ -57,11 +57,14 @@ export function hubPayload(ctx: Ctx, userId: string): Payload {
       new ButtonBuilder().setCustomId(`daily:claim:${userId}`).setLabel('Claim').setStyle(ButtonStyle.Success),
     )],
   };
-  attach(embed, payload, 'image', assetImage('banners', 'daily'));
+  // userId seeds the banner too: a banner has no object to key on, so it keys on who is
+  // looking and each player gets one stable Daily Quests card. claimPayload below takes
+  // the same seed for the same surface, so the hub and its claim reply agree.
+  attach(embed, payload, 'image', assetImage('banners', 'daily', userId));
   return payload;
 }
 
-export function claimPayload(result: ClaimResult): Payload {
+export function claimPayload(result: ClaimResult, userId: string): Payload {
   const lines = result.claimed.map((v) => `✅ ${v.def.description}`);
   const rewardParts: string[] = [];
   if (result.rewards.cash) rewardParts.push(`${emojiTag('dw_cash')} ${result.rewards.cash.toLocaleString('en-US')} cash`);
@@ -84,7 +87,7 @@ export function claimPayload(result: ClaimResult): Payload {
     });
   }
   const payload: Payload = { embeds: [embed] };
-  attach(embed, payload, 'image', assetImage('banners', 'daily'));
+  attach(embed, payload, 'image', assetImage('banners', 'daily', userId));
   return payload;
 }
 

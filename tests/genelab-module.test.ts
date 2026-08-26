@@ -256,11 +256,25 @@ describe('claimPayload', () => {
   it('thumbnails the new egg with the face seeded on its own row id', () => {
     const p = claimPayload({
       rarity: 'rare', traits: [], upgraded: false, speciesName: null, remaining: 0, eggId: 7,
+      userId: 'u1',
     });
     // Seeded on the egg's row id, so this is egg #7's face rather than the base.
     // The variant is deterministic — the same id always resolves here.
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://rare-v3.webp');
     expect(p.files!.map((f) => f.name)).toContain('rare-v3.webp');
+  });
+
+  it('banners the lab on the viewer, a different seed from the egg thumbnail', () => {
+    // Two seeds in one builder, keying two different things: eggId picks the egg's face,
+    // userId picks the player's Gene Lab. This is the only pin on a gene_lab face in the
+    // suite, so without it every gene_lab seed in this feature would be unobservable.
+    const p = claimPayload({
+      rarity: 'rare', traits: [], upgraded: false, speciesName: null, remaining: 0, eggId: 7,
+      userId: 'u1',
+    });
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://gene_lab-v2.webp');
+    // Call order is upload order: banner first, egg thumbnail second.
+    expect(p.files!.map((f) => f.name)).toEqual(['gene_lab-v2.webp', 'rare-v3.webp']);
   });
 });
 

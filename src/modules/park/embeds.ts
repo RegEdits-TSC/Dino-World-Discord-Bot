@@ -130,7 +130,10 @@ export function animalsPayload(
   // species with its own portrait overrides the shared archetype art. The featured ternary
   // guards domain data (is anything featured) — it stays outside attach, since that is not
   // an asset miss.
-  attach(embed, payload, 'image', assetImage('banners', 'dino_roster'));
+  // user.discordId seeds the banner — the park's OWNER, not the viewer. This tab is
+  // reachable on someone else's card (park:vtab carries a target), and the seed has to
+  // be a property of the card so a visitor and the owner see the same one.
+  attach(embed, payload, 'image', assetImage('banners', 'dino_roster', user.discordId));
   attach(embed, payload, 'thumbnail',
     opts.featured ? dinoImage(opts.featured.speciesId, opts.featured.archetype, opts.featured.diet) : null);
   return payload;

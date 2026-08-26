@@ -319,8 +319,10 @@ describe('hatchery visuals', () => {
     const newest = addEgg('common');
     const p = eggListPayload([newest, incubating, ready], 10, 'u1');
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://epic-v2.webp');
-    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://eggs_incubator.webp');
-    expect(p.files!.map((f) => f.name)).toEqual(['epic-v2.webp', 'eggs_incubator.webp']);
+    // Two seeds on one payload: the thumb keys on the featured egg's row id, the banner
+    // on the viewer ('u1' here). Different seeds, different things keyed, distinct names.
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://eggs_incubator-v4.webp');
+    expect(p.files!.map((f) => f.name)).toEqual(['epic-v2.webp', 'eggs_incubator-v4.webp']);
   });
   it('eggListPayload still ships the incubator banner when the featured thumb is missing', () => {
     // Degrade path 1/2: the two assetImage lookups are independent `if` blocks —
@@ -330,8 +332,8 @@ describe('hatchery visuals', () => {
     const p = eggListPayload([ready], 10, 'u1');
     const embed = p.embeds[0].toJSON();
     expect(embed.thumbnail).toBeUndefined();
-    expect(embed.image?.url).toBe('attachment://eggs_incubator.webp');
-    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator.webp']);
+    expect(embed.image?.url).toBe('attachment://eggs_incubator-v4.webp');
+    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator-v4.webp']);
   });
   it('eggListPayload still ships the featured thumb when the incubator banner is missing', async () => {
     // Degrade path 2/2: the mirror case — a miss on the banner call must not
@@ -364,7 +366,7 @@ describe('hatchery visuals', () => {
   it('eggListPayload with no eggs has no thumbnail but still banners the incubator', () => {
     const p = eggListPayload([], 10, 'u1');
     expect(p.embeds[0].toJSON().thumbnail).toBeUndefined();
-    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator.webp']);
+    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator-v4.webp']);
   });
 });
 

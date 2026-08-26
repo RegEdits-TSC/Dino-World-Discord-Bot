@@ -16,13 +16,19 @@ import { assetImage, attach } from '../../core/images.js';
 
 // Care replies carry a banner: care_neglect.webp when any of the player's non-escaped
 // dinos has gone unfed past the VERY HUNGRY threshold, care.webp otherwise.
+//
+// userId seeds the banner: a banner has no object to key on, so it keys on who is
+// looking, and each player gets one stable face of this surface. The seed rides the
+// whole ternary rather than just the `care` arm — care_neglect ships no -vN siblings,
+// so its seed is inert and returns the base file, and splitting the call to avoid
+// that would break tests/images.test.ts's one-line-at-a-time banner-name scrape.
 function carePayload(ctx: Ctx, userId: string, description: string) {
   const embed = new EmbedBuilder().setTitle(`${emojiTag('dw_food')} Care`).setColor(0x3ba55c).setDescription(description);
   const now = ctx.now();
   const dinos = ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, userId)).all();
   const neglected = dinos.some((d) => d.escapedAt === null && now - d.lastFedAt >= VERY_HUNGRY_MS);
   const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-  attach(embed, payload, 'image', assetImage('banners', neglected ? 'care_neglect' : 'care'));
+  attach(embed, payload, 'image', assetImage('banners', neglected ? 'care_neglect' : 'care', userId));
   return payload;
 }
 

@@ -41,7 +41,12 @@ const kindChoices = [...Object.keys(PADDOCKS), ...Object.keys(FACILITIES)]
 
 // emojiTag is resolved per call, never at module scope — the app-emoji map only
 // loads after client ready.
-function collectPayload(amount: number) {
+//
+// userId is a seed, not a lookup key: a banner has no object to key on, so it keys on
+// who is looking and each player gets one stable face of this surface. It is NOT the
+// card owner — park:collect deliberately carries no owner segment and always collects
+// the CLICKER's own income, so the clicker is the viewer here.
+function collectPayload(amount: number, userId: string) {
   const embed = new EmbedBuilder().setColor(0x3ba55c)
     .setTitle(`${emojiTag('dw_cash')} Park income`)
     .setDescription(amount > 0
@@ -49,7 +54,7 @@ function collectPayload(amount: number) {
       : 'Nothing to collect yet — give your dinos time to earn.');
   const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[]; flags: MessageFlags.Ephemeral } =
     { embeds: [embed], flags: MessageFlags.Ephemeral };
-  attach(embed, payload, 'image', assetImage('banners', 'collect'));
+  attach(embed, payload, 'image', assetImage('banners', 'collect', userId));
   return payload;
 }
 
@@ -85,7 +90,7 @@ function dinoListPayload(ctx: Ctx, userId: string, page: number) {
     .setFooter({ text: `Page ${p}/${pages}` });
   const payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof pageRow>[]; files?: AttachmentBuilder[] } =
     { embeds: [embed], components: pages > 1 ? [pageRow('park', 'dinos', userId, p, pages)] : [] };
-  attach(embed, payload, 'image', assetImage('banners', 'dino_roster'));
+  attach(embed, payload, 'image', assetImage('banners', 'dino_roster', userId));
   return payload;
 }
 
@@ -508,7 +513,7 @@ export const parkModule: ModuleManifest = {
           getOrCreateUser(ctx, i.user.id, i.user.displayName);
           settleEscapes(ctx, i.user.id);
           const { amount } = collectIncome(ctx, i.user.id);
-          await i.reply(collectPayload(amount));
+          await i.reply(collectPayload(amount, i.user.id));
           return;
         }
         const parts = i.customId.split(':');

@@ -249,7 +249,8 @@ describe('the owner sees their own showcase', () => {
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://triceratops.webp');
     // The two-files-on-one-embed pairing (roster banner, then the featured dino's own art)
     // is call order, i.e. upload order — see the repo CLAUDE.md note on attach().
-    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster.webp', 'triceratops.webp']);
+    // The roster banner is seeded on the park owner's discordId ('u1' here).
+    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster-v3.webp', 'triceratops.webp']);
   });
 
   it('carries no Next park button — that belongs to the visitor branch only', async () => {

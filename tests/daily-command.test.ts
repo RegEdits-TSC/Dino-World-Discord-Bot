@@ -78,7 +78,9 @@ describe('/daily hub', () => {
     await dailyCmd.execute(ctx, i.asChatInput());
     const files = (i.replies[0] as EmbedPayload).files!;
     expect(files).toHaveLength(1);
-    expect(files[0].name).toBe('daily.webp');
+    // The banner is seeded on the viewer's Discord id, so this pins the face 'u1' gets.
+    // The claim reply further down uses the same seed and lands on the same face.
+    expect(files[0].name).toBe('daily-v3.webp');
   });
 
   it('falls back to placeholder text instead of throwing when every rolled quest\'s def has been retired', async () => {
@@ -184,7 +186,7 @@ describe('/daily claim button', () => {
     await dailyBtn.execute(ctx, btn.asChatInput() as never);
     const payload = btn.replies[0] as EmbedPayload;
     expect(payload.files).toHaveLength(1);
-    expect(payload.files![0].name).toBe('daily.webp');
+    expect(payload.files![0].name).toBe('daily-v3.webp');
   });
 });
 

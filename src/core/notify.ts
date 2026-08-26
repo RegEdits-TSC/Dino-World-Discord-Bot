@@ -92,7 +92,9 @@ export function breedingReadyHandler(sender: Sender, ctx: Ctx) {
         .setTitle('🧬 Breeding complete')
         .setDescription('Your pairing has produced an egg! Use `/breed claim` to collect it.');
       const payload: NotifyPayload & { embeds: EmbedBuilder[] } = { embeds: [embed] };
-      attach(embed, payload, 'image', assetImage('banners', 'gene_lab'));
+      // t.userId seeds the banner — the player this DM is addressed to, the same seed
+      // /breed's own screens use, so the notification and the command agree on the face.
+      attach(embed, payload, 'image', assetImage('banners', 'gene_lab', t.userId));
       payload.components = [new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId(`breed:claim:${b.id}`)
           .setLabel('🧬 Claim').setStyle(ButtonStyle.Primary))];

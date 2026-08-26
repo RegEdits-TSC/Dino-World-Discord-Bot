@@ -85,7 +85,10 @@ export function eggListPayload(eggs: Egg[], now: number, userId: string, page = 
   const featured = featuredEgg(eggs, now);
   attach(embed, payload, 'thumbnail', featured ? assetImage('eggs', featured.rarity, String(featured.id)) : null);
   // Banner attaches on every branch, including the no-eggs one — mirrors the
-  // two-file thumbnail+image pattern in src/modules/shop/index.ts.
-  attach(embed, payload, 'image', assetImage('banners', 'eggs_incubator'));
+  // two-file thumbnail+image pattern in src/modules/shop/index.ts. Its seed is the
+  // VIEWER (this list has no single egg to key on, and it renders with none at all on
+  // the empty branch), while the thumbnail above keys on the featured egg's own row id.
+  // Two different seeds, two different things keyed, and the names stay distinct.
+  attach(embed, payload, 'image', assetImage('banners', 'eggs_incubator', userId));
   return payload;
 }

@@ -238,8 +238,10 @@ describe('sell confirm button', () => {
       files?: Array<{ name: string | null }>; components: unknown[]; flags?: number;
     };
     expect(prompt.embeds[0].toJSON().description).toContain(`Sell dino #${d.id}`);
-    expect(prompt.embeds[0].toJSON().image?.url).toBe('attachment://sell.webp');
-    expect(prompt.files!.map((f) => f.name)).toEqual(['sell.webp']);
+    // Banners are seeded on the viewer's Discord id, so these pin the face 'u1' —
+    // every fixture in this file — resolves to for each banner base.
+    expect(prompt.embeds[0].toJSON().image?.url).toBe('attachment://sell-v3.webp');
+    expect(prompt.files!.map((f) => f.name)).toEqual(['sell-v3.webp']);
     expect(prompt.components).toHaveLength(1);
     expect(prompt.flags).toBe(MessageFlags.Ephemeral);
     // The confirm edits that same message: without embeds:[]/attachments:[] the
@@ -283,12 +285,12 @@ describe('shop visuals', () => {
   });
   it('/shop view attaches the food-market banner image and file together', async () => {
     // Guards attach-all-or-nothing: setImage without the matching file renders a
-    // broken image in Discord. shop_food_market.webp ships in the repo.
+    // broken image in Discord. shop_food_market.webp and its -vN faces ship in the repo.
     const i = fakeCommand({ name: 'shop', sub: 'view', user: 'u1' });
     await shopModule.commands[0].execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { image?: { url: string } } }>; files?: Array<{ name?: string | null }> };
-    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://shop_food_market.webp');
-    expect(payload.files!.some((f) => f.name === 'shop_food_market.webp')).toBe(true);
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://shop_food_market-v4.webp');
+    expect(payload.files!.some((f) => f.name === 'shop_food_market-v4.webp')).toBe(true);
   });
 });
 
@@ -305,8 +307,8 @@ describe('shop food and sell error branches', () => {
     const embed = payload.embeds[0].toJSON();
     expect(embed.title).toContain('Bought 10× Ferns');
     expect(embed.description).toContain('100 cash');
-    expect(embed.image?.url).toBe('attachment://shop_food_market.webp');
-    expect(payload.files!.map((f) => f.name)).toContain('shop_food_market.webp');
+    expect(embed.image?.url).toBe('attachment://shop_food_market-v4.webp');
+    expect(payload.files!.map((f) => f.name)).toContain('shop_food_market-v4.webp');
     expect(ctx.economy.getFoodInventory('u1').ferns).toBe(20);   // 10 starter + 10 bought
   });
   it('/sell rejects an unsellable (locked) dino ephemeral, and sell:confirm re-checks', async () => {

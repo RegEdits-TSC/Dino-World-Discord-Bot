@@ -106,10 +106,11 @@ export const geneLabModule: ModuleManifest = {
               rarity: sa.rarity, fee: BREED_FEE[sa.rarity],
               durationMs: preview.readyAt - now,
               upgradeChance: sa.rarity === 'legendary' ? 0 : BREED_UPGRADE_CHANCE,
+              userId: i.user.id,
             }));
           } else if (sub === 'status') {
             const rows = activeBreedings(ctx, i.user.id).map((b) => ({ ...b, ready: b.readyAt <= ctx.now() }));
-            await i.reply(statusPayload(rows));
+            await i.reply(statusPayload(rows, i.user.id));
           } else {
             // One pairing per invocation, oldest first: claimPayload reveals a single
             // egg's traits, and that reveal is the point. A level-3 lab can have three
@@ -125,7 +126,7 @@ export const geneLabModule: ModuleManifest = {
             await i.reply(claimPayload({
               rarity: egg.rarity, traits: egg.traits, upgraded,
               speciesName: egg.speciesId ? getSpecies(egg.speciesId).name : null,
-              remaining: readyRows.length - 1, eggId: egg.id,
+              remaining: readyRows.length - 1, eggId: egg.id, userId: i.user.id,
             }));
           }
         } catch (e) {

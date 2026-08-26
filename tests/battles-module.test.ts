@@ -60,7 +60,12 @@ describe('/battle fight cinematic', () => {
     expect(names).toHaveLength(2);
     expect(names).toContain('compsognathus.webp');   // coastal_dig_1 leads with compsognathus
     const json = f4.embeds[0].toJSON();
-    expect(json.image!.url).toMatch(/^attachment:\/\/battle_(victory|defeat)\.webp$/);
+    // The alternation spans the two OUTCOMES, not two faces: this test runs a real fight
+    // and does not fix whether it is won. The face is pinned exactly — the banner is
+    // seeded on the viewer, and 'u1' resolves to -v3 for battle_victory and battle_defeat
+    // alike, so this still matches exactly two strings, as it did before seeding. An
+    // unseeded call would resolve to the bare base file and no longer match.
+    expect(json.image!.url).toMatch(/^attachment:\/\/battle_(victory|defeat)-v3\.webp$/);
     expect(json.thumbnail?.url).toBe('attachment://compsognathus.webp');
     expect(names).toContain(json.image!.url.replace('attachment://', ''));
   });

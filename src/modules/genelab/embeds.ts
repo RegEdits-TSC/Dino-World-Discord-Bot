@@ -8,10 +8,16 @@ import type { Breeding } from './service.js';
 
 export interface Payload { embeds: EmbedBuilder[]; components?: ActionRowBuilder<ButtonBuilder>[]; files?: AttachmentBuilder[] }
 
+// userId is a SEED, never a lookup: banners have no object to key on, so the gene_lab
+// banner keys on who is looking and each player gets one stable Gene Lab. Every builder
+// in this file that ships that banner takes it, so the three Gene Lab screens agree with
+// each other for a given player. claimPayload carries eggId as well — two seeds keying
+// two different things (the banner keys on the viewer, the egg thumbnail on the egg).
 export function confirmPayload(opts: {
   aId: number; bId: number; aName: string; bName: string;
   aTraits: string[]; bTraits: string[];
   rarity: string; fee: number; durationMs: number; upgradeChance: number;
+  userId: string;
 }): Payload {
   const embed = new EmbedBuilder().setColor(0x9b59b6)
     .setTitle('🧬 Gene Lab — confirm pairing')
@@ -30,11 +36,11 @@ export function confirmPayload(opts: {
         .setLabel('Breed').setStyle(ButtonStyle.Success),
     )],
   };
-  attach(embed, payload, 'image', assetImage('banners', 'gene_lab'));
+  attach(embed, payload, 'image', assetImage('banners', 'gene_lab', opts.userId));
   return payload;
 }
 
-export function statusPayload(rows: Array<Breeding & { ready: boolean }>): Payload {
+export function statusPayload(rows: Array<Breeding & { ready: boolean }>, userId: string): Payload {
   const embed = new EmbedBuilder().setColor(0x9b59b6).setTitle('🧬 Gene Lab');
   if (!rows.length) {
     embed.setDescription('No pairings in progress. Start one with `/breed start`.');
@@ -44,13 +50,13 @@ export function statusPayload(rows: Array<Breeding & { ready: boolean }>): Paylo
       : `**#${b.id}** — ⏳ ready <t:${Math.floor(b.readyAt / 1000)}:R>`).join('\n'));
   }
   const payload: Payload = { embeds: [embed] };
-  attach(embed, payload, 'image', assetImage('banners', 'gene_lab'));
+  attach(embed, payload, 'image', assetImage('banners', 'gene_lab', userId));
   return payload;
 }
 
 export function claimPayload(opts: {
   rarity: string; traits: string[]; upgraded: boolean;
-  speciesName: string | null; remaining: number; eggId: number;
+  speciesName: string | null; remaining: number; eggId: number; userId: string;
 }): Payload {
   const embed = new EmbedBuilder().setColor(0x9b59b6)
     .setTitle('🧬 A new egg!')
@@ -63,7 +69,7 @@ export function claimPayload(opts: {
     embed.setFooter({ text: `${opts.remaining} more pairing${opts.remaining === 1 ? '' : 's'} ready — run /breed claim again.` });
   }
   const payload: Payload = { embeds: [embed] };
-  attach(embed, payload, 'image', assetImage('banners', 'gene_lab'));
+  attach(embed, payload, 'image', assetImage('banners', 'gene_lab', opts.userId));
   attach(embed, payload, 'thumbnail', assetImage('eggs', opts.rarity, String(opts.eggId)));
   return payload;
 }

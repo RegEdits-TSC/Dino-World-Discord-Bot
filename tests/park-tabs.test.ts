@@ -117,7 +117,8 @@ describe('Animals tab', () => {
     // Call order is upload order, and several tests across the suite pin files by name.
     // triceratops ships its own portrait as of Task 10; it no longer falls back to
     // tank-herbivore. Call order is upload order, so the roster banner stays first.
-    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster.webp', 'triceratops.webp']);
+    // The roster banner is seeded on the park owner's discordId ('u1' here).
+    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster-v3.webp', 'triceratops.webp']);
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://triceratops.webp');
   });
 

@@ -147,8 +147,11 @@ describe('park dino commands', () => {
     const payload = i.replies[0] as {
       embeds: Array<{ toJSON(): { image?: { url: string } } }>; files?: Array<{ name: string | null }>;
     };
-    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://dino_roster.webp');
-    expect(payload.files!.map((f) => f.name)).toEqual(['dino_roster.webp']);
+    // Banners are seeded on the viewer's Discord id, so this pins the dino_roster face
+    // 'u1' resolves to. The collect pins further down stay on their base file: 'u1'
+    // hashes to index 0 for that banner, which is the base, not a variant.
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://dino_roster-v3.webp');
+    expect(payload.files!.map((f) => f.name)).toEqual(['dino_roster-v3.webp']);
     // An unenriched dino (enrichment exactly 1.0) must carry NO rung: the mark is gated
     // on `enrichment > 1`, and a `>= 1` there would print "enriched +0%" on every row.
     expect(JSON.stringify(i.replies[0])).not.toContain('enriched');

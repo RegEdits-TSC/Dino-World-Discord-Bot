@@ -72,8 +72,13 @@ export function alertPayload(
   // Every name stays a literal ON THIS LINE. tests/images.test.ts scrapes banner names one
   // source line at a time, taking every quoted string after `assetImage('banners'` — hoisting
   // the choice into a `const banner` would silently drop all three names from that coverage.
+  // That is also why the SEED rides the whole ternary instead of just the arm that needs it:
+  // userId picks which face of the banner this player sees (an alert has no object to key
+  // on, so the face keys on the player it is addressed to and stays stable across every
+  // alert they get), and only `collect` ships -vN siblings today — for care_neglect and
+  // season the seed is inert and returns the base file, exactly as before.
   attach(embed, payload, 'image',
-    assetImage('banners', escapes.length > 0 ? 'care_neglect' : income ? 'collect' : 'season'));
+    assetImage('banners', escapes.length > 0 ? 'care_neglect' : income ? 'collect' : 'season', userId));
 
   const row = new ActionRowBuilder<ButtonBuilder>();
   if (escapes.length > 0) {
