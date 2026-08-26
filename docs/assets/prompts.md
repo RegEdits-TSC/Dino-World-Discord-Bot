@@ -40,6 +40,16 @@ That produced a correct full-bleed square on the first attempt. Note it still
 carries "no border / no rounded corners" negatives — what changed is dropping
 the words that name the unwanted artefact as a *kind of object*.
 
+**Six thumb prompts below still break this rule, and they are recorded as run
+rather than rewritten.** Four legacy ones — Coastal Dig, Amber Ridge, Frozen
+Cliffs, Volcano Core — open with "A square cartoon game icon of …", the exact
+pattern named above as the cause. Two more — Mainland Ferry and Ruined City —
+carry the retired "NOT an app icon" clause and nevertheless came back correct.
+Every one of the six is flagged where it sits. The rule stands; those six are a
+record of what actually produced the committed file, not a counter-example to it,
+and the honest reading is that the phrasing is a strong tilt rather than a
+switch. Convert any of them before rerunning it.
+
 ## Shared style block
 
 Every prompt below ends with this block so the set matches the existing egg
@@ -102,13 +112,20 @@ takes whatever the generator emitted (usually PNG) as its source.
 |---|---|---|---|
 | `node scripts/fit-art.mjs banner <src> <dest>` | 1536×1024 (3:2) | cover-scale, center-crop | `assets/images/sites/<id>-banner.webp`, `assets/images/banners/` |
 | `node scripts/fit-art.mjs ground <src> <dest>` | 1200×800 (3:2) | cover-scale, center-crop | `assets/images/park/ground{,-wet,-dry,-cold}.webp` |
-| `node scripts/fit-art.mjs band <src> <dest>` | 270×150 (1.8:1) | cover-scale, center-crop | `assets/images/park/attraction-<kind>.webp`, `assets/images/park/landmark-{a,b,c}.webp` — anything the park renderer draws 1:1 at `TILE_W`×`TILE_H` |
+| `node scripts/fit-art.mjs band <src> <dest>` | 270×150 (1.8:1) | cover-scale, center-crop | `assets/images/park/attraction-<kind>.webp`, `assets/images/park/landmark-{a,b,c,d,e,f}.webp` — anything the park renderer draws 1:1 at `TILE_W`×`TILE_H` |
+| `node scripts/fit-art.mjs square <src> <dest>` | 1024×1024 | cover-scale, center-crop | `assets/images/sites/<id>-thumb.webp` |
 | `node scripts/fit-art.mjs cutout <src> <dest>` | 1024×1024 transparent | defringe, then whole-bbox fit at a 31px margin | `assets/images/hatch/`, `assets/images/dinos/` |
 | `node scripts/fit-art.mjs portrait <src> <dest>` | 1024×1024 transparent | largest region only, border flood, 2px shave, whole-bbox fit at a 24px margin (`--axis=egg` re-centres on the egg's own axis instead) | `assets/images/eggs/` (with `--axis=egg`), `assets/images/battles/` |
 
 `cutout` and `portrait` are not interchangeable — see the divergence table and
 the consequences list in the Egg rarities section for the numbers and what
 goes wrong if either is run on the other's family.
+
+`square` shares their output size and nothing else: it is a COVER mode, opaque,
+with no background removal, no defringe and no margin — the `banner` arithmetic
+at 1:1. It is the producer for a site thumb generated as its own square
+composition, and it reproduces the centred-square-crop hand pass the older site
+thumbs were made with. Do not reach for `cutout` because both write 1024×1024.
 
 `band` exists because 270×150 is 1.8:1 and no generator offers that aspect ratio:
 generate at 16:9 and let the mode crop. It is the `ground` mode's arithmetic with
@@ -249,19 +266,26 @@ border pixels transparent, exactly one connected region.
 **This 5-step pass is now `scripts/fit-art.mjs portrait`** (add `--axis=egg` for
 step (5)'s egg-axis variant; omit it for the whole-bbox battles variant).
 
-**Order note.** The implementation does not run steps (1)-(5) in the order just
-described: `fit-art.mjs` runs the alpha threshold and luminance peel (steps
-(2)-(3), shared with `cutout`) *before* the largest-region step (1), then
-border-floods and shaves — largest-region last, not first. This was checked
-byte-for-byte against the documented order on the four committed egg/battle
-files it was tested against and is inert on those, but it is **unverified on
-raw generated art**: a peel that severs a thin bridge before the largest-region
-step runs could delete real subject matter as a spurious second region, rather
-than an actual stray island being peeled first and never reaching the
-largest-region step at all. Phase D runs `portrait` on 21 files of raw
-generated art that have never been through either ordering — watch for an
-unexpectedly small or notched silhouette on the first few and compare against
-the source before trusting the pass on the rest of the batch.
+**Order note — settled, no longer an open question.** The implementation does not
+run steps (1)-(5) in the order just described: `fit-art.mjs` runs the alpha
+threshold and luminance peel (steps (2)-(3), shared with `cutout`) *before* the
+largest-region step (1), then border-floods and shaves — largest-region last, not
+first. The hazard that ordering carries is real in principle: a peel that severs
+a thin bridge before the largest-region step runs would delete real subject
+matter as a spurious second region, where the documented order would have peeled
+a stray island that never reached the largest-region step at all. On a synthetic
+subject built to trigger it — two saturated parts joined by a 4px pale
+desaturated bridge — the two orderings genuinely diverge, and the CLI exits 0
+either way, so the failure would be silent.
+
+It does not fire on this art. **Both orderings were run over all 24 raw
+background-removed sources this repository's `portrait` pass has ever seen** —
+the four original committed egg/battle files (byte-identical) and the 21 raw
+files the bank added, 18 egg variants and 3 boss portraits — and produce an
+identical opaque mask on every one: same pixel area, same bounding box, 21 of 21
+with zero mismatches. Nothing is owed here. Re-run the comparison only if the
+peel constants change, and expect a difference only on art whose silhouette is
+held together by a pale, low-contrast bridge.
 
 `cutout` remains a deliberately different, looser pass — alpha threshold, the 3-pass
 luminance peel of step (2), then a whole-bbox fit at 0.94 (a 31px margin) — with
@@ -490,7 +514,10 @@ ever regenerated; a 31/31 symmetric reading means `cutout` was used by mistake.
 > highlights, clean cel shading with smooth gradients, polished game-asset
 > look. No text, no characters, no UI elements.
 
-**Thumb (1024×1024):**
+**Thumb (1024×1024)** — legacy prompt, recorded as run. It opens with the exact
+"square cartoon game icon" phrasing the note on thumbs at the top of this file
+identifies as the cause of rounded-rectangle app-icon output; convert it to the
+positive full-bleed paragraph quoted there before rerunning it:
 
 > A square cartoon game icon of a single large dinosaur skull fossil sitting
 > in golden beach sand with a small palm leaf beside it, simple turquoise sky
@@ -511,7 +538,10 @@ ever regenerated; a 31/31 symmetric reading means `cutout` was used by mistake.
 > highlights, clean cel shading with smooth gradients, polished game-asset
 > look. No text, no characters, no UI elements.
 
-**Thumb (1024×1024):**
+**Thumb (1024×1024)** — legacy prompt, recorded as run. It opens with the exact
+"square cartoon game icon" phrasing the note on thumbs at the top of this file
+identifies as the cause of rounded-rectangle app-icon output; convert it to the
+positive full-bleed paragraph quoted there before rerunning it:
 
 > A square cartoon game icon of one large glowing amber gemstone with a
 > mosquito silhouette inside, resting on orange sandstone rocks, simple warm
@@ -533,7 +563,10 @@ ever regenerated; a 31/31 symmetric reading means `cutout` was used by mistake.
 > smooth gradients, polished game-asset look. No text, no characters, no UI
 > elements.
 
-**Thumb (1024×1024):**
+**Thumb (1024×1024)** — legacy prompt, recorded as run. It opens with the exact
+"square cartoon game icon" phrasing the note on thumbs at the top of this file
+identifies as the cause of rounded-rectangle app-icon output; convert it to the
+positive full-bleed paragraph quoted there before rerunning it:
 
 > A square cartoon game icon of a single translucent ice block with a dinosaur
 > skeleton silhouette frozen inside, sitting on snow, simple pale-blue arctic
@@ -557,7 +590,10 @@ shell with glowing orange cracks).
 > glossy highlights, clean cel shading with smooth gradients, polished
 > game-asset look. No text, no characters, no UI elements.
 
-**Thumb (1024×1024):**
+**Thumb (1024×1024)** — legacy prompt, recorded as run. It opens with the exact
+"square cartoon game icon" phrasing the note on thumbs at the top of this file
+identifies as the cause of rounded-rectangle app-icon output; convert it to the
+positive full-bleed paragraph quoted there before rerunning it:
 
 > A square cartoon game icon of a single black obsidian volcano peak with
 > glowing orange lava cracks and a small lava eruption at the top, simple dark
@@ -570,7 +606,9 @@ shell with glowing orange cracks).
 
 Generated at 2528×1696 (3:2, resolution `2k`), fitted to 1536×1024 for the
 banner; the thumb is a centered square crop of the same source, resized to
-1024×1024 (not a squash).
+1024×1024 (not a squash). That crop was a hand pass at the time. It is now
+`node scripts/fit-art.mjs square <src> <dest>`, which does exactly the same
+cover-scale and centre-crop — run the mode on any regeneration.
 
 **Banner (1536×1024) and Thumb (1024×1024), same source:**
 
@@ -596,7 +634,8 @@ clauses that fixed it.
 
 Generated at 1264×848, upscaled to 3216×2160 (`bytedance_image_upscale`, 2k),
 fitted to 1536×1024 for the banner; the thumb is a centered square crop of the
-same upscaled source, resized to 1024×1024 (not a squash).
+same upscaled source, resized to 1024×1024 (not a squash) — a hand pass then,
+`node scripts/fit-art.mjs square` now.
 
 **Banner (1536×1024) and Thumb (1024×1024), same source:**
 
@@ -614,9 +653,11 @@ same upscaled source, resized to 1024×1024 (not a squash).
 Generated at 1264×848 (3:2, `nano_banana_2`, routed by the service to
 `nano_banana_flash`), fitted to 1536×1024 for the banner via
 `node scripts/fit-art.mjs banner`; the thumb is a centered square crop of the
-same source, resized to 1024×1024 with `drawImage` (not a squash — no
-`fit-art.mjs` mode produces a site thumb, so this one is a hand pass, same
-recipe as the Abyssal Trench and Containment Site thumbs above).
+same source, resized to 1024×1024 with `drawImage` (not a squash), same recipe
+as the Abyssal Trench and Containment Site thumbs above. This was a hand pass
+because no `fit-art.mjs` mode produced a site thumb when it was written; the
+`square` mode this bank added is that pass, so a regeneration runs
+`node scripts/fit-art.mjs square <src> <dest>` rather than repeating it by hand.
 
 **Banner (1536×1024) and Thumb (1024×1024), same source:**
 
@@ -789,6 +830,14 @@ The harbour the breach reaches the mainland through.
 > symbols, no logos. Every sign, plaque and surface is blank and wordless. No
 > human characters, no UI elements.
 
+**These two thumb prompts still carry the retired "NOT an app icon" clause**, and
+that is deliberate rather than an oversight: both came back as correct full-bleed
+squares WITH it, so they are recorded as run. But the same clause is what failed
+on the `continental_divide` thumb one section later — see the note on thumbs at
+the top of this file — so on any regeneration, strip every mention of "app icon",
+"tile", "icon" and "game icon" and use the positive full-bleed paragraph quoted
+there instead. Do not read these two prompts as evidence that the clause works.
+
 **Boss — `boss-mainland_ferry`, the Harbormaster:** a barnacle-crusted
 semiaquatic apex that took the terminal, hide scarred by mooring cable,
 framed against wet steel. Generated as an image-edit of the coastal_dig
@@ -856,6 +905,10 @@ Downtown, long reclaimed.
 > words, no numbers, no carved inscriptions, no painted signage, no symbols,
 > no logos. Every sign, plaque and surface is blank and wordless. No human
 > characters, no UI elements.
+
+**Same caveat as the Mainland Ferry thumb above:** the "NOT an app icon" clause
+is recorded because it is what ran, not because it is what to run again. Convert
+it to the positive full-bleed paragraph on any regeneration.
 
 **Boss — `boss-ruined_city`, the Tower Nester:** a large flier whose
 wingspan reads against skyline, perched crest-forward on a broken cornice.
@@ -2062,8 +2115,13 @@ battle thumbnail.
 
 **Override, never replacement.** `dinoImage(speciesId, archetype, diet)` tries
 `dinos/<speciesId>.webp` first and falls back to `dinos/<archetype>-<diet>.webp`,
-so the other 44 species keep the shared archetype art and adding a species stays
-a data-only change. Deleting any one of these eight files restores that species'
+so a species with no file of its own keeps the shared archetype art and adding a
+species stays a data-only change. That sentence used to read "the other 44
+species keep the shared archetype art", which was true when these eight were the
+only per-species files in the repo and is not any more: the Species portraits
+section below shipped 43 of those 44, leaving `deinosuchus` the sole species
+still resolving to archetype art. The mechanism is what matters and has not
+changed — the count moves every time a portrait lands, so do not write one here. Deleting any one of these eight files restores that species'
 archetype art with no code change and no error — the same null-degrade every
 family here relies on.
 
@@ -2422,8 +2480,9 @@ tagged and fitted at 24px; the two must not be confused or reused for each other
 
 ## Species portraits
 
-44 per-species portraits — every species that shared archetype-only art before
-this pass — one `dinos/<speciesId>.webp` each, 1024×1024 transparent, resolved
+44 per-species portraits attempted and **43 shipped** — every species that shared
+archetype-only art before this pass, less `deinosuchus`, which is a deliberate
+gap documented below — one `dinos/<speciesId>.webp` each, 1024×1024 transparent, resolved
 by `dinoImage(speciesId, archetype, diet)` (`src/core/images.ts`) ahead of the
 shared `dinos/<archetype>-<diet>.webp` fallback. Same override-not-replacement
 guarantee as Hero species portraits above: deleting any one file here restores
@@ -2594,7 +2653,7 @@ beginning to rise at the base of the neck, the furthest down the body the
 crop line permits, rather than asking the model to render torso it must also
 refuse.
 
-Half of these twelve needed the CRITICAL FRAMING block (same wording and
+Seven of these twelve needed the CRITICAL FRAMING block (same wording and
 placement as documented above) for a silhouette that grows past the
 archetype reference: `amargasaurus` (paired neck spines), `apatosaurus`
 (extremely long neck), `corythosaurus` (rounded head crest), `dimorphodon`

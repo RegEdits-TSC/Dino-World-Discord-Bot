@@ -92,12 +92,17 @@ luminancePeel(px, w, h);
 // Order deviates from prompts.md's documented one-off pass, which runs the
 // largest-region step BEFORE the luminance peel: here alphaThreshold + luminancePeel
 // run first (shared with cutout, above), then largestRegion + borderFlood + shave.
-// Verified byte-identical (buffer-for-buffer) to the documented order on all four
-// committed egg/battle portrait files it was checked against, so it is inert today.
-// It is unverified on raw generated art, though: a peel that severs a thin bridge
-// before largestRegion runs would delete real subject matter as a "spurious" second
-// region, rather than an actual spurious island being peeled first and never
-// reaching largestRegion at all.
+// The two can differ in principle — a peel that severs a thin bridge before
+// largestRegion runs deletes real subject matter as a "spurious" second region, where
+// the documented order would have peeled a stray island that never reached
+// largestRegion at all — and on a synthetic subject joined by a 4px pale bridge they
+// demonstrably do, silently, with exit 0 either way.
+// They do not differ on this art. Both orderings were run over every raw
+// background-removed source this pass has ever been given: the four committed
+// egg/battle files (byte-identical) plus the 21 the art bank added (18 egg variants,
+// 3 boss portraits), and the resulting opaque mask matches on all of them — same
+// area, same bbox, zero mismatches. Re-run that comparison if the peel constants
+// move; nothing else is owed.
 if (mode === 'portrait') {
   largestRegion(px, w, h);
   borderFlood(px, w, h);
