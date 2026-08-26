@@ -3381,6 +3381,90 @@ Append to the base prompt above, in place of nothing else:
 > Vary only the break: {FRACTURE} Keep the shell colours, the speckling, the nest
 > and the framing exactly as the reference.
 
+**Provenance of the `{FRACTURE}` list below — read this before regenerating.**
+The exact strings used at generation time were not recorded. Every entry here is
+**reconstructed by eye from the committed file**, the same disclosure the three
+pilot species rows carry in the Species portraits section: regenerating from
+these will not reproduce the eighteen files pixel-for-pixel, but will reproduce
+the same break, the same fragment count and the same scatter. Each description is
+written as an instruction relative to that rarity's own committed BASE crack,
+which is what the edit was chained off. Where a description says "the base's two
+caps", look at the base file — the two upper shell pieces the split leaves
+hanging above the bowl.
+
+Across all six rarities the three variants follow one shape, which is the thing
+to preserve if any single entry reads oddly: **v2 breaks the same way as the base
+but throws more debris outward, v3 is the widest and most airborne of the three,
+and v4 is the heaviest and lowest — fewer pieces in the air, bigger pieces on the
+ground.** Fragment counts follow it too (see the table below): v3 is the peak on
+five of the six rarities.
+
+- **common** — v2: the same two caps, but the right-hand cap tips lower and
+  closer to the bowl's rim, and the rim's teeth are taller and sharper. Throw
+  several more chips outward so two or three land on the ground clear of the
+  nest, one at the left and a larger flake at the lower right.
+  v3: hold both caps higher and further apart than the base, with a spray of
+  small shards suspended in the gap between them and around their edges. Cut the
+  bowl's rim into a deep jagged crown with several tall notches, and scatter
+  chips widely to both sides, several of them clearing the nest onto the ground.
+  v4: bring the two caps closer together so the gap between them is narrow, and
+  make the bowl's rim a shallower, more even zigzag. Almost nothing in the air —
+  the fragments are larger and rest low, in the nest and on the ground beside it
+  at the left and right.
+- **uncommon** — v2: the same two caps, with the fine shards between them fanned
+  up and out to the right past the nest's edge, and two or three flakes landed on
+  the ground on each side.
+  v3: caps higher and wider apart with more small shards in flight around them,
+  the bowl's rim cut into deep notches, and chips scattered all the way around
+  the nest.
+  v4: a single wide sweeping crescent of shell above the egg, tilted to the
+  left — the base's two caps merged into one piece, with no second cap at all.
+  Nothing in the air. The bowl's rim is a broad, blunt-toothed wave with one
+  chunk broken out of its right side, and the fragments are large and resting on
+  the ground at the left and right of the nest.
+- **rare** — v2: the same two caps, with one small shard suspended in the gap
+  between them, and the bowl's rim taller and more sharply peaked. A large
+  fragment leans against the nest at the right and a flat chip lies on the ground
+  at the lower left.
+  v3: both caps lifted higher and further apart, with a burst of small shards
+  scattered between them and off to the right, and a few more floating to the
+  left of the egg. The bowl's rim is a tall jagged crown.
+  v4: only one cap remains, a crescent tipped over the upper left; the second is
+  gone. The bowl's rim is a wide, deeply V-notched crown, and the fragments are
+  large, low and still — resting on the ground to the left and right of the nest
+  rather than in the air.
+- **epic** — v2: break the base's single domed lid into pieces. Keep the wide
+  arc on the left, then a gap, then a loose cluster of three or four separate
+  crystal chunks, then the small piece at the right. Throw more chips outward,
+  with a large flat shard on the ground at the right and two more at the lower
+  left.
+  v3: keep the lid as one wide arc as in the base but hang more crystal points
+  from its underside, and let chips fall in a curtain down both sides of the
+  egg, dense with small shards all around the nest.
+  v4: a single narrower crescent lid tipped to the right, the rest of it gone.
+  Open the bowl's rim wider, and make the fragments chunky and low — heavy
+  pieces on the ground at the left and right rather than small chips in the air.
+- **legendary** — v2: crack the base's domed cap across itself into blocky
+  plates, so fault lines run over the lid without separating it. Add more
+  flakes, two flat ones on the ground at the lower left and a larger one at the
+  lower right.
+  v3: keep the cap's shape but break one shard off its right edge, and scatter
+  the flakes further down both sides onto the ground.
+  v4: split the cap into two separate pieces — a taller half tipped to the left
+  and a smaller half tipped to the right, with a clear gap between them. The
+  bowl's rim is a shallower ridge, and flat gold flakes lie strewn on the ground
+  to the left and right of the nest.
+- **mythic** — v2: keep the base's single tilted cap and add the fragments the
+  base does not have: several chunky obsidian shards floating clear of the shell
+  at the left and right, one flake resting on the ground at the lower left, and
+  a small chip up near the top right.
+  v3: the same cap, with the fragments spread into a wider halo to the left and
+  right and more small pieces gathered around the base of the nest. The lava
+  glow inside the open shell is brighter than the base's.
+  v4: split the cap into two — a larger piece over the left and a separate
+  rounded piece at the upper right. More chunks, and heavier ones, in and around
+  the nest and on the ground to the right.
+
 Measured region counts after post-processing — the fragment check this family
 lives or dies on, since the automated guard covers the six base files only:
 
