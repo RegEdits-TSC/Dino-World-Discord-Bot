@@ -423,9 +423,8 @@ describe('egg art', () => {
 
 describe('hatch crack art', () => {
   // Registered from disk, not from RARITIES, so a future -vN variant gets the same
-  // dimension and corner-transparency bar as the six base cracks. The multi-region
-  // flood-fill guard just below stays keyed to RARITIES on purpose — see its own
-  // comment.
+  // dimension, corner-transparency, backdrop and fragment-count bar as the six base
+  // cracks. Every case in this block runs off this one list.
   const CRACK_FILES = namesUnder('hatch');
   it('found crack art', () => expect(CRACK_FILES.length).toBeGreaterThanOrEqual(6));
   // 1024×1024 transparent, same square as the eggs they are edited from — NOT
@@ -446,16 +445,12 @@ describe('hatch crack art', () => {
     for (const [x, y] of [[0, 0], [1023, 0], [0, 1023], [1023, 1023]] as const) {
       expect(px[(y * img.width + x) * 4 + 3], `corner ${x},${y}`).toBe(0);
     }
-    // Margin, not a per-file region count: the multi-region guard below cannot be
-    // applied per file (mythic-crack legitimately lands at one region — see its own
-    // comment), so it stays keyed to the whole RARITIES set and says nothing about any
-    // one variant. This margin check is what covers a single file, and it is strictly
-    // stronger than a region count for the mistake it exists to catch: running
+    // The margin is a SECOND, independent way to catch the wrong-mode mistake, and it
+    // is strictly stronger than the fragment count below for that one mistake: running
     // `fit-art.mjs portrait` on a crack (instead of `cutout`) deletes every disconnected
-    // shell fragment AND moves the margin from 31px to 24px, so a wrong-mode crack that
-    // happens to still measure more than one region (or one nobody is flood-filling,
-    // i.e. any variant) is still caught here on the margin alone. Whole-bbox, matching
-    // `cutout`'s fit — never axis-biased like the eggs.
+    // shell fragment AND moves the margin from 31px to 24px, so it is caught here even
+    // on mythic-crack, the one file the fragment count cannot speak for. Whole-bbox,
+    // matching `cutout`'s fit — never axis-biased like the eggs.
     let minX = 1024, minY = 1024, maxX = -1, maxY = -1;
     for (let y = 0; y < img.height; y++) {
       for (let x = 0; x < img.width; x++) {
@@ -503,54 +498,62 @@ describe('hatch crack art', () => {
     expect(px, `${name} carries a ${px}px opaque backdrop region inside the subject`).toBeLessThan(300);
   });
 
-  // The multi-region guard below is DELIBERATELY still keyed to the six base RARITIES,
-  // never to CRACK_FILES: its assertion (multiRegion.length > 0) is evaluated ACROSS
-  // THE WHOLE SET, so widening it to include every -vN variant would let a base crack
-  // lose its falling shell fragments while a variant kept them, and the guard would
-  // still pass. Keeping it on the fixed base set is what makes it actually test the
-  // fragments, not just "some file somewhere has more than one region".
-  // The cracks are the one cutout family that MUST keep several disconnected
-  // alpha regions: the prompt asks for shell fragments falling away, and a
-  // fragment clear of the nest is its own opaque island. prompts.md's egg pass
-  // opens with "keep only the largest connected region" and verifies "exactly
-  // one connected region" — applying either step here silently deletes the
-  // fragments and leaves a plain open egg, which every size/corner check above
-  // still passes. This is the gate for that: a blanket single-region pass over
-  // the set takes the count below to 0. Individual cracks may legitimately land
-  // at one region (`mythic` does), so the assertion is on the set, not per file.
-  it('keeps the falling shell fragments — the set is not reduced to one region each', async () => {
-    const counts: Record<string, number> = {};
-    for (const rarity of RARITIES) {
-      const img = new Image();
-      img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${rarity}-crack.webp`));
-      await img.decode();
-      const canvas = createCanvas(img.width, img.height);
-      const c2d = canvas.getContext('2d');
-      c2d.drawImage(img, 0, 0);
-      const px = c2d.getImageData(0, 0, img.width, img.height).data;
-      const w = img.width, total = w * img.height;
-      const seen = new Uint8Array(total);
-      const stack = new Int32Array(total);
-      let regions = 0;
-      for (let start = 0; start < total; start++) {
-        if (seen[start] || px[start * 4 + 3] === 0) continue;
-        regions++;
-        let top = 0;
-        stack[top++] = start;
-        seen[start] = 1;
-        while (top > 0) {
-          const p = stack[--top];
-          const x = p % w;
-          if (x > 0 && !seen[p - 1] && px[(p - 1) * 4 + 3] !== 0) { seen[p - 1] = 1; stack[top++] = p - 1; }
-          if (x < w - 1 && !seen[p + 1] && px[(p + 1) * 4 + 3] !== 0) { seen[p + 1] = 1; stack[top++] = p + 1; }
-          if (p >= w && !seen[p - w] && px[(p - w) * 4 + 3] !== 0) { seen[p - w] = 1; stack[top++] = p - w; }
-          if (p + w < total && !seen[p + w] && px[(p + w) * 4 + 3] !== 0) { seen[p + w] = 1; stack[top++] = p + w; }
-        }
+  // The cracks are the one cutout family that MUST keep several disconnected alpha
+  // regions: the prompt asks for shell fragments falling away, and a fragment clear
+  // of the nest is its own opaque island. prompts.md's egg pass opens with "keep only
+  // the largest connected region" and verifies "exactly one connected region" —
+  // applying either step here silently deletes the fragments and leaves a plain open
+  // egg, which every size and corner check above still passes.
+  //
+  // PER FILE, and registered from disk. This used to be one case over the six base
+  // RARITIES asserting that AT LEAST ONE of them had more than one region — an OR
+  // across the set, which four of the six could fail while it stayed green (measured:
+  // it survives mutation to `> 5`), and which never opened the 18 committed variants
+  // at all. prompts.md states the real criterion per file: "a count of 1 on a
+  // non-mythic file means the fragments were lost and the file must be regenerated
+  // rather than shipped."
+  //
+  // COUNTS REGIONS OVER 40px, never the raw region total. The backdrop repair
+  // (scripts/clear-backdrop.mjs) severs pale bridges and leaves tens of single-pixel
+  // matte specks behind on the seven files it rewrote: common-crack.webp raw-counts 68
+  // regions and has 6 fragments. A raw `> 1` would therefore pass on a repaired file
+  // that had lost every fragment it owns, which is the exact failure this exists to
+  // catch. The 40px floor is count-regions.mjs's `significant` column.
+  //
+  // mythic-crack is exempt BY NAME — the one committed crack whose art genuinely
+  // lands at a single region, same single-filename exemption shape as
+  // volcano_core-thumb above. Its three variants are not exempt and carry 6 to 10.
+  it.each(CRACK_FILES)('%s keeps its falling shell fragments', async (name) => {
+    const img = new Image();
+    img.src = readFileSync(resolve(process.cwd(), 'assets/images/hatch', `${name}.webp`));
+    await img.decode();
+    const canvas = createCanvas(img.width, img.height);
+    const c2d = canvas.getContext('2d');
+    c2d.drawImage(img, 0, 0);
+    const px = c2d.getImageData(0, 0, img.width, img.height).data;
+    const w = img.width, total = w * img.height;
+    const seen = new Uint8Array(total);
+    const stack = new Int32Array(total);
+    let fragments = 0;
+    for (let start = 0; start < total; start++) {
+      if (seen[start] || px[start * 4 + 3] === 0) continue;
+      let top = 0, size = 0;
+      stack[top++] = start;
+      seen[start] = 1;
+      while (top > 0) {
+        const p = stack[--top];
+        size++;
+        const x = p % w;
+        if (x > 0 && !seen[p - 1] && px[(p - 1) * 4 + 3] !== 0) { seen[p - 1] = 1; stack[top++] = p - 1; }
+        if (x < w - 1 && !seen[p + 1] && px[(p + 1) * 4 + 3] !== 0) { seen[p + 1] = 1; stack[top++] = p + 1; }
+        if (p >= w && !seen[p - w] && px[(p - w) * 4 + 3] !== 0) { seen[p - w] = 1; stack[top++] = p - w; }
+        if (p + w < total && !seen[p + w] && px[(p + w) * 4 + 3] !== 0) { seen[p + w] = 1; stack[top++] = p + w; }
       }
-      counts[rarity] = regions;
+      if (size > 40) fragments++;
     }
-    const multiRegion = RARITIES.filter((r) => counts[r] > 1);
-    expect(multiRegion.length, `region counts: ${JSON.stringify(counts)}`).toBeGreaterThan(0);
+    const floor = name === 'mythic-crack' ? 1 : 2;
+    expect(fragments, `${name} has ${fragments} fragment(s) over 40px — the falling shell pieces were lost`)
+      .toBeGreaterThanOrEqual(floor);
   });
 });
 

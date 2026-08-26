@@ -3255,22 +3255,28 @@ bbox, 31px margin (see the table in Egg rarities; the eggs themselves sit at
 **Multiple disconnected regions are intentional here — never reduce a crack to
 one region.** The prompt asks for shell fragments falling away from the egg, and
 a fragment that has cleared the nest silhouette is its own opaque island. Five of
-the six committed cracks have 3–6 regions (`uncommon` 6, `legendary` and `rare` 5,
-`epic` 4, `common` 3; only `mythic` happens to land at 1). Step (1) of the Egg
-rarities pass — "keep only the largest connected region" — and its "exactly one
-connected region" verification are therefore **not** part of this family's
-post-processing: applying either would silently delete the fragments and leave a
-plain open egg, and `fit-art.mjs cutout` correctly keeps every region.
-`tests/images.test.ts`'s "keeps the falling shell fragments — the set is not
-reduced to one region each" case is the real guard against that loss: it
-flood-fills all six committed cracks and asserts that at least one of them
-keeps more than one connected region, which a blanket single-region pass over
-the whole set would drive to zero. It does not verify each rarity's own
-fragment count individually — `mythic` legitimately lands at one region — so
-treat it as a coarse backstop, not a substitute for review: after
-regenerating, still confirm by eye that the crack you touched kept its own
-fragments. What still applies from that pass is the *defringe* half —
-the light studio rim must be peeled, and all border pixels must end transparent.
+the six committed cracks carry 4–6 fragments (`common` and `uncommon` 6,
+`legendary` and `rare` 5, `epic` 4; only `mythic` happens to land at 1). Step (1)
+of the Egg rarities pass — "keep only the largest connected region" — and its
+"exactly one connected region" verification are therefore **not** part of this
+family's post-processing: applying either would silently delete the fragments and
+leave a plain open egg, and `fit-art.mjs cutout` correctly keeps every region.
+`tests/images.test.ts`'s "keeps its falling shell fragments" case is the real
+guard against that loss: it registers **every** committed hatch file from disk,
+bases and variants alike, and fails any one of them that drops below two
+fragments. `mythic-crack` — genuinely a single region — is exempt by name; its
+three variants are not. Two details of that guard are load-bearing if it is ever
+rewritten. It counts regions **over 40px**, never the raw region total: the
+backdrop repair below leaves tens of single-pixel matte specks behind on the
+files it touched, so `common-crack` raw-counts 68 regions against its 6 real
+fragments, and a raw count would pass a file that had lost every fragment it
+owns. And it is **per file**, not across the set — the version it replaced
+asserted only that at least ONE of the six bases had more than one region, which
+four of them could fail while it stayed green, and which never opened a single
+variant. It is still not a substitute for review: after regenerating, confirm by
+eye that the crack you touched kept its own fragments. What still applies from
+the egg pass is the *defringe* half — the light studio rim must be peeled, and
+all border pixels must end transparent.
 
 ### Backdrop in the crack gaps — the defect this family is most prone to
 
@@ -3465,28 +3471,49 @@ five of the six rarities.
   rounded piece at the upper right. More chunks, and heavier ones, in and around
   the nest and on the ground to the right.
 
-Measured region counts after post-processing — the fragment check this family
-lives or dies on, since the automated guard covers the six base files only:
+Measured fragment counts, **as committed today** — `scripts/count-regions.mjs`'s
+`significant` column, i.e. opaque regions over 40px:
 
 | Rarity | base | v2 | v3 | v4 |
 |---|---|---|---|---|
-| common | 3 | 4 | 8 | 6 |
+| common | 6 | 6 | 15 | 5 |
 | uncommon | 6 | 12 | 17 | 6 |
 | rare | 5 | 8 | 12 | 5 |
 | epic | 4 | 9 | 11 | 3 |
 | legendary | 5 | 9 | 10 | 5 |
-| mythic | 1 | 8 | 10 | 6 |
+| mythic | 1 | 7 | 10 | 6 |
 
-Every variant lands above one region, so no variant lost its fragments. Note the
-`mythic` row reads oddly on purpose: its **base** is the one committed crack that
-happens to sit at a single region, and all three of its variants carry more
+**Read `significant`, not `regions`.** `count-regions.mjs` prints the raw region
+total first, and on the seven files the backdrop repair rewrote that total is
+dominated by matte dust the repair leaves behind — `common-crack` reads 68
+regions, `common-crack-v4` 188, against the 6 and 5 real fragments above. Every
+other file's two columns agree exactly. This table is the second column on every
+row; comparing a regenerated file's `regions=` against it will look like a
+catastrophic change that did not happen.
+
+The seven repaired files were re-measured afterwards. The repair severs pale
+bridges the backdrop had been forming between pieces meant to be separate, so
+fragment counts **rose**: the `common` row went 3 → 6, 4 → 6, 8 → 15 and 3 → 5
+across base and variants, while `mythic-crack-v2` (7), `rare-crack-v2` (8) and
+`rare-crack-v3` (12) were unchanged. Nothing was lost — every fragment survived.
+One caution if a future repair is ever measured mid-flight: between the two
+passes the `common` counts read higher still (7, 8, 17, 6), because
+partial-alpha residue blobs of over 40px were themselves being counted as
+fragments until the second pass cleared them. A count that rises after a repair
+is not automatically good news; look at the picture.
+
+Every variant lands above one fragment, so no variant lost its shell pieces. Note
+the `mythic` row reads oddly on purpose: its **base** is the one committed crack
+that genuinely sits at a single region, and all three of its variants carry more
 fragments than it does. That is fine — more fragments is the intended look, and
 the base is the outlier, not the variants.
 
-Re-measure with `scripts/count-regions.mjs` (a
-4-connected flood fill over the alpha channel) if any of these is ever
-regenerated. A count of **1** on a non-`mythic` file means the fragments were
-lost and the file must be regenerated rather than shipped.
+Re-measure with `scripts/count-regions.mjs` (a 4-connected flood fill over the
+alpha channel) if any of these is ever regenerated. A `significant` count of
+**1** on a non-`mythic-crack` file means the fragments were lost and the file
+must be regenerated rather than shipped — which is exactly what
+`tests/images.test.ts` asserts per file, so a regeneration that loses them fails
+the suite rather than waiting to be noticed.
 
 ## Emoji icons
 
