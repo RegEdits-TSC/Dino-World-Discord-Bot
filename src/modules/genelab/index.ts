@@ -125,7 +125,7 @@ export const geneLabModule: ModuleManifest = {
             await i.reply(claimPayload({
               rarity: egg.rarity, traits: egg.traits, upgraded,
               speciesName: egg.speciesId ? getSpecies(egg.speciesId).name : null,
-              remaining: readyRows.length - 1,
+              remaining: readyRows.length - 1, eggId: egg.id,
             }));
           }
         } catch (e) {

@@ -31,8 +31,10 @@ describe('scheduler notification handlers', () => {
     expect(dms).toHaveLength(1);
     expect(embedJson(dms[0]).description).toContain('rare egg is ready to hatch');
     // Attach-all-or-nothing: the thumbnail URL and its file ride the same payload.
-    expect(embedJson(dms[0]).thumbnail?.url).toBe('attachment://rare.webp');
-    expect(fileNames(dms[0])).toContain('rare.webp');
+    // Seeded on the egg's row id, so this is egg #1's face rather than the base.
+    // The variant is deterministic — the same id always resolves here.
+    expect(embedJson(dms[0]).thumbnail?.url).toBe('attachment://rare-v4.webp');
+    expect(fileNames(dms[0])).toContain('rare-v4.webp');
     ctx.db.delete(schema.eggs).run();
     await handler({ userId: 'u1', refId: egg.id, originGuildId: null });
     expect(dms).toHaveLength(1);   // skip-guard: no ping for a consumed egg

@@ -79,6 +79,8 @@ export const shopModule: ModuleManifest = {
             const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
             const order = Object.keys(RARITY);
             const best = offers.length ? offers.reduce((a, b) => (order.indexOf(b) > order.indexOf(a) ? b : a)) : null;
+            // No seed: this previews what CAN be bought, so no egg exists yet to key on.
+            // Seeding from the viewer would make this preview disagree with the egg they buy.
             attach(embed, payload, 'thumbnail', best ? assetImage('eggs', best) : null);
             attach(embed, payload, 'image', assetImage('banners', 'shop_food_market'));
             await i.reply(payload);
@@ -91,7 +93,7 @@ export const shopModule: ModuleManifest = {
               .setTitle(`🥚 Bought a ${rarityEmoji(egg.rarity)}${egg.rarity} egg (#${egg.id})`)
               .setDescription(`Incubate it with /incubate ${egg.id}.`);
             const eggPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [eggEmbed] };
-            attach(eggEmbed, eggPayload, 'thumbnail', assetImage('eggs', egg.rarity));
+            attach(eggEmbed, eggPayload, 'thumbnail', assetImage('eggs', egg.rarity, String(egg.id)));
             await i.reply(eggPayload);
           } else {
             const units = i.options.getInteger('units', true);

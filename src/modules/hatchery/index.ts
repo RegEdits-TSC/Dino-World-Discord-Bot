@@ -35,7 +35,7 @@ export const hatcheryModule: ModuleManifest = {
             .setTitle(`🥚 Incubating your ${rarityEmoji(egg.rarity)}${egg.rarity} egg`)
             .setDescription(`Ready <t:${Math.floor(egg.hatchesAt! / 1000)}:R> — then run \`/hatch egg:${egg.id}\`.`);
           const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-          attach(embed, payload, 'thumbnail', assetImage('eggs', egg.rarity));
+          attach(embed, payload, 'thumbnail', assetImage('eggs', egg.rarity, String(egg.id)));
           await i.reply(payload);
         } catch (e) { if (e instanceof HatcheryError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
       },

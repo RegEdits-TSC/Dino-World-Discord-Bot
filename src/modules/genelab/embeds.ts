@@ -48,7 +48,10 @@ export function statusPayload(rows: Array<Breeding & { ready: boolean }>): Paylo
   return payload;
 }
 
-export function claimPayload(opts: { rarity: string; traits: string[]; upgraded: boolean; speciesName: string | null; remaining: number }): Payload {
+export function claimPayload(opts: {
+  rarity: string; traits: string[]; upgraded: boolean;
+  speciesName: string | null; remaining: number; eggId: number;
+}): Payload {
   const embed = new EmbedBuilder().setColor(0x9b59b6)
     .setTitle('🧬 A new egg!')
     .setDescription(opts.upgraded
@@ -61,7 +64,7 @@ export function claimPayload(opts: { rarity: string; traits: string[]; upgraded:
   }
   const payload: Payload = { embeds: [embed] };
   attach(embed, payload, 'image', assetImage('banners', 'gene_lab'));
-  attach(embed, payload, 'thumbnail', assetImage('eggs', opts.rarity));
+  attach(embed, payload, 'thumbnail', assetImage('eggs', opts.rarity, String(opts.eggId)));
   return payload;
 }
 

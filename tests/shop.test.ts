@@ -267,7 +267,10 @@ describe('shop visuals', () => {
     const i = fakeCommand({ name: 'shop', sub: 'egg', user: 'u1', options: { rarity: offers[0] } });
     await shopModule.commands[0].execute(ctx, i.asChatInput());
     const payload = i.replies[0] as { embeds: Array<{ toJSON(): { thumbnail?: { url: string }; description?: string } }> };
-    expect(payload.embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${offers[0]}.webp`);
+    // Seeded on the egg's row id (the first egg bought in this test, so id 1), so this
+    // is that egg's face rather than the base. Deterministic — offers[0] is 'uncommon'
+    // for a fresh rating-0 user at day 0, the same as every other test in this file.
+    expect(payload.embeds[0].toJSON().thumbnail?.url).toBe('attachment://uncommon-v3.webp');
     expect(payload.embeds[0].toJSON().description).toContain('/incubate');
   });
   it('/shop view lists the food market grouped by diet', async () => {

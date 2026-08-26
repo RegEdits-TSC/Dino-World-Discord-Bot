@@ -252,7 +252,9 @@ describe('hatchery module', () => {
 describe('hatchery visuals', () => {
   it('preHatchPayload sets the hero egg image and attaches the file', () => {
     const p = preHatchPayload('rare', 7);
-    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare.webp');
+    // Seeded on the egg's row id, so this is egg #7's face rather than the base.
+    // The variant is deterministic — the same id always resolves here.
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare-v3.webp');
     expect(p.files).toHaveLength(1);
     expect(p.components).toHaveLength(1); // crack button preserved
   });
@@ -313,9 +315,9 @@ describe('hatchery visuals', () => {
     const incubating = { ...addEgg('rare'), hatchesAt: 999_999, incubationStartedAt: 1 };
     const newest = addEgg('common');
     const p = eggListPayload([newest, incubating, ready], 10, 'u1');
-    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://epic.webp');
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://epic-v2.webp');
     expect(p.embeds[0].toJSON().image?.url).toBe('attachment://eggs_incubator.webp');
-    expect(p.files!.map((f) => f.name)).toEqual(['epic.webp', 'eggs_incubator.webp']);
+    expect(p.files!.map((f) => f.name)).toEqual(['epic-v2.webp', 'eggs_incubator.webp']);
   });
   it('eggListPayload still ships the incubator banner when the featured thumb is missing', () => {
     // Degrade path 1/2: the two assetImage lookups are independent `if` blocks —
@@ -333,14 +335,14 @@ describe('hatchery visuals', () => {
     // suppress the thumb that was already appended to payload.files.
     const { assetImage: realAssetImage } = await vi.importActual<typeof import('../src/core/images.js')>('../src/core/images.js');
     vi.mocked(assetImage)
-      .mockImplementationOnce((kind, name) => realAssetImage(kind, name))   // thumb call (1st) -> real
-      .mockImplementationOnce(() => null);                                 // banner call (2nd) -> missing
+      .mockImplementationOnce((...args) => realAssetImage(...args))   // thumb call (1st) -> real, seed forwarded
+      .mockImplementationOnce(() => null);                            // banner call (2nd) -> missing
     const ready = { ...addEgg('epic'), hatchesAt: 5, incubationStartedAt: 1 };
     const p = eggListPayload([ready], 10, 'u1');
     const embed = p.embeds[0].toJSON();
-    expect(embed.thumbnail?.url).toBe('attachment://epic.webp');
+    expect(embed.thumbnail?.url).toBe('attachment://epic-v2.webp');
     expect(embed.image).toBeUndefined();
-    expect(p.files!.map((f) => f.name)).toEqual(['epic.webp']);
+    expect(p.files!.map((f) => f.name)).toEqual(['epic-v2.webp']);
   });
   it('eggListPayload marks a trade-locked egg with a padlock, ahead of its timer state', () => {
     const locked = { ...addEgg('epic'), hatchesAt: 5, incubationStartedAt: 1 };
@@ -354,7 +356,7 @@ describe('hatchery visuals', () => {
     const older = { ...addEgg('common'), obtainedAt: 1 };
     const newer = { ...addEgg('legendary'), obtainedAt: 2 };
     const p = eggListPayload([older, newer], 10, 'u1');
-    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://legendary.webp');
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://legendary-v4.webp');
   });
   it('eggListPayload with no eggs has no thumbnail but still banners the incubator', () => {
     const p = eggListPayload([], 10, 'u1');
@@ -469,8 +471,8 @@ describe('/incubate execute', () => {
     expect(embed.title).toContain('Incubating your common egg');
     expect(embed.description).toContain('<t:');   // relative ready stamp survives the promotion
     // Attach-all-or-nothing: a thumbnail URL with no matching file renders broken.
-    expect(embed.thumbnail?.url).toBe('attachment://common.webp');
-    expect(payload.files!.map((f) => f.name)).toContain('common.webp');
+    expect(embed.thumbnail?.url).toBe('attachment://common-v3.webp');
+    expect(payload.files!.map((f) => f.name)).toContain('common-v3.webp');
     const timer = ctx.db.select().from(schema.timers).all().find((t) => t.kind === 'egg_hatch');
     expect(timer?.refId).toBe(egg.id);
   });

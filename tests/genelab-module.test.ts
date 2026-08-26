@@ -5,6 +5,7 @@ import { schema } from '../src/core/db/index.js';
 import { geneLabModule } from '../src/modules/genelab/index.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { BREED_FEE, BREED_MS, SPLICE_SHARD_COST } from '../src/data/breeding.js';
+import { claimPayload } from '../src/modules/genelab/embeds.js';
 
 const breedCmd = geneLabModule.commands.find((c) => c.data.name === 'breed')!;
 const breedBtn = geneLabModule.components.find((c) => c.prefix === 'breed')!;
@@ -248,6 +249,18 @@ describe('/breed status and claim', () => {
     await breedCmd.execute(ctx, claim2.asChatInput());
     expect(ctx.db.select().from(schema.eggs).all()).toHaveLength(2);
     expect(JSON.stringify(claim2.replies[0])).not.toMatch(/more pairing/);
+  });
+});
+
+describe('claimPayload', () => {
+  it('thumbnails the new egg with the face seeded on its own row id', () => {
+    const p = claimPayload({
+      rarity: 'rare', traits: [], upgraded: false, speciesName: null, remaining: 0, eggId: 7,
+    });
+    // Seeded on the egg's row id, so this is egg #7's face rather than the base.
+    // The variant is deterministic — the same id always resolves here.
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://rare-v3.webp');
+    expect(p.files!.map((f) => f.name)).toContain('rare-v3.webp');
   });
 });
 

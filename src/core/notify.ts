@@ -75,7 +75,7 @@ export function eggHatchHandler(sender: Sender, ctx: Ctx) {
         .setTitle('🥚 Egg ready')
         .setDescription(`Your ${egg.rarity} egg is ready to hatch! Use \`/hatch egg:${egg.id}\`.`);
       const payload: NotifyPayload & { embeds: EmbedBuilder[] } = { embeds: [embed] };
-      attach(embed, payload, 'thumbnail', assetImage('eggs', egg.rarity));
+      attach(embed, payload, 'thumbnail', assetImage('eggs', egg.rarity, String(egg.id)));
       payload.components = [new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId(`hatch:crack:${egg.id}`)
           .setLabel('🥚 Hatch').setStyle(ButtonStyle.Primary))];
