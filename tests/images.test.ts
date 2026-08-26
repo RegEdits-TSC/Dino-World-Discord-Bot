@@ -29,9 +29,11 @@ function namesUnder(kind: string): string[] {
 }
 
 // Extracted so the predicate can be tested against SYNTHETIC input (see 'banner art'
-// below) rather than only the live banner set. No -vN banner is committed yet, so a
-// mutated or broken regex here would match zero real files either way — same as the
-// correct one — and go undetected by anything that only reads assets/images/banners.
+// below) rather than only the live banner set. It is load-bearing now that -vN banners
+// are committed: it is what registers each of them into DIMENSION_CHECKED_BANNERS, so
+// a mutated or broken regex would silently DROP their dimension cases rather than fail
+// any — an it.each over a shorter array registers fewer tests and reports nothing.
+// Nothing that only reads assets/images/banners can see that; synthetic input can.
 const isVariantName = (n: string) => /-v\d+$/.test(n);
 
 // BANNERS is SCRAPED from src/, never hand-typed. A hand-typed list can only
@@ -191,9 +193,10 @@ describe('banner art', () => {
     expect([...new Set(onDisk)].filter((n) => !BANNERS.includes(n))).toEqual([]);
   });
 
-  // The predicate itself, not the live file set: no -vN banner exists on disk yet, so
-  // a floor assertion built on the current banner set would read the same before and
-  // after a broken regex. Synthetic input is what makes this fail under mutation.
+  // The predicate itself, not the live file set. A floor assertion over the live
+  // banners would read the same before and after a broken regex, because the failure
+  // is a SHORTER it.each below — dropped cases, not failing ones. Synthetic input is
+  // what makes this fail under mutation.
   // event-blood_moon and battle_victory are real committed banners that must NOT
   // match, so an over-matching predicate fails here too, not just an under-matching
   // one.
@@ -832,6 +835,60 @@ describe('dino art file names', () => {
   it('no banked id has since shipped as species data', () => {
     const shipped = BANKED_SPECIES_ART.filter((id) => SPECIES_IDS.has(id));
     expect(shipped, `remove from BANKED_SPECIES_ART, now real species: ${shipped.join(', ')}`)
+      .toEqual([]);
+  });
+
+  // The mirror of the stray check above, and the direction that was missing entirely:
+  // an entry in BANKED_SPECIES_ART whose file is absent is completely SILENT.
+  // SPECIES_ART_FILES intersects the allowlist with what is on disk, so a listed but
+  // missing id simply registers no cases — measured by adding a nonsense id, which
+  // left the whole file byte-identical at 291/291 passed. The hero portraits have this
+  // assertion ('still ships every hero portrait'); all twelve banked ids had nothing.
+  // Without it, a banked portrait deleted or never committed reads as fine forever,
+  // which for art that cannot be regenerated is the expensive direction to get wrong.
+  it('still ships every banked species portrait', () => {
+    for (const id of BANKED_SPECIES_ART) {
+      expect(DINO_ART_FILES, `banked portrait ${id} is listed but not committed`).toContain(id);
+    }
+  });
+});
+
+// The same closed-allowlist treatment dinos/ has had all along, for the two directories
+// that bank art ahead of the data that will name it. Both are registered from disk for
+// their dimension and margin checks, so a MISSPELLED file gets every one of those checks
+// and passes them all — the picture is the right size and shape, it just resolves from
+// no id anyone will ever ask for, and assetImage null-degrades to an imageless embed
+// rather than erroring. Nothing else in this suite reads these filenames: CAMPAIGN
+// cannot name a chapter that does not exist as data yet, which is the whole point of
+// banking them.
+describe('site and boss portrait file names', () => {
+  // Chapters 8-10, banked ahead of their CAMPAIGN data (spec 6a). Delete an entry when
+  // its chapter ships — EXPEDITION_SITES will cover it — and the case below fails until
+  // someone does, so the allowlist cannot rot into a hiding place for a real stray.
+  const BANKED_CHAPTER_ART = ['mainland_ferry', 'ruined_city', 'continental_divide'];
+  const SITE_IDS = new Set(CAMPAIGN.map((c) => c.id));
+
+  it('every committed sites/ file names a real or banked chapter', () => {
+    const ids = namesUnder('sites').map((n) => n.replace(/-v\d+$/, '').replace(/-(banner|thumb)$/, ''));
+    expect(ids.length, 'no site art found — wrong root?').toBeGreaterThan(0);
+    const strays = [...new Set(ids)].filter((id) => !SITE_IDS.has(id) && !BANKED_CHAPTER_ART.includes(id));
+    expect(strays, `neither a campaign site id nor banked: ${strays.join(', ')}`).toEqual([]);
+  });
+
+  it('every committed battles/ file is boss-<chapter>-portrait for a real or banked chapter', () => {
+    const names = namesUnder('battles');
+    expect(names.length, 'no boss portraits found — wrong root?').toBeGreaterThan(0);
+    const strays = names.filter((n) => {
+      const m = /^boss-(.+)-portrait$/.exec(n.replace(/-v\d+$/, ''));
+      return !m || (!SITE_IDS.has(m[1]!) && !BANKED_CHAPTER_ART.includes(m[1]!));
+    });
+    expect(strays, `not boss-<known chapter>-portrait: ${strays.join(', ')}`).toEqual([]);
+  });
+
+  // Same reasoning as 'no banked id has since shipped as species data' above.
+  it('no banked chapter has since shipped as campaign data', () => {
+    const shipped = BANKED_CHAPTER_ART.filter((id) => SITE_IDS.has(id));
+    expect(shipped, `remove from BANKED_CHAPTER_ART, now real chapters: ${shipped.join(', ')}`)
       .toEqual([]);
   });
 });
