@@ -2447,6 +2447,25 @@ in the 200×18 label band (roughly tile-local y+118 to y+136) at tile-local
 (14, 118) against `#f5e6b8`: **band a 7.06:1, band b 10.23:1, band c
 11.09:1** — all above the ~6:1 target the plates set.
 
+`.superpowers/sdd/2026-08-25-art-bank-6a/check-band-contrast.mjs` reproduces
+this measurement on demand, taking the glyph box from `drawLandmark`'s own
+constants rather than estimating it. Re-run it against any regenerated band:
+
+```
+node .superpowers/sdd/2026-08-25-art-bank-6a/check-band-contrast.mjs assets/images/park/landmark-*.webp
+```
+
+It reports the mean over the text box and the worst 24px-wide window inside
+it — the second number is the one that matters, since a band can average dark
+and still wash out under a single word. All six committed bands clear AAA
+(7:1) by that measure: **a 8.01, b 13.04, c 12.93, d 9.03, e 10.13, f 7.28**.
+Those figures read slightly higher than the worst-*pixel* numbers above
+because a 24px window averages across the stroke rather than sampling the
+single brightest pixel; both methods agree on the verdict, and neither is a
+substitute for the other. **Sample the real glyph box, not the lower third of
+the band** — a window taller than the text takes in bright upper scenery and
+will fail bands that are demonstrably fine, including the committed ones.
+
 **park/landmark-a — Stone Marker / Fossil Plinth:**
 
 > Wide landscape ground-level view inside a dinosaur park, filling the ENTIRE
