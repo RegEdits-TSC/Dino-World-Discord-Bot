@@ -316,6 +316,144 @@ reference). Prompt frame:
   pebbles or loose objects — the model repeatedly scattered them on the ground
   outside the nest, where they become floating islands after matting.
 
+### Variants (`-v2`, `-v3`, `-v4`)
+
+Each rarity carries three variants beside its untouched base, for eighteen files
+in total. Every one is an image-edit of **its own committed egg**, never of
+another variant or another rarity, so the silhouette and nest read as
+recognisably the same egg. Post-processed exactly like the base:
+`remove_background`, then `node scripts/fit-art.mjs portrait --axis=egg` —
+**never `cutout`**, which fits the whole bbox at a 31px margin, symmetric and
+nest-centred, and would ship a variant that silently disagrees with its own
+base's egg-axis 24px margin (see the divergence table above).
+
+What varies is the **shell's pattern and surface detail** (speckling, banding,
+mottling, sheen) and the **nest dressing**. What must never vary is the
+**rarity's colour identity** — the shell palette is what tells a player what
+they are holding, and `mythic` in particular stays obsidian-and-lava to match
+`volcano_core`; none of its three variants add pebbles or loose objects, for
+the same floating-island reason the base prompt excludes them.
+
+Reskin edits follow the same prompt frame as the base reskins above, with a
+distinct `{SHELL}` / `{NEST}` pair per variant:
+
+- **common** — v2 SHELL: gray-white eggshell with larger oval brown speckles
+  clustered toward the top of the shell, thinning out near the base. NEST: tuck
+  a single small brown feather into the twigs alongside the leaves.
+  v3 SHELL: gray-white eggshell with fine brown speckling arranged in soft
+  freckled bands wrapping horizontally around the shell. NEST: add two small
+  dry acorns resting in the twigs.
+  v4 SHELL: gray-white eggshell with tiny dark-brown speckles clustered into a
+  few small patches instead of an even scatter. NEST: weave one dry brown twig
+  fork into the rim in place of one of the leaves.
+- **uncommon** — v2 SHELL: moss-green eggshell (around #2ecc71) with a pattern
+  of thin darker-green vine-like stripes curling around the shell instead of
+  leaf shapes, subtle glossy highlight. NEST: weave a few fresh green leaves
+  into the twigs and tuck in a single small pale-yellow wildflower.
+  v3 SHELL: moss-green eggshell with small darker-green dappled spots
+  scattered evenly across the surface, subtle glossy highlight. NEST: weave a
+  few fresh green leaves and tiny white flowers into the twigs, and add one
+  small curled fern frond among them.
+  v4 SHELL: moss-green eggshell with a marbled swirl pattern of darker green
+  woven through the surface, subtle glossy highlight. NEST: weave a few fresh
+  green leaves and tiny white flowers into the twigs, with one small green
+  vine tendril looping around the base of the nest.
+- **rare** — v2 SHELL: ocean-blue eggshell (around #3498db) with a fine
+  fish-scale pattern of overlapping pale-blue curves covering the surface,
+  glossy wet-look highlights. NEST: tuck a smooth blue pebble and a single
+  small pearlescent seashell spiral among the twigs.
+  v3 SHELL: ocean-blue eggshell scattered with small round water-bubble
+  droplets of varying sizes clustered near the top, glossy wet-look
+  highlights. NEST: tuck a few smooth blue pebbles and a small pale coral
+  fragment between the twigs.
+  v4 SHELL: ocean-blue eggshell with horizontal wavy stripe bands of deeper
+  blue wrapping the shell, glossy wet-look highlights. NEST: tuck a smooth
+  blue pebble and a tiny cartoon starfish among the twigs.
+- **epic** — v2 SHELL: violet eggshell (around #9b59b6) with a few large
+  angular crystal facets clustered near the top of the shell and smoother
+  violet surface below, the facets catching bright glossy highlights on the
+  shell surface; no glowing aura or halo around the egg, the outline against
+  the background must be crisp. NEST: place one small violet amethyst crystal
+  shard tucked deeper into the twigs.
+  v3 SHELL: violet eggshell covered edge to edge in a fine cracked-glass
+  mosaic of tiny angular facets, the facets catching bright glossy highlights
+  on the shell surface; no glowing aura or halo around the egg, the outline
+  against the background must be crisp. NEST: place a couple of small violet
+  amethyst crystal shards among the twigs.
+  v4 SHELL: violet eggshell with spiraling bands of angular crystal facets
+  winding around the shell from top to base, the facets catching bright
+  glossy highlights on the shell surface; no glowing aura or halo around the
+  egg, the outline against the background must be crisp. NEST: place a single
+  larger violet amethyst crystal shard leaning against the nest rim.
+- **legendary** — v2 SHELL: polished golden eggshell (around #f1c40f) engraved
+  with a radiating sunburst pattern of straight gold lines spreading from the
+  top of the shell, the engraving gleaming on the shell surface only, no rays
+  of light. NEST: weave a thin gold ribbon through the twigs, tied in a small
+  bow.
+  v3 SHELL: polished golden eggshell engraved with a fine lattice of
+  interlocking filigree lines covering the whole surface, the engraving
+  gleaming on the shell surface only, no rays of light. NEST: weave a thin
+  gold ribbon and a single small gold coin trinket through the twigs.
+  v4 SHELL: polished golden eggshell engraved with bold zigzag chevron bands
+  wrapping around the shell, the engraving gleaming on the shell surface only,
+  no rays of light. NEST: weave a thin gold ribbon and a tiny gold star
+  trinket through the twigs.
+- **mythic** — v2 SHELL: jet-black obsidian eggshell with a few wide jagged
+  lava cracks concentrated near the top of the shell, each crack glowing
+  bright molten orange from within, no floating embers. NEST: charred dark
+  twigs with a few ember-orange glowing tips, no pebbles or loose objects.
+  v3 SHELL: jet-black obsidian eggshell covered in a dense network of fine
+  spiderweb-thin glowing orange lava cracks spreading evenly across the whole
+  surface, no floating embers. NEST: charred dark twigs with a few
+  ember-orange glowing tips, no pebbles or loose objects.
+  v4 SHELL: jet-black obsidian eggshell with glowing orange lava cracks
+  forming a spiral pattern winding from the top of the shell down to the
+  base, no floating embers. NEST: charred dark twigs with a few ember-orange
+  glowing tips, no pebbles or loose objects.
+
+Measured margins after post-processing — the tight-axis figure this family
+lives or dies on, since the automated guard (`tests/images.test.ts`) checks
+`min(top, bottom)` against 24px ± 1 on every file registered from disk, but a
+31px reading (the `cutout` mode's whole-bbox margin) is the diagnostic to
+watch for by hand on any future regeneration:
+
+| Rarity | file | L | R | T | B |
+|---|---|---|---|---|---|
+| common | base | 74 | 53 | 24 | 24 |
+| common | v2 | 14 | 110 | 24 | 24 |
+| common | v3 | 73 | 54 | 24 | 24 |
+| common | v4 | 72 | 59 | 24 | 24 |
+| uncommon | base | 32 | 55 | 24 | 24 |
+| uncommon | v2 | 30 | 49 | 24 | 24 |
+| uncommon | v3 | 31 | 50 | 24 | 24 |
+| uncommon | v4 | 38 | 61 | 24 | 24 |
+| rare | base | 73 | 54 | 24 | 24 |
+| rare | v2 | 73 | 53 | 24 | 24 |
+| rare | v3 | 73 | 78 | 24 | 24 |
+| rare | v4 | 73 | 56 | 24 | 24 |
+| epic | base | 73 | 54 | 24 | 24 |
+| epic | v2 | 73 | 78 | 24 | 24 |
+| epic | v3 | 73 | 55 | 24 | 24 |
+| epic | v4 | 67 | 58 | 24 | 24 |
+| legendary | base | 74 | 53 | 24 | 24 |
+| legendary | v2 | 72 | 48 | 24 | 24 |
+| legendary | v3 | 73 | 78 | 24 | 24 |
+| legendary | v4 | 73 | 50 | 24 | 24 |
+| mythic | base | 73 | 79 | 24 | 24 |
+| mythic | v2 | 73 | 79 | 24 | 24 |
+| mythic | v3 | 74 | 78 | 24 | 24 |
+| mythic | v4 | 73 | 78 | 24 | 24 |
+
+Every one of the 24 files (six bases, eighteen variants) lands at T=24 B=24
+exactly. L/R stay asymmetric and vary per file on purpose — the egg-axis fit
+centres on the egg's own silhouette, not the whole nest bbox, so a variant
+whose nest dressing sits further to one side (`common-v2`'s feather, for
+example, at L=14 R=110) shifts the horizontal margin without moving the
+vertical one. Re-measure with
+`.superpowers/sdd/2026-08-25-art-bank-6a/measure-margins.mjs` if any of these
+is ever regenerated; a 31/31 symmetric reading means `cutout` was used by
+mistake.
+
 ## Coastal Dig (`coastal_dig`)
 
 **Banner (1536×1024):**
