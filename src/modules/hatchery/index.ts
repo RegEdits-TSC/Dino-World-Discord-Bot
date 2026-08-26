@@ -95,7 +95,7 @@ export const hatcheryModule: ModuleManifest = {
         const idStr = a2;
         try {
           const { species, traits } = hatchEgg(ctx, i.user.id, Number(idStr));
-          const payload = revealPayload(species);
+          const payload = revealPayload(species, Number(idStr));
           // Traits field appended after revealPayload's Diet/Biome/Income/hr fields —
           // added here rather than inside revealPayload so the two attach() calls
           // there (crack image, archetype thumbnail) stay untouched.

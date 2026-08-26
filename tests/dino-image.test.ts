@@ -103,13 +103,15 @@ describe('dexViewPayload routes the entry art through dinoImage', () => {
 
 describe('revealPayload routes the hatched species through dinoImage', () => {
   it('passes the hatched species id and keeps the crack on the real assetImage path', () => {
+    // eggId 6 (a literal invented for this test — no real egg row is in scope
+    // here) seeds the crack: rare's hash for id 6 lands on -v4, not the base.
     const species = getSpecies('velociraptor');
-    const p = revealPayload(species);
+    const p = revealPayload(species, 6);
     expect(vi.mocked(dinoImage).mock.calls).toEqual([['velociraptor', species.archetype, species.diet]]);
-    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare-crack.webp');
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare-crack-v4.webp');
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://velociraptor.webp');
     // Call order is upload order, and only dinoImage is mocked — the crack is still real.
-    expect(p.files.map((f) => f.name)).toEqual(['rare-crack.webp', 'velociraptor.webp']);
+    expect(p.files.map((f) => f.name)).toEqual(['rare-crack-v4.webp', 'velociraptor.webp']);
     expect(p.attachments).toEqual([]);
   });
 });

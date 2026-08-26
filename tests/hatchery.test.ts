@@ -269,7 +269,9 @@ describe('hatchery visuals', () => {
     // survive on the edited message.
     // velociraptor ships its own portrait as of Task 10, so dinoImage (a pass-through
     // spy here) now resolves velociraptor.webp instead of the swift-carnivore fallback.
-    const p = revealPayload(getSpecies('velociraptor'));   // rare, swift/carnivore
+    // eggId 7 (the same literal preHatchPayload uses above) seeds the crack: rare's
+    // hash for id 7 lands back on the base file, so the resolved name is unchanged.
+    const p = revealPayload(getSpecies('velociraptor'), 7);   // rare, swift/carnivore
     const embed = p.embeds[0].toJSON();
     expect(embed.image?.url).toBe('attachment://rare-crack.webp');
     expect(embed.thumbnail?.url).toBe('attachment://velociraptor.webp');
@@ -279,16 +281,17 @@ describe('hatchery visuals', () => {
   it('revealPayload keys the thumbnail off the hatched species, not a constant', () => {
     // triceratops ships its own portrait as of Task 10; it no longer falls back to
     // the shared tank-herbivore archetype art.
-    const p = revealPayload(getSpecies('triceratops'));   // common, tank/herbivore
+    // Same eggId 7, but common's hash lands on -v4 for this id, unlike rare above.
+    const p = revealPayload(getSpecies('triceratops'), 7);   // common, tank/herbivore
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://triceratops.webp');
-    expect(p.files.map((f) => f.name)).toEqual(['common-crack.webp', 'triceratops.webp']);
+    expect(p.files.map((f) => f.name)).toEqual(['common-crack-v4.webp', 'triceratops.webp']);
   });
   it('revealPayload still ships the archetype thumb when the crack art is missing', () => {
     // Degrade path 1/2: two files on one payload, two independent attach calls —
     // a miss on the crack must not suppress the thumb.
     // velociraptor ships its own portrait as of Task 10 — see above.
     vi.mocked(assetImage).mockImplementationOnce(() => null);   // crack call (1st) -> missing
-    const p = revealPayload(getSpecies('velociraptor'));
+    const p = revealPayload(getSpecies('velociraptor'), 7);
     const embed = p.embeds[0].toJSON();
     expect(embed.image).toBeUndefined();
     expect(embed.thumbnail?.url).toBe('attachment://velociraptor.webp');
@@ -300,14 +303,14 @@ describe('hatchery visuals', () => {
     // dinoImage, not on the assetImage queue: revealPayload resolves the thumb through
     // dinoImage, whose own assetImage calls are module-internal and unmockable from here.
     vi.mocked(dinoImage).mockImplementationOnce(() => null);
-    const p = revealPayload(getSpecies('velociraptor'));
+    const p = revealPayload(getSpecies('velociraptor'), 7);
     const embed = p.embeds[0].toJSON();
     expect(embed.image?.url).toBe('attachment://rare-crack.webp');
     expect(embed.thumbnail).toBeUndefined();
     expect(p.files.map((f) => f.name)).toEqual(['rare-crack.webp']);
   });
   it('reveal embed points at /dino assign', () => {
-    const p = revealPayload(getSpecies('velociraptor'));
+    const p = revealPayload(getSpecies('velociraptor'), 7);
     expect(p.embeds[0].toJSON().footer?.text).toContain('/dino assign');
   });
   it('eggListPayload thumbnails the ready egg over incubating and newest, under the incubator banner', () => {

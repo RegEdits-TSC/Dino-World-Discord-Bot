@@ -27,7 +27,10 @@ export function preHatchPayload(rarity: string, eggId: number) {
   attach(embed, payload, 'image', assetImage('eggs', rarity, String(eggId)));
   return payload;
 }
-export function revealPayload(species: Species) {
+// eggId seeds the crack art, so the shell that bursts is a face of the egg the
+// player was looking at a second earlier. It is NOT the hatched dino's id: the
+// egg is what cracks, and hatchEgg does not return the egg id anyway.
+export function revealPayload(species: Species, eggId: number) {
   const stats = RARITY[species.rarity];
   const embed = new EmbedBuilder().setColor(RARITY_COLOR[species.rarity] ?? 0x95a5a6)
     .setTitle(`✨ ${rarityEmoji(species.rarity)}${species.rarity.toUpperCase()} — ${species.name}!`)
@@ -46,7 +49,7 @@ export function revealPayload(species: Species) {
     embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[];
     files: AttachmentBuilder[]; attachments: never[];
   } = { embeds: [embed], components: [], files: [], attachments: [] };
-  attach(embed, payload, 'image', assetImage('hatch', `${species.rarity}-crack`));
+  attach(embed, payload, 'image', assetImage('hatch', `${species.rarity}-crack`, String(eggId)));
   // Two files on one payload, each degrading independently: the crack is the
   // "your egg burst open" beat, the species (or archetype) thumb is what came out of it.
   // attach appends, so neither call can clobber the other's file.
