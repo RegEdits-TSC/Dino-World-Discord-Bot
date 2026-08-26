@@ -892,3 +892,60 @@ describe('site and boss portrait file names', () => {
       .toEqual([]);
   });
 });
+
+describe('variant selection', () => {
+  // The compatibility contract. ~180 filename pins across the suite, and every
+  // call site that never gains a seed, depend on this exact behaviour.
+  it('returns the base file when no seed is given', () => {
+    for (const rarity of ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic']) {
+      expect(assetImage('eggs', rarity)!.file.name).toBe(`${rarity}.webp`);
+    }
+  });
+
+  it('is deterministic — the same triple always resolves to the same file', () => {
+    for (const seed of ['1', '42', 'abc']) {
+      const first = assetImage('eggs', 'common', seed)!.file.name;
+      for (let i = 0; i < 5; i++) {
+        expect(assetImage('eggs', 'common', seed)!.file.name).toBe(first);
+      }
+    }
+  });
+
+  // A resolver that never returns the base, or never reaches -v4, is a real bug
+  // that "it returned something" would miss entirely. eggs/common has 3 variants,
+  // so all four faces must appear across enough seeds.
+  it('reaches every face including the base', () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 400; i++) seen.add(assetImage('eggs', 'common', String(i))!.file.name!);
+    expect([...seen].sort()).toEqual(
+      ['common-v2.webp', 'common-v3.webp', 'common-v4.webp', 'common.webp'],
+    );
+  });
+
+  // Why the hashed string is composite. eggs and hatch both ship 18 variants over
+  // 6 bases, so a bare seed would pick the SAME index in both — egg #42 showing
+  // common-v2 and then common-crack-v2. Including kind and name decorrelates them.
+  // This is the property most likely to be silently lost in a refactor.
+  it('decorrelates the same seed across kinds', () => {
+    const eggIdx: string[] = [];
+    const crackIdx: string[] = [];
+    for (let i = 0; i < 200; i++) {
+      eggIdx.push(assetImage('eggs', 'common', String(i))!.file.name!.replace('common', ''));
+      crackIdx.push(assetImage('hatch', 'common-crack', String(i))!.file.name!.replace('common-crack', ''));
+    }
+    const agree = eggIdx.filter((v, i) => v === crackIdx[i]).length;
+    // Independent picks over 4 faces agree ~25% of the time. Correlated picks
+    // would agree on every single seed.
+    expect(agree).toBeLessThan(120);
+  });
+
+  it('returns the base for a name with no variants, whatever the seed', () => {
+    for (const seed of ['1', '2', '99', 'x']) {
+      expect(assetImage('banners', 'help', seed)!.file.name).toBe('help.webp');
+    }
+  });
+
+  it('returns null for a missing name even with a seed', () => {
+    expect(assetImage('eggs', 'no-such-rarity', '42')).toBeNull();
+  });
+});
