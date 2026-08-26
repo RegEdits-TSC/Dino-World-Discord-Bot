@@ -37,6 +37,10 @@ prove it correct**. It changes **no file under `src/`**.
   decodes synchronously. Hand-authored SVG costs no credits and has no
   deadline, so it must not consume deadline-bound budget.
 - No re-generation of already-shipped art. Base files are never touched.
+  - One exception was taken in execution: `assets/images/hatch/common-crack.webp` was
+    repaired in place, having shipped with un-removed studio backdrop across its crack
+    opening. No re-generation — a post-processing pass over the committed bytes, at no
+    credit cost. See the plan's Global Constraints for the full record.
 
 ## §1 Architecture
 

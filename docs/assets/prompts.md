@@ -191,6 +191,16 @@ A surface with more than one committed face carries `<base>-v2.webp`,
 `<base>-v3.webp`, `<base>-v4.webp` beside an untouched `<base>.webp`. The base
 file is never renamed, moved or regenerated.
 
+**One committed base has been edited in place, deliberately, and it is the only
+one.** `assets/images/hatch/common-crack.webp` shipped with un-removed studio
+backdrop smeared across its crack opening (see "Backdrop in the crack gaps"),
+which is a defect in the file rather than a different take on it. It was repaired
+by `scripts/clear-backdrop.mjs` — same filename, same subject, same composition,
+no regeneration and no generator credit spent. That is the bar for touching a
+base at all: a measured defect in a shipped file, repaired by a tracked pass,
+recorded here. Wanting a better picture is not that bar; that is what a variant
+is for.
+
 The `v` is load-bearing: no committed filename and no species id contains a digit
 or a `-v` suffix, so `-vN` can never be read as part of a base name. A bare `-2`
 would carry no such guarantee for a future id.
