@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rollWeighted, rollRarityFromOdds, rollSpeciesInRarity, rollSellShards, rollIntInclusive, mulberry32, shuffle } from '../src/core/rolls.js';
+import { rollWeighted, rollRarityFromOdds, rollSpeciesInRarity, rollSellShards, rollIntInclusive, mulberry32, shuffle, hashSeed } from '../src/core/rolls.js';
 
 describe('rolls', () => {
   it('rollWeighted respects cumulative weights at boundaries', () => {
@@ -63,6 +63,31 @@ describe('shuffle', () => {
         expect(Math.abs(counts[value][pos] - expected) / expected,
           `value ${value} at position ${pos}`).toBeLessThan(0.06);
       }
+    }
+  });
+});
+
+describe('hashSeed', () => {
+  // Pinned BEFORE the function moved out of daily/service.ts, and measured from
+  // that implementation rather than computed independently. rollDailyQuests
+  // derives every player's daily board from this hash, so a changed value would
+  // silently reroll boards in flight with nothing failing.
+  it.each([
+    ['', 2166136261],
+    ['a', 3826002220],
+    ['eggs:common:42', 2668734150],
+    ['123456789012345678:2026-08-26', 2511531462],
+    ['hatch:common-crack:42', 1946910649],
+  ])('hashes %j to a pinned value', (input, expected) => {
+    expect(hashSeed(input)).toBe(expected);
+  });
+
+  it('returns an unsigned 32-bit integer', () => {
+    for (const s of ['x', 'a longer string', 'banners:daily:99']) {
+      const h = hashSeed(s);
+      expect(Number.isInteger(h)).toBe(true);
+      expect(h).toBeGreaterThanOrEqual(0);
+      expect(h).toBeLessThanOrEqual(0xffffffff);
     }
   });
 });
