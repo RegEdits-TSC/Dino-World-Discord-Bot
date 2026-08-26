@@ -1240,6 +1240,114 @@ references.
 > characters of any script. Any board, sign, plan, flag or panel that appears
 > must be blank or plain coloured. No people, no human figures.
 
+### Variants (`-v2`, `-v3`, `-v4`)
+
+The ten most-seen banners each carry three variants beside their untouched
+base, for thirty files in total: `care`, `collect`, `dino_roster`,
+`eggs_incubator`, `shop_food_market`, `sell`, `gene_lab`, `battle_victory`,
+`battle_defeat`, `daily`. Every one is an image-edit of **its own committed
+banner**, never another banner or another variant, generated with the base
+`.webp` attached as the `image_references` medium. Post-processed exactly
+like the base: `node scripts/fit-art.mjs banner <src> <dest>` — **no
+`remove_background` step**, since this family ships full-bleed opaque scenes,
+not cutouts.
+
+What varies is camera angle, time of day, weather and staging — a different
+view of the same scene. What must never vary is the subject and its purpose:
+`battle_victory` must still read as a win, `care` as feeding, `sell` as a
+transaction, and a player must recognise the command from the picture alone
+without reading the embed text. The two mood pairs this section documents
+above (`care`/`care_neglect`, `battle_victory`/`battle_defeat`) are pairs of
+BASE files, not of variants — only `care`, `battle_victory` and
+`battle_defeat` were varied here, and each variant was held to its own base's
+mood: every `care` variant stays a cheerful, well-fed scene, every
+`battle_victory` variant stays triumphant, every `battle_defeat` variant
+stays downcast. A cheerful `battle_defeat` variant would have broken the pair
+exactly as a cheerful base would have.
+
+Every one of the thirty prompts carries the expanded no-text clause used
+elsewhere in this section ("No text, no lettering, no words, no numbers, no
+signage writing anywhere in the scene") **and** the `collect.webp`/Founder's
+Park CRITICAL block ("CRITICAL: absolutely no writing anywhere in the image —
+no letters, no words, no numbers, no carved inscriptions, no painted
+signage, no symbols, no logos. Every sign, plaque and surface is blank and
+wordless."), applied uniformly rather than only on the banners judged
+highest-risk — cheap insurance against the class of failure `collect.webp`'s
+own note above documents. Each prompt also names the specific signable prop
+it's most likely to letter and states in the positive that it stays blank:
+the chalkboard sign on `collect`, the ledger pages on `sell`, the scroll tags
+and board on `daily`, the temperature dial and analogue dials on
+`eggs_incubator`/`gene_lab`, the banners and pennants on `battle_victory`/
+`battle_defeat`, and price tags/labels on `shop_food_market`. **The result
+was a clean sweep: all 30 generated accepted on the first attempt, zero
+regenerations, zero text leaks** — the first time this section has reported a
+0% leak rate on a signage-adjacent batch this size. Recorded here for
+whoever generates banners next: applying both defences everywhere, not just
+where a scene "looks risky," is what bought that number.
+
+Each prompt follows the same edit-instruction shape as the `care_neglect` /
+`battle_defeat` base pairing above: "Keep the exact same scene: [the base's
+own held-constant objects, named individually]. Change only the camera angle
+and the time of day: [the one specific change]." Held-constant naming, not a
+bare "keep it the same," is what keeps the model from drifting the subject
+across three sequential edits of one reference.
+
+- **care** — v2: low three-quarter angle close to the ground, warm golden
+  late-afternoon light. v3: pulled back to a wide elevated angle showing the
+  whole feeding station, bright midday sun. v4: dusk under a soft blue sky,
+  lit lanterns along the fence posts.
+- **collect** — v2: camera low and close along the counter so the coins loom
+  large, soft early-morning light with mist on the path. v3: pulled back to a
+  wide elevated angle showing more of the path, bright midday sun. v4: golden
+  dusk with a lit lantern beside the cash box.
+- **dino_roster** — v2: lower angle looking slightly up along the row for a
+  heroic head-count view, warm golden late-afternoon light. v3: wider
+  elevated angle showing more of the fence line, soft bright high daylight.
+  v4: dusk, lit lanterns along the fence posts, the lineup settling for the
+  evening.
+- **eggs_incubator** — v2: camera low and close along the row so the nearest
+  dome looms large, a warmer amber-orange heat-lamp glow. v3: pulled back to
+  a wide elevated angle, a cooler blue-white ambient light mixed with the
+  amber. v4: viewed from the opposite end of the bench, one dome in sharp
+  foreground focus with the rest blurred, deep late-night dark.
+- **shop_food_market** — v2: camera low and close along the counter so the
+  baskets and fish loom large, warm golden late-afternoon light. v3: pulled
+  back to a wide elevated angle showing the whole stall and awning, bright
+  clear midday sun. v4: viewed from the opposite side of the stall (meat side
+  foreground), dusk with a lit lantern over the counter.
+- **sell** — v2: camera low and close along the counter so the scale and coin
+  pouch loom large, warm early-morning light. v3: pulled back to a wide
+  elevated angle showing the whole stall and the path behind, bright overhead
+  midday sun. v4: dusk, a lit lantern beside the ledger.
+- **gene_lab** — v2: lower angle looking up the row of glowing tanks, a
+  deeper blue-violet night-shift light mixed with the amber glow. v3: pulled
+  back to a wide establishing angle showing more of the workbenches, brighter
+  daylight through the high windows. v4: viewed from the opposite end of the
+  room, one tank in sharp foreground focus, warm late-evening god-rays.
+- **battle_victory** — v2: lower angle looking up at the dinosaur for a more
+  heroic pose, bright midday sun. v3: pulled back to a wide elevated angle
+  showing more of the arena, warm sunset light. v4: side three-quarter angle,
+  the pennants snapping in a stronger breeze.
+- **battle_defeat** — v2: lower angle looking up at the lowered head for a
+  somber close view, heavier overcast with a light drizzle beginning. v3:
+  pulled back to a wide elevated angle showing more of the arena, dim
+  late-afternoon overcast light. v4: side three-quarter angle, thick dust and
+  mist hanging low, the torn pennants hanging limp.
+- **daily** — v2: camera low and close so the lit lantern and hourglass loom
+  large, warm golden late-afternoon light. v3: pulled back to a wide elevated
+  angle showing more of the path, bright clear midday sun. v4: dusk under a
+  soft blue sky, the lantern now lit.
+
+`gene_lab`'s three variants carry forward a carved hieroglyph-style stone
+panel visible in the top corners of the committed `gene_lab.webp` base — an
+element the base's own prompt in this file never asked for, so it must have
+been a model addition on that original generation that shipped anyway. It is
+inherited, not introduced: the variant prompts instruct the model to "keep
+the exact same laboratory," and the panel is part of that scene now.
+Regenerating a `gene_lab` variant will very likely keep reproducing it; that
+is expected, not a defect to chase, unless the base itself is ever
+regenerated to remove it first.
+
 ---
 
 ## Battle bosses
