@@ -144,8 +144,8 @@ export const breedings = sqliteTable('breedings', {
   startedAt: integer('started_at_ms').notNull(),
   readyAt: integer('ready_at_ms').notNull(),
   claimedAt: integer('claimed_at_ms'),
-  // Half of the pair closing the gap CLAUDE.md's locksFor note flags as "two unindexed table
-  // filters per call" — the unclaimed-breedings filter. The other half is trades_status_from.
+  // Half of the pair covering locksFor's two table filters — the unclaimed-breedings one.
+  // The other half is trades_status_from. See CLAUDE.md's locksFor note.
   // claimed_at_ms is nullable and SQLite indexes NULLs, so `claimed_at_ms IS NULL` uses it.
 }, (t) => [index('breedings_user_claimed').on(t.userId, t.claimedAt)]);
 
