@@ -137,6 +137,21 @@ describe('EconomyService.reverse', () => {
     expect(db.select().from(schema.txLog).all()).toHaveLength(before);  // no partial row
   });
 
+  it('throws rather than returning a null id when a reversal writes no row', () => {
+    // A food row of quantity zero: apply() cannot create one (its own zero filter drops the
+    // entry first), so this is built by hand. reverse() suppresses the base row for a food
+    // row and the zero food entry is then filtered out too, leaving nothing written. The old
+    // `baseId ?? lastFoodId!` handed that back as a null id, which adminReverse reports to the
+    // operator as a completed reversal — a success message for money that never moved.
+    db.insert(schema.txLog).values({
+      userId: 'u1', foodDelta: 0, foodId: 'ferns', reason: 'feed:trex', createdAt: 100,
+    }).run();
+    const empty = db.select().from(schema.txLog).all().at(-1)!;
+    expect(() => eco.reverse(empty.id, 500)).toThrow(/recorded no row/i);
+    // And nothing was left behind by the attempt.
+    expect(db.select().from(schema.txLog).all().filter((r) => r.reversesId !== null)).toHaveLength(0);
+  });
+
   it('rolls back the wallet update when the reversal audit insert fails', () => {
     eco.apply('u1', { cash: -100 }, 'build:x', 100);        // 500 -> 400
     const charge = db.select().from(schema.txLog).all().at(-1)!;

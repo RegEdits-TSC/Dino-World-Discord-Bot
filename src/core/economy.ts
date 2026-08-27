@@ -76,8 +76,15 @@ export class EconomyService {
       }
     }
     // skipBaseRow is only ever true for a single-food-entry reversal (see reverse() below), so
-    // exactly one of these is non-null.
-    return baseId ?? lastFoodId!;
+    // exactly one of these is non-null — but it is asserted rather than assumed. A non-null
+    // assertion here would hand the caller a null id on a row that wrote nothing, and
+    // adminReverse reports that id to the operator as a completed reversal: a success message
+    // for money that never moved. Throwing turns the same impossible state into a visible
+    // failure. Reachable only by a food row whose quantity is zero, which apply() cannot
+    // create — its own zero filter drops the entry before the row is ever written.
+    if (baseId !== null) return baseId;
+    if (lastFoodId !== null) return lastFoodId;
+    throw new Error(`Ledger write for ${reason} recorded no row.`);
   }
 
   // Reverses one ledger row by posting its opposite as a NEW row. tx_log is append-only: the

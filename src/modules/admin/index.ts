@@ -110,16 +110,21 @@ export const adminModule: ModuleManifest = {
           } else if (sub === 'reverse') {
             const out = adminReverse(ctx, target.id, i.options.getInteger('tx', true),
               i.options.getString('note') ?? undefined);
-            // "queued", never "sent": deliverNotification routes to the guild's notify channel
-            // and falls back to a DM, and a DM to a player who has closed them fails silently —
-            // so claiming delivery would imply a confirmation the bot never gets. NOT a mute
-            // claim: users.alertsEnabled gates the park alert sweep, never this path, so
+            // "queued", never "sent": adminReverse passes a null origin guild, so
+            // deliverNotification skips the channel branch entirely and this note is a DM —
+            // and a DM to a player who has closed them fails silently, so claiming delivery
+            // would imply a confirmation the bot never gets. NOT a mute claim:
+            // users.alertsEnabled gates the park alert sweep, never this path, so
             // /park alerts off does not stop a reversal note.
             await i.reply({
-              // No clause when sideEffect is empty — a payout under a reason the table has never
-              // heard of, where the fallback text would only be noise. A reason WITH an entry
-              // always prints, `sell` included: see sideEffectNoteFor.
-              content: `↩ Reversed for <@${target.id}>.`
+              // The row, the amount and the resulting balance, all three. The redundant `user`
+              // option cannot catch a transposed digit that still lands on a row belonging to
+              // the right player — reading them back is what makes that visible before it
+              // becomes a support ticket. No side-effect clause when it is empty: a payout
+              // under a reason the table has never heard of, where the fallback text would
+              // only be noise. A reason WITH an entry always prints: see sideEffectNoteFor.
+              content: `↩ Reversed #${out.txId} for <@${target.id}>: ${out.moved}.`
+                + ` They now hold ${out.balance}.`
                 + (out.sideEffect ? ` Not undone: ${out.sideEffect}.` : '')
                 + (out.notified ? ' Note queued to the player.' : ''),
               flags: MessageFlags.Ephemeral,

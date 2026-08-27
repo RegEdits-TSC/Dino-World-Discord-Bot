@@ -645,13 +645,12 @@ describe('/admin ledger', () => {
   });
 
   it('suppresses the FALLBACK on a payout, but keeps it for an unrecognised charge', () => {
-    // collect is the row an active park generates over and over and carries no SIDE_EFFECTS
-    // entry — before this fix every one of them read "unrecognised — check manually",
-    // burying the note on the one row type where it actually matters. What is suppressed is
-    // only the fallback: a payout WITH an entry still prints it (the test below).
+    // An income row must never read "unrecognised — check manually" merely because a future
+    // feature shipped ahead of the table: that buries the note on the rows where it matters.
+    // What is suppressed is only the fallback — a payout WITH an entry still prints it.
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'One');
-    ctx.economy.apply('u1', { cash: 40 }, 'collect', 100);
+    ctx.economy.apply('u1', { cash: 40 }, 'unknown-payout-reason', 100);
     const payout = ctx.db.select().from(schema.txLog).all().at(-1)!;
     // A genuine debit under a reason SIDE_EFFECTS has never heard of must still warn —
     // fail closed for money actually taken, never for money paid out.
@@ -660,6 +659,41 @@ describe('/admin ledger', () => {
 
     expect(lineFor(ctx, 'u1', 1, payout.id)).not.toMatch(/unrecognised/i);
     expect(lineFor(ctx, 'u1', 1, mystery.id)).toMatch(/unrecognised — check manually/i);
+  });
+
+  it('answers every live payout reason rather than rendering it blank', () => {
+    // These rendered a BLANK note before: a blank and "this row left nothing behind" are
+    // indistinguishable, and `trade` (whose counterparty row is still unreversed) and
+    // `admin:give` (which can grant an egg and a dino under the same reason) are among the
+    // rows an operator is most likely to reach for. Line-by-line, not a whole-blob match:
+    // one reason answered would otherwise satisfy an assertion made for all of them.
+    //
+    // Several rows want MORE THAN ONE thing named, and each is asserted separately — a note
+    // that mentions the claim but silently drops the item beside it is the failure mode here,
+    // and one regex per row cannot see it. Every clause below was read off the call site's own
+    // transaction rather than inferred from the reason's name: `collect` stamps the collection
+    // anchor, `expedition-loot` inserts an egg, `admin:give` writes granted food as its own row.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    const cases: Array<[string, RegExp[]]> = [
+      ['collect', [/collection window is already spent/i, /cannot collect that stretch of income again/i]],
+      ['trade:7', [/changed hands/i, /own ledger row/i]],
+      ['admin:give', [/egg or dino/i, /granted food is a separate ledger row/i]],
+      ['milestone:200', [/milestone stays claimed/i]],
+      ['expedition-loot:jungle', [/expedition stays claimed/i, /its egg remains/i, /food is a separate ledger row/i]],
+      ['quest:daily', [/stays claimed/i]],
+      ['season:rungs', [/season rungs/i]],
+      ['battle:1-1', [/stars/i]],
+    ];
+    const ids = cases.map(([reason], n) => {
+      ctx.economy.apply('u1', { cash: 1 }, reason, 100 + n);
+      return ctx.db.select().from(schema.txLog).all().at(-1)!.id;
+    });
+    cases.forEach(([reason, wanted], n) => {
+      const line = lineFor(ctx, 'u1', 1, ids[n]!);
+      for (const w of wanted) expect(line, `${reason} ${w}`).toMatch(w);
+      expect(line, reason).not.toMatch(/unrecognised/i);
+    });
   });
 
   it('keeps a genuine entry on a payout — `sell` is the row that narrowed the rule', () => {
@@ -709,6 +743,90 @@ describe('/admin ledger', () => {
     for (let n = 0; n < PAGE_SIZE + 3; n++) ctx.economy.apply('u1', { cash: 1 }, 'collect', n);
     const p = ledgerPayload(ctx, 'u1', 1);
     expect(JSON.stringify(p.components)).toContain('admin:ledger:u1:2');
+  });
+
+  it('names the player rather than showing a bare snowflake, and names food rather than keying it', () => {
+    // A raw id is not something an operator can check a refund against, and `ferns` is a code
+    // identifier, not a word to put in front of a human.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { foods: { ferns: -2 } }, 'feed:trex', 100);
+    const foodRow = ctx.db.select().from(schema.txLog).all().find((r) => r.foodId !== null)!;
+    expect(ledgerPayload(ctx, 'u1', 1).embeds[0].data.title).toContain('Reg');
+    expect(lineFor(ctx, 'u1', 1, foodRow.id)).toContain('-2 Ferns');
+    expect(lineFor(ctx, 'u1', 1, foodRow.id)).not.toContain('ferns');
+  });
+
+  it('renders a row that moved nothing as such, never as a bare 0', () => {
+    // Every feed and every cash-neutral trade writes a zero-delta base row alongside its real
+    // one. Reversing it is inert AND permanently consumes that row's single reversal, so it
+    // must never read like an amount an operator can hand back.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { foods: { ferns: -2 } }, 'feed:trex', 100);
+    const base = ctx.db.select().from(schema.txLog).all().find((r) => r.foodId === null)!;
+    expect(base.cashDelta).toBe(0);
+    expect(base.shardsDelta).toBe(0);
+    expect(lineFor(ctx, 'u1', 1, base.id)).toMatch(/no movement/i);
+  });
+
+  it('cuts the reset boundary on the row id, so a charge in the same millisecond is still pre-reset', () => {
+    // A millisecond holds more than one row, so a strict `createdAt <` comparison leaves a
+    // charge stamped at the reset's own instant on the reversible side of a boundary it
+    // actually predates. The marker is the FIRST insert in adminReset's transaction and
+    // tx_log.id is AUTOINCREMENT, so the id is an exact cut with no tie possible.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.setNow(100);
+    ctx.economy.apply('u1', { cash: -50 }, 'build:x', 100);
+    const before = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    adminReset(ctx, 'u1');                       // marker stamped at the SAME instant, 100
+    const marker = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(marker.createdAt).toBe(before.createdAt);   // the tie a timestamp cannot break
+    expect(lineFor(ctx, 'u1', 1, before.id)).toMatch(/pre-reset/i);
+    // Both surfaces must agree, so the refusal is checked against the very same tie.
+    expect(() => adminReverse(ctx, 'u1', before.id)).toThrow(/reset/i);
+  });
+});
+
+// Every test above reaches ledgerPayload directly or through the pager, so the COMMAND branch
+// — the one an operator actually types — had no coverage at all, its ephemeral flag included.
+// That flag is the whole reason /admin ledger is safe to run in a live channel: without it a
+// player's complete financial history posts publicly, and the entire suite stayed green.
+describe('/admin ledger command', () => {
+  it('answers ephemerally with the player’s rows', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: -300 }, 'build:paddock_plains', 100);
+    const charge = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    const i = fakeCommand({ name: 'admin', sub: 'ledger', user: 'owner', options: { user: 'u1' } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    // And it is the real ledger, not an empty shell that would satisfy the flag check alone.
+    expect(JSON.stringify(i.replies[0])).toContain(`#${charge.id}`);
+    expect(JSON.stringify(i.replies[0])).toContain('lot still stands');
+  });
+
+  it('honours the page option', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    for (let n = 0; n < PAGE_SIZE + 3; n++) ctx.economy.apply('u1', { cash: 1 }, 'collect', n);
+    const i = fakeCommand({ name: 'admin', sub: 'ledger', user: 'owner',
+      options: { user: 'u1', page: 2 } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    expect(JSON.stringify(i.replies[0])).toContain('Page 2/2');
+  });
+
+  it('is refused for a non-owner and leaks no rows', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: -300 }, 'build:paddock_plains', 100);
+    const i = fakeCommand({ name: 'admin', sub: 'ledger', user: 'u2', options: { user: 'u1' } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    // The refusal itself, not merely the absence of a leak: a handler that silently did
+    // nothing would satisfy the second assertion on its own.
+    expect(replyText(i.replies[0])).toMatch(/owner only/i);
+    expect(JSON.stringify(i.replies)).not.toContain('lot still stands');
   });
 });
 
@@ -865,14 +983,18 @@ describe('/admin reverse', () => {
   });
 
   it('leaves the side-effect note empty for a payout, but keeps it for an unrecognised charge', () => {
-    // The ledger view drops the FALLBACK on a payout for a reason (no payout reason other
-    // than `sell` carries a SIDE_EFFECTS entry, so every ordinary income row read
-    // "unrecognised — check manually" and trained the operator to skip the column). Both
-    // halves of this feature answer for the same row, so the reversal reply has to agree —
-    // and reversing a CREDIT, the symmetric case, is exactly where they disagreed.
+    // The ledger view drops the FALLBACK on a payout under a reason SIDE_EFFECTS has never
+    // heard of, so that a future income path cannot fill the column with
+    // "unrecognised — check manually" and train the operator to skip it. Both halves of this
+    // feature answer for the same row, so the reversal reply has to agree — and reversing a
+    // CREDIT, the symmetric case, is exactly where they disagreed.
+    //
+    // The subject used to be `collect`, which now carries an entry of its own — the whole
+    // point of the table covering every emitted reason is that the suppression is a backstop
+    // for reasons nobody has taught it yet, so that is what this now exercises.
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'One');
-    ctx.economy.apply('u1', { cash: 40 }, 'collect', 100);
+    ctx.economy.apply('u1', { cash: 40 }, 'unknown-payout-reason', 100);
     const payout = ctx.db.select().from(schema.txLog).all().at(-1)!;
     expect(adminReverse(ctx, 'u1', payout.id).sideEffect).toBe('');
     expect(cashOf(ctx, 'u1')).toBe(500);
@@ -881,6 +1003,12 @@ describe('/admin reverse', () => {
     ctx.economy.apply('u1', { cash: -5 }, 'totally-unknown-reason', 200);
     const mystery = ctx.db.select().from(schema.txLog).all().at(-1)!;
     expect(adminReverse(ctx, 'u1', mystery.id).sideEffect).toMatch(/unrecognised/i);
+    // And a live payout reason is answered rather than left blank: `collect` is the row an
+    // active park generates over and over, and a blank there is indistinguishable from
+    // "this row left nothing behind".
+    ctx.economy.apply('u1', { cash: 7 }, 'collect', 300);
+    const collected = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(adminReverse(ctx, 'u1', collected.id).sideEffect).not.toBe('');
   });
 
   it('names the entry when the reversed row is a payout that HAS one', () => {
@@ -902,9 +1030,12 @@ describe('/admin reverse', () => {
   });
 
   it('drops the whole clause from the reply when the reversed row was a payout', async () => {
+    // Subject is an UNRECOGNISED payout: every reason src/ actually emits now carries an
+    // entry, so the only rows the suppression still governs are the ones a future feature
+    // will ship before anyone updates the table.
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'One');
-    ctx.economy.apply('u1', { cash: 40 }, 'collect', 100);
+    ctx.economy.apply('u1', { cash: 40 }, 'unknown-payout-reason', 100);
     const payout = ctx.db.select().from(schema.txLog).all().at(-1)!;
     const i = fakeCommand({ name: 'admin', sub: 'reverse', user: 'owner',
       options: { user: 'u1', tx: payout.id } });
@@ -923,6 +1054,18 @@ describe('/admin reverse', () => {
     expect(out.notified).toBe(true);
     expect(ctx.notifications.map((n) => n.message).join(' ')).toMatch(/stale button/);
     expect(reversalOf(ctx, charge.id)!.note).toBe('double-charged by a stale button');
+  });
+
+  it('collapses a note’s interior whitespace so it cannot inject a ledger line', () => {
+    // The ledger renders one row per line. A note carrying a newline puts a line of the
+    // operator's own text into the middle of the embed, indistinguishable from a real row.
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    adminReverse(ctx, 'u1', charge.id, 'refund\n`#999` `landmark:6` -160,000,000 cash');
+    expect(reversalOf(ctx, charge.id)!.note).not.toContain('\n');
+    // The harm, not just the character: the page must carry exactly one line per row.
+    const description = ledgerPayload(ctx, 'u1', 1).embeds[0].data.description!;
+    expect(description.split('\n')).toHaveLength(ctx.db.select().from(schema.txLog).all().length);
   });
 
   it('caps the note it stores', () => {
@@ -957,6 +1100,51 @@ describe('/admin reverse', () => {
     expect(text).toMatch(/queued/i);
     expect(text).not.toMatch(/\bsent\b/i);
     expect(cashOf(ctx, 'u1')).toBe(500);
+  });
+
+  it('names the row, the amount and the resulting balance in the confirmation', async () => {
+    // The operator's last chance to notice a mistyped id. The redundant `user` option cannot
+    // catch a transposed digit that still lands on a row belonging to the RIGHT player, and a
+    // reply reading only "Reversed for @player" is indistinguishable from success whichever
+    // row was hit — two reversals in a row produced identical text.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    adminGive(ctx, 'u1', 'One', { cash: 9_000_000 });                      // -> 9,000,500
+    ctx.economy.apply('u1', { cash: -5_000_000 }, 'landmark:1', 100);      // -> 4,000,500
+    const charge = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    const i = fakeCommand({ name: 'admin', sub: 'reverse', user: 'owner',
+      options: { user: 'u1', tx: charge.id } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    const text = replyText(i.replies[0]);
+    expect(text).toContain(`#${charge.id}`);                 // which row
+    expect(text).toContain('+5,000,000 cash');               // what moved
+    expect(text).toContain('9,000,500 cash · 0 shards');     // what they hold now
+  });
+
+  it('shows a clawback as a negative, so reversing the wrong row is visible in the reply', async () => {
+    // The dangerous mistype is not an unknown id — it is a valid one on the right player that
+    // happens to be a PAYOUT, where the reversal takes cash out instead of handing it back.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 40 }, 'collect', 100);                 // -> 540
+    const payout = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    const i = fakeCommand({ name: 'admin', sub: 'reverse', user: 'owner',
+      options: { user: 'u1', tx: payout.id } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    const text = replyText(i.replies[0]);
+    expect(text).toContain('-40 cash');
+    expect(text).toContain('500 cash · 0 shards');
+  });
+
+  it('reports the food it moved by name, and the stack the player is left holding', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');                                     // 10 ferns
+    ctx.economy.apply('u1', { foods: { ferns: -2 } }, 'feed:trex', 100);    // -> 8
+    const foodRow = ctx.db.select().from(schema.txLog).all().find((r) => r.foodId !== null)!;
+    const out = adminReverse(ctx, 'u1', foodRow.id);
+    expect(out.moved).toBe('+2 Ferns');
+    expect(out.balance).toContain('10 Ferns');
+    expect(out.txId).toBe(foodRow.id);
   });
 
   it('answers a refusal ephemerally through the command layer instead of throwing', async () => {

@@ -2,16 +2,8 @@ import { EmbedBuilder, type ActionRowBuilder, type ButtonBuilder } from 'discord
 import { desc, eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import { paginate, pageRow } from '../../core/paginate.js';
-import { RESET_MARKER_REASON, resetBoundaryOf, sideEffectNoteFor } from './service.js';
+import { RESET_MARKER_REASON, movementOf, resetBoundaryOf, sideEffectNoteFor } from './service.js';
 import type { Ctx } from '../../core/context.js';
-
-function amount(r: typeof schema.txLog.$inferSelect): string {
-  if (r.foodId) return `${r.foodDelta > 0 ? '+' : ''}${r.foodDelta} ${r.foodId}`;
-  const parts: string[] = [];
-  if (r.cashDelta) parts.push(`${r.cashDelta > 0 ? '+' : ''}${r.cashDelta} cash`);
-  if (r.shardsDelta) parts.push(`${r.shardsDelta > 0 ? '+' : ''}${r.shardsDelta} shards`);
-  return parts.join(' ') || '0';
-}
 
 // The operator's window onto tx_log. Every row for the player is listed, food rows included —
 // this is the ledger, not a curated summary.
@@ -27,8 +19,9 @@ export function ledgerPayload(ctx: Ctx, targetId: string, page: number) {
   // and could never fire. Derived from the full row set, not the paginated page below: a
   // reset many pages back must still mark an old charge on whichever page it's viewed from.
   // The reduction itself is shared with adminReverse, which refuses to reverse anything this
-  // view marks — see resetBoundaryOf for why they must not be two separate derivations.
-  const resetAt = resetBoundaryOf(rows);
+  // view marks — see resetBoundaryOf for why they must not be two separate derivations, why
+  // the cut is the row ID rather than its timestamp, and what a 0 cannot tell you.
+  const resetBoundary = resetBoundaryOf(rows);
 
   const { items, page: p, pages } = paginate(rows, page);
   const lines = items.map((r) => {
@@ -39,22 +32,27 @@ export function ledgerPayload(ctx: Ctx, targetId: string, page: number) {
       return `\`#${r.id}\` — account reset — every row below predates it`;
     }
     if (r.reversesId !== null) {
-      return `\`#${r.id}\` ↩ reverses #${r.reversesId} — ${amount(r)}${r.note ? ` · ${r.note}` : ''}`;
+      return `\`#${r.id}\` ↩ reverses #${r.reversesId} — ${movementOf(r)}${r.note ? ` · ${r.note}` : ''}`;
     }
     const marks: string[] = [];
     const by = reversedBy.get(r.id);
     if (by !== undefined) marks.push(`already reversed by #${by}`);
-    if (r.createdAt < resetAt) marks.push('pre-reset');
+    if (r.id < resetBoundary) marks.push('pre-reset');
     const tail = marks.length ? ` · **${marks.join(' · ')}**` : '';
     // Never re-derived here: sideEffectNoteFor is what adminReverse's reply prints for the
-    // same row, and the two disagreeing once is why it is shared at all.
+    // same row, and the two disagreeing once is why it is shared at all. movementOf is shared
+    // with that same reply for the same reason.
     const effect = sideEffectNoteFor(r);
     const note = effect ? ` — ${effect}` : '';
-    return `\`#${r.id}\` \`${r.reason}\` ${amount(r)}${note}${tail}`;
+    return `\`#${r.id}\` \`${r.reason}\` ${movementOf(r)}${note}${tail}`;
   });
 
+  // Named as well as numbered: a bare snowflake is not something an operator can check a
+  // refund against. The id stays alongside it, the shape /admin inspect already uses.
+  const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, targetId)).get();
+  const who = u?.displayName ? `${u.displayName} (${targetId})` : targetId;
   const embed = new EmbedBuilder()
-    .setTitle(`🧾 Ledger — ${targetId}`)
+    .setTitle(`🧾 Ledger — ${who}`)
     .setDescription(lines.join('\n') || 'No transactions.')
     .setFooter({ text: `Page ${p}/${pages}` });
   const components: ActionRowBuilder<ButtonBuilder>[] =
