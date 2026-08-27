@@ -190,7 +190,17 @@ export const txLog = sqliteTable('tx_log', {
   shardsDelta: integer('shards_delta').notNull().default(0),
   reason: text('reason').notNull(),
   createdAt: integer('created_at_ms').notNull(),
-});
+  // The tx_log.id this row reverses. Deliberately not a DB-level foreign key: nothing in
+  // src/ ever deletes a ledger row, and a self-reference costs drizzle type inference for
+  // nothing. A reversal is a compensating ENTRY — the target row is never edited.
+  reversesId: integer('reverses_id'),
+  // Operator's free-text reason for a reversal. Kept out of `reason`, which is structured
+  // (build:<kind>, landmark:<tier>) and is what the side-effect table keys on.
+  note: text('note'),
+  // PARTIAL: only reversal rows carry a reverses_id, so an ordinary charge — on what will
+  // become the largest table in the schema — pays essentially nothing, while the
+  // double-reversal guard stays logarithmic. Same shape as timers_due.
+}, (t) => [index('tx_log_reverses').on(t.reversesId).where(sql`${t.reversesId} is not null`)]);
 
 export const timers = sqliteTable('timers', {
   id: integer('id').primaryKey({ autoIncrement: true }),
