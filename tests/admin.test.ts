@@ -9,7 +9,7 @@ import { settleEscapes } from '../src/modules/park/escapes.js';
 import { startBreeding, claimBreeding } from '../src/modules/genelab/service.js';
 import { BREED_MS } from '../src/data/breeding.js';
 import { requireOwner } from '../src/modules/admin/guard.js';
-import { adminGive, adminReset, adminFastForward, AdminError } from '../src/modules/admin/service.js';
+import { adminGive, adminReset, adminFastForward, adminReverse, AdminError } from '../src/modules/admin/service.js';
 import { setMotto, setFeaturedDino } from '../src/modules/park/showcase.js';
 import { adminModule } from '../src/modules/admin/index.js';
 import { ledgerPayload } from '../src/modules/admin/ledger.js';
@@ -733,5 +733,164 @@ describe('/admin ledger component', () => {
     expect(b.replies).toHaveLength(0);          // no i.update() — the target never sees page 2
     expect(b.deferOpts).toHaveLength(1);
     expect(b.deferOpts[0]).toMatchObject({ kind: 'update' });
+  });
+});
+
+describe('/admin reverse', () => {
+  const seed = (c: ReturnType<typeof makeCtx>) => {
+    getOrCreateUser(c, 'u1', 'One');                                     // 500 cash
+    c.economy.apply('u1', { cash: -300 }, 'build:paddock_plains', 100);  // -> 200
+    return c.db.select().from(schema.txLog).all().at(-1)!;
+  };
+  const cashOf = (c: ReturnType<typeof makeCtx>, id: string) =>
+    c.db.select().from(schema.users).where(eq(schema.users.discordId, id)).get()!.cash;
+  const reversalOf = (c: ReturnType<typeof makeCtx>, id: number) =>
+    c.db.select().from(schema.txLog).all().find((r) => r.reversesId === id);
+
+  it('reverses and reports what the money did not undo', () => {
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    const out = adminReverse(ctx, 'u1', charge.id);
+    expect(out.sideEffect).toMatch(/lot still stands/i);
+    expect(out.notified).toBe(false);
+    expect(cashOf(ctx, 'u1')).toBe(500);
+    // The money came back as a compensating row pointing at the charge, never an edit of it.
+    expect(reversalOf(ctx, charge.id)!.cashDelta).toBe(300);
+  });
+
+  it('refuses an unknown transaction id', () => {
+    const ctx = makeCtx();
+    seed(ctx);
+    expect(() => adminReverse(ctx, 'u1', 9999)).toThrow(AdminError);
+    expect(() => adminReverse(ctx, 'u1', 9999)).toThrow(/no transaction/i);
+  });
+
+  it('refuses a row belonging to another player', () => {
+    // The user option is redundant on purpose: it is the confirmation step that turns a
+    // mistyped id into a refusal rather than a refund to the wrong person.
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    getOrCreateUser(ctx, 'u2', 'Two');
+    expect(() => adminReverse(ctx, 'u2', charge.id)).toThrow(AdminError);
+    expect(() => adminReverse(ctx, 'u2', charge.id)).toThrow(/different player/i);
+    // Discriminating: neither the named player nor the row's real owner was paid.
+    expect(cashOf(ctx, 'u2')).toBe(500);
+    expect(cashOf(ctx, 'u1')).toBe(200);
+  });
+
+  it('refuses a charge that predates a reset, using a real reset — not a hand-inserted row', () => {
+    // adminReset UPDATEs the users row and never touches createdAt (that column means account
+    // CREATION), so the boundary cannot come from users.createdAt — it is the marker row the
+    // reset itself writes into the ledger.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: -50 }, 'build:x', 100);
+    const before = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    ctx.setNow(200);
+    adminReset(ctx, 'u1');                                   // writes the marker at 200
+    ctx.economy.apply('u1', { cash: -20 }, 'build:y', 300);
+    const after = ctx.db.select().from(schema.txLog).all().at(-1)!;
+
+    expect(() => adminReverse(ctx, 'u1', before.id)).toThrow(/reset/i);
+    expect(reversalOf(ctx, before.id)).toBeUndefined();
+    // Discriminating: it is the boundary that refuses, not the reversal path being broken —
+    // the same shape of charge on the other side of the marker reverses cleanly.
+    expect(() => adminReverse(ctx, 'u1', after.id)).not.toThrow();
+    expect(cashOf(ctx, 'u1')).toBe(500);
+  });
+
+  it('refuses the reset marker row itself', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.setNow(200);
+    adminReset(ctx, 'u1');
+    const marker = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(() => adminReverse(ctx, 'u1', marker.id)).toThrow(AdminError);
+    // Reversing a zero-delta row is economically inert, so a balance assertion would prove
+    // nothing. What must not happen is a nonsense "reverses #<marker>" row landing in the
+    // very ledger this feature exists to make readable.
+    expect(reversalOf(ctx, marker.id)).toBeUndefined();
+  });
+
+  it('refuses a reversal that would overdraw the player, and names the shortfall', () => {
+    // Reversal is symmetric on purpose: reversing a credit takes the cash back. A player who
+    // already spent it cannot pay, and "insufficient cash" alone does not tell the operator
+    // whether they are 5 short or 5,000,000 short.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');                             // 500
+    ctx.economy.apply('u1', { cash: 1000 }, 'admin:give', 100);    // -> 1500
+    const credit = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    ctx.economy.apply('u1', { cash: -1400 }, 'build:x', 200);      // -> 100
+    expect(() => adminReverse(ctx, 'u1', credit.id)).toThrow(AdminError);
+    expect(() => adminReverse(ctx, 'u1', credit.id)).toThrow(/900 short/);
+    // The rollback is the guard, not a pre-check: nothing moved and nothing was recorded.
+    expect(cashOf(ctx, 'u1')).toBe(100);
+    expect(reversalOf(ctx, credit.id)).toBeUndefined();
+  });
+
+  it('surfaces the ledger primitive’s own refusals as operator errors', () => {
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    adminReverse(ctx, 'u1', charge.id);
+    const reversal = reversalOf(ctx, charge.id)!;
+    expect(() => adminReverse(ctx, 'u1', charge.id)).toThrow(AdminError);
+    expect(() => adminReverse(ctx, 'u1', charge.id)).toThrow(/already reversed/i);
+    expect(() => adminReverse(ctx, 'u1', reversal.id)).toThrow(AdminError);
+    expect(() => adminReverse(ctx, 'u1', reversal.id)).toThrow(/terminal/i);
+  });
+
+  it('queues a note to the player when one is given, and keeps it on the row', () => {
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    const out = adminReverse(ctx, 'u1', charge.id, 'double-charged by a stale button');
+    expect(out.notified).toBe(true);
+    expect(ctx.notifications.map((n) => n.message).join(' ')).toMatch(/stale button/);
+    expect(reversalOf(ctx, charge.id)!.note).toBe('double-charged by a stale button');
+  });
+
+  it('caps the note it stores', () => {
+    // The note is rendered into /admin ledger's embed description, which Discord caps at
+    // 4096 characters — a page of uncapped notes would overflow it and reject the reply.
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    adminReverse(ctx, 'u1', charge.id, 'x'.repeat(500));
+    expect(reversalOf(ctx, charge.id)!.note).toHaveLength(200);
+  });
+
+  it('keeps the reversal committed when the notification throws', () => {
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    ctx.notify = () => Promise.reject(new Error('DMs closed'));
+    expect(() => adminReverse(ctx, 'u1', charge.id, 'here you go')).not.toThrow();
+    // The money moved even though telling the player failed.
+    expect(cashOf(ctx, 'u1')).toBe(500);
+    expect(reversalOf(ctx, charge.id)).toBeDefined();
+  });
+
+  it('replies through the command layer, saying the note was queued rather than sent', async () => {
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    const i = fakeCommand({ name: 'admin', sub: 'reverse', user: 'owner',
+      options: { user: 'u1', tx: charge.id, note: 'double-charged by a stale button' } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    const text = replyText(i.replies[0]);
+    expect(text).toMatch(/lot still stands/i);
+    // Delivery depends on the player's routing and mute settings, so the reply must claim
+    // only that the note was queued.
+    expect(text).toMatch(/queued/i);
+    expect(text).not.toMatch(/\bsent\b/i);
+    expect(cashOf(ctx, 'u1')).toBe(500);
+  });
+
+  it('answers a refusal ephemerally through the command layer instead of throwing', async () => {
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    getOrCreateUser(ctx, 'u2', 'Two');
+    const i = fakeCommand({ name: 'admin', sub: 'reverse', user: 'owner',
+      options: { user: 'u2', tx: charge.id } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toMatch(/different player/i);
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect(cashOf(ctx, 'u2')).toBe(500);
   });
 });

@@ -9,6 +9,9 @@ import { recomputeRating } from '../park/rating.js';
 import { settleEscapes } from '../park/escapes.js';
 import { ENERGY_CAP, DUEL_START_RATING } from '../../data/battle/constants.js';
 import { recordSpeciesSeen } from '../../core/species-seen.js';
+import { InsufficientFundsError, ReversalError } from '../../core/economy.js';
+import { sideEffectFor } from '../../data/tx-reasons.js';
+import { logger } from '../../core/logger.js';
 
 export class AdminError extends Error {}
 
@@ -16,6 +19,17 @@ export class AdminError extends Error {}
 // Exported so the ledger (src/modules/admin/ledger.ts) derives the reset boundary from the
 // same literal rather than a second hand-typed copy that could silently drift from this one.
 export const RESET_MARKER_REASON = 'admin:reset';
+
+// The instant a player's ledger was last cut by a reset — the NEWEST marker row's timestamp,
+// or 0 when they have never been reset. Shared with the ledger view
+// (src/modules/admin/ledger.ts) rather than hand-rolled twice, because the same boundary
+// decides what that view MARKS as pre-reset and what adminReverse REFUSES to reverse: two
+// copies that drifted would show the operator a row as reversible and then refuse it, or
+// worse, quietly pay one the ledger had flagged.
+export function resetBoundaryOf(rows: Array<typeof schema.txLog.$inferSelect>): number {
+  const marks = rows.filter((r) => r.reason === RESET_MARKER_REASON);
+  return marks.length ? Math.max(...marks.map((r) => r.createdAt)) : 0;
+}
 
 export interface GiveArgs {
   cash?: number; food?: { foodId: FoodId; qty: number }; shards?: number; eggRarity?: Rarity; dinoSpecies?: string;
@@ -235,4 +249,83 @@ export function adminFastForward(ctx: Ctx, targetId: string, hours: number): num
       .where(or(eq(schema.duels.challengerId, targetId), eq(schema.duels.defenderId, targetId))).run();
   });
   return settleEscapes(ctx, targetId).length;
+}
+
+// The operator's free-text reason, capped before it is stored. /admin ledger renders the note
+// into an embed DESCRIPTION, and Discord caps a description at 4096 characters — ten notes at
+// full length on one page would overflow that budget and turn the whole ledger reply into a
+// rejected request. The command option carries the same cap so the operator is stopped while
+// typing rather than silently truncated afterwards.
+export const NOTE_MAX = 200;
+
+// Names the gap rather than reporting a bare failure. Reversing a CREDIT takes the money back
+// — the only way a balance falls outside normal play — so a player who has already spent it
+// cannot pay, and "insufficient cash" alone leaves the operator unable to tell whether they
+// are 5 short or 5,000,000 short. Read AFTER the reversal transaction rolled back, so these
+// balances are the untouched ones.
+function shortfallOf(ctx: Ctx, row: typeof schema.txLog.$inferSelect, e: InsufficientFundsError): string {
+  if (e.foodId) {
+    const held = ctx.economy.getFoodInventory(row.userId)[e.foodId] ?? 0;
+    return `the player holds ${held} ${FOODS[e.foodId].name} and the reversal needs `
+      + `${row.foodDelta} — ${row.foodDelta - held} short.`;
+  }
+  const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, row.userId)).get();
+  const needed = e.wallet === 'cash' ? row.cashDelta : row.shardsDelta;
+  const held = (e.wallet === 'cash' ? u?.cash : u?.shards) ?? 0;
+  return `the player holds ${held} ${e.wallet} and the reversal needs ${needed} — ${needed - held} short.`;
+}
+
+// Reverses one ledger row for a named player. The user id is required and checked against the
+// row on purpose: it is the confirmation step, so a mistyped transaction id becomes a refusal
+// rather than a refund to the wrong person.
+//
+// Reversal is SYMMETRIC and deliberately unguarded in that direction: reversing a credit takes
+// cash back, which is the only path by which a balance decreases outside normal play. Money is
+// all it moves — whatever the charge bought is still there, which is what the returned
+// side-effect note exists to say out loud.
+export function adminReverse(
+  ctx: Ctx, targetId: string, txId: number, note?: string,
+): { sideEffect: string; notified: boolean } {
+  const row = ctx.db.select().from(schema.txLog).where(eq(schema.txLog.id, txId)).get();
+  if (!row) throw new AdminError(`No transaction #${txId}.`);
+  if (row.userId !== targetId) throw new AdminError(`#${txId} belongs to a different player.`);
+  // A marker moved no money, so reversing it is economically inert — but it would mint a
+  // nonsense "reverses #<marker>" row into the very ledger this feature exists to make
+  // readable, and EconomyService.reverse would accept it: its guards know nothing about
+  // markers. The refusal lives HERE rather than in core because a reset marker is an admin
+  // concept, and core has no business knowing the reason string this module stamps.
+  if (row.reason === RESET_MARKER_REASON) {
+    throw new AdminError(`#${txId} marks an account reset, not a charge — there is nothing to reverse.`);
+  }
+  const resetAt = resetBoundaryOf(ctx.db.select().from(schema.txLog)
+    .where(and(eq(schema.txLog.userId, targetId), eq(schema.txLog.reason, RESET_MARKER_REASON))).all());
+  // adminReset clears every per-player table except this one and restores new-player defaults,
+  // so a charge from before that line names money this account has nothing left to show for.
+  // Crediting it back would pay a fresh start for a park that was already erased.
+  if (row.createdAt < resetAt) {
+    throw new AdminError(`#${txId} predates this player’s reset and cannot be reversed.`);
+  }
+  const trimmed = note?.trim().slice(0, NOTE_MAX) || undefined;
+
+  try {
+    ctx.economy.reverse(txId, ctx.now(), trimmed);
+  } catch (e) {
+    if (e instanceof ReversalError) throw new AdminError(e.message);
+    if (e instanceof InsufficientFundsError) {
+      throw new AdminError(`Cannot reverse #${txId}: ${shortfallOf(ctx, row, e)}`);
+    }
+    throw e;
+  }
+
+  // AFTER the commit, never inside it: an unreachable player must not roll back a completed
+  // reversal, which is why the send is fired rather than awaited. The rejection is LOGGED and
+  // not discarded — the operator has already been told the note was queued, and a delivery
+  // that fails leaving no trace anywhere is a claim nobody can go back and check.
+  let notified = false;
+  if (trimmed) {
+    notified = true;
+    void ctx.notify(targetId, null, `🧾 A transaction was reversed by an operator: ${trimmed}`)
+      .catch((err: unknown) => logger.warn({ err, targetId, txId }, 'reversal note could not be delivered'));
+  }
+  return { sideEffect: sideEffectFor(row.reason), notified };
 }

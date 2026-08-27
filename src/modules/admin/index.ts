@@ -9,7 +9,7 @@ import { settleEscapes } from '../park/escapes.js';
 import { allSpecies } from '../../data/species/index.js';
 import { matches, respondRanked, emptyRow } from '../../core/autocomplete.js';
 import { requireOwner } from './guard.js';
-import { adminGive, adminReset, adminFastForward, AdminError } from './service.js';
+import { adminGive, adminReset, adminFastForward, adminReverse, AdminError, NOTE_MAX } from './service.js';
 import { FOODS, type FoodId } from '../../data/foods.js';
 import { emojiTag } from '../../core/emojis.js';
 import { ledgerPayload } from './ledger.js';
@@ -59,6 +59,10 @@ export const adminModule: ModuleManifest = {
         .addSubcommand((s) => s.setName('ledger').setDescription('Read a player’s transaction ledger')
           .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true))
           .addIntegerOption((o) => o.setName('page').setDescription('Page').setMinValue(1)))
+        .addSubcommand((s) => s.setName('reverse').setDescription('Reverse one ledger transaction')
+          .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true))
+          .addIntegerOption((o) => o.setName('tx').setDescription('Transaction id').setRequired(true).setMinValue(1))
+          .addStringOption((o) => o.setName('note').setDescription('Reason — also queued to the player').setMaxLength(NOTE_MAX)))
         .addSubcommand((s) => s.setName('reset').setDescription('Reset a player to a fresh start')
           .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true))
           .addStringOption((o) => o.setName('confirm').setDescription('Type the player’s user id to confirm').setRequired(true)))
@@ -103,6 +107,16 @@ export const adminModule: ModuleManifest = {
           } else if (sub === 'ledger') {
             const page = i.options.getInteger('page') ?? 1;
             await i.reply({ ...ledgerPayload(ctx, target.id, page), flags: MessageFlags.Ephemeral });
+          } else if (sub === 'reverse') {
+            const out = adminReverse(ctx, target.id, i.options.getInteger('tx', true),
+              i.options.getString('note') ?? undefined);
+            // "queued", never "sent": delivery depends on the player's routing and mute
+            // settings, so claiming otherwise would imply a confirmation the bot never gets.
+            await i.reply({
+              content: `↩ Reversed for <@${target.id}>. Not undone: ${out.sideEffect}.`
+                + (out.notified ? ' Note queued to the player.' : ''),
+              flags: MessageFlags.Ephemeral,
+            });
           } else if (sub === 'fast-forward') {
             getOrCreateUser(ctx, target.id, target.displayName);
             const escaped = adminFastForward(ctx, target.id, i.options.getInteger('hours', true));

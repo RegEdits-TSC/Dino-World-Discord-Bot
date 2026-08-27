@@ -3,7 +3,7 @@ import { desc, eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import { paginate, pageRow } from '../../core/paginate.js';
 import { sideEffectFor } from '../../data/tx-reasons.js';
-import { RESET_MARKER_REASON } from './service.js';
+import { RESET_MARKER_REASON, resetBoundaryOf } from './service.js';
 import type { Ctx } from '../../core/context.js';
 
 function amount(r: typeof schema.txLog.$inferSelect): string {
@@ -39,8 +39,9 @@ export function ledgerPayload(ctx: Ctx, targetId: string, page: number) {
   // which means account CREATION, so a boundary derived from that column could never move
   // and could never fire. Derived from the full row set, not the paginated page below: a
   // reset many pages back must still mark an old charge on whichever page it's viewed from.
-  const resetMarks = rows.filter((r) => r.reason === RESET_MARKER_REASON);
-  const resetAt = resetMarks.length ? Math.max(...resetMarks.map((r) => r.createdAt)) : 0;
+  // The reduction itself is shared with adminReverse, which refuses to reverse anything this
+  // view marks — see resetBoundaryOf for why they must not be two separate derivations.
+  const resetAt = resetBoundaryOf(rows);
 
   const { items, page: p, pages } = paginate(rows, page);
   const lines = items.map((r) => {
