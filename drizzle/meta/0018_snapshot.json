@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "30ca5eae-b92a-42bb-8e8f-382b5ac7d717",
+  "id": "e51ac44b-c7e5-4e5e-a21c-ad2204db0b60",
   "prevId": "4dff5559-46dc-45ec-8eb7-326761cce5ab",
   "tables": {
     "achievement_claims": {
@@ -234,7 +234,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "attractions_user": {
+          "name": "attractions_user",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "attractions_user_id_users_discord_id_fk": {
           "name": "attractions_user_id_users_discord_id_fk",
@@ -914,7 +922,16 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "expeditions_user_claimed": {
+          "name": "expeditions_user_claimed",
+          "columns": [
+            "user_id",
+            "claimed_at_ms"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "expeditions_user_id_users_discord_id_fk": {
           "name": "expeditions_user_id_users_discord_id_fk",
@@ -1226,8 +1243,8 @@
         }
       },
       "indexes": {
-        "season_progress_index": {
-          "name": "season_progress_index",
+        "season_progress_season_user": {
+          "name": "season_progress_season_user",
           "columns": [
             "season_index",
             "user_id"

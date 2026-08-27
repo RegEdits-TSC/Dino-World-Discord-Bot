@@ -526,8 +526,11 @@
   locks for the resolved `ownerId`, NOT `i.user.id`, because the `want-*` options list
   the TARGET's inventory — a test pins this by escrowing the target's dino in a trade
   with a third user, so reading the wrong id fails it. Scaling note: `locksFor` runs two
-  unindexed table filters per call, but filters in SQL (unlike `expireStale`, which
-  still filters by user in JS); sub-millisecond at current scale.
+  table filters per call, but filters in SQL (unlike `expireStale`, which still filters by
+  user in JS). Both were unindexed until migration 0018, which added `trades_status_from`
+  and `breedings_user_claimed` to cover exactly those two reads — the trades index leads
+  with `status` rather than the user because `expireStale` filters on `status` alone and
+  has no user scope to narrow it.
 - Provenance survives the hatch: `hatchEgg` inserts the dino with
   `viaTrade: egg.viaTrade`. `eggs.viaTrade` had no reader before this; the three
   readers of `dinos.viaTrade` are all in the shop module, so dropping it at the hatch
@@ -1405,10 +1408,18 @@
   `i.update`: a routed payload mints components under a foreign prefix, and those handlers
   re-render their own message with no tab row, so updating in place would strand the
   player one click from losing navigation.
-  Tabs are a UI win, not a performance win: `/park view` costs dozens of `SELECT`s against
-  a schema with exactly one index (`daily_quests_user_day_slot`), so a tab switch re-pays
-  the same unindexed scans. `user_id` indexes on `lots`/`dinos`/`attractions` are the
-  higher-leverage change and were left out of this work deliberately.
+  Tabs are a UI win, not a performance win: `/park view` costs 23 `SELECT`s per render, and
+  a tab switch re-pays them. Migration 0018 indexed the tables behind that path
+  (`lots_user`, `dinos_user_lot`, `attractions_user`, and six more), so those reads are
+  index searches rather than full scans — but the count is unchanged, and **12 of the 23
+  are exact duplicates**, because `toClockDinos` runs four times per render with no
+  memoization between calls. Deduplicating them is the larger remaining win and is still
+  open; it is not a free change, since it has to preserve the "settle escapes once per
+  interaction" ordering `renderTab` depends on.
+  Indexes are not a blanket `user_id` sweep and must not become one: 12 of the schema's
+  tables already lead their composite primary key with `user_id`, so indexing those again
+  is pure waste, and `tx_log` has no filtered read anywhere in `src/` at all. See the
+  per-index comments in `src/core/db/schema.ts` for which read each one serves.
 - Select menus route through their own `selects?: SelectDef[]` on `ModuleManifest`
   (`src/core/modules.ts`) with their own `findSelect` and their own boot-time duplicate
   check — NEVER by widening `ComponentDef.execute`. That declaration uses method syntax,

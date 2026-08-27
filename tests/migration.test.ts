@@ -758,12 +758,14 @@ describe('0018 read indexes via the real drizzle migrator (production path)', ()
         `SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
       ).all() as Array<{ name: string }>).map((r) => r.name);
       expect(names).toEqual([
+        'attractions_user',
         'breedings_user_claimed',
         'daily_quests_user_day_slot',
         'dinos_user_lot',
         'eggs_user',
+        'expeditions_user_claimed',
         'lots_user',
-        'season_progress_index',
+        'season_progress_season_user',
         'timers_due',
         'trades_status_from',
         'user_guilds_guild',
@@ -773,14 +775,26 @@ describe('0018 read indexes via the real drizzle migrator (production path)', ()
       // index over every row would grow without bound while only the unhandled rows are ever read.
       // A future migration that recreates `timers` would silently drop this WHERE and pass every
       // other assertion here, so pin the clause itself.
+      // Pin the whole clause, not just "a WHERE mentioning handled_at_ms": `IS NOT NULL` is the
+      // semantic inversion that would empty the index of every row the scheduler actually reads,
+      // and a looser match passes it happily.
       const timersSql = (sqlite.prepare(
         `SELECT sql FROM sqlite_master WHERE name = 'timers_due'`,
       ).get() as { sql: string }).sql;
-      expect(timersSql).toMatch(/where/i);
-      expect(timersSql).toMatch(/handled_at_ms/);
+      expect(timersSql).toMatch(/where\s+"?timers"?\.?"?handled_at_ms"?\s+is\s+null/i);
+
+      // And prove the partial condition actually restricts membership: forcing the index sees
+      // only the live row, not the handled one seeded above.
+      expect(sqlite.prepare(
+        `SELECT COUNT(*) c FROM timers INDEXED BY timers_due WHERE handled_at_ms IS NULL`,
+      ).get()).toEqual({ c: 1 });
 
       // An index the planner declines to use is not an optimisation. Pin the two hottest reads:
       // the 30-second scheduler tick, and the per-user dino scan behind /park view.
+      // These hold because nothing in src/ or scripts/ ever runs ANALYZE or PRAGMA optimize, so
+      // the planner has no sqlite_stat1 and prefers the index even on a one-row fixture. Adding
+      // ANALYZE to migrateDb would flip these to SCAN — correctly, for a tiny table — and would
+      // mean growing the fixtures here rather than relaxing the assertions.
       const tickPlan = (sqlite.prepare(
         `EXPLAIN QUERY PLAN SELECT * FROM timers
          WHERE handled_at_ms IS NULL AND fires_at_ms <= ? ORDER BY fires_at_ms`,

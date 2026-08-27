@@ -144,8 +144,9 @@ export const breedings = sqliteTable('breedings', {
   startedAt: integer('started_at_ms').notNull(),
   readyAt: integer('ready_at_ms').notNull(),
   claimedAt: integer('claimed_at_ms'),
-  // Half of the pair closing the gap locksFor's own comment flags as "two unindexed table
+  // Half of the pair closing the gap CLAUDE.md's locksFor note flags as "two unindexed table
   // filters per call" — the unclaimed-breedings filter. The other half is trades_status_from.
+  // claimed_at_ms is nullable and SQLite indexes NULLs, so `claimed_at_ms IS NULL` uses it.
 }, (t) => [index('breedings_user_claimed').on(t.userId, t.claimedAt)]);
 
 export const expeditions = sqliteTable('expeditions', {
@@ -157,7 +158,9 @@ export const expeditions = sqliteTable('expeditions', {
   loot: text('loot', { mode: 'json' })
     .$type<{ eggRarity: string; cash: number; food: { foodId: string; qty: number } } | null>(),
   claimedAt: integer('claimed_at_ms'),
-});
+  // Same predicate shape as breedings_user_claimed, on a table that likewise keeps claimed
+  // rows as history and therefore grows without bound.
+}, (t) => [index('expeditions_user_claimed').on(t.userId, t.claimedAt)]);
 
 export interface TradeSide { dinoIds: number[]; eggIds: number[]; cash: number; foods: Record<string, number> }
 
@@ -173,6 +176,9 @@ export const trades = sqliteTable('trades', {
   // `status` leads deliberately: it is the lowest-cardinality column and the only predicate
   // expireStale filters on, so this one index serves both locksFor's per-user escrow read and
   // expireStale's unscoped `status = 'pending'` scan, which has no user scope to narrow it.
+  // The deliberate cost: createTrade's daily-cap read filters from_user + created_at_ms with
+  // NO status predicate, so it cannot use this index at all. Judged worth it — that is one
+  // rate-limit check against three hotter readers.
 }, (t) => [index('trades_status_from').on(t.status, t.fromUser, t.createdAt)]);
 
 export const txLog = sqliteTable('tx_log', {
@@ -194,7 +200,8 @@ export const timers = sqliteTable('timers', {
   originGuildId: text('origin_guild_id'),
   firesAt: integer('fires_at_ms').notNull(),
   handledAt: integer('handled_at_ms'),
-  // PARTIAL on purpose. Nothing ever deletes a handled timer, so this table only grows, and the
+  // PARTIAL on purpose. Nothing prunes handled timers in normal operation — only adminReset's
+  // per-user wipe ever removes one — so this table only grows, and the
   // scheduler tick scans it every 30 seconds forever. A handled row is never read again by any
   // query in src/, so indexing one would be pure waste — restricting the index to the unhandled
   // rows keeps it the size of the live working set no matter how large the table gets, and makes
@@ -317,7 +324,7 @@ export const seasonProgress = sqliteTable('season_progress', {
   // daily/season.ts keep using the PK unchanged.
 }, (t) => [
   primaryKey({ columns: [t.userId, t.seasonIndex] }),
-  index('season_progress_index').on(t.seasonIndex, t.userId),
+  index('season_progress_season_user').on(t.seasonIndex, t.userId),
 ]);
 
 // Consumable rungs only. The badge is seasonProgress.badgeAt, not a row here, because it
@@ -339,7 +346,11 @@ export const attractions = sqliteTable('attractions', {
   // same decision species_seen.first_at_ms records. If a build cooldown is ever added,
   // THAT column must shift.
   builtAt: integer('built_at_ms').notNull(),
-});
+  // Indexed for the same reason as lots/dinos, and it was nearly skipped for a bad one: a
+  // player's own attraction rows are capped by catalog size, but a SCAN reads the whole
+  // table, not one player's slice, so the cost tracks total players rather than per-player
+  // rows. buildParkSnapshot reads this on the /park view render path.
+}, (t) => [index('attractions_user').on(t.userId)]);
 
 // One row per claimed milestone. Composite primary key rather than uniqueIndex, matching
 // season_claims and achievement_claims — the shipped claim-ledger shape.
