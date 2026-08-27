@@ -32,8 +32,8 @@ function seedRow(ctx: ReturnType<typeof makeCtx>, userId: string, slot: number, 
 }
 
 // The board rolled for a user/day is a deterministic hash of `${userId}:${dayKey}`
-// (see rollDailyQuests/hashSeed in src/modules/daily/service.ts) — there's no public
-// way to force a specific quest onto it. To test the pre/post-dispatch roll TIMING
+// (see rollDailyQuests in src/modules/daily/service.ts, hashSeed in src/core/rolls.ts)
+// — there's no public way to force a specific quest onto it. To test the pre/post-dispatch roll TIMING
 // (not just that rows appear), find a userId whose day-0 board actually happens to
 // include an 'eggs_hatched' quest (hatch_1 or hatch_3), the stat every synthetic
 // command below tracks.

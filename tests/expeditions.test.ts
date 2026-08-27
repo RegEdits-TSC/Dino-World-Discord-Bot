@@ -90,11 +90,31 @@ describe('expedition visuals', () => {
     };
     const embed = payload.embeds[0].toJSON();
     expect(embed.title).toBe('🧭 🐚 Coastal Dig — returned!');
+    // The banner is now seeded on i.user.id ('u1' here), but coastal_dig-banner hashes
+    // to index 0 for 'u1' and index 0 IS the base file, so this literal is unchanged —
+    // see the 'u2' pin below for an assertion that actually moves with the seed.
     expect(embed.image?.url).toBe('attachment://coastal_dig-banner.webp');
     expect(embed.thumbnail?.url).toBe('attachment://coastal_dig-thumb.webp');
     const names = payload.files!.map((f) => f.name);
     expect(names).toContain('coastal_dig-banner.webp');
     expect(names).toContain('coastal_dig-thumb.webp');
+  });
+  it('/expedition claim seeds the banner on the viewer, not fixed to the base face', async () => {
+    const u2ctx = makeCtx();
+    getOrCreateUser(u2ctx, 'u2', 'Reg2');
+    u2ctx.economy.apply('u2', { cash: 1_000 }, 'seed', 0);
+    startExpedition(u2ctx, 'u2', 'coastal_dig', 'g1');
+    u2ctx.setNow(u2ctx.now() + 16 * 60_000);
+    const i = fakeCommand({ name: 'expedition', sub: 'claim', user: 'u2', guild: 'g1' });
+    await expeditionsModule.commands[0].execute(u2ctx, i.asChatInput());
+    const payload = i.replies[0] as {
+      embeds: Array<{ toJSON(): { image?: { url: string } } }>;
+      files?: Array<{ name?: string | null }>;
+    };
+    // 'u2' hashes coastal_dig-banner to -v2, unlike 'u1' above — this is the pin that
+    // actually goes red if the seed argument at the call site is removed.
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://coastal_dig-banner-v2.webp');
+    expect(payload.files!.map((f) => f.name)).toContain('coastal_dig-banner-v2.webp');
   });
   it('/expedition claim still attaches the thumb when the banner is missing', async () => {
     // Degrade path 1/2: the two assetImage lookups are independent `if`
@@ -121,7 +141,7 @@ describe('expedition visuals', () => {
     // suppress the banner that was already appended to payload.files.
     const { assetImage: realAssetImage } = await vi.importActual<typeof import('../src/core/images.js')>('../src/core/images.js');
     vi.mocked(assetImage)
-      .mockImplementationOnce((kind, name) => realAssetImage(kind, name))   // banner call (1st) -> real
+      .mockImplementationOnce((...args) => realAssetImage(...args))   // banner call (1st) -> real, seed forwarded
       .mockImplementationOnce(() => null);                                 // thumb call (2nd) -> missing
     ctx.economy.apply('u1', { cash: 1_000 }, 'seed', 0);
     startExpedition(ctx, 'u1', 'coastal_dig', 'g1');

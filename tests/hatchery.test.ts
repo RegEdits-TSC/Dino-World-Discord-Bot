@@ -252,7 +252,9 @@ describe('hatchery module', () => {
 describe('hatchery visuals', () => {
   it('preHatchPayload sets the hero egg image and attaches the file', () => {
     const p = preHatchPayload('rare', 7);
-    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare.webp');
+    // Seeded on the egg's row id, so this is egg #7's face rather than the base.
+    // The variant is deterministic — the same id always resolves here.
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare-v3.webp');
     expect(p.files).toHaveLength(1);
     expect(p.components).toHaveLength(1); // crack button preserved
   });
@@ -267,7 +269,9 @@ describe('hatchery visuals', () => {
     // survive on the edited message.
     // velociraptor ships its own portrait as of Task 10, so dinoImage (a pass-through
     // spy here) now resolves velociraptor.webp instead of the swift-carnivore fallback.
-    const p = revealPayload(getSpecies('velociraptor'));   // rare, swift/carnivore
+    // eggId 7 (the same literal preHatchPayload uses above) seeds the crack: rare's
+    // hash for id 7 lands back on the base file, so the resolved name is unchanged.
+    const p = revealPayload(getSpecies('velociraptor'), 7);   // rare, swift/carnivore
     const embed = p.embeds[0].toJSON();
     expect(embed.image?.url).toBe('attachment://rare-crack.webp');
     expect(embed.thumbnail?.url).toBe('attachment://velociraptor.webp');
@@ -277,16 +281,17 @@ describe('hatchery visuals', () => {
   it('revealPayload keys the thumbnail off the hatched species, not a constant', () => {
     // triceratops ships its own portrait as of Task 10; it no longer falls back to
     // the shared tank-herbivore archetype art.
-    const p = revealPayload(getSpecies('triceratops'));   // common, tank/herbivore
+    // Same eggId 7, but common's hash lands on -v4 for this id, unlike rare above.
+    const p = revealPayload(getSpecies('triceratops'), 7);   // common, tank/herbivore
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://triceratops.webp');
-    expect(p.files.map((f) => f.name)).toEqual(['common-crack.webp', 'triceratops.webp']);
+    expect(p.files.map((f) => f.name)).toEqual(['common-crack-v4.webp', 'triceratops.webp']);
   });
   it('revealPayload still ships the archetype thumb when the crack art is missing', () => {
     // Degrade path 1/2: two files on one payload, two independent attach calls —
     // a miss on the crack must not suppress the thumb.
     // velociraptor ships its own portrait as of Task 10 — see above.
     vi.mocked(assetImage).mockImplementationOnce(() => null);   // crack call (1st) -> missing
-    const p = revealPayload(getSpecies('velociraptor'));
+    const p = revealPayload(getSpecies('velociraptor'), 7);
     const embed = p.embeds[0].toJSON();
     expect(embed.image).toBeUndefined();
     expect(embed.thumbnail?.url).toBe('attachment://velociraptor.webp');
@@ -298,14 +303,14 @@ describe('hatchery visuals', () => {
     // dinoImage, not on the assetImage queue: revealPayload resolves the thumb through
     // dinoImage, whose own assetImage calls are module-internal and unmockable from here.
     vi.mocked(dinoImage).mockImplementationOnce(() => null);
-    const p = revealPayload(getSpecies('velociraptor'));
+    const p = revealPayload(getSpecies('velociraptor'), 7);
     const embed = p.embeds[0].toJSON();
     expect(embed.image?.url).toBe('attachment://rare-crack.webp');
     expect(embed.thumbnail).toBeUndefined();
     expect(p.files.map((f) => f.name)).toEqual(['rare-crack.webp']);
   });
   it('reveal embed points at /dino assign', () => {
-    const p = revealPayload(getSpecies('velociraptor'));
+    const p = revealPayload(getSpecies('velociraptor'), 7);
     expect(p.embeds[0].toJSON().footer?.text).toContain('/dino assign');
   });
   it('eggListPayload thumbnails the ready egg over incubating and newest, under the incubator banner', () => {
@@ -313,9 +318,11 @@ describe('hatchery visuals', () => {
     const incubating = { ...addEgg('rare'), hatchesAt: 999_999, incubationStartedAt: 1 };
     const newest = addEgg('common');
     const p = eggListPayload([newest, incubating, ready], 10, 'u1');
-    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://epic.webp');
-    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://eggs_incubator.webp');
-    expect(p.files!.map((f) => f.name)).toEqual(['epic.webp', 'eggs_incubator.webp']);
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://epic-v2.webp');
+    // Two seeds on one payload: the thumb keys on the featured egg's row id, the banner
+    // on the viewer ('u1' here). Different seeds, different things keyed, distinct names.
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://eggs_incubator-v4.webp');
+    expect(p.files!.map((f) => f.name)).toEqual(['epic-v2.webp', 'eggs_incubator-v4.webp']);
   });
   it('eggListPayload still ships the incubator banner when the featured thumb is missing', () => {
     // Degrade path 1/2: the two assetImage lookups are independent `if` blocks —
@@ -325,22 +332,22 @@ describe('hatchery visuals', () => {
     const p = eggListPayload([ready], 10, 'u1');
     const embed = p.embeds[0].toJSON();
     expect(embed.thumbnail).toBeUndefined();
-    expect(embed.image?.url).toBe('attachment://eggs_incubator.webp');
-    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator.webp']);
+    expect(embed.image?.url).toBe('attachment://eggs_incubator-v4.webp');
+    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator-v4.webp']);
   });
   it('eggListPayload still ships the featured thumb when the incubator banner is missing', async () => {
     // Degrade path 2/2: the mirror case — a miss on the banner call must not
     // suppress the thumb that was already appended to payload.files.
     const { assetImage: realAssetImage } = await vi.importActual<typeof import('../src/core/images.js')>('../src/core/images.js');
     vi.mocked(assetImage)
-      .mockImplementationOnce((kind, name) => realAssetImage(kind, name))   // thumb call (1st) -> real
-      .mockImplementationOnce(() => null);                                 // banner call (2nd) -> missing
+      .mockImplementationOnce((...args) => realAssetImage(...args))   // thumb call (1st) -> real, seed forwarded
+      .mockImplementationOnce(() => null);                            // banner call (2nd) -> missing
     const ready = { ...addEgg('epic'), hatchesAt: 5, incubationStartedAt: 1 };
     const p = eggListPayload([ready], 10, 'u1');
     const embed = p.embeds[0].toJSON();
-    expect(embed.thumbnail?.url).toBe('attachment://epic.webp');
+    expect(embed.thumbnail?.url).toBe('attachment://epic-v2.webp');
     expect(embed.image).toBeUndefined();
-    expect(p.files!.map((f) => f.name)).toEqual(['epic.webp']);
+    expect(p.files!.map((f) => f.name)).toEqual(['epic-v2.webp']);
   });
   it('eggListPayload marks a trade-locked egg with a padlock, ahead of its timer state', () => {
     const locked = { ...addEgg('epic'), hatchesAt: 5, incubationStartedAt: 1 };
@@ -354,12 +361,12 @@ describe('hatchery visuals', () => {
     const older = { ...addEgg('common'), obtainedAt: 1 };
     const newer = { ...addEgg('legendary'), obtainedAt: 2 };
     const p = eggListPayload([older, newer], 10, 'u1');
-    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://legendary.webp');
+    expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://legendary-v4.webp');
   });
   it('eggListPayload with no eggs has no thumbnail but still banners the incubator', () => {
     const p = eggListPayload([], 10, 'u1');
     expect(p.embeds[0].toJSON().thumbnail).toBeUndefined();
-    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator.webp']);
+    expect(p.files!.map((f) => f.name)).toEqual(['eggs_incubator-v4.webp']);
   });
 });
 
@@ -469,8 +476,8 @@ describe('/incubate execute', () => {
     expect(embed.title).toContain('Incubating your common egg');
     expect(embed.description).toContain('<t:');   // relative ready stamp survives the promotion
     // Attach-all-or-nothing: a thumbnail URL with no matching file renders broken.
-    expect(embed.thumbnail?.url).toBe('attachment://common.webp');
-    expect(payload.files!.map((f) => f.name)).toContain('common.webp');
+    expect(embed.thumbnail?.url).toBe('attachment://common-v3.webp');
+    expect(payload.files!.map((f) => f.name)).toContain('common-v3.webp');
     const timer = ctx.db.select().from(schema.timers).all().find((t) => t.kind === 'egg_hatch');
     expect(timer?.refId).toBe(egg.id);
   });

@@ -127,7 +127,10 @@ export const helpModule: ModuleManifest = {
           const t = HELP_TOPICS[topic];
           const embed = new EmbedBuilder().setTitle(t.title).setDescription(t.body).setColor(0x5865F2);
           const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-          if (t.art) attach(embed, payload, 'image', assetImage(t.art.kind, t.art.name));
+          // i.user.id seeds the topic art — the viewer, same rule as every other
+          // banner/site call. A base with no variants (most of these) is a contract
+          // no-op: assetImage returns it unchanged regardless of seed.
+          if (t.art) attach(embed, payload, 'image', assetImage(t.art.kind, t.art.name, i.user.id));
           if (topic === 'park') {
             // The park topic illustrates itself with the reader's own map: a worker
             // render, so defer first and degrade to the text-only embed on any
@@ -150,7 +153,11 @@ export const helpModule: ModuleManifest = {
             name: t.title, value: `\`/help topic:${key}\``, inline: true,
           })));
         const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [overview] };
-        attach(overview, payload, 'image', assetImage('banners', 'help'));
+        // Seeded on the viewer like the topic art above. banners/help ships no faces
+        // today, so this is the documented contract no-op — but the overview and
+        // /help topic:getting-started render the SAME base, and leaving one of the two
+        // unseeded would make them disagree the day a face lands.
+        attach(overview, payload, 'image', assetImage('banners', 'help', i.user.id));
         await i.reply(payload);
       } },
   ],

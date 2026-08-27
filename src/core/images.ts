@@ -1,6 +1,7 @@
 import { AttachmentBuilder, type EmbedBuilder } from 'discord.js';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { hashSeed, mulberry32 } from './rolls.js';
 
 export interface ImageRef { file: AttachmentBuilder; url: string }
 
@@ -13,11 +14,85 @@ function present(abs: string): boolean {
   return hit;
 }
 
+// How many `<name>-vN.webp` siblings a base has. Counted from -v2 upward and
+// stopped at the first gap, which is exactly the invariant
+// tests/asset-variants.test.ts enforces: numbering starts at 2 and never skips.
+// Cached per kind/name like present() caches existsSync — assets do not change
+// at runtime.
+const variantCounts = new Map<string, number>();
+
+// The six directories under assets/images/. Named rather than repeated inline so the
+// two module-private helpers below stay narrowed to exactly what assetImage accepts
+// instead of widening to bare `string` — they feed the same resolve() path, so a
+// widened parameter buys nothing and only lets a typo reach the filesystem.
+type AssetKind = 'eggs' | 'sites' | 'banners' | 'battles' | 'hatch' | 'dinos';
+
+function variantCount(kind: AssetKind, name: string): number {
+  const key = `${kind}/${name}`;
+  let n = variantCounts.get(key);
+  if (n === undefined) {
+    n = 0;
+    while (present(resolve(process.cwd(), 'assets/images', kind, `${name}-v${n + 2}.webp`))) n++;
+    variantCounts.set(key, n);
+  }
+  return n;
+}
+
+// Picks which face of `name` a seed resolves to. Index 0 is the base file, so a
+// base with no variants always returns itself and the seeded path agrees with the
+// unseeded one wherever no variant exists.
+//
+// The hashed string is COMPOSITE — `kind:name:seed` — and that is load-bearing,
+// not stylistic. eggs and hatch each ship one variant set per rarity, with equal
+// counts, so hashing a bare egg id would select the same index in both: egg #42
+// would show common-v2 and then common-crack-v2, collapsing two independent picks
+// into one for a consistency nobody can perceive. No count here on purpose: the
+// equal-counts fact is what the argument needs, and a number goes stale silently
+// the first time a -v5 ships. Same reasoning as WORLD_SALT (src/core/world.ts)
+// and DEAL_SALT (src/modules/shop/service.ts), which exist to stop two features
+// keying off one input from moving together.
+//
+// The hash goes through mulberry32 rather than `% (count + 1)`. No code in src/
+// takes FNV-1a output modulo anything — its low bits carry less avalanche than a
+// PRNG's, and every selection in this repo (pickBoard, rollSpeciesInRarity,
+// dailyDeal) runs mulberry32 first.
+//
+// This is a deliberate carve-out from the ctx.now()/ctx.rng() rule everywhere
+// else in the codebase: variant selection is a pure function of (kind, name,
+// seed), never a clock or ctx.rng(), so the same triple always renders the same
+// face — including for a Discord edit that re-renders an already-sent message.
+function pickVariant(kind: AssetKind, name: string, seed: string): string {
+  const count = variantCount(kind, name);
+  if (count === 0) return name;
+  const index = Math.floor(mulberry32(hashSeed(`${kind}:${name}:${seed}`))() * (count + 1));
+  return index === 0 ? name : `${name}-v${index + 1}`;
+}
+
 // Missing asset = null; callers render the embed without the image. The bot
 // must work with zero, some, or all assets present. `name` values come from
 // internal enums (rarities, site ids) — never user input.
-export function assetImage(kind: 'eggs' | 'sites' | 'banners' | 'battles' | 'hatch' | 'dinos', name: string): ImageRef | null {
-  const fileName = `${name}.webp`;
+//
+// `seed` is any string already in scope at the call site — an egg's row id, a
+// viewer's Discord id. OMITTING IT RETURNS THE BASE FILE, and that default is a
+// compatibility contract rather than a convenience: every call site that never
+// gains a seed relies on it, as does every filename pin in the suite written
+// against a base name. Deliberately no count here — a figure written into prose
+// is wrong the next time a pin lands, and wrong silently. Derive it if you
+// actually need it: `grep -rho '[A-Za-z0-9_-]*\.webp' tests/`.
+//
+// The contract is on `seed === undefined`, so OMITTING the argument and passing an
+// EMPTY STRING are different things: `assetImage(k, n, '')` is a supplied seed, goes
+// through pickVariant and hashes like any other string — on a base that ships faces it
+// usually resolves to one of them rather than the base file (`eggs/rare` and
+// `hatch/common-crack` both do today). A call site writing
+// `assetImage(k, n, someUser?.id ?? '')` therefore gets a variant on the fallback arm,
+// not the base it probably meant — pass `someUser?.id` and let it be undefined.
+export function assetImage(
+  kind: AssetKind,
+  name: string,
+  seed?: string,
+): ImageRef | null {
+  const fileName = `${seed === undefined ? name : pickVariant(kind, name, seed)}.webp`;
   const abs = resolve(process.cwd(), 'assets/images', kind, fileName);
   if (!present(abs)) return null;
   return { file: new AttachmentBuilder(abs, { name: fileName }), url: `attachment://${fileName}` };

@@ -97,10 +97,20 @@ describe('alertPayload', () => {
     const withEscape = alertPayload('u1', [esc()], null, seasonNudge, 0)!;
     expect(fileNames(withEscape)).toEqual(['care_neglect.webp']);
     const withIncome = alertPayload('u1', [], { capAt: 0, pending: 500, capHours: 8 }, seasonNudge, 0)!;
+    // The banner is seeded on userId, and 'u1' happens to hash to index 0 for `collect`
+    // — index 0 IS the base file — so this name reads exactly as it did before seeding.
+    // care_neglect and season ship no -vN siblings at all, so their seed is inert.
     expect(fileNames(withIncome)).toEqual(['collect.webp']);
     for (const p of [withEscape, withIncome]) {
       expect('attachments' in (p as Record<string, unknown>)).toBe(false);
     }
+  });
+
+  it('picks the collect banner face from the alerted player, not a constant', () => {
+    // Guards the seed itself: 'u1' resolving to the base file above cannot tell a seeded
+    // call from an unseeded one, so a second player pins that the face actually moves.
+    const income = { capAt: 0, pending: 500, capHours: 8 };
+    expect(fileNames(alertPayload('u2', [], income, null, 0)!)).toEqual(['collect-v3.webp']);
   });
 
   it('returns null when there is nothing to report', () => {

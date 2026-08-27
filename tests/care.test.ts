@@ -204,15 +204,18 @@ describe('care module', () => {
     expect(json.description).toBe('Fed your Triceratops (−5 Ferns).');
   });
 
-  it('care banner is care.webp when no dino is very hungry', async () => {
+  it('care banner is a care face when no dino is very hungry', async () => {
     addDino({ hunger: 100, lastFedAt: 1 * H });               // fed recently, well under VERY_HUNGRY_MS
     ctx.setNow(1 * H);
     const i = fakeCommand({ name: 'feed', sub: 'all', user: 'u1' });
     await careModule.commands[0].execute(ctx, i.asChatInput());
     const payload = careReply(i);
-    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://care.webp');
+    // The banner is seeded on the viewer, so the assertion pins the face 'u1' — this
+    // fixture's user — resolves to. What is under test is still which BASE is chosen
+    // (care vs care_neglect); the -v2 suffix is that base's face for this one player.
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://care-v2.webp');
     expect(payload.files).toHaveLength(1);
-    expect(payload.files![0].name).toBe('care.webp');
+    expect(payload.files![0].name).toBe('care-v2.webp');
   });
 
   it('care banner is care_neglect.webp when a dino has gone unfed past VERY_HUNGRY_MS', async () => {
@@ -228,7 +231,7 @@ describe('care module', () => {
     expect(payload.files![0].name).toBe('care_neglect.webp');
   });
 
-  it('care banner stays care.webp when the long-unfed dino has escaped', async () => {
+  it('care banner stays a care face when the long-unfed dino has escaped', async () => {
     const escaped = addDino({ hunger: 100, lastFedAt: 0, escapedAt: 1 }); // never fed, but escaped — must not count as neglected
     const fedNow = addDino({ hunger: 100, lastFedAt: 0 });                // this one gets fed by the command below
     ctx.setNow(VERY_HUNGRY_MS + 4 * H);
@@ -236,9 +239,9 @@ describe('care module', () => {
     await careModule.commands[0].execute(ctx, i.asChatInput());
     expect(dinoRow(escaped.id).lastFedAt).toBe(0);              // confirms it really was left unfed
     const payload = careReply(i);
-    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://care.webp');
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://care-v2.webp');
     expect(payload.files).toHaveLength(1);
-    expect(payload.files![0].name).toBe('care.webp');
+    expect(payload.files![0].name).toBe('care-v2.webp');
   });
 
   it('/feed one food:<id> passes the explicit pick through (wrong diet is an ephemeral error)', async () => {

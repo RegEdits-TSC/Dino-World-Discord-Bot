@@ -79,8 +79,17 @@ export const shopModule: ModuleManifest = {
             const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
             const order = Object.keys(RARITY);
             const best = offers.length ? offers.reduce((a, b) => (order.indexOf(b) > order.indexOf(a) ? b : a)) : null;
+            // No seed: this previews what CAN be bought, so no egg exists yet to key on —
+            // there is simply nothing here to seed from. NOT because a viewer seed would
+            // make the preview disagree with the egg actually bought: it disagrees either
+            // way, since every other egg surface resolves on String(egg.id), so an unseeded
+            // preview shows the base while the bought egg usually shows a face.
             attach(embed, payload, 'thumbnail', best ? assetImage('eggs', best) : null);
-            attach(embed, payload, 'image', assetImage('banners', 'shop_food_market'));
+            // The banner DOES take a seed, unlike the egg preview above it: a banner has no
+            // object to key on, so it keys on who is looking and each player gets one stable
+            // shopfront. That is the opposite of the preview's problem — a face keyed to the
+            // viewer is exactly right for furniture, and exactly wrong for an unbought egg.
+            attach(embed, payload, 'image', assetImage('banners', 'shop_food_market', i.user.id));
             await i.reply(payload);
           } else if (sub === 'egg') {
             const rarity = i.options.getString('rarity', true) as Rarity;
@@ -91,7 +100,7 @@ export const shopModule: ModuleManifest = {
               .setTitle(`🥚 Bought a ${rarityEmoji(egg.rarity)}${egg.rarity} egg (#${egg.id})`)
               .setDescription(`Incubate it with /incubate ${egg.id}.`);
             const eggPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [eggEmbed] };
-            attach(eggEmbed, eggPayload, 'thumbnail', assetImage('eggs', egg.rarity));
+            attach(eggEmbed, eggPayload, 'thumbnail', assetImage('eggs', egg.rarity, String(egg.id)));
             await i.reply(eggPayload);
           } else {
             const units = i.options.getInteger('units', true);
@@ -100,7 +109,7 @@ export const shopModule: ModuleManifest = {
               .setTitle(`${emojiTag(food.emoji)} Bought ${units}× ${food.name}`)
               .setDescription(`Paid ${total.toLocaleString()} cash — fills hunger to ${food.fillTo}. Serve it with \`/feed all\`.`);
             const foodPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [foodEmbed] };
-            attach(foodEmbed, foodPayload, 'image', assetImage('banners', 'shop_food_market'));
+            attach(foodEmbed, foodPayload, 'image', assetImage('banners', 'shop_food_market', i.user.id));
             await i.reply(foodPayload);
           }
         } catch (e) {
@@ -157,7 +166,7 @@ export const shopModule: ModuleManifest = {
             embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[];
             files?: AttachmentBuilder[]; flags: MessageFlags.Ephemeral;
           } = { embeds: [sellEmbed], components: [row], flags: MessageFlags.Ephemeral };
-          attach(sellEmbed, sellPayload, 'image', assetImage('banners', 'sell'));
+          attach(sellEmbed, sellPayload, 'image', assetImage('banners', 'sell', i.user.id));
           await i.reply(sellPayload);
         } catch (e) { if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
       },

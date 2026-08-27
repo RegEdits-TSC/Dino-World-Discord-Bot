@@ -228,11 +228,13 @@ describe('the owner sees their own showcase', () => {
   // triceratops fixtures already exercising the builder (tests/park-tabs.test.ts,
   // tests/park.test.ts's 'dashboard showcase', tests/dino-image.test.ts).
   //
-  // The `files` assertion below was WRONG when this test was still parked and pinned to
-  // `dashboardPayload` — it must be `['dino_roster.webp', 'tank-herbivore.webp']`, not
-  // just have `.skip` dropped. animalsPayload always attaches the roster banner first
-  // (call order is upload order); that ordering is real and correct, not a stale
-  // expectation to "fix" back to a single file.
+  // HISTORY, not an instruction — do not "restore" the filenames named here. When this
+  // test was still parked and pinned to `dashboardPayload`, its `files` assertion was
+  // wrong, and unparking it meant rewriting the array rather than just dropping `.skip`.
+  // Both names in that array have since moved on (triceratops ships its own portrait; the
+  // banner is seeded per park owner), so read the assertion below for the current truth.
+  // What survives from that fix is the ORDERING: animalsPayload always attaches the roster
+  // banner first, and call order is upload order — that is real, not a stale expectation.
   it('renders the featured dino and its art on the Animals tab', async () => {
     const d = addDino();
     setFeaturedDino(ctx, 'u1', d.id);
@@ -249,7 +251,8 @@ describe('the owner sees their own showcase', () => {
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://triceratops.webp');
     // The two-files-on-one-embed pairing (roster banner, then the featured dino's own art)
     // is call order, i.e. upload order — see the repo CLAUDE.md note on attach().
-    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster.webp', 'triceratops.webp']);
+    // The roster banner is seeded on the park owner's discordId ('u1' here).
+    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster-v3.webp', 'triceratops.webp']);
   });
 
   it('carries no Next park button — that belongs to the visitor branch only', async () => {

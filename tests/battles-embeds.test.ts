@@ -29,11 +29,15 @@ vi.mock('../src/core/images.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/core/images.js')>();
   return {
     ...actual,
-    assetImage: vi.fn((kind: Parameters<typeof actual.assetImage>[0], name: string) => {
+    // `seed` is forwarded, never dropped: fightFrames seeds its site banner and its
+    // outcome banner on the viewer, and a spy that truncated the argument list would
+    // hand every one of those calls back the BASE file — turning the -vN pins below
+    // into assertions that pass no matter what the source does.
+    assetImage: vi.fn((kind: Parameters<typeof actual.assetImage>[0], name: string, seed?: string) => {
       // `sites: false` models a deploy with no chapter art (docs/ops.md: every
       // asset is individually optional) — the only way F1 ends up with no files.
       if (kind === 'sites' && !art.sites) return null;
-      if (kind !== 'battles') return actual.assetImage(kind, name);   // chapter banners/thumbs stay real
+      if (kind !== 'battles') return actual.assetImage(kind, name, seed);   // chapter banners/thumbs stay real
       if (!art.portraits) return null;
       const fileName = `${name}.webp`;
       return { file: new AttachmentBuilder(Buffer.from('portrait'), { name: fileName }), url: `attachment://${fileName}` };
@@ -81,7 +85,7 @@ function liveAfter(frames: FramePayload[]): string[] {
 
 describe('fightFrames', () => {
   it('returns 4 valid frames; files attach on F1 and F4 only', () => {
-    const frames = fightFrames(makeOutcome(), skipStub);
+    const frames = fightFrames(makeOutcome(), skipStub, 'u1');
     expect(frames).toHaveLength(4);
     for (const f of frames) validateMessagePayload(f, 'frame');
     expect(frames[0].files?.length).toBeGreaterThan(0);   // coastal_dig banner ships
@@ -90,40 +94,45 @@ describe('fightFrames', () => {
     // F4 replaces the whole attachment set, so it re-uploads the thumb it shows.
     // coastal_dig_1's weakest-first roster leads with compsognathus, which ships its
     // own portrait as of Task 10 — it no longer falls back to swift-carnivore.
-    expect(frames[3].files?.map((f) => f.name)).toEqual(['battle_victory.webp', 'compsognathus.webp']);
+    // fightFrames seeds its site banner and its outcome banner on the VIEWER, so these
+    // pin the faces 'u1' — the id every fightFrames call in this file passes — resolves
+    // to. The species thumb takes no seed and is unchanged. The site banner is seeded
+    // too, but coastal_dig-banner hashes to index 0 for 'u1' and index 0 IS the base
+    // file, so no assertion on that name anywhere in this file had to move.
+    expect(frames[3].files?.map((f) => f.name)).toEqual(['battle_victory-v3.webp', 'compsognathus.webp']);
     expect(frames[0].attachments).toEqual([]);   // F1 and F4 both replace the whole set
     expect(frames[3].attachments).toEqual([]);
-    expect(frames[3].embeds[0].toJSON().image?.url).toBe('attachment://battle_victory.webp');
+    expect(frames[3].embeds[0].toJSON().image?.url).toBe('attachment://battle_victory-v3.webp');
     expect(frames[3].embeds[0].toJSON().thumbnail?.url).toBe('attachment://compsognathus.webp');
   });
   it('F2/F3 come straight from the result beats', () => {
-    const frames = fightFrames(makeOutcome(), skipStub);
+    const frames = fightFrames(makeOutcome(), skipStub, 'u1');
     expect(frames[1].embeds[0].toJSON().title).toBe('⚔️ Clash!');
     expect(frames[1].embeds[0].toJSON().description).toContain('Rexy bites');
     expect(frames[2].embeds[0].toJSON().title).toBe('💥 Climax');
   });
   it('F4 shows shards only on first clear and always the real energy countdown', () => {
-    const first = fightFrames(makeOutcome(), skipStub)[3].embeds[0].toJSON();
+    const first = fightFrames(makeOutcome(), skipStub, 'u1')[3].embeds[0].toJSON();
     expect(JSON.stringify(first.fields)).toContain('shards');
     expect(JSON.stringify(first.fields)).toContain('⚡ 9/10');
     // Real next-energy countdown from the settled stamp, not a static cadence note.
     expect(JSON.stringify(first.fields)).toContain(`+1 <t:${(600_000 + ENERGY_REGEN_MS) / 1000}:R>`);
     expect(first.description).toContain('⭐⭐⭐');
     const repeat = fightFrames(makeOutcome({ firstClear: false, stars: 2,
-      rewards: { cash: 120, food: null, shards: 0, xpPerDino: [40] } }), skipStub)[3].embeds[0].toJSON();
+      rewards: { cash: 120, food: null, shards: 0, xpPerDino: [40] } }), skipStub, 'u1')[3].embeds[0].toJSON();
     expect(JSON.stringify(repeat.fields)).not.toContain('shards');
   });
   it('loss frame shows defeat, empty stars, consolation XP only', () => {
     const f4 = fightFrames(makeOutcome({ won: false, stars: 0, firstClear: false, bossEgg: null,
       result: { won: false, rounds: 30, squadKos: 1, squadSurvivors: [], beats, finalHp: {} },
-      rewards: { cash: 0, food: null, shards: 0, xpPerDino: [10] } }), skipStub)[3].embeds[0].toJSON();
+      rewards: { cash: 0, food: null, shards: 0, xpPerDino: [10] } }), skipStub, 'u1')[3].embeds[0].toJSON();
     expect(f4.title).toContain('Defeat');
     expect(f4.description).toContain('☆☆☆');
     expect(JSON.stringify(f4.fields)).not.toContain('cash');
     expect(JSON.stringify(f4.fields)).toContain('+10 battle XP');
   });
   it('boss stages thumbnail the portrait; non-boss stages thumbnail the lead enemy archetype', () => {
-    const boss = fightFrames(makeOutcome({ stageId: 'coastal_dig_boss', bossEgg: { rarity: 'rare' } }), skipStub);
+    const boss = fightFrames(makeOutcome({ stageId: 'coastal_dig_boss', bossEgg: { rarity: 'rare' } }), skipStub, 'u1');
     expect(boss[2].embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${bossId}-portrait.webp`);
     expect(boss[3].embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${bossId}-portrait.webp`);
     expect(boss[0].files?.map((f) => f.name)).toContain(`${bossId}-portrait.webp`);
@@ -140,7 +149,7 @@ describe('fightFrames', () => {
     expect(enemiesField).toContain('👑 Old Riptooth');
     // coastal_dig_1's weakest-first roster leads with compsognathus (swift/carnivore),
     // which ships its own portrait as of Task 10 — no longer the shared archetype art.
-    const normal = fightFrames(makeOutcome(), skipStub);
+    const normal = fightFrames(makeOutcome(), skipStub, 'u1');
     for (const f of normal) expect(f.embeds[0].toJSON().thumbnail?.url).toBe('attachment://compsognathus.webp');
   });
   it('the non-boss thumbnail is computed per stage from rosterFor[0], not a constant', () => {
@@ -148,9 +157,9 @@ describe('fightFrames', () => {
     // microceratus (support/herbivore) — different keys down the same code path.
     // Both ship their own portrait as of Task 10, so this now pins the species
     // filename rather than the shared archetype fallback each used to resolve to.
-    const s2 = fightFrames(makeOutcome({ stageId: 'coastal_dig_2' }), skipStub);
+    const s2 = fightFrames(makeOutcome({ stageId: 'coastal_dig_2' }), skipStub, 'u1');
     expect(s2[0].embeds[0].toJSON().thumbnail?.url).toBe('attachment://othnielia.webp');
-    const s3 = fightFrames(makeOutcome({ stageId: 'coastal_dig_3' }), skipStub);
+    const s3 = fightFrames(makeOutcome({ stageId: 'coastal_dig_3' }), skipStub, 'u1');
     expect(s3[0].embeds[0].toJSON().thumbnail?.url).toBe('attachment://microceratus.webp');
     expect(s3[0].files?.map((f) => f.name)).toContain('microceratus.webp');
   });
@@ -162,12 +171,12 @@ describe('fightFrames', () => {
     art.portraits = false;
     try {
       const frames = fightFrames(
-        makeOutcome({ stageId: 'amber_ridge_boss', bossEgg: { rarity: 'epic' } }), skipStub);
+        makeOutcome({ stageId: 'amber_ridge_boss', bossEgg: { rarity: 'epic' } }), skipStub, 'u1');
       expect(frames).toHaveLength(4);
       for (const f of frames) validateMessagePayload(f, 'frame-no-portrait');
       for (const f of frames) expect(f.embeds[0].toJSON().thumbnail).toBeUndefined();
       expect(frames[0].files?.map((f) => f.name)).not.toContain(`${noPortraitBossId}-portrait.webp`);
-      expect(frames[0].files?.map((f) => f.name)).toContain('amber_ridge-banner.webp');   // chapter banner still ships
+      expect(frames[0].files?.map((f) => f.name)).toContain('amber_ridge-banner-v3.webp');   // chapter banner still ships
     } finally {
       art.portraits = true;
     }
@@ -178,7 +187,7 @@ describe('fightFrames', () => {
       seen.push(idx);
       return new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId('battle:skip:u1:1').setLabel('⏭️ Skip').setStyle(ButtonStyle.Secondary));
-    });
+    }, 'u1');
     expect(seen).toEqual([0, 1, 2]);
     expect(frames[0].components).toHaveLength(1);
     expect(frames[3].components).toHaveLength(0);   // the module appends the again row (it owns userId)
@@ -188,17 +197,17 @@ describe('fightFrames', () => {
     // lands on the message fight 1's F4 last wrote — and F4 replaces the whole
     // attachment set with the outcome banner. On a deploy with no chapter art F1
     // carries no files; if it also carried no `attachments` key, Discord would keep
-    // fight 1's battle_victory.webp alive under F1-F3, whose embeds reference
+    // fight 1's outcome banner alive under F1-F3, whose embeds reference
     // nothing. F1's `attachments: []` must therefore be unconditional, not
     // `if (files.length)`.
     art.sites = false;
     art.dinos = false;
     try {
-      const first = fightFrames(makeOutcome(), skipStub);
-      const replay = fightFrames(makeOutcome(), skipStub);
+      const first = fightFrames(makeOutcome(), skipStub, 'u1');
+      const replay = fightFrames(makeOutcome(), skipStub, 'u1');
       expect(first[0].files).toBeUndefined();               // no chapter art in this deploy
       expect(first[0].attachments).toEqual([]);             // ...the set is replaced regardless
-      expect(liveAfter(first)).toEqual(['battle_victory.webp']);
+      expect(liveAfter(first)).toEqual(['battle_victory-v3.webp']);
       // The decisive step: nothing stale survives into the replay's F1-F3.
       expect(liveAfter([...first, replay[0]])).toEqual([]);
       expect(liveAfter([...first, ...replay.slice(0, 3)])).toEqual([]);
@@ -212,7 +221,7 @@ describe('fightFrames', () => {
   // `attachments` array) REPLACES the message's whole attachment set; a payload
   // carrying neither leaves the previous uploads in place (see liveAfter above).
   const assertFrameContract = (stageId: string, bossEgg: FightOutcome['bossEgg'], expectedLive: string[]) => {
-    const frames = fightFrames(makeOutcome({ stageId, bossEgg }), skipStub);
+    const frames = fightFrames(makeOutcome({ stageId, bossEgg }), skipStub, 'u1');
     let live: string[] = [];
     frames.forEach((frame, idx) => {
       const own = (frame.files ?? []).map((f) => f.name!);
@@ -227,11 +236,11 @@ describe('fightFrames', () => {
     expect(live).toEqual(expectedLive);
   };
   it('frame contract (boss stage): every referenced attachment is live on that frame, and no frame uploads what it never references', () => {
-    assertFrameContract('coastal_dig_boss', { rarity: 'rare' }, ['battle_victory.webp', `${bossId}-portrait.webp`]);
+    assertFrameContract('coastal_dig_boss', { rarity: 'rare' }, ['battle_victory-v3.webp', `${bossId}-portrait.webp`]);
   });
   it('frame contract (non-boss stage): the archetype thumb is uploaded by both attaching frames', () => {
     // coastal_dig_1's lead enemy, compsognathus, ships its own portrait as of Task 10.
-    assertFrameContract('coastal_dig_1', null, ['battle_victory.webp', 'compsognathus.webp']);
+    assertFrameContract('coastal_dig_1', null, ['battle_victory-v3.webp', 'compsognathus.webp']);
   });
 });
 
@@ -261,6 +270,9 @@ describe('chaptersPayload', () => {
     // chapterId === siteId, so both site assets are legal here. This pins the
     // append: assigning payload.files twice would drop the banner file while the
     // embed still points at attachment://coastal_dig-banner.webp.
+    // The banner is seeded on chaptersPayload's userId ('u1' here), but
+    // coastal_dig-banner hashes to index 0 for 'u1' and index 0 IS the base file,
+    // so this literal is unchanged — see the 'u2' pin below for one that moves.
     const p = chaptersPayload('u1', 0, baseView());
     const embed = p.embeds[0].toJSON();
     expect(embed.image?.url).toBe('attachment://coastal_dig-banner.webp');
@@ -269,6 +281,14 @@ describe('chaptersPayload', () => {
     expect(names).toContain('coastal_dig-banner.webp');
     expect(names).toContain('coastal_dig-thumb.webp');
     expect(names).toHaveLength(2);   // nothing uploaded that the embed does not reference
+  });
+  it('seeds the chapter banner on the viewer, not fixed to the base face', () => {
+    // 'u2' hashes coastal_dig-banner to -v2, unlike 'u1' above — this is the pin
+    // that actually goes red if the seed argument at the call site is removed.
+    const p = chaptersPayload('u2', 0, baseView());
+    const embed = p.embeds[0].toJSON();
+    expect(embed.image?.url).toBe('attachment://coastal_dig-banner-v2.webp');
+    expect(p.files!.map((f) => f.name)).toContain('coastal_dig-banner-v2.webp');
   });
   it('chaptersPayload still ships the thumb when the banner is missing', () => {
     // Degrade path 1/2: the two assetImage lookups are independent `if`
@@ -285,10 +305,13 @@ describe('chaptersPayload', () => {
     // suppress the banner that was already appended to payload.files.
     const { assetImage: realAssetImage } = await vi.importActual<typeof import('../src/core/images.js')>('../src/core/images.js');
     vi.mocked(assetImage)
-      .mockImplementationOnce((kind, name) => realAssetImage(kind, name))   // banner call (1st) -> real
+      .mockImplementationOnce((...args) => realAssetImage(...args))   // banner call (1st) -> real, seed forwarded
       .mockImplementationOnce(() => null);                                 // thumb call (2nd) -> missing
     const p = chaptersPayload('u1', 0, baseView());
     const embed = p.embeds[0].toJSON();
+    // Seeded on 'u1' like every chaptersPayload call above, and 'u1' hashes
+    // coastal_dig-banner to index 0 (the base file), so this literal is unchanged —
+    // see 'seeds the chapter banner on the viewer' above for the pin that moves.
     expect(embed.image?.url).toBe('attachment://coastal_dig-banner.webp');
     expect(embed.thumbnail).toBeUndefined();
     expect(p.files!.map((f) => f.name)).toEqual(['coastal_dig-banner.webp']);

@@ -72,8 +72,17 @@ export function alertPayload(
   // Every name stays a literal ON THIS LINE. tests/images.test.ts scrapes banner names one
   // source line at a time, taking every quoted string after `assetImage('banners'` — hoisting
   // the choice into a `const banner` would silently drop all three names from that coverage.
+  // The SEED rides the whole ternary for a different reason — not the scrape, which would
+  // survive one call per arm just fine, since each arm's literal would sit on a line
+  // carrying its own `assetImage('banners'`. userId picks which face of the banner this
+  // player sees (an alert has no object to key on, so the face keys on the player it is
+  // addressed to and stays stable across every alert they get), and only `collect` ships
+  // -vN siblings today. For care_neglect and season assetImage returns the base file
+  // unchanged — pickVariant's `count === 0` early return in src/core/images.ts makes that
+  // a contract, not a coincidence — so seeding all three arms costs nothing, keeps the
+  // call in one readable piece, and self-activates if either base ever gains faces.
   attach(embed, payload, 'image',
-    assetImage('banners', escapes.length > 0 ? 'care_neglect' : income ? 'collect' : 'season'));
+    assetImage('banners', escapes.length > 0 ? 'care_neglect' : income ? 'collect' : 'season', userId));
 
   const row = new ActionRowBuilder<ButtonBuilder>();
   if (escapes.length > 0) {

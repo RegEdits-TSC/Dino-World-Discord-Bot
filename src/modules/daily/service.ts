@@ -5,19 +5,13 @@ import { dayKeyUTC, DAY_MS } from '../../core/clock.js';
 import { readStat, readStats, type StatId } from '../../core/stats.js';
 import { QUESTS, CHURN_STATS, chestFor, type QuestDef, type ChestDef } from '../../data/quests.js';
 import { ACHIEVEMENTS, TIER_REWARDS, type AchievementTrack } from '../../data/achievements.js';
-import { mulberry32, shuffle } from '../../core/rolls.js';
+import { mulberry32, hashSeed, shuffle } from '../../core/rolls.js';
 import { facilityLevel, capHours } from '../park/service.js';
 import { RARITY } from '../../data/rarity.js';
 import { getSpecies } from '../../data/species/index.js';
 import { modProduct } from '../../data/traits.js';
 import { TRADE_MIN_RATING } from '../../data/trade.js';
 import type { FoodId } from '../../data/foods.js';
-
-function hashSeed(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
 
 // Each arm reads exactly one thing, per spec §4. 'income' matches the spec verbatim —
 // any dino with lotId set, escaped or not: the escaped exclusion is a

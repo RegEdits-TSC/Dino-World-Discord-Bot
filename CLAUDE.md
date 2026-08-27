@@ -84,6 +84,133 @@
   CLICKER's own income) while still minting the tab row, so there is neither
   a components array to hand-build nor a featured-dino upload to forward: a
   visited Park tab never carries one.
+- Art variants: a surface with more than one committed face ships `<base>-v2.webp`,
+  `-v3.webp`, … beside an untouched `<base>.webp`, and `assetImage(kind, name, seed?)`
+  (`src/core/images.ts`) picks which one. **Omitting the seed returns the base file**,
+  and that default is a compatibility contract rather than a convenience: every call
+  site that never gains a seed depends on it, as does every filename pin in the suite
+  written against a base name. Derive that set if you actually need the figure
+  (`grep -rho '[A-Za-z0-9_-]*\.webp' tests/ | sort | uniq -c`) and never write it into
+  prose — the next pin to land makes it wrong, silently, the same reason the router-guard
+  passage below carries no counts. With a seed the pick is
+  ``mulberry32(hashSeed(`${kind}:${name}:${seed}`))`` scaled over `variantCount + 1`, so
+  index 0 is always the base and the seeded path agrees with the unseeded one wherever
+  no variant exists.
+  **No variant count is hardcoded anywhere, and none should be.** `variantCount` scans
+  from `-v2` upward and stops at the first gap — exactly the invariant
+  `tests/asset-variants.test.ts` enforces (numbering starts at 2, never skips; every
+  variant has a committed base), which the resolver now DEPENDS on rather than merely
+  agrees with: a gap makes a face unreachable, an orphan makes a resolved name miss.
+  The families do not carry the same number of faces — `sites` ships fewer per base than
+  `eggs`, `hatch` and `banners`, and `battles` and `dinos` ship none — so never write a
+  uniform face count into code, a test or a doc; `ls assets/images/<kind> | grep -- '-v'`
+  is the answer. Shipping one more face needs no code edit and is **never inert — for a
+  base resolved through a SEEDED call site**: a seed's
+  draw is fixed and only `floor(draw * (count + 1))` moves, so raising a base's count
+  re-partitions that draw and **half of its seeds land on a different face** — exactly
+  half, provably, at every count. That is ONE rule, not a general case plus a mild one: the
+  `0 → 1` step that gives a variant-free base its first face obeys it too, and differs only
+  in that there is no other variant to move BETWEEN, so its moving half simply leaves the
+  base file — which is the whole point of shipping the face. Two real seeds that did move:
+  `banners/dino_roster` seed `u1` is `-v3` at three variants and `-v4` at four
+  (`tests/park.test.ts:1210`); `sites/coastal_dig-banner` seed `u2` is `-v2` at two and
+  `-v3` at three (`tests/battles-embeds.test.ts:290-291`). **Which half moves is not
+  knowable by eye, so budget for re-deriving every committed `-vN` pin on that base from
+  the real `assetImage`, never by hand** — half of them staying put is not something you
+  can find out without checking all of them.
+  **The converse is the trap, and it is the majority case: a base reached only by UNSEEDED
+  calls gains nothing from a new face — not eventually, but never — and nothing fails to
+  say so.** Dropping `banners/lots-v2.webp` into the repo today changes nothing, forever:
+  `lotsPayload` (`src/modules/park/embeds.ts`) is that base's only call site and it omits
+  the seed, so `assetImage` returns `lots.webp` and no test moves. Same for
+  `banners/rescue`, `achievements`, `dex`, `gene_splice`, `landmark` and every `event-*`;
+  for every `sites/<id>-thumb`; for every `battles/boss-<id>-portrait` (which must never
+  gain faces anyway — a boss is a named individual, one face is the point, and
+  `src/modules/battles/embeds.ts` says so at the call site); and for all of `dinos/`,
+  since `dinoImage` passes no seed on either of its two lookups. That list is a snapshot,
+  not an invariant — re-derive it with `grep -rn 'assetImage(' src/` and read the third
+  argument, because a call site gaining a seed moves its base out of this class silently.
+  Five bases are **half-seeded**, which is subtler than either: `banners/trading`,
+  `leaderboards`, `guests` and `duel` are each unseeded at the surface they belong to
+  (`src/modules/trading/index.ts`, `leaderboards/index.ts`, `guests/embeds.ts`,
+  `duels/embeds.ts`) yet reach a SEEDED resolver through
+  `assetImage(t.art.kind, t.art.name, i.user.id)` (`src/modules/help/index.ts`), so a face
+  shipped for one of them would vary on `/help topic:trading` while `/trade` itself never
+  did; `banners/season` is the mirror image, seeded in `park/alert-embeds.ts` and unseeded
+  on `/season`. Seeding those five surfaces is real scope and was deliberately left undone
+  — do it in the change that ships the face, not before. `banners/help` was a sixth until
+  the `/help` overview was seeded too, so the two call sites that render it now agree.
+  **Nothing in the suite proves a committed variant is REACHABLE**, and that is a
+  deliberate omission rather than a gap to close: `tests/asset-variants.test.ts` proves the
+  inverse — every variant has a committed base, numbering starts at 2 and never skips — so
+  a face shipped for an unseeded-only base is a dead file that passes every gate green. A
+  machine gate was declined because the art bank is closed, which leaves this paragraph as
+  the only thing standing between a future art drop and a file nothing can ever render.
+  The hashed string is **composite on purpose** — `kind:name:seed`. `eggs` and `hatch`
+  ship one variant set per rarity apiece, with equal counts, so hashing a bare egg id
+  would pick the same index in both — egg #42 showing `common-v2` and then
+  `common-crack-v2` — collapsing two independent picks into one for a consistency
+  nobody can perceive. Same reasoning as `WORLD_SALT` (`src/core/world.ts`) and
+  `DEAL_SALT` (`src/modules/shop/service.ts`). `hashSeed` moved into `src/core/rolls.ts`
+  for this and now has two callers with different reasons to care that it never changes:
+  `rollDailyQuests` derives every player's daily board from it, so a changed hash
+  silently rerolls every board in flight AND reshuffles every face, with nothing failing.
+  `tests/rolls.test.ts` pins known input/output pairs. **Never take its result modulo
+  anything** — FNV-1a's low bits carry less avalanche than a PRNG's, which is why every
+  selection in this repo runs it through `mulberry32` first.
+  Seeds by family, as shipped: **`eggs` and `hatch` on the egg's own row id**, so one egg
+  keeps one identity from purchase through to the reveal — the crack is the EGG's face,
+  not the hatched dino's — and **`banners` and site banners on the viewer's Discord id**,
+  a stable face per player per surface. Two departures from "the viewer", both
+  deliberate: `animalsPayload` (`src/modules/park/embeds.ts`) seeds on `user.discordId`,
+  the park OWNER, because `park:vtab:<targetId>:animals` puts a visitor on someone else's
+  tab and seeding on the clicker would give one park two faces; and `/shop view`'s egg
+  preview takes **no** seed at all, because it previews which rarities CAN be bought
+  before any egg exists — there is simply nothing there to seed from. That is the whole
+  reason, and an earlier revision of this line added a second one that does not hold:
+  seeding it on the viewer would NOT be what makes the preview disagree with the egg
+  actually bought, because it disagrees either way — every other egg surface resolves on
+  `String(egg.id)`, so an unseeded preview shows the base while the bought egg usually
+  shows a face. Don't re-add it. The banner on that same reply does take a seed: a banner
+  has no object to key on, so it keys on who is looking.
+  Seeding a base that ships no variants is a documented **no-op**, not a defect —
+  `pickVariant` returns the name unchanged when `variantCount` is 0 — which is why two
+  ternaries carry the seed across variant-free arms (`care_neglect` in
+  `src/modules/care/index.ts`; `care_neglect`/`season` in
+  `src/modules/park/alert-embeds.ts`) and why `/help` seeds both its no-variant topics and
+  its no-variant overview banner harmlessly. Those arms start working on their own the day
+  their base gains a face, with no edit here. What must never happen on an
+  `assetImage('banners', …)` line is hoisting
+  the NAME into a `const`, or passing a **quoted string literal** as the seed:
+  `scrapeBannerNames` (`tests/images.test.ts`) reads one source line at a time and takes
+  every quoted string after the match, so the first loses the name entirely and the second
+  demands that `assets/images/banners/<seed>.webp` exist.
+  **Audit art call sites with `grep -rn 'assetImage(' src/`, never by kind literal.**
+  `src/modules/help/index.ts` calls `assetImage(t.art.kind, t.art.name, i.user.id)` — the
+  kind is a VARIABLE read off `HELP_TOPICS`, the only such call site in `src/`, and it is
+  invisible to an `assetImage('sites'` / `assetImage('banners'` grep. Every enumeration on
+  this feature — the plan, three reconnaissance passes, two implementers — grepped for the
+  literal and every one of them missed it; that one line serves every art-bearing help
+  topic and it shipped unseeded until a reviewer read the file.
+  **A seeded call site needs a test that can detect the seed.** Four seeded sites shipped
+  where deleting the seed argument left the whole suite green, because the user ids in
+  those fixtures hashed to index 0 — which IS the base file — so the pin read identically
+  seeded or unseeded and proved nothing. Each has a guard now under an id that genuinely
+  moves the face; pick that id by resolving it against the real `assetImage`, never by
+  assuming one will differ. The matching hazard on the mock side:
+  `mockImplementationOnce((kind, name) => realAssetImage(kind, name))` silently DROPS the
+  seed and the test keeps passing while exercising nothing. Three files carried mocks of
+  that shape, one of them a file-wide spy that would have handed the base file to every
+  new pin in the file it governs. **Any mock of `assetImage` must forward every
+  argument** — `(...args) => realAssetImage(...args)`.
+  Variant choice is a deliberate carve-out from "randomness comes from `ctx.rng()`", taken
+  knowingly rather than assumed. It is not the only seeded draw that bypasses `ctx.rng()`
+  — `rollDailyQuests`, `worldEventFor`, `dailyEggOffers` and `dailyDeal` all do — but it
+  is the only one that needs neither a clock nor a `ctx` at all: all four key off a day
+  derived from `ctx.now()`, while `pickVariant` is a pure function of
+  `(kind, name, seed)` over ids already in scope. That is what keeps `ctx` out of a dozen
+  pure display builders, and it is also what makes a Discord edit re-render the same face
+  it sent the first time.
 - Passive notifications carry a `NotifyPayload` (`src/core/notify.ts`):
   `string | { content?, embeds?, files?, components?, allowedMentions? }`.
   `Ctx.notify`'s third argument stays `message: string` on purpose — a string
@@ -112,7 +239,8 @@
   `payload.files` (the idiom that shipped those defects) is banned outright by
   `tests/images.test.ts`. What `attach` cannot do for you is DEDUPE, and that
   hazard is still live: attachment names are basenames only — `assetImage`
-  (`src/core/images.ts`) names the file `${name}.webp` with no `kind` prefix — so
+  (`src/core/images.ts`) names the file after the RESOLVED face — `${name}.webp`, or
+  `${name}-vN.webp` where a seed picked a variant — with no `kind` prefix either way, so
   two refs on one payload must resolve to distinct names. Same-named uploads make
   `attachment://<name>.webp` ambiguous and one of the two embed slots renders the
   wrong picture. `<site>-banner.webp` vs `<site>-thumb.webp` is safe; naming the
@@ -459,8 +587,9 @@
   3 quests from `QUESTS` (`src/data/quests.ts`): (a) no two slots share a stat; (b) at
   most one churn-stat quest (`CHURN_STATS`: `eggs_incubated`, `dinos_sold`) per board;
   (c) at most one food-paying quest per board. The roll itself is deterministic — the
-  local `hashSeed` (FNV-1a-style) turns `` `${userId}:${dayKey}` `` into a seed for
-  `mulberry32` (`src/core/rolls.ts`), never `ctx.rng()` — so concurrent
+  shared `hashSeed` (FNV-1a, `src/core/rolls.ts` since the art-variant resolver became
+  its second caller) turns `` `${userId}:${dayKey}` `` into a seed for
+  `mulberry32` (same file), never `ctx.rng()` — so concurrent
   first-interactions land on the same board and the unique `(userId, dayKey, slot)`
   constraint backstops the race with `INSERT OR IGNORE`.
   Streak chests (`chestFor`, `src/data/quests.ts`) pay on **personal bests only**:

@@ -51,7 +51,7 @@ export const dailyModule: ModuleManifest = {
           await i.reply({ content: 'Nothing to claim — quests reset at UTC midnight.', flags: MessageFlags.Ephemeral });
           return;
         }
-        await i.reply({ ...claimPayload(result), flags: MessageFlags.Ephemeral });
+        await i.reply({ ...claimPayload(result, i.user.id), flags: MessageFlags.Ephemeral });
       },
     },
     {

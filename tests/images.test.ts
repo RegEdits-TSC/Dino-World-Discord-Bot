@@ -186,9 +186,9 @@ describe('banner art', () => {
     const onDisk = readdirSync(resolve(process.cwd(), 'assets/images/banners'))
       .filter((f) => f.endsWith('.webp') && !f.startsWith('event-'))
       .map((f) => f.replace(/\.webp$/, ''))
-      // A `-vN` variant is another face of its base, not a banner of its own. It is
-      // deliberately unreferenced from src/ until the resolver ships (spec 6b);
-      // tests/asset-variants.test.ts is what proves its base exists.
+      // A `-vN` variant is another face of its base, not a banner of its own. No
+      // `-vN` name is ever written in src/ — the resolver composes it at runtime — so
+      // the scrape can never see one; tests/asset-variants.test.ts proves its base exists.
       .map((n) => n.replace(/-v\d+$/, ''));
     expect([...new Set(onDisk)].filter((n) => !BANNERS.includes(n))).toEqual([]);
   });
@@ -218,9 +218,10 @@ describe('banner art', () => {
     ...new Set([
       ...BANNERS,
       ...WORLD_EVENTS.map((e) => `event-${e.id}`),
-      // Variants are unreferenced from src/ until spec 6b, so neither the scrape nor
-      // WORLD_EVENTS can see them. An unfitted variant would letterbox on the /world
-      // hub exactly like an unfitted base, so register it from disk instead.
+      // No `-vN` name is written in src/ — the resolver composes it at runtime — so
+      // neither the scrape nor WORLD_EVENTS can see one. An unfitted variant would
+      // letterbox on the /world hub exactly like an unfitted base, so register it
+      // from disk instead.
       ...namesUnder('banners').filter(isVariantName),
     ]),
   ];
@@ -890,5 +891,82 @@ describe('site and boss portrait file names', () => {
     const shipped = BANKED_CHAPTER_ART.filter((id) => SITE_IDS.has(id));
     expect(shipped, `remove from BANKED_CHAPTER_ART, now real chapters: ${shipped.join(', ')}`)
       .toEqual([]);
+  });
+});
+
+describe('variant selection', () => {
+  // The compatibility contract: every call site that never gains a seed, and every
+  // filename pin in this suite written against a base name, depend on this exact
+  // behaviour. No count here on purpose — see assetImage's own note in
+  // src/core/images.ts for why, and for the grep that derives the figure.
+  it('returns the base file when no seed is given', () => {
+    for (const rarity of ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic']) {
+      expect(assetImage('eggs', rarity)!.file.name).toBe(`${rarity}.webp`);
+    }
+  });
+
+  it('is deterministic — the same triple always resolves to the same file', () => {
+    for (const seed of ['1', '42', 'abc']) {
+      const first = assetImage('eggs', 'common', seed)!.file.name;
+      for (let i = 0; i < 5; i++) {
+        expect(assetImage('eggs', 'common', seed)!.file.name).toBe(first);
+      }
+    }
+  });
+
+  // A resolver that never returns the base, or never reaches -v4, is a real bug
+  // that "it returned something" would miss entirely. eggs/common has 3 variants,
+  // so all four faces must appear across enough seeds.
+  it('reaches every face including the base', () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 400; i++) seen.add(assetImage('eggs', 'common', String(i))!.file.name!);
+    expect([...seen].sort()).toEqual(
+      ['common-v2.webp', 'common-v3.webp', 'common-v4.webp', 'common.webp'],
+    );
+  });
+
+  // Why the hashed string is composite. eggs and hatch each ship one variant set per
+  // rarity, with equal counts, so a bare seed would pick the SAME index in both — egg
+  // #42 showing common-v2 and then common-crack-v2. Including kind and name
+  // decorrelates them.
+  // This is the property most likely to be silently lost in a refactor.
+  it('decorrelates the same seed across kinds', () => {
+    const eggIdx: string[] = [];
+    const crackIdx: string[] = [];
+    for (let i = 0; i < 200; i++) {
+      eggIdx.push(assetImage('eggs', 'common', String(i))!.file.name!.replace('common', ''));
+      crackIdx.push(assetImage('hatch', 'common-crack', String(i))!.file.name!.replace('common-crack', ''));
+    }
+    const agree = eggIdx.filter((v, i) => v === crackIdx[i]).length;
+    // Independent picks over 4 faces agree ~25% of the time. Correlated picks
+    // would agree on every single seed.
+    expect(agree).toBeLessThan(120);
+  });
+
+  // The case above varies kind AND name together, so it cannot tell the shipped
+  // `kind:name:seed` composite apart from a `name:seed` one — both decorrelate eggs
+  // from cracks. This pin can. eggs/common ships 3 variants, so the draw is scaled
+  // over 4 faces, and seed '7' lands on a different index under each candidate hash
+  // string: `eggs:common:7` -> 1 (common-v2), `common:7` -> 3 (common-v4), and a bare
+  // `7` -> 2 (common-v3). One literal therefore discriminates all three.
+  //
+  // This is a MEASURED constant, not a recomputation: it names the filename the real
+  // assetImage returns, and does not re-run hashSeed/mulberry32 the way mirroring the
+  // implementation inside the test would. If a refactor drops kind or name from the
+  // hashed string, this fails with a specific wrong filename rather than a soft
+  // statistical margin. Re-derive it (never hand-adjust it) if eggs/common ever gains
+  // or loses a face — the count is part of what fixes the index.
+  it('pins the composite hash string, not just decorrelation', () => {
+    expect(assetImage('eggs', 'common', '7')!.file.name).toBe('common-v2.webp');
+  });
+
+  it('returns the base for a name with no variants, whatever the seed', () => {
+    for (const seed of ['1', '2', '99', 'x']) {
+      expect(assetImage('banners', 'help', seed)!.file.name).toBe('help.webp');
+    }
+  });
+
+  it('returns null for a missing name even with a seed', () => {
+    expect(assetImage('eggs', 'no-such-rarity', '42')).toBeNull();
   });
 });

@@ -24,10 +24,13 @@ export function preHatchPayload(rarity: string, eggId: number) {
   const embed = preHatchEmbed(rarity);
   const payload: { embeds: EmbedBuilder[]; components: ReturnType<typeof crackButton>[]; files?: AttachmentBuilder[] } =
     { embeds: [embed], components: [crackButton(eggId)] };
-  attach(embed, payload, 'image', assetImage('eggs', rarity));
+  attach(embed, payload, 'image', assetImage('eggs', rarity, String(eggId)));
   return payload;
 }
-export function revealPayload(species: Species) {
+// eggId seeds the crack art, so the shell that bursts is a face of the egg the
+// player was looking at a second earlier. It is NOT the hatched dino's id: the
+// egg is what cracks, and hatchEgg does not return the egg id anyway.
+export function revealPayload(species: Species, eggId: number) {
   const stats = RARITY[species.rarity];
   const embed = new EmbedBuilder().setColor(RARITY_COLOR[species.rarity] ?? 0x95a5a6)
     .setTitle(`✨ ${rarityEmoji(species.rarity)}${species.rarity.toUpperCase()} — ${species.name}!`)
@@ -46,7 +49,7 @@ export function revealPayload(species: Species) {
     embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[];
     files: AttachmentBuilder[]; attachments: never[];
   } = { embeds: [embed], components: [], files: [], attachments: [] };
-  attach(embed, payload, 'image', assetImage('hatch', `${species.rarity}-crack`));
+  attach(embed, payload, 'image', assetImage('hatch', `${species.rarity}-crack`, String(eggId)));
   // Two files on one payload, each degrading independently: the crack is the
   // "your egg burst open" beat, the species (or archetype) thumb is what came out of it.
   // attach appends, so neither call can clobber the other's file.
@@ -80,9 +83,12 @@ export function eggListPayload(eggs: Egg[], now: number, userId: string, page = 
   // Featured thumbnail is computed from ALL eggs, not just the current page, so the
   // "act on next" egg keeps showing even when it lives on a different page.
   const featured = featuredEgg(eggs, now);
-  attach(embed, payload, 'thumbnail', featured ? assetImage('eggs', featured.rarity) : null);
+  attach(embed, payload, 'thumbnail', featured ? assetImage('eggs', featured.rarity, String(featured.id)) : null);
   // Banner attaches on every branch, including the no-eggs one — mirrors the
-  // two-file thumbnail+image pattern in src/modules/shop/index.ts.
-  attach(embed, payload, 'image', assetImage('banners', 'eggs_incubator'));
+  // two-file thumbnail+image pattern in src/modules/shop/index.ts. Its seed is the
+  // VIEWER (this list has no single egg to key on, and it renders with none at all on
+  // the empty branch), while the thumbnail above keys on the featured egg's own row id.
+  // Two different seeds, two different things keyed, and the names stay distinct.
+  attach(embed, payload, 'image', assetImage('banners', 'eggs_incubator', userId));
   return payload;
 }

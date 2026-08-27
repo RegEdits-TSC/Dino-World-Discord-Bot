@@ -1206,7 +1206,8 @@ describe('dashboard showcase', () => {
     // attach() on a null ref is a total no-op, so the banner is the only entry — the
     // "never an empty array" distinction other test files pin still holds.
     expect(p.files).toHaveLength(1);
-    expect(p.files![0].name).toBe('dino_roster.webp');
+    // Seeded on the park owner's discordId ('u1' here) — see src/modules/park/embeds.ts.
+    expect(p.files![0].name).toBe('dino_roster-v3.webp');
   });
 });
 

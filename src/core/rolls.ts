@@ -48,3 +48,23 @@ export function shuffle<T>(items: T[], rng: () => number): T[] {
   }
   return out;
 }
+
+// FNV-1a, 32-bit. Turns an id-bearing string into a seed for mulberry32.
+//
+// Two callers with different reasons to care that this never changes:
+// rollDailyQuests hashes `${userId}:${dayKey}` to derive a player's daily board,
+// and assetImage hashes `${kind}:${name}:${seed}` to pick an art variant. A
+// changed hash silently rerolls every board in flight and reshuffles every
+// variant, with nothing failing. tests/rolls.test.ts pins known pairs.
+//
+// Never use the result modulo anything. FNV-1a's low bits carry less avalanche
+// than a PRNG's, which is why every selection in this repo runs the hash through
+// mulberry32 first and then Math.floor(rng() * n).
+export function hashSeed(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}

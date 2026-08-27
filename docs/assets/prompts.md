@@ -185,11 +185,15 @@ Three more — `mainland_ferry`, `ruined_city`, `continental_divide` — are
 banked ahead of their chapter data; see "Chapters 8–10 (banked, unshipped)"
 below.
 
-## Art variants (`-v2`, `-v3`, `-v4`)
+## Art variants (`-vN`)
 
 A surface with more than one committed face carries `<base>-v2.webp`,
-`<base>-v3.webp`, `<base>-v4.webp` beside an untouched `<base>.webp`. The base
-file is never renamed, moved or regenerated.
+`<base>-v3.webp`, … beside an untouched `<base>.webp`. **How many faces a base
+carries varies by family and by base**, and most bases carry none at all: the
+per-family sections below state what each set ships, and
+`ls assets/images/<kind> | grep -- '-v'` answers it for any one family. Never
+assume a uniform count — nothing in the codebase hardcodes one, and the resolver
+derives it (see below). The base file is never renamed, moved or regenerated.
 
 **One committed base has been edited in place, deliberately, and it is the only
 one.** `assets/images/hatch/common-crack.webp` shipped with un-removed studio
@@ -211,10 +215,59 @@ bare prompt. This is the same reference-chain discipline the egg rarities and th
 dino archetypes use, and for the same reason: a variant that drifts off its base
 reads as a different asset rather than another view of the same one.
 
-Variants are unreferenced from `src/` until the resolver ships. Two guards cover
-them meanwhile: `tests/asset-variants.test.ts` proves every variant has a base,
-and the disk-registered dimension checks in `tests/images.test.ts` hold them to
-their family's size and transparency contract.
+**The resolver is live.** `assetImage(kind, name, seed?)` (`src/core/images.ts`)
+takes an optional `seed` — any string already in scope at the call site, an egg's
+row id or a viewer's Discord id — and resolves it to one of the base's committed
+faces; omitting it returns the base file, unchanged, forever. Nothing here
+hardcodes how many faces a base has: `variantCount` scans `-v2`, `-v3`, … and
+stops at the first gap, so shipping a face costs no code edit. For a base resolved
+through a **seeded** call site it is not inert either, and this is the part to plan
+for: a seed's draw is fixed and only
+`floor(draw * (count + 1))` moves, so adding a face re-partitions that draw and
+**half of the base's seeds land on a different face** — exactly half, provably, at
+every count. The step that gives a variant-free base its FIRST face is the same
+rule, not a gentler one; it differs only in having no other variant to move
+between, so its moving half simply leaves the base file, which is the whole point
+of shipping it. Two real seeds that did move: `banners/dino_roster` seed `u1` goes
+`-v3` to `-v4` when a fourth variant lands, and `sites/coastal_dig-banner` seed
+`u2` goes `-v2` to `-v3` when a third does. Which half moves is not knowable by
+eye, so **every committed `-vN` pin in `tests/` for that base has to be re-derived
+from the real `assetImage` in the same change that ships the file** — half of them
+staying put is not something you can find out without checking all of them.
+
+**A base reached only by UNSEEDED calls is the opposite case, and it is the
+majority of bases: a face shipped for one changes nothing, forever, with no test
+failing and no error.** `assetImage` returns the base file whenever the `seed`
+argument is omitted, so the new file is simply never named. Check the call site
+before planning the drop — `grep -rn 'assetImage(' src/` and read the third
+argument. As the code stands, these are unseeded everywhere they are used:
+`banners/rescue`, `banners/achievements`, `banners/dex`, `banners/gene_splice`,
+`banners/lots`, `banners/landmark`, every `banners/event-*`, every
+`sites/<id>-thumb`, every `battles/boss-<id>-portrait`, and all of
+`assets/images/dinos/` (both lookups inside `dinoImage` pass no seed). Five more
+are **half-seeded** — `banners/trading`, `leaderboards`, `guests` and `duel` are
+unseeded on their own surfaces but seeded through `/help`'s topic art, and
+`banners/season` is seeded on the park alert and unseeded on `/season` — so a face
+for one of those would vary on one surface and not the other until that surface is
+seeded too.
+
+**Nothing in the test suite proves a committed variant is reachable.**
+`tests/asset-variants.test.ts` proves the inverse (every variant has a base;
+numbering starts at 2 and never skips), so a face shipped for an unseeded-only base
+is a dead file that passes every gate. That was left as a rule here rather than
+built as a machine gate because the art bank is closed — which makes this paragraph
+the only check on it.
+
+See the art-variants bullet in `CLAUDE.md` for which surfaces are seeded on what,
+and why.
+
+Two guards cover the committed files, and the resolver now **depends** on both
+rather than merely agreeing with them: `tests/asset-variants.test.ts` proves every
+variant has a committed base and that numbering starts at 2 with no gaps — a gap
+would make a face unreachable, since the scan stops there, and an orphan would
+make a resolved name miss and the embed silently ship without its image — and the
+disk-registered dimension checks in `tests/images.test.ts` hold every variant to
+its family's size and transparency contract.
 
 **A variant takes its base's own `fit-art.mjs` mode, never a different one.**
 The two cutout modes are not interchangeable (see the divergence table in Egg
@@ -229,6 +282,10 @@ disagrees with its own base's siblings:
 | `assets/images/hatch/<rarity>-crack-vN.webp` | `cutout` |
 | `assets/images/dinos/<key>-vN.webp` | `cutout` |
 | `assets/images/battles/boss-<id>-portrait-vN.webp` | `portrait` (no flag) |
+
+That last row states the mode a boss variant *would* take, for completeness of the
+mode rules only. **No boss portrait may gain one** — see the ruling in Battle
+bosses below.
 
 ---
 
@@ -1804,6 +1861,18 @@ fully playable with zero battle art.
 | `assets/images/battles/boss-abyssal_trench-portrait.webp` | 1024×1024, transparent | The Trench Sovereign (Mosasaurus), Abyssal Trench boss frames |
 | `assets/images/battles/boss-containment_site-portrait.webp` | 1024×1024, transparent | Asset 47 (Spinoraptor), Containment Site boss frames |
 | `assets/images/battles/boss-founders_park-portrait.webp` | 1024×1024, transparent | Ultimasaurus (The Last Asset), Founder's Park boss frames |
+
+**No boss portrait may ever gain a `-vN` variant.** A boss is a named individual,
+not a surface: Old Riptooth has one face and that is the point. The chapter
+banner behind him is the opposite kind of thing — scenery, which ships two
+variants apiece and is seeded on the viewer — and `fightFrames`
+(`src/modules/battles/embeds.ts`) builds the two one line apart, seeding the
+banner and deliberately not the portrait. It says so at that call site; this is
+the copy an art drop will actually read. The Art variants section's `-vN` mode
+table lists a `battles/boss-<id>-portrait-vN` row for completeness of the mode
+rules, not as an invitation. If a portrait is genuinely wrong, the remedy is the
+`hatch/common-crack` precedent — a measured defect repaired in place under the
+same filename — not a second take shipped beside it.
 
 **Hard no-glow rule:** no glow, rays, embers, sparkles, or light effects may
 extend beyond the dinosaur silhouette — off-silhouette glow survives

@@ -58,8 +58,10 @@ describe('animalsPayload routes the featured dino through dinoImage', () => {
     expect(vi.mocked(dinoImage).mock.calls).toEqual([['triceratops', 'tank', 'herbivore']]);
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://triceratops.webp');
     // Two files now, not one: animalsPayload always attaches the roster banner first
-    // (call order is upload order), then the featured dino's art second.
-    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster.webp', 'triceratops.webp']);
+    // (call order is upload order), then the featured dino's art second. The banner is
+    // seeded on the park owner's discordId ('u1' here), so it resolves to that owner's
+    // face of dino_roster; the dino art carries no seed and is unaffected.
+    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster-v3.webp', 'triceratops.webp']);
   });
 
   it('never calls dinoImage when nothing is featured — that ternary guards domain data', () => {
@@ -68,7 +70,7 @@ describe('animalsPayload routes the featured dino through dinoImage', () => {
     expect(dinoImage).not.toHaveBeenCalled();
     // Not undefined: unlike the old single-card dashboard, animalsPayload always attaches
     // the roster banner regardless of whether anything is featured.
-    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster.webp']);
+    expect(p.files!.map((f) => f.name)).toEqual(['dino_roster-v3.webp']);
   });
 });
 
@@ -103,13 +105,15 @@ describe('dexViewPayload routes the entry art through dinoImage', () => {
 
 describe('revealPayload routes the hatched species through dinoImage', () => {
   it('passes the hatched species id and keeps the crack on the real assetImage path', () => {
+    // eggId 6 (a literal invented for this test — no real egg row is in scope
+    // here) seeds the crack: rare's hash for id 6 lands on -v4, not the base.
     const species = getSpecies('velociraptor');
-    const p = revealPayload(species);
+    const p = revealPayload(species, 6);
     expect(vi.mocked(dinoImage).mock.calls).toEqual([['velociraptor', species.archetype, species.diet]]);
-    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare-crack.webp');
+    expect(p.embeds[0].toJSON().image?.url).toBe('attachment://rare-crack-v4.webp');
     expect(p.embeds[0].toJSON().thumbnail?.url).toBe('attachment://velociraptor.webp');
     // Call order is upload order, and only dinoImage is mocked — the crack is still real.
-    expect(p.files.map((f) => f.name)).toEqual(['rare-crack.webp', 'velociraptor.webp']);
+    expect(p.files.map((f) => f.name)).toEqual(['rare-crack-v4.webp', 'velociraptor.webp']);
     expect(p.attachments).toEqual([]);
   });
 });
@@ -136,7 +140,9 @@ describe('fightFrames routes the lead enemy through dinoImage', () => {
     const stage = STAGES.get('coastal_dig_1')!;
     // rosterFor is the single source of truth for who is fielded — never re-derived.
     const lead = getSpecies(rosterFor(stage, 1)[0].speciesId);
-    const frames = fightFrames(makeOutcome(), skipStub);
+    // fightFrames' third argument is the viewer, seeding its site and outcome banners.
+    // Neither is asserted here — this file is about the dino art, which takes no seed.
+    const frames = fightFrames(makeOutcome(), skipStub, 'u1');
     expect(vi.mocked(dinoImage).mock.calls).toEqual([[lead.id, lead.archetype, lead.diet]]);
     for (const f of frames) {
       expect(f.embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${lead.id}.webp`);
@@ -150,7 +156,7 @@ describe('fightFrames routes the lead enemy through dinoImage', () => {
 
   it('never calls dinoImage on a boss stage — a boss is a named individual, never a species stand-in', () => {
     const frames = fightFrames(
-      makeOutcome({ stageId: 'coastal_dig_boss', bossEgg: { rarity: 'rare' } }), skipStub);
+      makeOutcome({ stageId: 'coastal_dig_boss', bossEgg: { rarity: 'rare' } }), skipStub, 'u1');
     expect(dinoImage).not.toHaveBeenCalled();
     const bossId = STAGES.get('coastal_dig_boss')!.boss!.bossId;
     expect(frames[3].embeds[0].toJSON().thumbnail?.url).toBe(`attachment://${bossId}-portrait.webp`);

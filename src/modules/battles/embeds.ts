@@ -44,9 +44,16 @@ function starGlyphs(stars: number): string {
   return '⭐'.repeat(stars) + '☆'.repeat(3 - stars);
 }
 
+// userId seeds the two art lookups that have faces to choose from — the chapter's site
+// banner and the outcome banner. It is NOT on FightOutcome, because the fight itself does
+// not care who is watching: presentFight already holds it for the skip and replay
+// customIds and passes it straight through. Seeding on the viewer rather than the fight
+// is deliberate — a `battle:again` replay re-renders the same message, so a face that
+// moved per fight would flicker the banner under a player who never left the screen.
 export function fightFrames(
   outcome: FightOutcome,
   includeSkipButton: (frameIdx: 0 | 1 | 2) => ActionRowBuilder<ButtonBuilder> | null,
+  userId: string,
 ): [FramePayload, FramePayload, FramePayload, FramePayload] {
   const stage = STAGES.get(outcome.stageId);
   if (!stage) throw new Error(`Unknown stage: ${outcome.stageId}`);
@@ -55,9 +62,11 @@ export function fightFrames(
   // two payloads by the F1/F4 contract below, which attach's one-embed-one-payload
   // shape cannot express. fightFrames is the only such site in the repo —
   // everywhere else attach() is mandatory.
-  const banner = assetImage('sites', `${stage.chapterId}-banner`);
+  const banner = assetImage('sites', `${stage.chapterId}-banner`, userId);
+  // No seed on the portrait: boss art ships no -vN siblings, and a boss is a named
+  // individual — one face is the point, so it must never gain them either.
   const portrait = stage.boss ? assetImage('battles', `${stage.boss.bossId}-portrait`) : null;
-  const outcomeBanner = assetImage('banners', outcome.won ? 'battle_victory' : 'battle_defeat');
+  const outcomeBanner = assetImage('banners', outcome.won ? 'battle_victory' : 'battle_defeat', userId);
   // Single source of truth for who actually fought AND which entry is the
   // boss is rosterFor (shared with runFight) — never re-derived here. Hoisted
   // above dress() because the thumbnail is now derived from it.
@@ -193,7 +202,8 @@ export function chaptersPayload(userId: string, chapterIndex: number, view: Chap
   );
   const payload: FramePayload = { embeds: [embed], components: [nav] };
   // chapterId === siteId invariant (content test) makes the site art legal here.
-  attach(embed, payload, 'image', assetImage('sites', `${ch.id}-banner`));
+  // userId seeds the banner — the viewer, same rule as every other banner call.
+  attach(embed, payload, 'image', assetImage('sites', `${ch.id}-banner`, userId));
   attach(embed, payload, 'thumbnail', assetImage('sites', `${ch.id}-thumb`));
   return payload;
 }

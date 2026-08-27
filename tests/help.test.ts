@@ -34,6 +34,27 @@ describe('/help', () => {
     expect(t.body).toMatch(/boss/i);
     expect(t.body).toMatch(/escaped/i);
   });
+  // The topic art lookup is seeded on i.user.id ('u1' throughout this loop, same as
+  // every other test in this file). Five of these twelve bases — eggs_incubator,
+  // shop_food_market, care, gene_lab and daily — ship -vN variants and hash 'u1'
+  // PAST index 0, so their real filename is a variant face, not the base; the other
+  // seven (including expeditions' coastal_dig-banner, which does have variants but
+  // happens to hash 'u1' to index 0) are unchanged. Every value below was resolved
+  // against the real assetImage, never re-derived inside the assertion.
+  const EXPECTED_ART_FOR_U1: Record<string, string> = {
+    'getting-started': 'help.webp',
+    eggs: 'eggs_incubator-v4.webp',
+    expeditions: 'coastal_dig-banner.webp',
+    shop: 'shop_food_market-v4.webp',
+    care: 'care-v2.webp',
+    trading: 'trading.webp',
+    ranks: 'leaderboards.webp',
+    battles: 'battles.webp',
+    genelab: 'gene_lab-v2.webp',
+    daily: 'daily-v3.webp',
+    guests: 'guests.webp',
+    duel: 'duel.webp',
+  };
   it('every topic that declares art ships the image and its file together', async () => {
     const covered: string[] = [];
     for (const [topic, t] of Object.entries(HELP_TOPICS)) {
@@ -44,8 +65,8 @@ describe('/help', () => {
         embeds: Array<{ toJSON(): { image?: { url: string } } }>;
         files?: Array<{ name?: string | null }>;
       };
-      expect(payload.embeds[0].toJSON().image?.url, topic).toBe(`attachment://${t.art.name}.webp`);
-      expect(payload.files!.map((f) => f.name), topic).toContain(`${t.art.name}.webp`);
+      expect(payload.embeds[0].toJSON().image?.url, topic).toBe(`attachment://${EXPECTED_ART_FOR_U1[topic]}`);
+      expect(payload.files!.map((f) => f.name), topic).toContain(EXPECTED_ART_FOR_U1[topic]);
       covered.push(topic);
     }
     // Hard-coded list, deliberately NOT derived from HELP_TOPICS: the loop above
@@ -54,6 +75,19 @@ describe('/help', () => {
     // Naming every topic also fails a PARTIAL regression (art dropped from one).
     expect([...covered].sort()).toEqual(
       ['battles', 'care', 'daily', 'duel', 'eggs', 'expeditions', 'genelab', 'getting-started', 'guests', 'ranks', 'shop', 'trading']);
+  });
+  it('/help topic:expeditions seeds the banner on the viewer, not fixed to the base face', async () => {
+    // 'u1' above hashes coastal_dig-banner to index 0 (the base file), so that pin
+    // cannot see this call site's seed argument go missing. 'u2' hashes it to -v2 —
+    // this is the pin that actually goes red if the seed is removed.
+    const i = fakeCommand({ name: 'help', user: 'u2', options: { topic: 'expeditions' } });
+    await helpModule.commands[0].execute(ctx, i.asChatInput());
+    const payload = i.replies[0] as {
+      embeds: Array<{ toJSON(): { image?: { url: string } } }>;
+      files?: Array<{ name?: string | null }>;
+    };
+    expect(payload.embeds[0].toJSON().image?.url).toBe('attachment://coastal_dig-banner-v2.webp');
+    expect(payload.files!.map((f) => f.name)).toContain('coastal_dig-banner-v2.webp');
   });
   // The eggs topic borrowed eggs/rare — a single rarity's egg icon standing in for the
   // whole hatchery screen. banners/eggs_incubator is the picture /eggs itself already

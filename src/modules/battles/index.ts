@@ -90,7 +90,7 @@ async function presentFight(ctx: Ctx, i: ChatInputCommandInteraction | ButtonInt
     // id) — by commit-before-present design runFight already committed every
     // reward before we ever got here, so a throw anywhere in this block is a
     // presentation-layer failure only, never a reason to imply nothing happened.
-    const frames = fightFrames(outcome, () => skipRow(userId, pid));
+    const frames = fightFrames(outcome, () => skipRow(userId, pid), userId);
     frames[3].components.push(againRow(userId, outcome.stageId));
     const entry: Presentation = { userId, final: frames[3], skipped: false, lock: Promise.resolve() };
     presentations.set(pid, entry);

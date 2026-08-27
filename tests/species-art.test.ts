@@ -99,23 +99,25 @@ describe('/dex view carries the species art override', () => {
 
 describe('the hatch reveal carries the species art override', () => {
   it('a mythic hero hatches under its own portrait, beside its rarity crack', () => {
-    const p = revealPayload(getSpecies('indominus'));   // mythic, bruiser/carnivore
+    // eggId 1 (a literal invented for this test — no real egg row is in scope
+    // here) seeds the crack: mythic's hash for id 1 lands on -v2, not the base.
+    const p = revealPayload(getSpecies('indominus'), 1);   // mythic, bruiser/carnivore
     const embed = p.embeds[0].toJSON();
-    expect(embed.image?.url).toBe('attachment://mythic-crack.webp');
+    expect(embed.image?.url).toBe('attachment://mythic-crack-v2.webp');
     expect(embed.thumbnail?.url).toBe('attachment://indominus.webp');
     // attach APPENDS and call order is upload order: crack first, portrait second.
-    expect(p.files.map((f) => f.name)).toEqual(['mythic-crack.webp', 'indominus.webp']);
+    expect(p.files.map((f) => f.name)).toEqual(['mythic-crack-v2.webp', 'indominus.webp']);
     // attachments: [] is load-bearing — discord.js pushes the new descriptors into
     // the array we pass, so the pre-hatch egg upload is dropped by i.update().
     expect(p.attachments).toEqual([]);
   });
 
   it('a legendary hero hatches under its own portrait', () => {
-    const p = revealPayload(getSpecies('quetzalcoatlus'));   // legendary, swift/carnivore
+    const p = revealPayload(getSpecies('quetzalcoatlus'), 2);   // legendary, swift/carnivore
     const embed = p.embeds[0].toJSON();
-    expect(embed.image?.url).toBe('attachment://legendary-crack.webp');
+    expect(embed.image?.url).toBe('attachment://legendary-crack-v4.webp');
     expect(embed.thumbnail?.url).toBe('attachment://quetzalcoatlus.webp');
-    expect(p.files.map((f) => f.name)).toEqual(['legendary-crack.webp', 'quetzalcoatlus.webp']);
+    expect(p.files.map((f) => f.name)).toEqual(['legendary-crack-v4.webp', 'quetzalcoatlus.webp']);
   });
 
   // velociraptor ships its own portrait as of Task 10, same as every other former
@@ -127,15 +129,15 @@ describe('the hatch reveal carries the species art override', () => {
     const p = revealPayload({
       id: 'no-such-species', name: 'Test Dino', rarity: 'rare', diet: 'carnivore',
       archetype: 'swift', biomeTags: [], flavor: 'x',
-    });
+    }, 3);
     const embed = p.embeds[0].toJSON();
-    expect(embed.image?.url).toBe('attachment://rare-crack.webp');
+    expect(embed.image?.url).toBe('attachment://rare-crack-v2.webp');
     expect(embed.thumbnail?.url).toBe('attachment://swift-carnivore.webp');
-    expect(p.files.map((f) => f.name)).toEqual(['rare-crack.webp', 'swift-carnivore.webp']);
+    expect(p.files.map((f) => f.name)).toEqual(['rare-crack-v2.webp', 'swift-carnivore.webp']);
   });
 
   it('passes the species id, archetype and diet — in that argument order', () => {
-    revealPayload(getSpecies('ultimasaurus'));
+    revealPayload(getSpecies('ultimasaurus'), 4);
     expect(vi.mocked(dinoImage).mock.calls).toEqual([['ultimasaurus', 'tank', 'carnivore']]);
   });
 
@@ -143,10 +145,10 @@ describe('the hatch reveal carries the species art override', () => {
     // Two files on one payload, two independent attach calls: a miss on the
     // portrait must not drop the crack attach already appended to payload.files.
     vi.mocked(dinoImage).mockImplementationOnce(() => null);
-    const p = revealPayload(getSpecies('indoraptor'));
+    const p = revealPayload(getSpecies('indoraptor'), 5);
     const embed = p.embeds[0].toJSON();
-    expect(embed.image?.url).toBe('attachment://mythic-crack.webp');
+    expect(embed.image?.url).toBe('attachment://mythic-crack-v2.webp');
     expect(embed.thumbnail).toBeUndefined();
-    expect(p.files.map((f) => f.name)).toEqual(['mythic-crack.webp']);
+    expect(p.files.map((f) => f.name)).toEqual(['mythic-crack-v2.webp']);
   });
 });
