@@ -943,6 +943,23 @@ describe('variant selection', () => {
     expect(agree).toBeLessThan(120);
   });
 
+  // The case above varies kind AND name together, so it cannot tell the shipped
+  // `kind:name:seed` composite apart from a `name:seed` one — both decorrelate eggs
+  // from cracks. This pin can. eggs/common ships 3 variants, so the draw is scaled
+  // over 4 faces, and seed '7' lands on a different index under each candidate hash
+  // string: `eggs:common:7` -> 1 (common-v2), `common:7` -> 3 (common-v4), and a bare
+  // `7` -> 2 (common-v3). One literal therefore discriminates all three.
+  //
+  // This is a MEASURED constant, not a recomputation: it names the filename the real
+  // assetImage returns, and does not re-run hashSeed/mulberry32 the way mirroring the
+  // implementation inside the test would. If a refactor drops kind or name from the
+  // hashed string, this fails with a specific wrong filename rather than a soft
+  // statistical margin. Re-derive it (never hand-adjust it) if eggs/common ever gains
+  // or loses a face — the count is part of what fixes the index.
+  it('pins the composite hash string, not just decorrelation', () => {
+    expect(assetImage('eggs', 'common', '7')!.file.name).toBe('common-v2.webp');
+  });
+
   it('returns the base for a name with no variants, whatever the seed', () => {
     for (const seed of ['1', '2', '99', 'x']) {
       expect(assetImage('banners', 'help', seed)!.file.name).toBe('help.webp');

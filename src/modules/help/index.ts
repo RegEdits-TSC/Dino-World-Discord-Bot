@@ -153,7 +153,11 @@ export const helpModule: ModuleManifest = {
             name: t.title, value: `\`/help topic:${key}\``, inline: true,
           })));
         const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [overview] };
-        attach(overview, payload, 'image', assetImage('banners', 'help'));
+        // Seeded on the viewer like the topic art above. banners/help ships no faces
+        // today, so this is the documented contract no-op — but the overview and
+        // /help topic:getting-started render the SAME base, and leaving one of the two
+        // unseeded would make them disagree the day a face lands.
+        attach(overview, payload, 'image', assetImage('banners', 'help', i.user.id));
         await i.reply(payload);
       } },
   ],

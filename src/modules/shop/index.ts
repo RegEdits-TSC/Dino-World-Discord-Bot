@@ -79,8 +79,11 @@ export const shopModule: ModuleManifest = {
             const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
             const order = Object.keys(RARITY);
             const best = offers.length ? offers.reduce((a, b) => (order.indexOf(b) > order.indexOf(a) ? b : a)) : null;
-            // No seed: this previews what CAN be bought, so no egg exists yet to key on.
-            // Seeding from the viewer would make this preview disagree with the egg they buy.
+            // No seed: this previews what CAN be bought, so no egg exists yet to key on —
+            // there is simply nothing here to seed from. NOT because a viewer seed would
+            // make the preview disagree with the egg actually bought: it disagrees either
+            // way, since every other egg surface resolves on String(egg.id), so an unseeded
+            // preview shows the base while the bought egg usually shows a face.
             attach(embed, payload, 'thumbnail', best ? assetImage('eggs', best) : null);
             // The banner DOES take a seed, unlike the egg preview above it: a banner has no
             // object to key on, so it keys on who is looking and each player gets one stable

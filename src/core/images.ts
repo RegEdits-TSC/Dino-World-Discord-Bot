@@ -21,7 +21,13 @@ function present(abs: string): boolean {
 // at runtime.
 const variantCounts = new Map<string, number>();
 
-function variantCount(kind: string, name: string): number {
+// The six directories under assets/images/. Named rather than repeated inline so the
+// two module-private helpers below stay narrowed to exactly what assetImage accepts
+// instead of widening to bare `string` — they feed the same resolve() path, so a
+// widened parameter buys nothing and only lets a typo reach the filesystem.
+type AssetKind = 'eggs' | 'sites' | 'banners' | 'battles' | 'hatch' | 'dinos';
+
+function variantCount(kind: AssetKind, name: string): number {
   const key = `${kind}/${name}`;
   let n = variantCounts.get(key);
   if (n === undefined) {
@@ -55,7 +61,7 @@ function variantCount(kind: string, name: string): number {
 // else in the codebase: variant selection is a pure function of (kind, name,
 // seed), never a clock or ctx.rng(), so the same triple always renders the same
 // face — including for a Discord edit that re-renders an already-sent message.
-function pickVariant(kind: string, name: string, seed: string): string {
+function pickVariant(kind: AssetKind, name: string, seed: string): string {
   const count = variantCount(kind, name);
   if (count === 0) return name;
   const index = Math.floor(mulberry32(hashSeed(`${kind}:${name}:${seed}`))() * (count + 1));
@@ -73,8 +79,16 @@ function pickVariant(kind: string, name: string, seed: string): string {
 // against a base name. Deliberately no count here — a figure written into prose
 // is wrong the next time a pin lands, and wrong silently. Derive it if you
 // actually need it: `grep -rho '[A-Za-z0-9_-]*\.webp' tests/`.
+//
+// The contract is on `seed === undefined`, so OMITTING the argument and passing an
+// EMPTY STRING are different things: `assetImage(k, n, '')` is a supplied seed, goes
+// through pickVariant and hashes like any other string — on a base that ships faces it
+// usually resolves to one of them rather than the base file (`eggs/rare` and
+// `hatch/common-crack` both do today). A call site writing
+// `assetImage(k, n, someUser?.id ?? '')` therefore gets a variant on the fallback arm,
+// not the base it probably meant — pass `someUser?.id` and let it be undefined.
 export function assetImage(
-  kind: 'eggs' | 'sites' | 'banners' | 'battles' | 'hatch' | 'dinos',
+  kind: AssetKind,
   name: string,
   seed?: string,
 ): ImageRef | null {
