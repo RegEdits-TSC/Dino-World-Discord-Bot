@@ -716,3 +716,90 @@ describe('0016 season hint high water via the real drizzle migrator (production 
     }
   });
 });
+
+describe('0018 read indexes via the real drizzle migrator (production path)', () => {
+  it('creates every index on a populated DB, keeps timers_due partial, and the planner uses them', () => {
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig18-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    // The regex and the journal filter must widen together.
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^00(0[0-9]|1[0-7]).*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 17);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });   // apply 0000-0017 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, last_collect_at_ms, created_at_ms) VALUES ('u1', 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO dinos (user_id, species_id, hunger, last_fed_at_ms, hatched_at_ms)
+                    VALUES ('u1', 'triceratops', 100, 0, 0)`).run();
+    // One handled and one live timer: the partial index must contain only the live one.
+    sqlite.prepare(`INSERT INTO timers (kind, user_id, ref_id, fires_at_ms, handled_at_ms)
+                    VALUES ('alert_sweep', '0', 0, 10, 5)`).run();
+    sqlite.prepare(`INSERT INTO timers (kind, user_id, ref_id, fires_at_ms, handled_at_ms)
+                    VALUES ('alert_sweep', '0', 0, 20, NULL)`).run();
+
+    // Before/after, so this case cannot pass vacuously: at 0017 the schema's ONLY index is the
+    // daily-quests uniqueness constraint. If a future edit moves these indexes into an earlier
+    // migration, this assertion fails rather than the test quietly proving nothing.
+    const before = (sqlite.prepare(
+      `SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+    ).all() as Array<{ name: string }>).map((r) => r.name);
+    expect(before).toEqual(['daily_quests_user_day_slot']);
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+
+      const names = (sqlite.prepare(
+        `SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+      ).all() as Array<{ name: string }>).map((r) => r.name);
+      expect(names).toEqual([
+        'breedings_user_claimed',
+        'daily_quests_user_day_slot',
+        'dinos_user_lot',
+        'eggs_user',
+        'lots_user',
+        'season_progress_index',
+        'timers_due',
+        'trades_status_from',
+        'user_guilds_guild',
+      ]);
+
+      // timers_due is PARTIAL, and that is the whole point: nothing prunes handled timers, so an
+      // index over every row would grow without bound while only the unhandled rows are ever read.
+      // A future migration that recreates `timers` would silently drop this WHERE and pass every
+      // other assertion here, so pin the clause itself.
+      const timersSql = (sqlite.prepare(
+        `SELECT sql FROM sqlite_master WHERE name = 'timers_due'`,
+      ).get() as { sql: string }).sql;
+      expect(timersSql).toMatch(/where/i);
+      expect(timersSql).toMatch(/handled_at_ms/);
+
+      // An index the planner declines to use is not an optimisation. Pin the two hottest reads:
+      // the 30-second scheduler tick, and the per-user dino scan behind /park view.
+      const tickPlan = (sqlite.prepare(
+        `EXPLAIN QUERY PLAN SELECT * FROM timers
+         WHERE handled_at_ms IS NULL AND fires_at_ms <= ? ORDER BY fires_at_ms`,
+      ).all(100) as Array<{ detail: string }>).map((r) => r.detail).join(' | ');
+      expect(tickPlan).toContain('timers_due');
+      expect(tickPlan).not.toContain('SCAN timers');
+
+      const dinoPlan = (sqlite.prepare(
+        `EXPLAIN QUERY PLAN SELECT * FROM dinos WHERE user_id = ?`,
+      ).all('u1') as Array<{ detail: string }>).map((r) => r.detail).join(' | ');
+      expect(dinoPlan).toContain('dinos_user_lot');
+      expect(dinoPlan).not.toContain('SCAN dinos');
+
+      // Purely additive: no row lost, and the FK bracket left enforcement back ON.
+      expect((sqlite.prepare(`SELECT COUNT(*) c FROM dinos`).get() as { c: number }).c).toBe(1);
+      expect((sqlite.prepare(`SELECT COUNT(*) c FROM timers`).get() as { c: number }).c).toBe(2);
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});
