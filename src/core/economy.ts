@@ -20,14 +20,18 @@ export class EconomyService {
   constructor(private db: Db) {}
 
   apply(userId: string, delta: WalletDelta, reason: string, now: number): void {
-    this.db.transaction((tx) => { this.post(tx, userId, delta, reason, now, null, null); });
+    this.db.transaction((tx) => { this.post(tx, userId, delta, reason, now, null, null, false); });
   }
 
   // The single writer for every wallet movement. Called inside an open transaction by both
   // apply() and reverse() so the balance guards and the audit rows can never diverge.
+  // skipBaseRow: true only for reversing a food row — that reversal's cash/shards delta is
+  // zero by construction, and writing that empty base row anyway would drop an orphan row
+  // into the ledger and leave two new rows for reverse() to choose an id from. apply() always
+  // passes false, so its base row is written exactly as before.
   private post(
     tx: Tx, userId: string, delta: WalletDelta, reason: string, now: number,
-    reversesId: number | null, note: string | null,
+    reversesId: number | null, note: string | null, skipBaseRow: boolean,
   ): number {
     const { cash = 0, shards = 0, foods = {} } = delta;
     const foodEntries = (Object.entries(foods) as Array<[FoodId, number]>).filter(([, q]) => q !== 0);
@@ -52,14 +56,28 @@ export class EconomyService {
         tx.insert(schema.foodInventory).values({ userId, foodId, qty: next }).run();
       }
     }
-    const base = tx.insert(schema.txLog)
-      .values({ userId, cashDelta: cash, shardsDelta: shards, reason, createdAt: now, reversesId, note })
-      .returning().get();
-    for (const [foodId, qty] of foodEntries) {
-      tx.insert(schema.txLog)
-        .values({ userId, foodDelta: qty, foodId, reason, createdAt: now, reversesId, note }).run();
+    let baseId: number | null = null;
+    if (!skipBaseRow) {
+      const base = tx.insert(schema.txLog)
+        .values({ userId, cashDelta: cash, shardsDelta: shards, reason, createdAt: now, reversesId, note })
+        .returning().get();
+      baseId = base.id;
     }
-    return base.id;
+    let lastFoodId: number | null = null;
+    for (const [foodId, qty] of foodEntries) {
+      if (skipBaseRow) {
+        const row = tx.insert(schema.txLog)
+          .values({ userId, foodDelta: qty, foodId, reason, createdAt: now, reversesId, note })
+          .returning().get();
+        lastFoodId = row.id;
+      } else {
+        tx.insert(schema.txLog)
+          .values({ userId, foodDelta: qty, foodId, reason, createdAt: now, reversesId, note }).run();
+      }
+    }
+    // skipBaseRow is only ever true for a single-food-entry reversal (see reverse() below), so
+    // exactly one of these is non-null.
+    return baseId ?? lastFoodId!;
   }
 
   // Reverses one ledger row by posting its opposite as a NEW row. tx_log is append-only: the
@@ -82,12 +100,15 @@ export class EconomyService {
       if (existing) throw new ReversalError(`#${txId} was already reversed by #${existing.id}.`);
 
       // A row is either a cash/shards row or a food row, never both — apply() writes them
-      // separately, so each reverses independently.
-      const delta: WalletDelta = target.foodId
+      // separately, so each reverses independently. A food row's opposite has nothing to say
+      // in the base cash/shards row (cash=0, shards=0), so skipBaseRow suppresses it —
+      // see post()'s own comment.
+      const isFoodRow = target.foodId !== null;
+      const delta: WalletDelta = isFoodRow
         ? { foods: { [target.foodId as FoodId]: -target.foodDelta } }
         : { cash: -target.cashDelta, shards: -target.shardsDelta };
 
-      const reversalId = this.post(tx, target.userId, delta, 'reverse', now, target.id, note ?? null);
+      const reversalId = this.post(tx, target.userId, delta, 'reverse', now, target.id, note ?? null, isFoodRow);
       return { targetId: target.id, reversalId };
     });
   }

@@ -67,6 +67,7 @@ describe('EconomyService.reverse', () => {
     const charge = db.select().from(schema.txLog).all().at(-1)!;
     const out = eco.reverse(charge.id, 500);
 
+    expect(out.targetId).toBe(charge.id);
     expect(bal().cash).toBe(500);
     const reversal = db.select().from(schema.txLog)
       .where(eq(schema.txLog.id, out.reversalId)).get()!;
@@ -90,6 +91,21 @@ describe('EconomyService.reverse', () => {
     eco.reverse(foodRow.id, 500);
     expect(eco.getFoodInventory('u1').ferns ?? 0).toBe(0);
     expect(bal().cash).toBe(450);                       // the cash row is untouched
+  });
+
+  it('reversing a food row writes exactly one row and names it as reversalId', () => {
+    eco.apply('u1', { cash: -50, foods: { ferns: 3 } }, 'shop-food:ferns:3', 100);
+    const before = db.select().from(schema.txLog).all().length;                     // cash row + food row
+    const foodRow = db.select().from(schema.txLog).all().find((r) => r.foodId === 'ferns')!;
+
+    const out = eco.reverse(foodRow.id, 500);
+
+    const rows = db.select().from(schema.txLog).all();
+    expect(rows).toHaveLength(before + 1);                          // no orphan zero-delta base row
+    expect(rows.at(-1)!.id).toBe(out.reversalId);
+    expect(rows.at(-1)).toMatchObject({
+      foodId: 'ferns', foodDelta: -3, cashDelta: 0, shardsDelta: 0, reversesId: foodRow.id,
+    });
   });
 
   it('refuses an unknown transaction', () => {
@@ -119,5 +135,19 @@ describe('EconomyService.reverse', () => {
     expect(() => eco.reverse(grant.id, 500)).toThrow(InsufficientFundsError);
     expect(bal().cash).toBe(100);                          // unchanged
     expect(db.select().from(schema.txLog).all()).toHaveLength(before);  // no partial row
+  });
+
+  it('rolls back the wallet update when the reversal audit insert fails', () => {
+    eco.apply('u1', { cash: -100 }, 'build:x', 100);        // 500 -> 400
+    const charge = db.select().from(schema.txLog).all().at(-1)!;
+
+    // raw better-sqlite3 handle; drizzle exposes it as db.$client
+    const raw = db.$client;
+    raw.exec(`CREATE TRIGGER block_reverse BEFORE INSERT ON tx_log
+              WHEN NEW.reason = 'reverse'
+              BEGIN SELECT RAISE(ABORT, 'forced'); END;`);
+
+    expect(() => eco.reverse(charge.id, 500)).toThrow();
+    expect(bal().cash).toBe(400);                     // wallet update rolled back, not left at 500
   });
 });
