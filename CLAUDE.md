@@ -104,7 +104,8 @@
   The families do not carry the same number of faces — `sites` ships fewer per base than
   `eggs`, `hatch` and `banners`, and `battles` and `dinos` ship none — so never write a
   uniform face count into code, a test or a doc; `ls assets/images/<kind> | grep -- '-v'`
-  is the answer. Shipping one more face needs no code edit but is **never inert**: a seed's
+  is the answer. Shipping one more face needs no code edit and is **never inert — for a
+  base resolved through a SEEDED call site**: a seed's
   draw is fixed and only `floor(draw * (count + 1))` moves, so raising a base's count
   re-partitions that draw and **half of its seeds land on a different face** — exactly
   half, provably, at every count. That is ONE rule, not a general case plus a mild one: the
@@ -117,6 +118,34 @@
   knowable by eye, so budget for re-deriving every committed `-vN` pin on that base from
   the real `assetImage`, never by hand** — half of them staying put is not something you
   can find out without checking all of them.
+  **The converse is the trap, and it is the majority case: a base reached only by UNSEEDED
+  calls gains nothing from a new face — not eventually, but never — and nothing fails to
+  say so.** Dropping `banners/lots-v2.webp` into the repo today changes nothing, forever:
+  `lotsPayload` (`src/modules/park/embeds.ts`) is that base's only call site and it omits
+  the seed, so `assetImage` returns `lots.webp` and no test moves. Same for
+  `banners/rescue`, `achievements`, `dex`, `gene_splice`, `landmark` and every `event-*`;
+  for every `sites/<id>-thumb`; for every `battles/boss-<id>-portrait` (which must never
+  gain faces anyway — a boss is a named individual, one face is the point, and
+  `src/modules/battles/embeds.ts` says so at the call site); and for all of `dinos/`,
+  since `dinoImage` passes no seed on either of its two lookups. That list is a snapshot,
+  not an invariant — re-derive it with `grep -rn 'assetImage(' src/` and read the third
+  argument, because a call site gaining a seed moves its base out of this class silently.
+  Five bases are **half-seeded**, which is subtler than either: `banners/trading`,
+  `leaderboards`, `guests` and `duel` are each unseeded at the surface they belong to
+  (`src/modules/trading/index.ts`, `leaderboards/index.ts`, `guests/embeds.ts`,
+  `duels/embeds.ts`) yet reach a SEEDED resolver through
+  `assetImage(t.art.kind, t.art.name, i.user.id)` (`src/modules/help/index.ts`), so a face
+  shipped for one of them would vary on `/help topic:trading` while `/trade` itself never
+  did; `banners/season` is the mirror image, seeded in `park/alert-embeds.ts` and unseeded
+  on `/season`. Seeding those five surfaces is real scope and was deliberately left undone
+  — do it in the change that ships the face, not before. `banners/help` was a sixth until
+  the `/help` overview was seeded too, so the two call sites that render it now agree.
+  **Nothing in the suite proves a committed variant is REACHABLE**, and that is a
+  deliberate omission rather than a gap to close: `tests/asset-variants.test.ts` proves the
+  inverse — every variant has a committed base, numbering starts at 2 and never skips — so
+  a face shipped for an unseeded-only base is a dead file that passes every gate green. A
+  machine gate was declined because the art bank is closed, which leaves this paragraph as
+  the only thing standing between a future art drop and a file nothing can ever render.
   The hashed string is **composite on purpose** — `kind:name:seed`. `eggs` and `hatch`
   ship one variant set per rarity apiece, with equal counts, so hashing a bare egg id
   would pick the same index in both — egg #42 showing `common-v2` and then
@@ -137,16 +166,21 @@
   the park OWNER, because `park:vtab:<targetId>:animals` puts a visitor on someone else's
   tab and seeding on the clicker would give one park two faces; and `/shop view`'s egg
   preview takes **no** seed at all, because it previews which rarities CAN be bought
-  before any egg exists — seeding it from the viewer would make the preview disagree with
-  the egg they actually buy. The banner on that same reply does take one: a banner has no
-  object to key on, so it keys on who is looking.
+  before any egg exists — there is simply nothing there to seed from. That is the whole
+  reason, and an earlier revision of this line added a second one that does not hold:
+  seeding it on the viewer would NOT be what makes the preview disagree with the egg
+  actually bought, because it disagrees either way — every other egg surface resolves on
+  `String(egg.id)`, so an unseeded preview shows the base while the bought egg usually
+  shows a face. Don't re-add it. The banner on that same reply does take a seed: a banner
+  has no object to key on, so it keys on who is looking.
   Seeding a base that ships no variants is a documented **no-op**, not a defect —
   `pickVariant` returns the name unchanged when `variantCount` is 0 — which is why two
   ternaries carry the seed across variant-free arms (`care_neglect` in
   `src/modules/care/index.ts`; `care_neglect`/`season` in
-  `src/modules/park/alert-embeds.ts`) and why `/help` seeds its no-variant topics
-  harmlessly. Those arms start working on their own the day their base gains a face, with
-  no edit here. What must never happen on an `assetImage('banners', …)` line is hoisting
+  `src/modules/park/alert-embeds.ts`) and why `/help` seeds both its no-variant topics and
+  its no-variant overview banner harmlessly. Those arms start working on their own the day
+  their base gains a face, with no edit here. What must never happen on an
+  `assetImage('banners', …)` line is hoisting
   the NAME into a `const`, or passing a **quoted string literal** as the seed:
   `scrapeBannerNames` (`tests/images.test.ts`) reads one source line at a time and takes
   every quoted string after the match, so the first loses the name entirely and the second
