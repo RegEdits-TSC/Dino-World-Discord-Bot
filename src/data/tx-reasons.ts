@@ -7,7 +7,7 @@
 const SIDE_EFFECTS = Object.assign(Object.create(null) as Record<string, string>, {
   build: 'the lot still stands',
   upgrade: 'the lot keeps its level',
-  landmark: 'landmarkTier stays raised',
+  landmark: 'the landmark tier stays raised',
   attraction: 'the attraction row remains',
   decorate: 'the decor stays on the lot',
   'shop-egg': 'the egg remains',

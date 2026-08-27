@@ -4,7 +4,7 @@ import { sideEffectFor } from '../src/data/tx-reasons.js';
 describe('sideEffectFor', () => {
   it('names what a charge left behind', () => {
     expect(sideEffectFor('build:paddock_plains')).toMatch(/lot still stands/i);
-    expect(sideEffectFor('landmark:3')).toMatch(/landmarkTier/i);
+    expect(sideEffectFor('landmark:3')).toMatch(/landmark tier/i);
     expect(sideEffectFor('sell:triceratops')).toMatch(/destroyed/i);
     expect(sideEffectFor('splice:12')).toMatch(/irreversible/i);
   });
@@ -20,8 +20,9 @@ describe('sideEffectFor', () => {
   });
 
   it('does not read prototype keys as entries', () => {
-    // Repo convention: null-prototype lookup tables. A plain object would read back a
-    // truthy value for these and silently claim a side effect that does not exist.
+    // sideEffectFor treats prototype-shaped keys as unrecognised rather than as entries,
+    // relying on Object.hasOwn to gate access. This protects against accidental collision
+    // with inherited properties.
     expect(sideEffectFor('constructor:1')).toMatch(/unrecognised/i);
     expect(sideEffectFor('__proto__:1')).toMatch(/unrecognised/i);
   });
