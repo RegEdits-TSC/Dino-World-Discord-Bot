@@ -3,7 +3,7 @@ import { desc, eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import { paginate, pageRow } from '../../core/paginate.js';
 import { sideEffectFor } from '../../data/tx-reasons.js';
-import { RESET_MARKER_REASON, resetBoundaryOf } from './service.js';
+import { RESET_MARKER_REASON, resetBoundaryOf, isCharge } from './service.js';
 import type { Ctx } from '../../core/context.js';
 
 function amount(r: typeof schema.txLog.$inferSelect): string {
@@ -12,18 +12,6 @@ function amount(r: typeof schema.txLog.$inferSelect): string {
   if (r.cashDelta) parts.push(`${r.cashDelta > 0 ? '+' : ''}${r.cashDelta} cash`);
   if (r.shardsDelta) parts.push(`${r.shardsDelta > 0 ? '+' : ''}${r.shardsDelta} shards`);
   return parts.join(' ') || '0';
-}
-
-// A row with no negative movement is a payout — income, a grant, a reversal's own credit —
-// never a charge, and "what does this leave behind" has no meaning for one. Showing the
-// side-effect note there anyway is what buried the column: collect, quest, season, battle
-// and every other payout reason are all absent from SIDE_EFFECTS (src/data/tx-reasons.ts),
-// so every ordinary income row — collect above all, the single most frequent row in the
-// table — read "unrecognised — check manually", training the operator to skip the column on
-// the one row where it actually matters. A genuine debit with an unrecognised reason still
-// gets the note: fail CLOSED for money actually taken, never for money paid out.
-function isCharge(r: typeof schema.txLog.$inferSelect): boolean {
-  return r.cashDelta < 0 || r.shardsDelta < 0 || r.foodDelta < 0;
 }
 
 // The operator's window onto tx_log. Every row for the player is listed, food rows included —

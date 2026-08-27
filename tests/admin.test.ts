@@ -771,11 +771,15 @@ describe('/admin reverse', () => {
     const ctx = makeCtx();
     const charge = seed(ctx);
     getOrCreateUser(ctx, 'u2', 'Two');
-    expect(() => adminReverse(ctx, 'u2', charge.id)).toThrow(AdminError);
-    expect(() => adminReverse(ctx, 'u2', charge.id)).toThrow(/different player/i);
+    expect(() => adminReverse(ctx, 'u2', charge.id, 'sorry about that')).toThrow(AdminError);
+    expect(() => adminReverse(ctx, 'u2', charge.id, 'sorry about that')).toThrow(/different player/i);
     // Discriminating: neither the named player nor the row's real owner was paid.
     expect(cashOf(ctx, 'u2')).toBe(500);
     expect(cashOf(ctx, 'u1')).toBe(200);
+    // ORDERING, checked with a note in hand: a refusal must never tell a player money moved.
+    // This one catches a notify hoisted above the guards; the overdraw test below catches the
+    // narrower hoist, above the reversal but below them.
+    expect(ctx.notifications).toHaveLength(0);
   });
 
   it('refuses a charge that predates a reset, using a real reset — not a hand-inserted row', () => {
@@ -821,11 +825,16 @@ describe('/admin reverse', () => {
     ctx.economy.apply('u1', { cash: 1000 }, 'admin:give', 100);    // -> 1500
     const credit = ctx.db.select().from(schema.txLog).all().at(-1)!;
     ctx.economy.apply('u1', { cash: -1400 }, 'build:x', 200);      // -> 100
-    expect(() => adminReverse(ctx, 'u1', credit.id)).toThrow(AdminError);
-    expect(() => adminReverse(ctx, 'u1', credit.id)).toThrow(/900 short/);
+    expect(() => adminReverse(ctx, 'u1', credit.id, 'clawing back a mis-grant')).toThrow(AdminError);
+    expect(() => adminReverse(ctx, 'u1', credit.id, 'clawing back a mis-grant')).toThrow(/900 short/);
     // The rollback is the guard, not a pre-check: nothing moved and nothing was recorded.
     expect(cashOf(ctx, 'u1')).toBe(100);
     expect(reversalOf(ctx, credit.id)).toBeUndefined();
+    // ORDERING — the assertion that pins "notify AFTER the commit, never before". This refusal
+    // comes from inside the economy transaction, i.e. BELOW every guard, so a notify block
+    // hoisted above the reverse call would queue a note here even though the money never
+    // moved. It is the only case in this suite that can see that hoist.
+    expect(ctx.notifications).toHaveLength(0);
   });
 
   it('surfaces the ledger primitive’s own refusals as operator errors', () => {
@@ -837,6 +846,40 @@ describe('/admin reverse', () => {
     expect(() => adminReverse(ctx, 'u1', charge.id)).toThrow(/already reversed/i);
     expect(() => adminReverse(ctx, 'u1', reversal.id)).toThrow(AdminError);
     expect(() => adminReverse(ctx, 'u1', reversal.id)).toThrow(/terminal/i);
+  });
+
+  it('leaves the side-effect note empty for a payout, but keeps it for an unrecognised charge', () => {
+    // The ledger view suppresses that note on a payout for a reason (no payout reason carries
+    // a SIDE_EFFECTS entry, so every one of them read "unrecognised — check manually" and
+    // trained the operator to skip the column). Both halves of this feature answer for the
+    // same row, so the reversal reply has to agree — and reversing a CREDIT, the symmetric
+    // case, is exactly where they disagreed.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 40 }, 'collect', 100);
+    const payout = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(adminReverse(ctx, 'u1', payout.id).sideEffect).toBe('');
+    expect(cashOf(ctx, 'u1')).toBe(500);
+    // Discriminating: this is not a blanket suppression. A genuine debit under a reason
+    // nothing recognises must still warn — fail CLOSED for money actually taken.
+    ctx.economy.apply('u1', { cash: -5 }, 'totally-unknown-reason', 200);
+    const mystery = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(adminReverse(ctx, 'u1', mystery.id).sideEffect).toMatch(/unrecognised/i);
+  });
+
+  it('drops the whole clause from the reply when the reversed row was a payout', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 40 }, 'collect', 100);
+    const payout = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    const i = fakeCommand({ name: 'admin', sub: 'reverse', user: 'owner',
+      options: { user: 'u1', tx: payout.id } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    const text = replyText(i.replies[0]);
+    expect(text).toMatch(/reversed/i);
+    expect(text).not.toMatch(/unrecognised/i);
+    expect(text).not.toMatch(/not undone/i);
+    expect(cashOf(ctx, 'u1')).toBe(500);
   });
 
   it('queues a note to the player when one is given, and keeps it on the row', () => {

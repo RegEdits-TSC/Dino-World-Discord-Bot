@@ -31,6 +31,24 @@ export function resetBoundaryOf(rows: Array<typeof schema.txLog.$inferSelect>): 
   return marks.length ? Math.max(...marks.map((r) => r.createdAt)) : 0;
 }
 
+// A row with no negative movement is a payout — income, a grant, a reversal's own credit —
+// never a charge, and "what does this leave behind" has no meaning for one. Showing the
+// side-effect note there anyway is what buried the column: collect, quest, season, battle
+// and every other payout reason are all absent from SIDE_EFFECTS (src/data/tx-reasons.ts),
+// so every ordinary income row — collect above all, the single most frequent row in the
+// table — read "unrecognised — check manually", training the operator to skip the column on
+// the one row where it actually matters. A genuine debit with an unrecognised reason still
+// gets the note: fail CLOSED for money actually taken, never for money paid out.
+//
+// Shared, for the same reason resetBoundaryOf above is: both surfaces of this feature answer
+// for the SAME row, and the ledger view (src/modules/admin/ledger.ts) suppressing the note
+// while adminReverse's reply kept printing it is precisely how the two came to disagree — a
+// reversed credit replied "Not undone: unrecognised — check manually", re-teaching the
+// operator to ignore the column the ledger had just cleaned up.
+export function isCharge(r: typeof schema.txLog.$inferSelect): boolean {
+  return r.cashDelta < 0 || r.shardsDelta < 0 || r.foodDelta < 0;
+}
+
 export interface GiveArgs {
   cash?: number; food?: { foodId: FoodId; qty: number }; shards?: number; eggRarity?: Rarity; dinoSpecies?: string;
 }
@@ -327,5 +345,8 @@ export function adminReverse(
     void ctx.notify(targetId, null, `🧾 A transaction was reversed by an operator: ${trimmed}`)
       .catch((err: unknown) => logger.warn({ err, targetId, txId }, 'reversal note could not be delivered'));
   }
-  return { sideEffect: sideEffectFor(row.reason), notified };
+  // Empty for a payout, exactly as the ledger view leaves the column blank for one: a credit
+  // has no "what does this leave behind" answer, and printing SIDE_EFFECTS' unrecognised
+  // fallback there is the noise isCharge exists to remove. The caller drops the clause.
+  return { sideEffect: isCharge(row) ? sideEffectFor(row.reason) : '', notified };
 }

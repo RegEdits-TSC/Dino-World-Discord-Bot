@@ -113,7 +113,10 @@ export const adminModule: ModuleManifest = {
             // "queued", never "sent": delivery depends on the player's routing and mute
             // settings, so claiming otherwise would imply a confirmation the bot never gets.
             await i.reply({
-              content: `↩ Reversed for <@${target.id}>. Not undone: ${out.sideEffect}.`
+              // No clause at all for a payout — sideEffect is empty there, because a credit has
+              // nothing left behind to name and the fallback text would only be noise.
+              content: `↩ Reversed for <@${target.id}>.`
+                + (out.sideEffect ? ` Not undone: ${out.sideEffect}.` : '')
                 + (out.notified ? ' Note queued to the player.' : ''),
               flags: MessageFlags.Ephemeral,
             });
