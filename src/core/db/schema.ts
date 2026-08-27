@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, check, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey, check, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { DUEL_START_RATING } from '../../data/battle/constants.js';
 
@@ -81,7 +81,7 @@ export const lots = sqliteTable('lots', {
   name: text('name').notNull(),
   level: integer('level').notNull().default(1),
   decor: text('decor', { mode: 'json' }).$type<string[]>().notNull().default([]),
-});
+}, (t) => [index('lots_user').on(t.userId)]);
 
 export const dinos = sqliteTable('dinos', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -96,7 +96,11 @@ export const dinos = sqliteTable('dinos', {
   battleXp: integer('battle_xp').notNull().default(0),
   traits: text('traits', { mode: 'json' }).$type<string[]>().notNull().default([]),
   hatchedAt: integer('hatched_at_ms').notNull(),
-});
+  // (user_id, lot_id) rather than (user_id) alone: every per-player read is a leftmost-prefix
+  // match either way, and the second column additionally serves the paddock-occupancy check in
+  // park/dinos.ts for the same write cost — lot_id only moves on assign/unassign, so the
+  // frequent writes (feed, battle XP, splice) never relocate a row within this index.
+}, (t) => [index('dinos_user_lot').on(t.userId, t.lotId)]);
 
 export const eggs = sqliteTable('eggs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -112,7 +116,7 @@ export const eggs = sqliteTable('eggs', {
   obtainedAt: integer('obtained_at_ms').notNull(),
   incubationStartedAt: integer('incubation_started_at_ms'),
   hatchesAt: integer('hatches_at_ms'),
-});
+}, (t) => [index('eggs_user').on(t.userId)]);
 
 export const battleProgress = sqliteTable('battle_progress', {
   userId: text('user_id').notNull().references(() => users.discordId),
@@ -140,7 +144,10 @@ export const breedings = sqliteTable('breedings', {
   startedAt: integer('started_at_ms').notNull(),
   readyAt: integer('ready_at_ms').notNull(),
   claimedAt: integer('claimed_at_ms'),
-});
+  // Half of the pair covering locksFor's two table filters — the unclaimed-breedings one.
+  // The other half is trades_status_from. See CLAUDE.md's locksFor note.
+  // claimed_at_ms is nullable and SQLite indexes NULLs, so `claimed_at_ms IS NULL` uses it.
+}, (t) => [index('breedings_user_claimed').on(t.userId, t.claimedAt)]);
 
 export const expeditions = sqliteTable('expeditions', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -151,7 +158,9 @@ export const expeditions = sqliteTable('expeditions', {
   loot: text('loot', { mode: 'json' })
     .$type<{ eggRarity: string; cash: number; food: { foodId: string; qty: number } } | null>(),
   claimedAt: integer('claimed_at_ms'),
-});
+  // Same predicate shape as breedings_user_claimed, on a table that likewise keeps claimed
+  // rows as history and therefore grows without bound.
+}, (t) => [index('expeditions_user_claimed').on(t.userId, t.claimedAt)]);
 
 export interface TradeSide { dinoIds: number[]; eggIds: number[]; cash: number; foods: Record<string, number> }
 
@@ -164,7 +173,13 @@ export const trades = sqliteTable('trades', {
   status: text('status', { enum: ['pending', 'accepted', 'declined', 'cancelled', 'expired'] }).notNull().default('pending'),
   createdAt: integer('created_at_ms').notNull(),
   resolvedAt: integer('resolved_at_ms'),
-});
+  // `status` leads deliberately: it is the lowest-cardinality column and the only predicate
+  // expireStale filters on, so this one index serves both locksFor's per-user escrow read and
+  // expireStale's unscoped `status = 'pending'` scan, which has no user scope to narrow it.
+  // The deliberate cost: createTrade's daily-cap read filters from_user + created_at_ms with
+  // NO status predicate, so it cannot use this index at all. Judged worth it — that is one
+  // rate-limit check against three hotter readers.
+}, (t) => [index('trades_status_from').on(t.status, t.fromUser, t.createdAt)]);
 
 export const txLog = sqliteTable('tx_log', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -185,13 +200,21 @@ export const timers = sqliteTable('timers', {
   originGuildId: text('origin_guild_id'),
   firesAt: integer('fires_at_ms').notNull(),
   handledAt: integer('handled_at_ms'),
-});
+  // PARTIAL on purpose. Nothing prunes handled timers in normal operation — only adminReset's
+  // per-user wipe ever removes one — so this table only grows, and the
+  // scheduler tick scans it every 30 seconds forever. A handled row is never read again by any
+  // query in src/, so indexing one would be pure waste — restricting the index to the unhandled
+  // rows keeps it the size of the live working set no matter how large the table gets, and makes
+  // the tick's cost independent of the handled backlog.
+}, (t) => [index('timers_due').on(t.firesAt).where(sql`${t.handledAt} is null`)]);
 
 export const userGuilds = sqliteTable('user_guilds', {
   userId: text('user_id').notNull(),
   guildId: text('guild_id').notNull(),
   lastSeenAt: integer('last_seen_at_ms').notNull(),
-}, (t) => [primaryKey({ columns: [t.userId, t.guildId] })]);
+  // The PK's leftmost column is user_id, so /top's server-scoped membership lookup — the one
+  // guild_id-only read in the codebase — cannot use it. This is that gap, not a duplicate of it.
+}, (t) => [primaryKey({ columns: [t.userId, t.guildId] }), index('user_guilds_guild').on(t.guildId)]);
 
 export const guildSettings = sqliteTable('guild_settings', {
   guildId: text('guild_id').primaryKey(),
@@ -296,7 +319,13 @@ export const seasonProgress = sqliteTable('season_progress', {
   // yet" — rung indices are 0-based, so it can never collide with a real rung.
   hintedRung: integer('hinted_rung').notNull().default(-1),
   createdAt: integer('created_at_ms').notNull(),
-}, (t) => [primaryKey({ columns: [t.userId, t.seasonIndex] })]);
+  // Same shape as user_guilds_guild: the PK leads with user_id, so /top season's board-wide read
+  // (scoped to the CURRENT season index, across all players) cannot use it. Per-player reads in
+  // daily/season.ts keep using the PK unchanged.
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.seasonIndex] }),
+  index('season_progress_season_user').on(t.seasonIndex, t.userId),
+]);
 
 // Consumable rungs only. The badge is seasonProgress.badgeAt, not a row here, because it
 // is granted on crossing rather than claimed — keeping them apart is what stops an
@@ -317,7 +346,11 @@ export const attractions = sqliteTable('attractions', {
   // same decision species_seen.first_at_ms records. If a build cooldown is ever added,
   // THAT column must shift.
   builtAt: integer('built_at_ms').notNull(),
-});
+  // Indexed for the same reason as lots/dinos, and it was nearly skipped for a bad one: a
+  // player's own attraction rows are capped by catalog size, but a SCAN reads the whole
+  // table, not one player's slice, so the cost tracks total players rather than per-player
+  // rows. buildParkSnapshot reads this on the /park view render path.
+}, (t) => [index('attractions_user').on(t.userId)]);
 
 // One row per claimed milestone. Composite primary key rather than uniqueIndex, matching
 // season_claims and achievement_claims — the shipped claim-ledger shape.
