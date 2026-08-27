@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MessageFlags } from 'discord.js';
 import { eq, and } from 'drizzle-orm';
-import { makeCtx, fakeCommand, replyText } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, replyText, testRegistry } from './harness.js';
+import { routeInteraction } from '../src/core/router.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, pendingIncome, collectIncome, buildLot } from '../src/modules/park/service.js';
 import { settleEscapes } from '../src/modules/park/escapes.js';
@@ -11,6 +12,8 @@ import { requireOwner } from '../src/modules/admin/guard.js';
 import { adminGive, adminReset, adminFastForward, AdminError } from '../src/modules/admin/service.js';
 import { setMotto, setFeaturedDino } from '../src/modules/park/showcase.js';
 import { adminModule } from '../src/modules/admin/index.js';
+import { ledgerPayload } from '../src/modules/admin/ledger.js';
+import { PAGE_SIZE } from '../src/core/paginate.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
 import { TRADE_MIN_RATING, TRADE_EXPIRY_MS } from '../src/data/trade.js';
@@ -610,4 +613,80 @@ it('adminReset clears attractions, milestone claims and the attendance high-wate
   expect(ctx.db.select().from(schema.attractions).all()).toHaveLength(0);
   expect(ctx.db.select().from(schema.attendanceClaims).all()).toHaveLength(0);
   expect(ctx.db.select().from(schema.users).all()[0].attendanceHighWater).toBe(0);
+});
+
+describe('/admin ledger', () => {
+  it('lists rows newest first with ids, and marks the three row states', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: -300 }, 'build:paddock_plains', 100);
+    const charge = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    ctx.economy.apply('u1', { cash: -50 }, 'decorate:fern', 200);
+    ctx.economy.reverse(charge.id, 300);
+
+    const text = JSON.stringify(ledgerPayload(ctx, 'u1', 1));
+    expect(text).toContain(`#${charge.id}`);
+    expect(text).toMatch(/reverses/i);          // the reversal row identifies its target
+    expect(text).toMatch(/already reversed/i);  // and the charge is marked as made good
+    expect(text).toMatch(/lot still stands/i);  // side-effect note from Task 3
+  });
+
+  it('marks rows that predate a reset', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    // A charge older than the users row can only be pre-reset: adminReset drops the user
+    // row and getOrCreateUser stamps a fresh createdAt.
+    ctx.db.insert(schema.txLog).values({
+      userId: 'u1', cashDelta: -1, reason: 'build:x', createdAt: -1,
+    }).run();
+    expect(JSON.stringify(ledgerPayload(ctx, 'u1', 1))).toMatch(/pre-reset/i);
+  });
+
+  it('pages, and the page buttons carry the TARGET id', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    for (let n = 0; n < PAGE_SIZE + 3; n++) ctx.economy.apply('u1', { cash: 1 }, 'collect', n);
+    const p = ledgerPayload(ctx, 'u1', 1);
+    expect(JSON.stringify(p.components)).toContain('admin:ledger:u1:2');
+  });
+});
+
+// The brief's own three tests above only call ledgerPayload directly — never the component
+// handler, never routeInteraction. Dispatching through the real ModuleRegistry (testRegistry)
+// is what catches a wiring mistake findComponent's PREFIX match can make: it compares only
+// customId.split(':')[0], so a component registered with prefix 'admin:ledger' (three
+// segments long) would never match an 'admin:ledger:<uid>:<page>' click at all and the pager
+// would be a dead button in production while every offline test above still passed.
+describe('/admin ledger component', () => {
+  function build() {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    for (let n = 0; n < PAGE_SIZE + 3; n++) ctx.economy.apply('u1', { cash: 1 }, 'collect', n);
+    return ctx;
+  }
+  function nextButtonId(ctx: ReturnType<typeof makeCtx>): string {
+    const p = ledgerPayload(ctx, 'u1', 1);
+    const json = p.components[0]!.toJSON() as { components: Array<{ custom_id: string; label: string }> };
+    return json.components.find((c) => c.label === 'Next ▶')!.custom_id;
+  }
+
+  it('routes the real Next button through the registry and pages the ledger', async () => {
+    const ctx = build();
+    const customId = nextButtonId(ctx);
+    const b = fakeButton({ customId, user: 'owner', componentIds: [customId] });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(b.deferOpts).toHaveLength(0);   // dispatched, not rejected by the router guard
+    expect(b.replies).toHaveLength(1);     // i.update() ran — the handler, not the no-op arm
+    expect(JSON.stringify(b.replies[0])).toContain('Page 2/2');
+  });
+
+  it('the target clicking their own audit log is rejected — the gate is ownerId, never the customId segment', async () => {
+    const ctx = build();
+    const customId = nextButtonId(ctx);   // customId's own segment names u1, the target
+    const b = fakeButton({ customId, user: 'u1', componentIds: [customId] });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(b.replies).toHaveLength(0);          // no i.update() — the target never sees page 2
+    expect(b.deferOpts).toHaveLength(1);
+    expect(b.deferOpts[0]).toMatchObject({ kind: 'update' });
+  });
 });

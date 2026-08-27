@@ -12,6 +12,7 @@ import { requireOwner } from './guard.js';
 import { adminGive, adminReset, adminFastForward, AdminError } from './service.js';
 import { FOODS, type FoodId } from '../../data/foods.js';
 import { emojiTag } from '../../core/emojis.js';
+import { ledgerPayload } from './ledger.js';
 
 const RARITIES: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
 
@@ -55,6 +56,9 @@ export const adminModule: ModuleManifest = {
           .addStringOption((o) => o.setName('dino-species').setDescription('Species — type to search').setAutocomplete(true)))
         .addSubcommand((s) => s.setName('inspect').setDescription('Dump a player’s raw state')
           .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true)))
+        .addSubcommand((s) => s.setName('ledger').setDescription('Read a player’s transaction ledger')
+          .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true))
+          .addIntegerOption((o) => o.setName('page').setDescription('Page').setMinValue(1)))
         .addSubcommand((s) => s.setName('reset').setDescription('Reset a player to a fresh start')
           .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true))
           .addStringOption((o) => o.setName('confirm').setDescription('Type the player’s user id to confirm').setRequired(true)))
@@ -96,6 +100,9 @@ export const adminModule: ModuleManifest = {
             if (!exists) { await i.reply({ content: 'That player has no park to reset.', flags: MessageFlags.Ephemeral }); return; }
             adminReset(ctx, target.id);
             await i.reply({ content: `♻️ Reset <@${target.id}> to a fresh start.`, flags: MessageFlags.Ephemeral });
+          } else if (sub === 'ledger') {
+            const page = i.options.getInteger('page') ?? 1;
+            await i.reply({ ...ledgerPayload(ctx, target.id, page), flags: MessageFlags.Ephemeral });
           } else if (sub === 'fast-forward') {
             getOrCreateUser(ctx, target.id, target.displayName);
             const escaped = adminFastForward(ctx, target.id, i.options.getInteger('hours', true));
@@ -120,5 +127,24 @@ export const adminModule: ModuleManifest = {
         })));
       } },
   ],
-  components: [],
+  components: [
+    {
+      // Component prefixes are matched against customId.split(':')[0] (ModuleRegistry.
+      // findComponent), so this MUST be the single segment 'admin', not 'admin:ledger' —
+      // every other module's component prefix follows the same convention (e.g. 'park'
+      // dispatches park:tab, park:vtab, park:tour, ... internally, never one prefix per
+      // action). Only one components entry may carry prefix 'admin' (the duplicate-prefix
+      // check flattens every component in this array), so a future admin action switches
+      // on the id's own action segment the same way, rather than adding a second entry.
+      prefix: 'admin',
+      async execute(ctx, i) {
+        const [, action, targetId, pageStr] = i.customId.split(':');
+        if (action !== 'ledger') { await i.deferUpdate(); return; }
+        // The id segment is the TARGET, not the clicker — the park:tour precedent — so the
+        // gate is ownership of the BOT, never a match against the segment.
+        if (i.user.id !== ctx.config.ownerId) { await i.deferUpdate(); return; }
+        await i.update(ledgerPayload(ctx, targetId!, Number(pageStr)));
+      },
+    },
+  ],
 };
