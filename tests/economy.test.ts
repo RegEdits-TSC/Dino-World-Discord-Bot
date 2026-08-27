@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createDb, migrateDb, schema, type Db } from '../src/core/db/index.js';
-import { EconomyService, InsufficientFundsError } from '../src/core/economy.js';
+import { EconomyService, InsufficientFundsError, ReversalError } from '../src/core/economy.js';
 import { eq } from 'drizzle-orm';
 
 let db: Db; let eco: EconomyService;
@@ -56,5 +56,68 @@ describe('EconomyService.apply', () => {
     expect(() => eco.apply('ghost', { cash: 1 }, 'x', 0)).toThrow(Error);
     expect(() => eco.apply('ghost', { cash: 1 }, 'x', 0)).not.toThrow(InsufficientFundsError);
     expect(db.select().from(schema.txLog).all()).toHaveLength(0);
+  });
+});
+
+describe('EconomyService.reverse', () => {
+  it('posts a compensating row and moves the balance back', () => {
+    eco.apply('u1', { cash: -300 }, 'build:paddock_plains', 100);
+    expect(bal().cash).toBe(200);
+
+    const charge = db.select().from(schema.txLog).all().at(-1)!;
+    const out = eco.reverse(charge.id, 500);
+
+    expect(bal().cash).toBe(500);
+    const reversal = db.select().from(schema.txLog)
+      .where(eq(schema.txLog.id, out.reversalId)).get()!;
+    expect(reversal).toMatchObject({
+      userId: 'u1', cashDelta: 300, reason: 'reverse', reversesId: charge.id, note: null,
+    });
+  });
+
+  it('stores the operator note on the reversal row', () => {
+    eco.apply('u1', { cash: -100 }, 'landmark:1', 100);
+    const charge = db.select().from(schema.txLog).all().at(-1)!;
+    const out = eco.reverse(charge.id, 500, 'stale button double-charge');
+    expect(db.select().from(schema.txLog).where(eq(schema.txLog.id, out.reversalId)).get()!.note)
+      .toBe('stale button double-charge');
+  });
+
+  it('reverses a food row independently of its cash row', () => {
+    eco.apply('u1', { cash: -50, foods: { ferns: 3 } }, 'shop-food:ferns:3', 100);
+    const rows = db.select().from(schema.txLog).all();
+    const foodRow = rows.find((r) => r.foodId === 'ferns')!;
+    eco.reverse(foodRow.id, 500);
+    expect(eco.getFoodInventory('u1').ferns ?? 0).toBe(0);
+    expect(bal().cash).toBe(450);                       // the cash row is untouched
+  });
+
+  it('refuses an unknown transaction', () => {
+    expect(() => eco.reverse(9999, 500)).toThrow(ReversalError);
+  });
+
+  it('refuses to reverse the same charge twice', () => {
+    eco.apply('u1', { cash: -100 }, 'build:x', 100);
+    const charge = db.select().from(schema.txLog).all().at(-1)!;
+    eco.reverse(charge.id, 500);
+    expect(() => eco.reverse(charge.id, 600)).toThrow(/already reversed/i);
+  });
+
+  it('refuses to reverse a reversal — reversals are terminal', () => {
+    eco.apply('u1', { cash: -100 }, 'build:x', 100);
+    const charge = db.select().from(schema.txLog).all().at(-1)!;
+    const out = eco.reverse(charge.id, 500);
+    expect(() => eco.reverse(out.reversalId, 600)).toThrow(/terminal/i);
+  });
+
+  it('refuses a credit reversal the player can no longer afford, leaving no partial row', () => {
+    eco.apply('u1', { cash: 1000 }, 'admin:give', 100);   // 500 -> 1500
+    const grant = db.select().from(schema.txLog).all().at(-1)!;
+    eco.apply('u1', { cash: -1400 }, 'build:x', 200);     // 1500 -> 100
+    const before = db.select().from(schema.txLog).all().length;
+
+    expect(() => eco.reverse(grant.id, 500)).toThrow(InsufficientFundsError);
+    expect(bal().cash).toBe(100);                          // unchanged
+    expect(db.select().from(schema.txLog).all()).toHaveLength(before);  // no partial row
   });
 });
