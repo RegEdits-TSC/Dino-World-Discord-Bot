@@ -615,6 +615,17 @@ it('adminReset clears attractions, milestone claims and the attendance high-wate
   expect(ctx.db.select().from(schema.users).all()[0].attendanceHighWater).toBe(0);
 });
 
+// Reads one row's own rendered line out of the embed description — never the whole
+// JSON blob. A whole-blob substring match (the shape this replaced) is satisfied by an
+// implementation that stamps "already reversed" on EVERY row, or by a reversal row's own
+// "reverses #N" text standing in for the charge's presence — exactly the confusion this
+// feature exists to prevent. Matching per-line is what actually pins which row a mark
+// belongs to.
+function lineFor(ctx: ReturnType<typeof makeCtx>, targetId: string, page: number, id: number): string {
+  const description = ledgerPayload(ctx, targetId, page).embeds[0].data.description!;
+  return description.split('\n').find((l) => l.startsWith(`\`#${id}\``))!;
+}
+
 describe('/admin ledger', () => {
   it('lists rows newest first with ids, and marks the three row states', () => {
     const ctx = makeCtx();
@@ -622,24 +633,58 @@ describe('/admin ledger', () => {
     ctx.economy.apply('u1', { cash: -300 }, 'build:paddock_plains', 100);
     const charge = ctx.db.select().from(schema.txLog).all().at(-1)!;
     ctx.economy.apply('u1', { cash: -50 }, 'decorate:fern', 200);
-    ctx.economy.reverse(charge.id, 300);
+    const untouched = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    const { reversalId } = ctx.economy.reverse(charge.id, 300);
 
-    const text = JSON.stringify(ledgerPayload(ctx, 'u1', 1));
-    expect(text).toContain(`#${charge.id}`);
-    expect(text).toMatch(/reverses/i);          // the reversal row identifies its target
-    expect(text).toMatch(/already reversed/i);  // and the charge is marked as made good
-    expect(text).toMatch(/lot still stands/i);  // side-effect note from Task 3
+    expect(lineFor(ctx, 'u1', 1, reversalId)).toMatch(/reverses/i);        // the reversal row identifies its target
+    expect(lineFor(ctx, 'u1', 1, charge.id)).toMatch(/already reversed/i); // and the charge is marked as made good
+    expect(lineFor(ctx, 'u1', 1, charge.id)).toMatch(/lot still stands/i); // side-effect note from Task 3
+    // Discriminating: an implementation that stamped "already reversed" on every row would
+    // pass every assertion above for free. The untouched charge's OWN line must not claim it.
+    expect(lineFor(ctx, 'u1', 1, untouched.id)).not.toMatch(/already reversed/i);
   });
 
-  it('marks rows that predate a reset', () => {
+  it('suppresses the side-effect note on a payout, but keeps it for an unrecognised charge', () => {
+    // collect is the single most frequent row in the real table and carries no
+    // SIDE_EFFECTS entry — before this fix every one of them read "unrecognised — check
+    // manually", burying the note on the one row type where it actually matters.
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'One');
-    // A charge older than the users row can only be pre-reset: adminReset drops the user
-    // row and getOrCreateUser stamps a fresh createdAt.
-    ctx.db.insert(schema.txLog).values({
-      userId: 'u1', cashDelta: -1, reason: 'build:x', createdAt: -1,
-    }).run();
-    expect(JSON.stringify(ledgerPayload(ctx, 'u1', 1))).toMatch(/pre-reset/i);
+    ctx.economy.apply('u1', { cash: 40 }, 'collect', 100);
+    const payout = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    // A genuine debit under a reason SIDE_EFFECTS has never heard of must still warn —
+    // fail closed for money actually taken, never for money paid out.
+    ctx.economy.apply('u1', { cash: -1 }, 'totally-unknown-reason', 200);
+    const mystery = ctx.db.select().from(schema.txLog).all().at(-1)!;
+
+    expect(lineFor(ctx, 'u1', 1, payout.id)).not.toMatch(/unrecognised/i);
+    expect(lineFor(ctx, 'u1', 1, mystery.id)).toMatch(/unrecognised — check manually/i);
+  });
+
+  it('marks rows that predate a reset, using a real reset — not a hand-inserted row', () => {
+    // adminReset UPDATEs the users row and never touches createdAt (that column means
+    // account CREATION), so the boundary cannot be users.createdAt — it has to come from
+    // the marker row adminReset itself writes into tx_log.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: -50 }, 'build:x', 100);   // before the reset
+    const before = ctx.db.select().from(schema.txLog).all().at(-1)!;
+
+    ctx.setNow(200);
+    adminReset(ctx, 'u1');   // writes the boundary marker at createdAt=200
+    const marker = ctx.db.select().from(schema.txLog).all().at(-1)!;
+
+    ctx.economy.apply('u1', { cash: 20 }, 'collect', 300);    // after the reset
+    const after = ctx.db.select().from(schema.txLog).all().at(-1)!;
+
+    expect(lineFor(ctx, 'u1', 1, before.id)).toMatch(/pre-reset/i);
+    expect(lineFor(ctx, 'u1', 1, after.id)).not.toMatch(/pre-reset/i);
+    // The marker itself must never read like a chargeable row an operator might try to
+    // reverse: no reason tag in the ordinary `reason` format, no "unrecognised" warning.
+    const markerLine = lineFor(ctx, 'u1', 1, marker.id);
+    expect(markerLine).toMatch(/account reset/i);
+    expect(markerLine).not.toMatch(/unrecognised/i);
+    expect(markerLine).not.toContain('`admin:reset`');
   });
 
   it('pages, and the page buttons carry the TARGET id', () => {

@@ -12,6 +12,11 @@ import { recordSpeciesSeen } from '../../core/species-seen.js';
 
 export class AdminError extends Error {}
 
+// The tx_log reason adminReset stamps on the zero-delta boundary marker it writes below.
+// Exported so the ledger (src/modules/admin/ledger.ts) derives the reset boundary from the
+// same literal rather than a second hand-typed copy that could silently drift from this one.
+export const RESET_MARKER_REASON = 'admin:reset';
+
 export interface GiveArgs {
   cash?: number; food?: { foodId: FoodId; qty: number }; shards?: number; eggRarity?: Rarity; dinoSpecies?: string;
 }
@@ -44,6 +49,16 @@ export function adminGive(ctx: Ctx, targetId: string, displayName: string, args:
 // Reset a player to a fresh start: delete their content, restore new-player defaults. One transaction.
 export function adminReset(ctx: Ctx, targetId: string): void {
   ctx.db.transaction(() => {
+    // A zero-delta boundary marker, not a charge — this is what lets the ledger
+    // (src/modules/admin/ledger.ts) tell a pre-reset charge from a post-reset one. It has
+    // to be a tx_log row and not, say, users.createdAt (which this function never touches —
+    // that column means account CREATION, and stamping it here would corrupt that meaning)
+    // because tx_log has no other reader that can see "a reset happened here." It has to be
+    // written in THIS transaction, not after it: a rolled-back reset must leave no marker,
+    // the same guarantee every other row this function deletes or rewrites already gets.
+    ctx.db.insert(schema.txLog).values({
+      userId: targetId, cashDelta: 0, shardsDelta: 0, reason: RESET_MARKER_REASON, createdAt: ctx.now(),
+    }).run();
     // Deleting the trade rows below IS the unlock, including for the counterparty: escrow is
     // derived from pending trades (src/core/locks.ts), never stored on the dino/egg. When
     // targetId is the recipient (toUser) the offer belongs to a different player, and their
