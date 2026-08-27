@@ -42,8 +42,11 @@ Adds migration 0019. Two new `/admin` subcommands.
 - **No side-effect reversal.** A reversal moves money and nothing else. See §2.
 - **No automatic compensation.** The bot never decides on its own that a charge
   was wrong; that judgement is the operator's.
-- **No clawback beyond a reversal.** `/admin give` stays positive-only. The only
-  way money leaves a player is by reversing a specific credit they received.
+- **No free-form clawback.** `/admin give` stays positive-only. But reversal is
+  **symmetric and deliberately so**: any ledger row can be undone, credits
+  included, so reversing an `admin:give`, a `collect` or a quest payout does take
+  cash back. That is the only way money leaves a player, it is always tied to a
+  specific row, and §3 case 4 covers what happens when they have already spent it.
 - **No batch reversal.** An operator tool that undoes ten charges in one
   keystroke is a worse tool.
 
@@ -51,9 +54,17 @@ Adds migration 0019. Two new `/admin` subcommands.
 
 ### Migration 0019
 
-One nullable column: `tx_log.reverses_id INTEGER`, referencing `tx_log.id`.
-Nothing is backfilled — every existing row keeps `NULL`, meaning "an original
-charge, not a reversal."
+Two nullable columns on `tx_log`:
+
+- `reverses_id INTEGER`, referencing `tx_log.id`. Nothing is backfilled — every
+  existing row keeps `NULL`, meaning "an original charge, not a reversal."
+- `note TEXT`, the operator's free-text reason for a reversal (§2). `NULL` on
+  every charge and on any reversal made without one.
+
+The note lives on the row rather than in `reason` because `reason` is structured
+(`build:<kind>`, `landmark:<tier>`) and is what the side-effect table keys on.
+Mixing free text into it would make that lookup ambiguous. A reversal row's
+`reason` is the fixed string `reverse`.
 
 ### Reversal is a compensating entry, never an edit
 
@@ -173,17 +184,38 @@ are indistinguishable to a tired operator; new spend paths will ship and someone
 will forget this table; the tool should say it does not know rather than imply a
 safety it has not verified.
 
-### `/admin reverse user:<@x> tx:<id>`
+### `/admin reverse user:<@x> tx:<id> [note:<text>]`
 
-Requires both options and refuses if the row does not belong to the named player.
-The `user` option is **deliberately redundant** — it is the confirmation step, in
-the spirit of `/admin reset` making the operator type the target's id, and it
-turns a mistyped transaction id into a refusal rather than a refund to the wrong
-person.
+Requires both `user` and `tx`, and refuses if the row does not belong to the
+named player. The `user` option is **deliberately redundant** — it is the
+confirmation step, in the spirit of `/admin reset` making the operator type the
+target's id, and it turns a mistyped transaction id into a refusal rather than a
+refund to the wrong person.
 
 The ephemeral reply states what moved, the resulting balance, and repeats the
 side-effect note, so the last thing the operator reads is "the lot is still
 standing."
+
+**`note` is optional and does two things.** It is stored on the reversal row, so
+the audit record says *why* the money moved and not merely that it did; and it
+is sent to the player through the existing notification path, so a balance change
+does not arrive unexplained. Omitting it reverses silently — the default, since
+remediation usually happens in a conversation already underway.
+
+Three constraints on the note:
+
+- **Delivery is not guaranteed.** It routes through `ctx.notify`, so it inherits
+  the player's existing routing and mute settings. A muted player gets nothing.
+  The operator's reply must say the note was *queued*, never that it was
+  delivered, or the tool will imply a confirmation it does not have.
+- **Notify after the transaction commits, never inside it.** A failed DM must not
+  roll back a completed reversal. The money moving is the operation; telling the
+  player about it is a side effect of lower importance, and coupling them would
+  make an unreachable player block a legitimate refund.
+- **Cap the length** at what the ledger view can render on one line, and store
+  what was sent. No link-defanging: unlike `/park motto` or `/dino rename`, this
+  text is authored by the bot owner rather than by a player, so it is not the
+  untrusted-input case `defangLinks` exists for.
 
 `/admin`'s subcommand dispatch already ends in
 `else { throw new AdminError('Unknown subcommand.') }`, so it does **not** carry
@@ -223,7 +255,12 @@ carries negated deltas and the correct `reverses_id`), each of cases 1–6, and
 the double-reversal guard trustworthy rather than merely usually-right.
 
 **Command layer:** the wrong-player refusal, the three row states rendering
-distinctly, paging, and the unrecognised-prefix note.
+distinctly, paging, the unrecognised-prefix note, and the optional note — that
+supplying one stores it on the reversal row and enqueues a notification, that
+omitting one reverses silently, and that **a notification failure leaves the
+reversal committed**. That last case is the one worth writing deliberately: it
+fails only if the notify call sits inside the transaction, which is exactly the
+mistake the ordering constraint exists to prevent.
 
 **Migration:** the same production-path treatment as 0018 — apply 0000–0018 to a
 **populated** database, run the real `migrateDb`, then assert the column exists,
@@ -233,7 +270,8 @@ vacuously, the way `tests/migration.test.ts`'s 0018 case does.
 
 ## Deliverables
 
-1. `src/core/db/schema.ts` — `tx_log.reverses_id`, plus the partial index.
+1. `src/core/db/schema.ts` — `tx_log.reverses_id` and `tx_log.note`, plus the
+   partial index.
 2. `drizzle/0019_operator_refunds.sql` — pure additive DDL. drizzle-kit generates
    a random name; rename it and update the journal tag to match, as 0018 did.
 3. `src/core/economy.ts` — `reverse(txId, now)`.
@@ -259,3 +297,12 @@ vacuously, the way `tests/migration.test.ts`'s 0018 case does.
   is not a correctness problem, but the per-user read is a full scan on the
   largest table in the schema. Deliberate: indexing `user_id` would tax every
   economy transaction to serve a rare operator command.
+- **A queued note is not a delivered one.** The player may be muted, may have
+  DMs closed, or may simply not read it. The operator's confirmation says queued
+  rather than sent for that reason, but an operator who treats the note as proof
+  the player was informed will occasionally be wrong.
+- **Reversal can take money back.** This is intended (see Non-goals) and is the
+  only path by which a balance decreases outside normal play, but it means a
+  mistyped `tx` id against the right player can reduce a balance rather than
+  raise one. The redundant `user` option does not catch that case — only reading
+  the ledger row first does.
