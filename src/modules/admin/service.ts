@@ -10,7 +10,7 @@ import { settleEscapes } from '../park/escapes.js';
 import { ENERGY_CAP, DUEL_START_RATING } from '../../data/battle/constants.js';
 import { recordSpeciesSeen } from '../../core/species-seen.js';
 import { InsufficientFundsError, ReversalError } from '../../core/economy.js';
-import { sideEffectFor } from '../../data/tx-reasons.js';
+import { knownSideEffectFor, UNRECOGNISED_SIDE_EFFECT } from '../../data/tx-reasons.js';
 import { logger } from '../../core/logger.js';
 
 export class AdminError extends Error {}
@@ -32,21 +32,38 @@ export function resetBoundaryOf(rows: Array<typeof schema.txLog.$inferSelect>): 
 }
 
 // A row with no negative movement is a payout — income, a grant, a reversal's own credit —
-// never a charge, and "what does this leave behind" has no meaning for one. Showing the
-// side-effect note there anyway is what buried the column: collect, quest, season, battle
-// and every other payout reason are all absent from SIDE_EFFECTS (src/data/tx-reasons.ts),
-// so every ordinary income row — collect above all, the single most frequent row in the
-// table — read "unrecognised — check manually", training the operator to skip the column on
-// the one row where it actually matters. A genuine debit with an unrecognised reason still
-// gets the note: fail CLOSED for money actually taken, never for money paid out.
+// never a charge.
+function isCharge(r: typeof schema.txLog.$inferSelect): boolean {
+  return r.cashDelta < 0 || r.shardsDelta < 0 || r.foodDelta < 0;
+}
+
+// The side-effect clause for one ledger row, or '' for none. What a payout suppresses is only
+// the UNRECOGNISED FALLBACK, never a genuine entry, and that distinction was learned the
+// expensive way: the first version of this rule gated the whole note on isCharge, which reads
+// correctly for every reason SIDE_EFFECTS has never heard of and silently killed the one payout
+// that IS in the table. `sell` posts positive cash (src/modules/shop/shards.ts), so the most
+// consequential note in the whole table — "the dino was destroyed; the cash returning does not
+// bring it back" — became unreachable from either surface while tests/tx-reasons.test.ts went on
+// asserting it directly and passing. A suite green on a path no surface can reach is exactly the
+// failure this feature exists to spare the operator.
+//
+// So the rule is narrower than "suppress the note for payouts":
+//   - a reason WITH a table entry always shows it, payout or charge, `sell` included;
+//   - a reason with NO entry shows the fallback only when the row actually took money.
+// The second half is what keeps the column readable: no payout reason other than `sell` is in
+// the table, so without it every ordinary income row — collect above all, the row an active park
+// generates over and over — would read "unrecognised — check manually" and train the operator to
+// skip the column on the one kind of row where it matters. Fail CLOSED for money actually taken,
+// never for money paid out.
 //
 // Shared, for the same reason resetBoundaryOf above is: both surfaces of this feature answer
 // for the SAME row, and the ledger view (src/modules/admin/ledger.ts) suppressing the note
 // while adminReverse's reply kept printing it is precisely how the two came to disagree — a
 // reversed credit replied "Not undone: unrecognised — check manually", re-teaching the
-// operator to ignore the column the ledger had just cleaned up.
-export function isCharge(r: typeof schema.txLog.$inferSelect): boolean {
-  return r.cashDelta < 0 || r.shardsDelta < 0 || r.foodDelta < 0;
+// operator to ignore the column the ledger had just cleaned up. Neither surface may re-derive
+// this; both call here.
+export function sideEffectNoteFor(r: typeof schema.txLog.$inferSelect): string {
+  return knownSideEffectFor(r.reason) ?? (isCharge(r) ? UNRECOGNISED_SIDE_EFFECT : '');
 }
 
 export interface GiveArgs {
@@ -345,8 +362,8 @@ export function adminReverse(
     void ctx.notify(targetId, null, `🧾 A transaction was reversed by an operator: ${trimmed}`)
       .catch((err: unknown) => logger.warn({ err, targetId, txId }, 'reversal note could not be delivered'));
   }
-  // Empty for a payout, exactly as the ledger view leaves the column blank for one: a credit
-  // has no "what does this leave behind" answer, and printing SIDE_EFFECTS' unrecognised
-  // fallback there is the noise isCharge exists to remove. The caller drops the clause.
-  return { sideEffect: isCharge(row) ? sideEffectFor(row.reason) : '', notified };
+  // Exactly what the ledger view prints for the same row — one helper, never a second
+  // derivation. Empty only when the table has no entry AND the row took no money; the caller
+  // drops the clause entirely in that case.
+  return { sideEffect: sideEffectNoteFor(row), notified };
 }

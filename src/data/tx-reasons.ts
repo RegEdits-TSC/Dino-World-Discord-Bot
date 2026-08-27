@@ -21,10 +21,21 @@ const SIDE_EFFECTS = Object.assign(Object.create(null) as Record<string, string>
   feed: 'the dino was already fed',
 } satisfies Record<string, string>);
 
-export function sideEffectFor(reason: string): string {
+// The fallback, exported because the payout suppression in src/modules/admin/service.ts has
+// to name it rather than re-typing the string a second time.
+export const UNRECOGNISED_SIDE_EFFECT = 'unrecognised — check manually';
+
+// What the table actually knows about this reason, or null when it has never heard of it.
+// The two are a REAL distinction and not a formatting detail: a caller that wants to drop the
+// fallback while keeping the genuine entries — sideEffectNoteFor (src/modules/admin/service.ts)
+// is the only one — must branch on this. String-comparing sideEffectFor's output against the
+// fallback would work today and break silently the moment that wording is edited.
+export function knownSideEffectFor(reason: string): string | null {
   if (reason === 'reverse') return '—';
   const prefix = reason.split(':')[0] ?? '';
-  return Object.hasOwn(SIDE_EFFECTS, prefix)
-    ? SIDE_EFFECTS[prefix]!
-    : 'unrecognised — check manually';
+  return Object.hasOwn(SIDE_EFFECTS, prefix) ? SIDE_EFFECTS[prefix]! : null;
+}
+
+export function sideEffectFor(reason: string): string {
+  return knownSideEffectFor(reason) ?? UNRECOGNISED_SIDE_EFFECT;
 }

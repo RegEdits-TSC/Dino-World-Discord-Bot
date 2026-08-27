@@ -951,8 +951,8 @@
   and costs drizzle type inference) — and "has this been reversed?" is DERIVED at read time from the
   existence of a row whose `reverses_id` points at the target, the same philosophy as escrow
   locks, quest progress and world events: nothing is stamped on the target and nothing
-  sweeps. `EconomyService.reverse` (`src/core/economy.ts`) takes the read, both guards and
-  both writes in ONE transaction, and better-sqlite3 is synchronous with no suspension point
+  sweeps. `EconomyService.reverse` (`src/core/economy.ts`) takes the read, its guards and
+  its writes in ONE transaction, and better-sqlite3 is synchronous with no suspension point
   inside it, so a double reversal is structurally impossible rather than checked by
   convention — the same no-suspension-point argument `park:buildyes`' `lotCount` anchor
   rests on, except here the transaction callback is synchronous by construction, so the
@@ -961,9 +961,14 @@
   about double-entry: reversing a reversal is perfectly coherent bookkeeping, but it leaves
   the ORIGINAL target still pointed at by a row while the player is, on net, charged — so
   every reader of that derivation reports "reversed" and is wrong. Relax this and the flag
-  starts lying, silently, with no test able to notice; an operator who wants to re-charge
-  uses `/admin give`, visibly. Core's guards are only these — not found, is itself a
-  reversal, already reversed — and know nothing else about the row.
+  starts lying, silently, with no test able to notice. Core's guards are only these — not
+  found, is itself a reversal, already reversed — and know nothing else about the row.
+  **There is no re-charge path at all**, which strengthens that rule rather than weakening
+  it: `/admin give`'s `cash` and `shards` options are both `.setMinValue(0)`, so Discord
+  rejects a negative before the handler is even reached, and nothing else in `src/` lets an
+  operator debit a player. Short of `/admin reset` a reversal cannot be walked back. The
+  spec offers `/admin give` as the escape hatch; it does not work, and a reversal should be
+  treated as final when it is made.
   **Reversal is SYMMETRIC**, deliberately and not by oversight: reversing a CREDIT takes the
   cash back, so a mis-grant can be clawed back without wiping the account. Short of
   `/admin reset` it is the only path that moves a balance downward without the player having
@@ -995,8 +1000,14 @@
   its guards have no notion of markers — and what that buys is a nonsense
   "reverses #<marker>" row minted into the very ledger this feature exists to make readable.
   **The note is QUEUED, never sent.** It rides `ctx.notify`, so it inherits the player's
-  routing and mute settings and the bot never gets a delivery confirmation — the reply says
-  "Note queued to the player" and must never be reworded into a claim of delivery. The send
+  ROUTING — `deliverNotification` (`src/core/notify.ts`) tries the guild's notify channel,
+  then falls back to a DM, and a DM to a player who has closed them fails silently — and the
+  bot never gets a delivery confirmation, so the reply says "Note queued to the player" and
+  must never be reworded into a claim of delivery. It does NOT inherit a mute: nothing on the
+  notify path reads `users.alertsEnabled`, which gates the park alert sweep alone, so a player
+  who ran `/park alerts off` still gets the reversal note. Do not describe this path as
+  mute-aware — an earlier revision of this bullet and of the comment at the call site both
+  did, and it is the kind of claim an operator would act on. The send
   fires AFTER the transaction commits and is not awaited, so an unreachable player cannot
   roll back a completed reversal; its rejection is logged rather than discarded, since the
   operator has already been told the note went out and a failure leaving no trace is a claim
@@ -1013,24 +1024,41 @@
   ship without a `SIDE_EFFECTS` entry, since nothing tests that table against the live set
   of economy reasons. `SIDE_EFFECTS` is null-prototype for the same reason `PADDOCKS` and
   `FACILITIES` are — a plain object reads back a truthy `constructor`/`__proto__` and claims
-  a side effect that is not there. But the note is SUPPRESSED ENTIRELY for payouts, through
-  `isCharge`: "what does this charge leave behind" has no meaning for a credit, and no
-  payout reason is in the table, so every ordinary income row — `collect` above all, the row
-  an active park generates over and over — read "unrecognised — check manually" and trained
-  the operator to skip the column on the one kind of row where it matters. Both surfaces
-  call the shared `isCharge`, and it is shared because they DID disagree once: the ledger
-  suppressed the note while `adminReverse`'s reply kept printing it, so a reversed credit
-  answered "Not undone: unrecognised — check manually" and re-taught the habit the ledger
-  had just cleaned up. Fail closed for money actually taken, never for money paid out.
+  a side effect that is not there. What a payout suppresses is **only that fallback, never a
+  genuine entry**, and the difference is not a nicety — the first version of this rule gated
+  the WHOLE note on "is this row a charge", which reads correctly for every reason the table
+  has never heard of and silently killed the one payout that IS in it. `sell` posts positive
+  cash (`src/modules/shop/shards.ts`), so "the dino was destroyed; the cash returning does not
+  bring it back" — the most consequential line in the table — became unreachable from both
+  surfaces while `tests/tx-reasons.test.ts` went on asserting it directly and passing. A suite
+  green on a path no surface can reach is the exact failure this feature exists to spare the
+  operator, arrived at from the other side. So: a reason WITH an entry always shows it, payout
+  or charge; a reason with NO entry shows the fallback only when the row actually took money.
+  The second half is what keeps the column readable — no payout reason other than `sell` is in
+  the table, so without it every ordinary income row (`collect` above all, the row an active
+  park generates over and over) would read "unrecognised — check manually" and train the
+  operator to skip the column on the one kind of row where it matters. That whole decision
+  lives in ONE place, `sideEffectNoteFor` (`src/modules/admin/service.ts`), which both surfaces
+  call and neither re-derives; it is shared because they DID disagree once, the ledger
+  suppressing the note while `adminReverse`'s reply kept printing it. Telling "has an entry"
+  from "fell back" needs `knownSideEffectFor`'s `string | null`, never a string comparison
+  against the fallback text — that would work today and break silently the next time the
+  wording is edited. Fail closed for money actually taken, never for money paid out.
   One general rule this feature nearly shipped broken, worth stating on its own: **a
   component's `prefix` must be the FIRST customId segment and nothing more.**
   `ModuleRegistry.findComponent` (`src/core/modules.ts`) resolves a handler by
   `customId.split(':')[0]`, so registering `prefix: 'admin:ledger'` matches nothing at all —
   `routeInteraction`'s `if (comp)` falls straight through, the interaction is never
   acknowledged, and Discord paints "This interaction failed" after three seconds. The ledger
-  pager was written that way and would have shipped dead; no test sees it, because the
+  pager was written that way and would have shipped dead. Nothing STRUCTURAL catches it: the
   registry's boot-time duplicate check only rejects a REPEATED prefix, never an unreachable
-  one. That same check also means only one entry per prefix may exist, so a handler takes the
+  one, and the router's real-payload sweep builds a synthetic registry from a hardcoded prefix
+  list rather than resolving any real manifest's. What catches it is a per-component ROUTED
+  test — one that dispatches the real minted customId through `routeInteraction` against a
+  registry built from the real `ALL_MODULES` and asserts a reply lands — and the ledger pager
+  has one (`tests/admin.test.ts`, "routes the real Next button through the registry"). Every
+  new component needs its own; the generic gates will not cover you.
+  Only one entry per prefix may exist, so a handler takes the
   whole prefix and branches on the id's own action segment internally — `park` dispatching
   `park:tab`, `park:vtab` and `park:tour` from one entry is the pattern — acknowledging an
   unrecognised action with `deferUpdate`, never a bare `return`, for exactly the reason the
@@ -1518,10 +1546,12 @@
   the only two that gained an index (`season_progress`, `user_guilds`) did so because their
   hot read filters the key's *non-leftmost* column, which the key cannot serve. `tx_log`
   used to have no filtered read anywhere in `src/` at all; operator refunds (above) gave it
-  its first, and the rule survives with exactly one carve-out. The reads are: by `id`, which
-  the primary key already serves; by `reverses_id`, the double-reversal guard inside
-  `EconomyService.reverse`; and by `user_id`, which only `/admin ledger` and
-  `adminReverse`'s reset-boundary lookup ever do. `tx_log_reverses` (migration 0019) is
+  its first, and the rule survives with one carve-out. The reads are: by `id`, which the
+  primary key already serves; by `reverses_id`, the double-reversal guard inside
+  `EconomyService.reverse`; and two per-player reads, `/admin ledger`'s scan by `user_id` and
+  `adminReverse`'s reset-boundary lookup, which filters `(user_id, reason)` — worth knowing
+  before revisiting this decision, since the composite is the shape an index would have to
+  serve. `tx_log_reverses` (migration 0019) is
   **PARTIAL** — `where reverses_id is not null`, the same shape as `timers_due` — so an
   ordinary charge, on what will become the largest table in the schema, never enters the
   index and pays essentially nothing for it, while the guard stays logarithmic. `user_id`

@@ -110,11 +110,15 @@ export const adminModule: ModuleManifest = {
           } else if (sub === 'reverse') {
             const out = adminReverse(ctx, target.id, i.options.getInteger('tx', true),
               i.options.getString('note') ?? undefined);
-            // "queued", never "sent": delivery depends on the player's routing and mute
-            // settings, so claiming otherwise would imply a confirmation the bot never gets.
+            // "queued", never "sent": deliverNotification routes to the guild's notify channel
+            // and falls back to a DM, and a DM to a player who has closed them fails silently —
+            // so claiming delivery would imply a confirmation the bot never gets. NOT a mute
+            // claim: users.alertsEnabled gates the park alert sweep, never this path, so
+            // /park alerts off does not stop a reversal note.
             await i.reply({
-              // No clause at all for a payout — sideEffect is empty there, because a credit has
-              // nothing left behind to name and the fallback text would only be noise.
+              // No clause when sideEffect is empty — a payout under a reason the table has never
+              // heard of, where the fallback text would only be noise. A reason WITH an entry
+              // always prints, `sell` included: see sideEffectNoteFor.
               content: `↩ Reversed for <@${target.id}>.`
                 + (out.sideEffect ? ` Not undone: ${out.sideEffect}.` : '')
                 + (out.notified ? ' Note queued to the player.' : ''),

@@ -2,8 +2,7 @@ import { EmbedBuilder, type ActionRowBuilder, type ButtonBuilder } from 'discord
 import { desc, eq } from 'drizzle-orm';
 import { schema } from '../../core/db/index.js';
 import { paginate, pageRow } from '../../core/paginate.js';
-import { sideEffectFor } from '../../data/tx-reasons.js';
-import { RESET_MARKER_REASON, resetBoundaryOf, isCharge } from './service.js';
+import { RESET_MARKER_REASON, resetBoundaryOf, sideEffectNoteFor } from './service.js';
 import type { Ctx } from '../../core/context.js';
 
 function amount(r: typeof schema.txLog.$inferSelect): string {
@@ -47,7 +46,10 @@ export function ledgerPayload(ctx: Ctx, targetId: string, page: number) {
     if (by !== undefined) marks.push(`already reversed by #${by}`);
     if (r.createdAt < resetAt) marks.push('pre-reset');
     const tail = marks.length ? ` · **${marks.join(' · ')}**` : '';
-    const note = isCharge(r) ? ` — ${sideEffectFor(r.reason)}` : '';
+    // Never re-derived here: sideEffectNoteFor is what adminReverse's reply prints for the
+    // same row, and the two disagreeing once is why it is shared at all.
+    const effect = sideEffectNoteFor(r);
+    const note = effect ? ` — ${effect}` : '';
     return `\`#${r.id}\` \`${r.reason}\` ${amount(r)}${note}${tail}`;
   });
 

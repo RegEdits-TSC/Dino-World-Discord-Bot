@@ -644,10 +644,11 @@ describe('/admin ledger', () => {
     expect(lineFor(ctx, 'u1', 1, untouched.id)).not.toMatch(/already reversed/i);
   });
 
-  it('suppresses the side-effect note on a payout, but keeps it for an unrecognised charge', () => {
-    // collect is the single most frequent row in the real table and carries no
-    // SIDE_EFFECTS entry — before this fix every one of them read "unrecognised — check
-    // manually", burying the note on the one row type where it actually matters.
+  it('suppresses the FALLBACK on a payout, but keeps it for an unrecognised charge', () => {
+    // collect is the row an active park generates over and over and carries no SIDE_EFFECTS
+    // entry — before this fix every one of them read "unrecognised — check manually",
+    // burying the note on the one row type where it actually matters. What is suppressed is
+    // only the fallback: a payout WITH an entry still prints it (the test below).
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'One');
     ctx.economy.apply('u1', { cash: 40 }, 'collect', 100);
@@ -659,6 +660,21 @@ describe('/admin ledger', () => {
 
     expect(lineFor(ctx, 'u1', 1, payout.id)).not.toMatch(/unrecognised/i);
     expect(lineFor(ctx, 'u1', 1, mystery.id)).toMatch(/unrecognised — check manually/i);
+  });
+
+  it('keeps a genuine entry on a payout — `sell` is the row that narrowed the rule', () => {
+    // `sell` pays cash OUT and is in SIDE_EFFECTS: the only reason that is both. Gating the
+    // whole note on "is this a charge" — the first version of this rule — made the most
+    // consequential note in the table unreachable from either surface, while
+    // tests/tx-reasons.test.ts went on asserting it directly and passing.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 120, shards: 2 }, 'sell:triceratops', 100);
+    const sold = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(lineFor(ctx, 'u1', 1, sold.id)).toMatch(/does not bring it back/i);
+    // Discriminating: it is the ENTRY that survives, not the suppression being reverted —
+    // the same row must not also carry the fallback.
+    expect(lineFor(ctx, 'u1', 1, sold.id)).not.toMatch(/unrecognised/i);
   });
 
   it('marks rows that predate a reset, using a real reset — not a hand-inserted row', () => {
@@ -849,11 +865,11 @@ describe('/admin reverse', () => {
   });
 
   it('leaves the side-effect note empty for a payout, but keeps it for an unrecognised charge', () => {
-    // The ledger view suppresses that note on a payout for a reason (no payout reason carries
-    // a SIDE_EFFECTS entry, so every one of them read "unrecognised — check manually" and
-    // trained the operator to skip the column). Both halves of this feature answer for the
-    // same row, so the reversal reply has to agree — and reversing a CREDIT, the symmetric
-    // case, is exactly where they disagreed.
+    // The ledger view drops the FALLBACK on a payout for a reason (no payout reason other
+    // than `sell` carries a SIDE_EFFECTS entry, so every ordinary income row read
+    // "unrecognised — check manually" and trained the operator to skip the column). Both
+    // halves of this feature answer for the same row, so the reversal reply has to agree —
+    // and reversing a CREDIT, the symmetric case, is exactly where they disagreed.
     const ctx = makeCtx();
     getOrCreateUser(ctx, 'u1', 'One');
     ctx.economy.apply('u1', { cash: 40 }, 'collect', 100);
@@ -865,6 +881,24 @@ describe('/admin reverse', () => {
     ctx.economy.apply('u1', { cash: -5 }, 'totally-unknown-reason', 200);
     const mystery = ctx.db.select().from(schema.txLog).all().at(-1)!;
     expect(adminReverse(ctx, 'u1', mystery.id).sideEffect).toMatch(/unrecognised/i);
+  });
+
+  it('names the entry when the reversed row is a payout that HAS one', () => {
+    // The other half of the narrowed rule, on the surface that reads it aloud: reversing a
+    // sale returns the cash and cannot bring the dino back, which is the single most
+    // consequential thing an operator can be told at this moment. Suppressing it because the
+    // row happened to be a credit is the defect this pins shut.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 120, shards: 2 }, 'sell:triceratops', 100);
+    const sold = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(adminReverse(ctx, 'u1', sold.id).sideEffect).toMatch(/does not bring it back/i);
+    // Discriminating: the reversal really did run symmetric — the sale's cash and shards
+    // both came back out — so this is the live path, not a formatting helper called in
+    // isolation.
+    expect(cashOf(ctx, 'u1')).toBe(500);
+    const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+    expect(u.shards).toBe(0);
   });
 
   it('drops the whole clause from the reply when the reversed row was a payout', async () => {
