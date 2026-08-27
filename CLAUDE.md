@@ -938,6 +938,103 @@
   literal. Any future button that spends money needs the same treatment: the rung, page
   or amount it was minted for belongs in the customId, because a Discord message is
   durable and its label is not re-derived.
+- Operator refunds (`/admin ledger`, `/admin reverse`) are the first readers `tx_log` has
+  ever had. It was written at every economy call site and read by nothing, so after a wrong
+  charge — the landmark stale button above is the worked example — the operator could hand
+  cash back with `/admin give` but could not see what had actually been charged, could not
+  tell whether they had already made the player whole, and left no record that the grant was
+  remediation rather than a gift. Reversing that landmark charge is now possible, and the
+  tier still stays raised: money is all a reversal moves.
+  **A reversal is a compensating ROW, never an edit.** `tx_log` is append-only — nothing in
+  `src/` UPDATEs or DELETEs a ledger row, and `reverses_id` is deliberately not a DB-level
+  foreign key for that reason (nothing can ever dangle, so the constraint would buy nothing
+  and costs drizzle type inference) — and "has this been reversed?" is DERIVED at read time from the
+  existence of a row whose `reverses_id` points at the target, the same philosophy as escrow
+  locks, quest progress and world events: nothing is stamped on the target and nothing
+  sweeps. `EconomyService.reverse` (`src/core/economy.ts`) takes the read, both guards and
+  both writes in ONE transaction, and better-sqlite3 is synchronous with no suspension point
+  inside it, so a double reversal is structurally impossible rather than checked by
+  convention — the same no-suspension-point argument `park:buildyes`' `lotCount` anchor
+  rests on, except here the transaction callback is synchronous by construction, so the
+  window cannot be reopened by dropping an `await` into it the way that one can.
+  **Reversals are terminal**, and the reason is the derived flag rather than squeamishness
+  about double-entry: reversing a reversal is perfectly coherent bookkeeping, but it leaves
+  the ORIGINAL target still pointed at by a row while the player is, on net, charged — so
+  every reader of that derivation reports "reversed" and is wrong. Relax this and the flag
+  starts lying, silently, with no test able to notice; an operator who wants to re-charge
+  uses `/admin give`, visibly. Core's guards are only these — not found, is itself a
+  reversal, already reversed — and know nothing else about the row.
+  **Reversal is SYMMETRIC**, deliberately and not by oversight: reversing a CREDIT takes the
+  cash back, so a mis-grant can be clawed back without wiping the account. Short of
+  `/admin reset` it is the only path that moves a balance downward without the player having
+  spent anything, and it can therefore overdraw. `post`'s balance guards throw
+  `InsufficientFundsError` from INSIDE the transaction, which rolls the whole reversal back,
+  and `shortfallOf` (`src/modules/admin/service.ts`) then reads the untouched balances to
+  name the gap — "insufficient cash" alone leaves the operator unable to tell 5 short from
+  5,000,000 short.
+  **The reset boundary is a MARKER ROW, and the spec is wrong about it.**
+  `docs/superpowers/specs/2026-08-27-operator-refunds-design.md` §3 case 6 states that
+  `adminReset` "deletes the `users` row, which `getOrCreateUser` recreates with
+  `createdAt: ctx.now()`", making a pre-reset charge detectable as
+  `tx_log.created_at_ms < users.created_at_ms`. **That is false.** `adminReset` only ever
+  UPDATEs the users row and never re-stamps `createdAt` — that column means account
+  CREATION, and stamping it on a reset would corrupt what it means — and nothing in `src/`
+  deletes a users row at all. The comparison was unreachable and shipped as dead code until
+  a reviewer caught it. `adminReset` now writes a zero-delta row with reason
+  `RESET_MARKER_REASON` (`admin:reset`) INSIDE its existing transaction, so a rolled-back
+  reset leaves no marker, and both surfaces derive the boundary from the newest such row
+  through the one shared `resetBoundaryOf` — never two hand-rolled copies, because copies
+  that drifted would show the operator a row as reversible and then refuse it, or worse,
+  quietly pay one the ledger had flagged. Specs in this repo are dated records of a decision
+  as it was made, so that one is deliberately NOT being corrected in place: this is the only
+  place the correction lives, and a reader who finds the spec's mechanism should implement
+  from here instead.
+  `adminReverse` refuses the marker row itself, and the refusal lives in the ADMIN layer
+  rather than in `EconomyService.reverse` because a reset marker is an admin concept and
+  core has no business knowing the reason string this module stamps. Core would accept one —
+  its guards have no notion of markers — and what that buys is a nonsense
+  "reverses #<marker>" row minted into the very ledger this feature exists to make readable.
+  **The note is QUEUED, never sent.** It rides `ctx.notify`, so it inherits the player's
+  routing and mute settings and the bot never gets a delivery confirmation — the reply says
+  "Note queued to the player" and must never be reworded into a claim of delivery. The send
+  fires AFTER the transaction commits and is not awaited, so an unreachable player cannot
+  roll back a completed reversal; its rejection is logged rather than discarded, since the
+  operator has already been told the note went out and a failure leaving no trace is a claim
+  nobody can go back and check. That ordering is pinned by a test that passes a note down a
+  refusal path and asserts nothing was queued — the overdraw case in `tests/admin.test.ts`,
+  the only one whose refusal comes from BELOW the guards and can therefore see a notify
+  hoisted above the `reverse` call rather than above the guards. `NOTE_MAX` caps the note
+  because it renders into the ledger's embed DESCRIPTION, which Discord caps at 4096
+  characters; the command option carries the same cap, so the operator is stopped while
+  typing rather than silently truncated afterwards.
+  **`sideEffectFor` (`src/data/tx-reasons.ts`) fails CLOSED** on a reason prefix it does not
+  know — "unrecognised — check manually", never a blank — because a blank note and "this
+  charge left nothing behind" are indistinguishable to an operator, and new spend paths will
+  ship without a `SIDE_EFFECTS` entry, since nothing tests that table against the live set
+  of economy reasons. `SIDE_EFFECTS` is null-prototype for the same reason `PADDOCKS` and
+  `FACILITIES` are — a plain object reads back a truthy `constructor`/`__proto__` and claims
+  a side effect that is not there. But the note is SUPPRESSED ENTIRELY for payouts, through
+  `isCharge`: "what does this charge leave behind" has no meaning for a credit, and no
+  payout reason is in the table, so every ordinary income row — `collect` above all, the row
+  an active park generates over and over — read "unrecognised — check manually" and trained
+  the operator to skip the column on the one kind of row where it matters. Both surfaces
+  call the shared `isCharge`, and it is shared because they DID disagree once: the ledger
+  suppressed the note while `adminReverse`'s reply kept printing it, so a reversed credit
+  answered "Not undone: unrecognised — check manually" and re-taught the habit the ledger
+  had just cleaned up. Fail closed for money actually taken, never for money paid out.
+  One general rule this feature nearly shipped broken, worth stating on its own: **a
+  component's `prefix` must be the FIRST customId segment and nothing more.**
+  `ModuleRegistry.findComponent` (`src/core/modules.ts`) resolves a handler by
+  `customId.split(':')[0]`, so registering `prefix: 'admin:ledger'` matches nothing at all —
+  `routeInteraction`'s `if (comp)` falls straight through, the interaction is never
+  acknowledged, and Discord paints "This interaction failed" after three seconds. The ledger
+  pager was written that way and would have shipped dead; no test sees it, because the
+  registry's boot-time duplicate check only rejects a REPEATED prefix, never an unreachable
+  one. That same check also means only one entry per prefix may exist, so a handler takes the
+  whole prefix and branches on the id's own action segment internally — `park` dispatching
+  `park:tab`, `park:vtab` and `park:tour` from one entry is the pattern — acknowledging an
+  unrecognised action with `deferUpdate`, never a bare `return`, for exactly the reason the
+  park component handler's own `default` arm already documents.
 - Putting state in the customId (`park:landmark:buy:<uid>:<tier>`,
   `dex:page:<uid>:<page>:<slugs>`) only helps if the handler also proves the bot MINTED
   that id. A component interaction can be emitted straight at the gateway with any
@@ -1420,8 +1517,16 @@
   primary key in this schema already leads with `user_id`, so those tables need nothing —
   the only two that gained an index (`season_progress`, `user_guilds`) did so because their
   hot read filters the key's *non-leftmost* column, which the key cannot serve. `tx_log`
-  has no filtered read anywhere in `src/` at all and must stay unindexed: it would pay
-  write cost on every economy transaction for a read path that does not exist. See the
+  used to have no filtered read anywhere in `src/` at all; operator refunds (above) gave it
+  its first, and the rule survives with exactly one carve-out. The reads are: by `id`, which
+  the primary key already serves; by `reverses_id`, the double-reversal guard inside
+  `EconomyService.reverse`; and by `user_id`, which only `/admin ledger` and
+  `adminReverse`'s reset-boundary lookup ever do. `tx_log_reverses` (migration 0019) is
+  **PARTIAL** — `where reverses_id is not null`, the same shape as `timers_due` — so an
+  ordinary charge, on what will become the largest table in the schema, never enters the
+  index and pays essentially nothing for it, while the guard stays logarithmic. `user_id`
+  stays deliberately UNINDEXED and should: it would charge write cost on every economy
+  transaction in the game to serve a command an operator runs a few times a month. See the
   per-index comments in `src/core/db/schema.ts` for which read each one serves.
 - Select menus route through their own `selects?: SelectDef[]` on `ModuleManifest`
   (`src/core/modules.ts`) with their own `findSelect` and their own boot-time duplicate
