@@ -74,18 +74,14 @@ one, so outliers share art loosely — `swift-carnivore` covers both `velocirapt
 `quetzalcoatlus` (a beaked pterosaur), rendered as a scaled toothy theropod. Accepted
 deliberately: a per-species `silhouette` field was considered and declined, since it would
 have traded 8 images for roughly 12 plus a migration across all 40 species files, to fix
-fidelity for a handful of outliers. Both halves matter — without the example the fidelity
-cost reads as theoretical, and without the recorded decision a future reader proposes the
-field again.
+fidelity for a handful of outliers.
 
 ## validate-client-supplied-customid-segments
 
 Everything after a `/dex list` pager customId's prefix is CLIENT-supplied, so
 `parseDexFilters` (`src/modules/dex/service.ts`) validates each slug against the real union
 and degrades an unrecognised one (including the `-` placeholder) to "no filter" — a raw
-slug reaching `dexRows` would match nothing and render an empty compendium. Degrading, not
-rejecting, is the deliberate half: an empty compendium is a screen with no error on it, so
-a rejection the player never sees is worse than a filter quietly dropped.
+slug reaching `dexRows` would match nothing and render an empty compendium.
 
 The command path reads its own options through that same parser rather than casting, so
 there is exactly one validated way into `DexFilters`. Why the pager needs a customId of its

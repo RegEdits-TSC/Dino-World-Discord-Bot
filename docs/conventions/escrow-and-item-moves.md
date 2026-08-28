@@ -107,8 +107,7 @@ release a dino a breeding is still holding.
 Enforcement lands only at paths that CONSUME an item, never at paths that merely use one:
 `sellDino`, `incubateEgg` and `hatchEgg` reject escrowed rows, while battling an escrowed
 dino stays legal (`src/modules/battles/service.ts`) because it neither consumes nor
-transfers. The battling exemption is the half a future implementer would "fix" by adding a
-guard; it is deliberate.
+transfers.
 
 ## fortradeid-never-a-boolean
 
@@ -124,8 +123,7 @@ on being impossible.
 `expireStale` is no longer load-bearing for escrow at all. Migration 0005 dropped the lock
 columns, so nothing has to be swept before a lock is read, and the calls that survive live
 only in `src/modules/trading/index.ts` and exist only to flip `status` for `/trade list`
-display and history. A call to it anywhere else is the regression to look for — it would
-read as a pre-read escrow sweep, which is exactly the thing this design removed.
+display and history. A call to it anywhere else is the regression to look for.
 
 ## autocomplete-expirestale-trade-only
 
@@ -138,10 +136,7 @@ and needs no sweep at all, because `locksFor` is a pure read.
 
 `createTrade`'s `verifySide` refuses an incubating egg, so an escrowed *and* incubating row
 can only be legacy data — `hatchEgg`'s guard is unreachable through the public API and its
-test builds the state by inserting the pending trade row directly. Neither of those is a
-defect: the guard is not dead code, and the test is not a fixture doing something
-illegitimate. Deleting either on the assumption that the state cannot happen leaves a real
-row on a real database with nothing to catch it.
+test builds the state by inserting the pending trade row directly.
 
 ## trade-offer-autocomplete-uses-ownerid
 
@@ -160,9 +155,9 @@ above.
 ## viatrade-survives-the-hatch
 
 Provenance survives the hatch: `hatchEgg` inserts the dino with `viaTrade: egg.viaTrade`.
-`eggs.viaTrade` had no reader before this — which is exactly why the column looked safe to
-ignore — and the three readers of `dinos.viaTrade` are all in the shop module, so dropping
-it at the hatch boundary silently reopened the alt-to-main shard funnel.
+`eggs.viaTrade` had no reader before this, and the three readers of `dinos.viaTrade` are
+all in the shop module, so dropping it at the hatch boundary silently reopened the
+alt-to-main shard funnel.
 
 ## viatrade-frozen-on-breeding-row
 
@@ -177,9 +172,7 @@ and claim) and a second source would only give the two a way to disagree.
 ## mint-carries-provenance
 
 Any future path that MINTS an item from an existing one has to carry provenance too. The
-hatch and the breeding claim above are the two worked instances; the rule applies to a file
-that does not exist yet, which is why it is stated on its own rather than left implicit in
-either of them.
+hatch and the breeding claim above are the two worked instances.
 
 ## record-species-seen-write-sites
 
@@ -204,9 +197,8 @@ traits before drawing, so the rule holds without any caller checking it. That is
 makes cancelling pairs like `prolific` + `runt` structurally impossible — they share the
 `income` domain, so a dino can never hold both.
 
-Do not add a redundant caller-side check, and do not "fix" the exclusion to allow
-interesting combinations. The enrichment gate derives its worst-case drain multiplier from
-this same fact, taking the product of the two largest per-domain `drain` maxima
+The enrichment gate derives its worst-case drain multiplier from this same fact, taking
+the product of the two largest per-domain `drain` maxima
 (`§dead-window-gate-derives-from-traits-table` in
 `docs/conventions/clock-comfort-and-feeding.md`), so relaxing the rule moves a balance
 guard nobody would think to look at.

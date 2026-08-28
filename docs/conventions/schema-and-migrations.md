@@ -28,10 +28,6 @@ whole duration, which is why `migrateDb`'s outer bracket (and not a per-migratio
 what lets a table-recreate migration (SQLite column drop) run `DROP TABLE` against child
 rows on a **populated** DB (`createDb` sets FK on) without throwing.
 
-Every clause of that is a step in the argument — connection level, before the transaction
-starts, why the embedded pragma is a no-op, why it only bites on a populated DB. Remove
-any one of them and the bracket reads as cleanup somebody can tidy away.
-
 ## populated-migration-test-proves-less-than-it-sounds
 
 What the "seed a parent **and** a child row, then run the real `migrateDb`" recipe (the
@@ -43,16 +39,11 @@ raw-SQL replay or an empty-DB substitute standing in for the real migrator, eith
 gives a false green on exactly that regression, and (3) a recreate that mishandles data —
 drops or resets a column — even though FK enforcement passes clean.
 
-The test's name oversells it, which is the reason this paragraph exists. Trim it back to
-"this proves migrations work on populated DBs" and the wrong belief is back immediately.
-
 ## unnecessary-recreate-caught-only-by-reading-sql
 
 The actual gate against an UNNECESSARY recreate, one drizzle-kit could have expressed as a
 plain `ALTER TABLE` instead, is reading the emitted SQL by eye; the populated-row test
-cannot do that job for you. This is the one instruction here that tells an author what to
-DO when they generate a migration, and it fires before any check on the generated file
-could help.
+cannot do that job for you.
 
 ## indexes-not-a-blanket-user-id-sweep
 
@@ -67,8 +58,7 @@ carve-out. The reads are: by `id`, which the primary key already serves; by `rev
 the double-reversal guard inside `EconomyService.reverse`; and two per-player reads,
 `/admin ledger`'s scan by `user_id` and `adminReverse`'s reset-boundary lookup, which
 filters `(user_id, reason)` — worth knowing before revisiting this decision, since the
-composite is the shape an index would have to serve. That inventory is kept here and
-nowhere else, so it cannot drift against the schema it describes.
+composite is the shape an index would have to serve.
 
 ## tx-log-partial-index-and-unindexed-user
 
@@ -79,8 +69,7 @@ double-reversal guard stays logarithmic.
 
 `user_id` stays deliberately UNINDEXED and should: it would charge write cost on every
 economy transaction in the game to serve a command an operator runs a few times a month.
-Those are the two rulings; see the per-index comments in `src/core/db/schema.ts` for which
-read each index serves, rather than restating the justification here.
+See the per-index comments in `src/core/db/schema.ts` for which read each one serves.
 
 ## locks-read-indexes
 
@@ -88,8 +77,7 @@ read each index serves, rather than restating the justification here.
 Both were unindexed until migration 0018, which added `trades_status_from` and
 `breedings_user_claimed` to cover exactly those two reads. The trades index leads with
 `status` rather than the user because `expireStale` filters on `status` alone and has no
-user scope to narrow it — the same "which column must an index LEAD with" question the
-non-leftmost cases above turn on.
+user scope to narrow it.
 
 These two reads run on every call that needs a lock, because escrow is derived rather than
 stored: `§escrow-derived-never-stored` in `docs/conventions/escrow-and-item-moves.md`
@@ -102,8 +90,7 @@ than caching away.
 nothing in `src/` UPDATEs or DELETEs a ledger row, and a reversal is a compensating row
 rather than an edit (`§reversal-is-a-compensating-row` in
 `docs/conventions/economy-core.md`) — so nothing can ever dangle: the constraint would buy
-nothing and costs drizzle type inference. Without that reason a future schema pass "fixes"
-it.
+nothing and costs drizzle type inference.
 
 ## season-two-migrations
 
@@ -128,16 +115,14 @@ Worth knowing because **once it has run there is no trace that the table was see
 than accumulated**: `species_seen` looks identical either way, and a species a player sold
 or traded away before the backfill reads as never-seen — `tx_log` has no species column, so
 that history is genuinely gone, which is the accepted cost of backfilling from live
-inventory instead of shipping every dex empty. That is a disclosed gap, not a bug to chase.
-The three real write sites are `§record-species-seen-write-sites` in
-`docs/conventions/escrow-and-item-moves.md`.
+inventory instead of shipping every dex empty. The three real write sites are
+`§record-species-seen-write-sites` in `docs/conventions/escrow-and-item-moves.md`.
 
 ## reset-covers-every-table-the-feature-reads
 
-A migration that adds a table incurs a debt somewhere else: `adminReset` must delete from
-every table the feature reads, and the damage is done while the NEW feature is written,
-long before anyone opens `src/modules/admin/service.ts`. The general rule and its later
-instances are `§admin-covers-daily-tables` in `docs/conventions/admin-service.md`.
+A migration that adds a table incurs a debt in `adminReset`, which must delete from every
+table the feature reads. The general rule and its later instances are
+`§admin-covers-daily-tables` in `docs/conventions/admin-service.md`.
 
 The escrow instance is the one that taught it. `adminReset` must delete from every table
 `locksFor` reads — `trades` and now `breedings` — not only the tables holding the player's

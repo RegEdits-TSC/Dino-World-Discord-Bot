@@ -127,11 +127,9 @@ neither surface re-derives it:
 - `resetBoundaryOf` derives the reset boundary for both surfaces. Two hand-rolled copies
   that drifted would show the operator a row as reversible and then refuse it, or worse,
   quietly pay one the ledger had flagged.
-- The same rule predates this feature on the pricing side: `eggPriceAt`, `foodPriceAt`,
-  `roundCharge`, `sellCashAt`, `roundPayout`, `feedCostFor` and `energyCostFor` are each
-  the single quote-and-charge path for a value a world event can scale, so a display
-  quote, an autocomplete label and the actual charge or payout cannot drift apart. Route
-  any future price or cost surface through the matching helper rather than re-deriving it.
+- The same rule predates this feature on the pricing side, where every value a world event
+  can scale has exactly one quote-and-charge helper —
+  `§one-helper-per-scalable-price` in `docs/conventions/escrow-and-item-moves.md`.
 
 Two corollaries carry this further than "share a function":
 
