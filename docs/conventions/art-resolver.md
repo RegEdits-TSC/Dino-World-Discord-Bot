@@ -101,9 +101,10 @@ that a total no-op. On the CANVAS side it is not free — `drawImage(null)` thro
 every draw site has to carry its own guard and its own fallback. That half is stated at
 `§drawimage-null-needs-guard` in `docs/conventions/park-png-renderer.md`.
 
-There is exactly one place in this codebase where a missing asset THROWS rather than
-degrading, and it is a discord.js builder rather than one of ours: an empty rarity tag
-passed to `ButtonBuilder.setEmoji`. That exception is stated at
+`drawImage` throws too, but every draw site guards it. The one API this repo lets a
+missing asset reach UNGUARDED is `ButtonBuilder.setEmoji` — a discord.js builder rather
+than one of ours, handed the empty string a rarity gem returns when no map is loaded, and
+it throws rather than degrading. That exception is stated at
 `§never-rarity-emoji-to-seticon` in `docs/conventions/embed-payload-builders.md`.
 
 ## embed-art-kinds

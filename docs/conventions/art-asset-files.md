@@ -152,9 +152,10 @@ season ground rasters (`park/ground-wet|dry|cold.webp`) come from `ground`,
 cover-scaled to 1200×800 rather than banner's 1536×1024 — the park renderer's
 canvas never needs more than that.
 
-The eight `dinos/<archetype>-<diet>.webp` files are 1024×1024 transparent cutouts from
-`fit-art.mjs cutout`, so they carry the script's 31px margin against the boss portraits'
-24px — deliberate, and recorded in `docs/assets/prompts.md`.
+The eight `dinos/<archetype>-<diet>.webp` files are 1024×1024 transparent cutouts
+produced by `fit-art.mjs cutout`, so they fall on the script side of that margin
+divergence rather than the one-off side — deliberate, and recorded in
+`docs/assets/prompts.md`.
 
 ## cracks-keep-disconnected-alpha
 
