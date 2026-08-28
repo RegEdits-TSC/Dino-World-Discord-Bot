@@ -754,6 +754,9 @@ describe('0018 read indexes via the real drizzle migrator (production path)', ()
     try {
       expect(() => migrateDb(db)).not.toThrow();
 
+      // migrateDb always runs against the real drizzle/ folder at HEAD, not a pinned snapshot,
+      // so this list necessarily grows as later migrations add their own indexes — tx_log_reverses
+      // is 0019's, not 0018's. Widen it here rather than scoping this test to a frozen folder.
       const names = (sqlite.prepare(
         `SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
       ).all() as Array<{ name: string }>).map((r) => r.name);
@@ -768,6 +771,7 @@ describe('0018 read indexes via the real drizzle migrator (production path)', ()
         'season_progress_season_user',
         'timers_due',
         'trades_status_from',
+        'tx_log_reverses',
         'user_guilds_guild',
       ]);
 
@@ -811,6 +815,64 @@ describe('0018 read indexes via the real drizzle migrator (production path)', ()
       // Purely additive: no row lost, and the FK bracket left enforcement back ON.
       expect((sqlite.prepare(`SELECT COUNT(*) c FROM dinos`).get() as { c: number }).c).toBe(1);
       expect((sqlite.prepare(`SELECT COUNT(*) c FROM timers`).get() as { c: number }).c).toBe(2);
+      expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('0019 operator refunds via the real drizzle migrator (production path)', () => {
+  it('adds reverses_id and note to a populated DB and indexes only reversal rows', () => {
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dw-mig19-'));
+    mkdirSync(resolve(scratch, 'meta'), { recursive: true });
+    // The regex and the journal filter must widen together.
+    for (const f of readdirSync(DRIZZLE).filter((f) => /^00(0[0-9]|1[0-8]).*\.sql$/.test(f))) {
+      cpSync(resolve(DRIZZLE, f), resolve(scratch, f));
+    }
+    const journal = JSON.parse(readFileSync(resolve(DRIZZLE, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= 18);
+    writeFileSync(resolve(scratch, 'meta/_journal.json'), JSON.stringify(journal));
+
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: scratch });   // apply 0000-0018 only
+
+    sqlite.prepare(`INSERT INTO users (discord_id, last_collect_at_ms, created_at_ms) VALUES ('u1', 0, 0)`).run();
+    sqlite.prepare(`INSERT INTO tx_log (user_id, cash_delta, reason, created_at_ms)
+                    VALUES ('u1', -500, 'build:paddock_plains', 10)`).run();
+
+    // Before/after, so this case cannot pass vacuously.
+    const before = (sqlite.prepare(`SELECT name FROM pragma_table_info('tx_log')`)
+      .all() as Array<{ name: string }>).map((r) => r.name);
+    expect(before).not.toContain('reverses_id');
+    expect(before).not.toContain('note');
+
+    try {
+      expect(() => migrateDb(db)).not.toThrow();
+
+      const cols = (sqlite.prepare(`SELECT name FROM pragma_table_info('tx_log')`)
+        .all() as Array<{ name: string }>).map((r) => r.name);
+      expect(cols).toContain('reverses_id');
+      expect(cols).toContain('note');
+
+      // The pre-existing row survives and reads NULL for both new columns.
+      expect(sqlite.prepare(`SELECT reverses_id, note FROM tx_log WHERE id = 1`).get())
+        .toEqual({ reverses_id: null, note: null });
+
+      // The index is partial, and that is the point: an ordinary charge must not enter it.
+      const idxSql = (sqlite.prepare(
+        `SELECT sql FROM sqlite_master WHERE name = 'tx_log_reverses'`,
+      ).get() as { sql: string }).sql;
+      expect(idxSql).toMatch(/where\s+"?tx_log"?\.?"?reverses_id"?\s+is\s+not\s+null/i);
+
+      // And the planner uses it for the double-reversal guard's exact query.
+      const plan = (sqlite.prepare(
+        `EXPLAIN QUERY PLAN SELECT * FROM tx_log WHERE reverses_id = ?`,
+      ).all(1) as Array<{ detail: string }>).map((r) => r.detail).join(' | ');
+      expect(plan).toContain('tx_log_reverses');
+
       expect((sqlite.prepare(`PRAGMA foreign_keys`).get() as { foreign_keys: number }).foreign_keys).toBe(1);
     } finally {
       rmSync(scratch, { recursive: true, force: true });

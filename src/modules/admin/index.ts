@@ -9,9 +9,10 @@ import { settleEscapes } from '../park/escapes.js';
 import { allSpecies } from '../../data/species/index.js';
 import { matches, respondRanked, emptyRow } from '../../core/autocomplete.js';
 import { requireOwner } from './guard.js';
-import { adminGive, adminReset, adminFastForward, AdminError } from './service.js';
+import { adminGive, adminReset, adminFastForward, adminReverse, AdminError, NOTE_MAX } from './service.js';
 import { FOODS, type FoodId } from '../../data/foods.js';
 import { emojiTag } from '../../core/emojis.js';
+import { ledgerPayload, parseShowAll } from './ledger.js';
 
 const RARITIES: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
 
@@ -55,6 +56,18 @@ export const adminModule: ModuleManifest = {
           .addStringOption((o) => o.setName('dino-species').setDescription('Species — type to search').setAutocomplete(true)))
         .addSubcommand((s) => s.setName('inspect').setDescription('Dump a player’s raw state')
           .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true)))
+        .addSubcommand((s) => s.setName('ledger').setDescription('Read a player’s transaction ledger')
+          .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true))
+          .addIntegerOption((o) => o.setName('page').setDescription('Page').setMinValue(1))
+          // A boolean, so it needs no AUTOCOMPLETE_OPTIONS entry in tests/contract.test.ts.
+          // The description names what appears, not what the flag is called: hidden rows are
+          // every feed's zero-delta base row and every cash-neutral trade's.
+          .addBooleanOption((o) => o.setName('show-all')
+            .setDescription('Also list rows that moved nothing — every feed writes one')))
+        .addSubcommand((s) => s.setName('reverse').setDescription('Reverse one ledger transaction')
+          .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true))
+          .addIntegerOption((o) => o.setName('tx').setDescription('Transaction id').setRequired(true).setMinValue(1))
+          .addStringOption((o) => o.setName('note').setDescription('Reason — also queued to the player').setMaxLength(NOTE_MAX)))
         .addSubcommand((s) => s.setName('reset').setDescription('Reset a player to a fresh start')
           .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true))
           .addStringOption((o) => o.setName('confirm').setDescription('Type the player’s user id to confirm').setRequired(true)))
@@ -96,6 +109,32 @@ export const adminModule: ModuleManifest = {
             if (!exists) { await i.reply({ content: 'That player has no park to reset.', flags: MessageFlags.Ephemeral }); return; }
             adminReset(ctx, target.id);
             await i.reply({ content: `♻️ Reset <@${target.id}> to a fresh start.`, flags: MessageFlags.Ephemeral });
+          } else if (sub === 'ledger') {
+            const page = i.options.getInteger('page') ?? 1;
+            const showAll = i.options.getBoolean('show-all') ?? false;
+            await i.reply({ ...ledgerPayload(ctx, target.id, page, showAll), flags: MessageFlags.Ephemeral });
+          } else if (sub === 'reverse') {
+            const out = adminReverse(ctx, target.id, i.options.getInteger('tx', true),
+              i.options.getString('note') ?? undefined);
+            // "queued", never "sent": adminReverse passes a null origin guild, so
+            // deliverNotification skips the channel branch entirely and this note is a DM —
+            // and a DM to a player who has closed them fails silently, so claiming delivery
+            // would imply a confirmation the bot never gets. NOT a mute claim:
+            // users.alertsEnabled gates the park alert sweep, never this path, so
+            // /park alerts off does not stop a reversal note.
+            await i.reply({
+              // The row, the amount and the resulting balance, all three. The redundant `user`
+              // option cannot catch a transposed digit that still lands on a row belonging to
+              // the right player — reading them back is what makes that visible before it
+              // becomes a support ticket. No side-effect clause when it is empty: a payout
+              // under a reason the table has never heard of, where the fallback text would
+              // only be noise. A reason WITH an entry always prints: see sideEffectNoteFor.
+              content: `↩ Reversed #${out.txId} for <@${target.id}>: ${out.moved}.`
+                + ` They now hold ${out.balance}.`
+                + (out.sideEffect ? ` Not undone: ${out.sideEffect}.` : '')
+                + (out.notified ? ' Note queued to the player.' : ''),
+              flags: MessageFlags.Ephemeral,
+            });
           } else if (sub === 'fast-forward') {
             getOrCreateUser(ctx, target.id, target.displayName);
             const escaped = adminFastForward(ctx, target.id, i.options.getInteger('hours', true));
@@ -120,5 +159,30 @@ export const adminModule: ModuleManifest = {
         })));
       } },
   ],
-  components: [],
+  components: [
+    {
+      // Component prefixes are matched against customId.split(':')[0] (ModuleRegistry.
+      // findComponent), so this MUST be the single segment 'admin', not 'admin:ledger' —
+      // every other module's component prefix follows the same convention (e.g. 'park'
+      // dispatches park:tab, park:vtab, park:tour, ... internally, never one prefix per
+      // action). Only one components entry may carry prefix 'admin' (the duplicate-prefix
+      // check flattens every component in this array), so a future admin action switches
+      // on the id's own action segment the same way, rather than adding a second entry.
+      prefix: 'admin',
+      async execute(ctx, i) {
+        const [, action, targetId, pageStr, showAllSlug] = i.customId.split(':');
+        if (action !== 'ledger') { await i.deferUpdate(); return; }
+        // The id segment is the TARGET, not the clicker — the park:tour precedent — so the
+        // gate is ownership of the BOT, never a match against the segment.
+        if (i.user.id !== ctx.config.ownerId) { await i.deferUpdate(); return; }
+        // The show-all flag rides in the customId (ledgerPageRow, ./ledger.ts) and is read
+        // back here. Paging with a hardcoded default instead is the /dex list defect: the
+        // filter is silently dropped on the first Next click and the operator is looking at a
+        // different list than the one they asked for, with nothing to tell them. Everything
+        // after the prefix is client-supplied, so parseShowAll degrades an unrecognised slug
+        // to the default rather than erroring.
+        await i.update(ledgerPayload(ctx, targetId!, Number(pageStr), parseShowAll(showAllSlug)));
+      },
+    },
+  ],
 };

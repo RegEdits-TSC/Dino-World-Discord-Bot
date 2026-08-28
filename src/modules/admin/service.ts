@@ -9,8 +9,139 @@ import { recomputeRating } from '../park/rating.js';
 import { settleEscapes } from '../park/escapes.js';
 import { ENERGY_CAP, DUEL_START_RATING } from '../../data/battle/constants.js';
 import { recordSpeciesSeen } from '../../core/species-seen.js';
+import { InsufficientFundsError, ReversalError } from '../../core/economy.js';
+import { knownSideEffectFor, UNRECOGNISED_SIDE_EFFECT } from '../../data/tx-reasons.js';
+import { logger } from '../../core/logger.js';
 
 export class AdminError extends Error {}
+
+// The tx_log reason adminReset stamps on the zero-delta boundary marker it writes below.
+// Exported so the ledger (src/modules/admin/ledger.ts) derives the reset boundary from the
+// same literal rather than a second hand-typed copy that could silently drift from this one.
+export const RESET_MARKER_REASON = 'admin:reset';
+
+// Where a player's ledger was last cut by a reset — the NEWEST marker row's ID, or 0 when
+// they have never been reset. Shared with the ledger view (src/modules/admin/ledger.ts)
+// rather than hand-rolled twice, because the same boundary decides what that view MARKS as
+// pre-reset and what adminReverse REFUSES to reverse: two copies that drifted would show the
+// operator a row as reversible and then refuse it, or worse, quietly pay one the ledger had
+// flagged.
+//
+// The ID and not the timestamp, deliberately. A millisecond can hold more than one row, so a
+// strict `createdAt <` comparison leaves a charge stamped in the SAME millisecond as the reset
+// on the reversible side of a boundary it actually predates. The marker is the FIRST insert in
+// adminReset's transaction and tx_log.id is AUTOINCREMENT (never reused, strictly increasing),
+// so the marker's id is above every pre-reset row and below every post-reset one — an exact
+// cut with no tie possible, at the same cost.
+//
+// **This is blind to every reset performed before this feature shipped.** Nothing back-derives
+// a marker — the users row carries no trace of a reset (adminReset never touches createdAt,
+// which means account CREATION) and tx_log has no other record of one — so a player reset last
+// month reads here as never reset, and every charge in their history reads as reversible.
+// Deliberately NOT surfaced as a caveat on the ledger itself: a 0 here means "never reset" for
+// the overwhelming majority of players and "reset before this shipped" for a handful, and
+// nothing can tell those two apart — so a runtime note would print a warning on most ledgers
+// about a condition most of them do not have, and an operator stops reading a line that is
+// always there. Same lesson the unrecognised-side-effect fallback taught on this very feature.
+// It is documented in CLAUDE.md instead, where it is read once.
+export function resetBoundaryOf(rows: Array<typeof schema.txLog.$inferSelect>): number {
+  const marks = rows.filter((r) => r.reason === RESET_MARKER_REASON);
+  return marks.length ? Math.max(...marks.map((r) => r.id)) : 0;
+}
+
+// One row's movement, in words. Shared with the ledger view for the same reason
+// sideEffectNoteFor below is: adminReverse's confirmation names what it just moved and the
+// ledger names the same thing for the same row, and the two disagreeing is the failure this
+// whole feature exists to spare the operator.
+//
+// A row that moved NOTHING says so rather than rendering a bare 0: every feed and every
+// cash-neutral trade writes one, reversing it is inert, and it permanently consumes that row's
+// single reversal — so it must never read like an amount an operator can hand back. Food is
+// named, never keyed: `meat_basic` is a code identifier, not something to put in front of a
+// human, and an id the catalog no longer carries falls back to itself rather than crashing.
+export function movementOf(r: typeof schema.txLog.$inferSelect): string {
+  if (movedNothing(r)) return 'no movement';
+  const sign = (n: number) => `${n > 0 ? '+' : ''}${n.toLocaleString('en-US')}`;
+  if (r.foodId !== null && r.foodDelta !== 0) {
+    return `${sign(r.foodDelta)} ${Object.hasOwn(FOODS, r.foodId) ? FOODS[r.foodId as FoodId].name : r.foodId}`;
+  }
+  const parts: string[] = [];
+  if (r.cashDelta) parts.push(`${sign(r.cashDelta)} cash`);
+  if (r.shardsDelta) parts.push(`${sign(r.shardsDelta)} shards`);
+  return parts.join(' ');
+}
+
+// True for exactly the rows movementOf renders as 'no movement' — no cash, no shards, and no
+// food quantity. The predicate is what the ledger view hides by default (112 of the live
+// table's 173 rows were these, because every feed writes one alongside its food row), and it
+// lives HERE, beside the renderer, rather than as a second condition in ledger.ts: a filter
+// that disagreed with the text would either hide a row rendering a real figure or list one
+// reading 'no movement' under a heading promising the opposite. Never compare against the
+// rendered STRING to get this — that is the same mistake knownSideEffectFor exists to prevent,
+// and it breaks silently the next time the wording is edited.
+export function movedNothing(r: typeof schema.txLog.$inferSelect): boolean {
+  if (r.foodId !== null && r.foodDelta !== 0) return false;
+  return r.cashDelta === 0 && r.shardsDelta === 0;
+}
+
+// What the player holds now, in words — read AFTER the reversal commits, so the operator sees
+// the balance their click produced rather than the one it started from. The affected food is
+// listed only when the reversed row moved food; cash and shards always are, because those are
+// the two the operator is about to be asked about if the figure looks wrong.
+function holdingsOf(ctx: Ctx, userId: string, foodId: string | null): string {
+  const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, userId)).get();
+  const parts = [
+    `${(u?.cash ?? 0).toLocaleString('en-US')} cash`,
+    `${(u?.shards ?? 0).toLocaleString('en-US')} shards`,
+  ];
+  if (foodId !== null && Object.hasOwn(FOODS, foodId)) {
+    const held = ctx.economy.getFoodInventory(userId)[foodId as FoodId] ?? 0;
+    parts.push(`${held.toLocaleString('en-US')} ${FOODS[foodId as FoodId].name}`);
+  }
+  return parts.join(' · ');
+}
+
+// A row with no negative movement is a payout — income, a grant, a reversal's own credit —
+// never a charge.
+function isCharge(r: typeof schema.txLog.$inferSelect): boolean {
+  return r.cashDelta < 0 || r.shardsDelta < 0 || r.foodDelta < 0;
+}
+
+// The side-effect clause for one ledger row, or '' for none. What a payout suppresses is only
+// the UNRECOGNISED FALLBACK, never a genuine entry, and that distinction was learned the
+// expensive way: the first version of this rule gated the whole note on isCharge, which reads
+// correctly for every reason SIDE_EFFECTS has never heard of and silently killed the one payout
+// that IS in the table. `sell` posts positive cash (src/modules/shop/shards.ts), so the most
+// consequential note in the whole table — "the dino was destroyed; the cash returning does not
+// bring it back" — became unreachable from either surface while tests/tx-reasons.test.ts went on
+// asserting it directly and passing. A suite green on a path no surface can reach is exactly the
+// failure this feature exists to spare the operator.
+//
+// So the rule is narrower than "suppress the note for payouts":
+//   - a reason WITH a table entry always shows it, payout or charge, `sell` included;
+//   - a reason with NO entry shows the fallback only when the row actually took money.
+// The second half is what keeps the column readable: without it every ordinary income row would
+// read "unrecognised — check manually" and train the operator to skip the column on the one kind
+// of row where it matters. Fail CLOSED for money actually taken, never for money paid out.
+//
+// That second half is now a BACKSTOP and nothing more, which is what it was always for. SIDE_EFFECTS
+// answers every reason src/ emits, payouts included — `sell` was never the only non-charge in it
+// (`shop-food`'s food row and `feed`'s zero-delta base row are both entries too), and leaving the
+// other payouts out left live payout reasons rendering blank, `trade` and `admin:give` among
+// them. A blank
+// note and "this charge left nothing behind" are indistinguishable to a tired operator, so the fix
+// went into the table rather than into this rule, and tests/tx-reasons.test.ts holds the table to
+// the live set of reasons. The suppression now only ever fires for a reason nobody has taught it yet.
+//
+// Shared, for the same reason resetBoundaryOf above is: both surfaces of this feature answer
+// for the SAME row, and the ledger view (src/modules/admin/ledger.ts) suppressing the note
+// while adminReverse's reply kept printing it is precisely how the two came to disagree — a
+// reversed credit replied "Not undone: unrecognised — check manually", re-teaching the
+// operator to ignore the column the ledger had just cleaned up. Neither surface may re-derive
+// this; both call here.
+export function sideEffectNoteFor(r: typeof schema.txLog.$inferSelect): string {
+  return knownSideEffectFor(r.reason) ?? (isCharge(r) ? UNRECOGNISED_SIDE_EFFECT : '');
+}
 
 export interface GiveArgs {
   cash?: number; food?: { foodId: FoodId; qty: number }; shards?: number; eggRarity?: Rarity; dinoSpecies?: string;
@@ -44,6 +175,16 @@ export function adminGive(ctx: Ctx, targetId: string, displayName: string, args:
 // Reset a player to a fresh start: delete their content, restore new-player defaults. One transaction.
 export function adminReset(ctx: Ctx, targetId: string): void {
   ctx.db.transaction(() => {
+    // A zero-delta boundary marker, not a charge — this is what lets the ledger
+    // (src/modules/admin/ledger.ts) tell a pre-reset charge from a post-reset one. It has
+    // to be a tx_log row and not, say, users.createdAt (which this function never touches —
+    // that column means account CREATION, and stamping it here would corrupt that meaning)
+    // because tx_log has no other reader that can see "a reset happened here." It has to be
+    // written in THIS transaction, not after it: a rolled-back reset must leave no marker,
+    // the same guarantee every other row this function deletes or rewrites already gets.
+    ctx.db.insert(schema.txLog).values({
+      userId: targetId, cashDelta: 0, shardsDelta: 0, reason: RESET_MARKER_REASON, createdAt: ctx.now(),
+    }).run();
     // Deleting the trade rows below IS the unlock, including for the counterparty: escrow is
     // derived from pending trades (src/core/locks.ts), never stored on the dino/egg. When
     // targetId is the recipient (toUser) the offer belongs to a different player, and their
@@ -220,4 +361,123 @@ export function adminFastForward(ctx: Ctx, targetId: string, hours: number): num
       .where(or(eq(schema.duels.challengerId, targetId), eq(schema.duels.defenderId, targetId))).run();
   });
   return settleEscapes(ctx, targetId).length;
+}
+
+// The operator's free-text reason, capped before it is stored. /admin ledger renders the note
+// into an embed DESCRIPTION, and Discord caps a description at 4096 characters — ten notes at
+// full length on one page would overflow that budget and turn the whole ledger reply into a
+// rejected request. The command option carries the same cap so the operator is stopped while
+// typing rather than silently truncated afterwards.
+export const NOTE_MAX = 200;
+
+// Names the gap rather than reporting a bare failure. Reversing a CREDIT takes the money back
+// — the only way a balance falls outside normal play — so a player who has already spent it
+// cannot pay, and "insufficient cash" alone leaves the operator unable to tell whether they
+// are 5 short or 5,000,000 short. Read AFTER the reversal transaction rolled back, so these
+// balances are the untouched ones.
+function shortfallOf(ctx: Ctx, row: typeof schema.txLog.$inferSelect, e: InsufficientFundsError): string {
+  if (e.foodId) {
+    const held = ctx.economy.getFoodInventory(row.userId)[e.foodId] ?? 0;
+    return `the player holds ${held} ${FOODS[e.foodId].name} and the reversal needs `
+      + `${row.foodDelta} — ${row.foodDelta - held} short.`;
+  }
+  const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, row.userId)).get();
+  const needed = e.wallet === 'cash' ? row.cashDelta : row.shardsDelta;
+  const held = (e.wallet === 'cash' ? u?.cash : u?.shards) ?? 0;
+  return `the player holds ${held} ${e.wallet} and the reversal needs ${needed} — ${needed - held} short.`;
+}
+
+export interface ReversalOutcome {
+  /** The row that was reversed — named back to the operator so a mistyped id is visible. */
+  txId: number;
+  /** What the compensating row actually moved, in words. */
+  moved: string;
+  /** What the player holds now, read after the commit. */
+  balance: string;
+  sideEffect: string;
+  notified: boolean;
+}
+
+// Reverses one ledger row for a named player. The user id is required and checked against the
+// row on purpose: it is the confirmation step, so a mistyped transaction id becomes a refusal
+// rather than a refund to the wrong person.
+//
+// Reversal is SYMMETRIC and deliberately unguarded in that direction: reversing a credit takes
+// cash back, which is the only path by which a balance decreases outside normal play. Money is
+// all it moves — whatever the charge bought is still there, which is what the returned
+// side-effect note exists to say out loud.
+export function adminReverse(
+  ctx: Ctx, targetId: string, txId: number, note?: string,
+): ReversalOutcome {
+  const row = ctx.db.select().from(schema.txLog).where(eq(schema.txLog.id, txId)).get();
+  if (!row) throw new AdminError(`No transaction #${txId}.`);
+  if (row.userId !== targetId) throw new AdminError(`#${txId} belongs to a different player.`);
+  // A marker moved no money, so reversing it is economically inert — but it would mint a
+  // nonsense "reverses #<marker>" row into the very ledger this feature exists to make
+  // readable, and EconomyService.reverse would accept it: its guards know nothing about
+  // markers. The refusal lives HERE rather than in core because a reset marker is an admin
+  // concept, and core has no business knowing the reason string this module stamps.
+  if (row.reason === RESET_MARKER_REASON) {
+    throw new AdminError(`#${txId} marks an account reset, not a charge — there is nothing to reverse.`);
+  }
+  const resetBoundary = resetBoundaryOf(ctx.db.select().from(schema.txLog)
+    .where(and(eq(schema.txLog.userId, targetId), eq(schema.txLog.reason, RESET_MARKER_REASON))).all());
+  // adminReset clears every per-player table except this one and restores new-player defaults,
+  // so a charge from before that line names money this account has nothing left to show for.
+  // Crediting it back would pay a fresh start for a park that was already erased. Compared on
+  // the ledger ID, exactly as the ledger view compares it — see resetBoundaryOf for why the
+  // timestamp is the wrong key and for what this cannot see.
+  if (row.id < resetBoundary) {
+    throw new AdminError(`#${txId} predates this player’s reset and cannot be reversed.`);
+  }
+  // Interior whitespace is COLLAPSED, not merely trimmed at the ends. The ledger renders one
+  // row per line, so a note carrying a newline would inject a line of the operator's own text
+  // into the middle of the embed, indistinguishable from a real ledger row. Collapsing runs
+  // before the cap, so what is stored is what the cap governs.
+  const trimmed = note?.replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX) || undefined;
+
+  let reversalId: number;
+  try {
+    ({ reversalId } = ctx.economy.reverse(txId, ctx.now(), trimmed));
+  } catch (e) {
+    if (e instanceof ReversalError) throw new AdminError(e.message);
+    if (e instanceof InsufficientFundsError) {
+      throw new AdminError(`Cannot reverse #${txId}: ${shortfallOf(ctx, row, e)}`);
+    }
+    throw e;
+  }
+
+  // Read back rather than re-derived from the target's own deltas. The compensating row is the
+  // record of what was actually applied, and quoting anything else to the operator is a second
+  // derivation that can disagree with the ledger they are about to open. Its id came from the
+  // committed transaction, so a miss here is an impossible state, not a not-found case.
+  const applied = ctx.db.select().from(schema.txLog).where(eq(schema.txLog.id, reversalId)).get();
+  if (!applied) throw new Error(`Reversal #${reversalId} committed but could not be read back.`);
+
+  // AFTER the commit, never inside it: an unreachable player must not roll back a completed
+  // reversal, which is why the send is fired rather than awaited. The rejection is LOGGED and
+  // not discarded — the operator has already been told the note was queued, and a delivery
+  // that fails leaving no trace anywhere is a claim nobody can go back and check.
+  let notified = false;
+  if (trimmed) {
+    notified = true;
+    void ctx.notify(targetId, null, `🧾 A transaction was reversed by an operator: ${trimmed}`)
+      .catch((err: unknown) => logger.warn({ err, targetId, txId }, 'reversal note could not be delivered'));
+  }
+  // Exactly what the ledger view prints for the same row — one helper, never a second
+  // derivation. Empty only when the table has no entry AND the row took no money; the caller
+  // drops the clause entirely in that case.
+  //
+  // `txId`, `moved` and `balance` are the operator's last chance to catch a mistyped id. The
+  // redundant `user` option cannot: a transposed digit that still lands on a row belonging to
+  // the RIGHT player passes every guard above, and reversing a payout by mistake claws cash
+  // OUT of them. Naming the row, the amount and the resulting balance is what makes that
+  // visible in the moment rather than in a support ticket a week later.
+  return {
+    txId: row.id,
+    moved: movementOf(applied),
+    balance: holdingsOf(ctx, targetId, applied.foodId),
+    sideEffect: sideEffectNoteFor(row),
+    notified,
+  };
 }

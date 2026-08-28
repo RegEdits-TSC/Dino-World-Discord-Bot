@@ -1,16 +1,19 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MessageFlags } from 'discord.js';
 import { eq, and } from 'drizzle-orm';
-import { makeCtx, fakeCommand, replyText } from './harness.js';
+import { makeCtx, fakeCommand, fakeButton, replyText, testRegistry } from './harness.js';
+import { routeInteraction } from '../src/core/router.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, pendingIncome, collectIncome, buildLot } from '../src/modules/park/service.js';
 import { settleEscapes } from '../src/modules/park/escapes.js';
 import { startBreeding, claimBreeding } from '../src/modules/genelab/service.js';
 import { BREED_MS } from '../src/data/breeding.js';
 import { requireOwner } from '../src/modules/admin/guard.js';
-import { adminGive, adminReset, adminFastForward, AdminError } from '../src/modules/admin/service.js';
+import { adminGive, adminReset, adminFastForward, adminReverse, AdminError } from '../src/modules/admin/service.js';
 import { setMotto, setFeaturedDino } from '../src/modules/park/showcase.js';
 import { adminModule } from '../src/modules/admin/index.js';
+import { ledgerPayload } from '../src/modules/admin/ledger.js';
+import { PAGE_SIZE } from '../src/core/paginate.js';
 import { createTrade } from '../src/modules/trading/service.js';
 import { locksFor } from '../src/core/locks.js';
 import { TRADE_MIN_RATING, TRADE_EXPIRY_MS } from '../src/data/trade.js';
@@ -610,4 +613,822 @@ it('adminReset clears attractions, milestone claims and the attendance high-wate
   expect(ctx.db.select().from(schema.attractions).all()).toHaveLength(0);
   expect(ctx.db.select().from(schema.attendanceClaims).all()).toHaveLength(0);
   expect(ctx.db.select().from(schema.users).all()[0].attendanceHighWater).toBe(0);
+});
+
+// Reads one row's own rendered line out of the embed description — never the whole
+// JSON blob. A whole-blob substring match (the shape this replaced) is satisfied by an
+// implementation that stamps "already reversed" on EVERY row, or by a reversal row's own
+// "reverses #N" text standing in for the charge's presence — exactly the confusion this
+// feature exists to prevent. Matching per-line is what actually pins which row a mark
+// belongs to.
+function lineFor(
+  ctx: ReturnType<typeof makeCtx>, targetId: string, page: number, id: number, showAll = false,
+): string {
+  const description = ledgerPayload(ctx, targetId, page, showAll).embeds[0].data.description!;
+  return description.split('\n').find((l) => l.startsWith(`\`#${id}\``))!;
+}
+
+/** The rendered id of every row on one page, in order. undefined for a row that is not listed. */
+function idsOn(ctx: ReturnType<typeof makeCtx>, targetId: string, page: number, showAll = false): number[] {
+  const description = ledgerPayload(ctx, targetId, page, showAll).embeds[0].data.description!;
+  return description.split('\n')
+    .map((l) => /^`#(\d+)`/.exec(l)?.[1]).filter((n): n is string => n !== undefined).map(Number);
+}
+
+/** The footer text of one rendered ledger page. */
+function footerOf(ctx: ReturnType<typeof makeCtx>, targetId: string, page: number, showAll = false): string {
+  return ledgerPayload(ctx, targetId, page, showAll).embeds[0].data.footer!.text;
+}
+
+describe('/admin ledger', () => {
+  it('lists rows newest first with ids, and marks the three row states', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: -300 }, 'build:paddock_plains', 100);
+    const charge = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    ctx.economy.apply('u1', { cash: -50 }, 'decorate:fern', 200);
+    const untouched = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    const { reversalId } = ctx.economy.reverse(charge.id, 300);
+
+    expect(lineFor(ctx, 'u1', 1, reversalId)).toMatch(/reverses/i);        // the reversal row identifies its target
+    expect(lineFor(ctx, 'u1', 1, charge.id)).toMatch(/already reversed/i); // and the charge is marked as made good
+    expect(lineFor(ctx, 'u1', 1, charge.id)).toMatch(/lot still stands/i); // side-effect note from Task 3
+    // Discriminating: an implementation that stamped "already reversed" on every row would
+    // pass every assertion above for free. The untouched charge's OWN line must not claim it.
+    expect(lineFor(ctx, 'u1', 1, untouched.id)).not.toMatch(/already reversed/i);
+  });
+
+  it('suppresses the FALLBACK on a payout, but keeps it for an unrecognised charge', () => {
+    // An income row must never read "unrecognised — check manually" merely because a future
+    // feature shipped ahead of the table: that buries the note on the rows where it matters.
+    // What is suppressed is only the fallback — a payout WITH an entry still prints it.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 40 }, 'unknown-payout-reason', 100);
+    const payout = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    // A genuine debit under a reason SIDE_EFFECTS has never heard of must still warn —
+    // fail closed for money actually taken, never for money paid out.
+    ctx.economy.apply('u1', { cash: -1 }, 'totally-unknown-reason', 200);
+    const mystery = ctx.db.select().from(schema.txLog).all().at(-1)!;
+
+    expect(lineFor(ctx, 'u1', 1, payout.id)).not.toMatch(/unrecognised/i);
+    expect(lineFor(ctx, 'u1', 1, mystery.id)).toMatch(/unrecognised — check manually/i);
+  });
+
+  it('answers every live payout reason rather than rendering it blank', () => {
+    // These rendered a BLANK note before: a blank and "this row left nothing behind" are
+    // indistinguishable, and `trade` (whose counterparty row is still unreversed) and
+    // `admin:give` (which can grant an egg and a dino under the same reason) are among the
+    // rows an operator is most likely to reach for. Line-by-line, not a whole-blob match:
+    // one reason answered would otherwise satisfy an assertion made for all of them.
+    //
+    // Several rows want MORE THAN ONE thing named, and each is asserted separately — a note
+    // that mentions the claim but silently drops the item beside it is the failure mode here,
+    // and one regex per row cannot see it. Every clause below was read off the call site's own
+    // transaction rather than inferred from the reason's name: `collect` stamps the collection
+    // anchor, `expedition-loot` inserts an egg, `admin:give` writes granted food as its own row.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    const cases: Array<[string, RegExp[]]> = [
+      ['collect', [/collection window is already spent/i, /cannot collect that stretch of income again/i]],
+      ['trade:7', [/changed hands/i, /own ledger row/i]],
+      ['admin:give', [/egg or dino/i, /granted food is a separate ledger row/i]],
+      ['milestone:200', [/milestone stays claimed/i]],
+      ['expedition-loot:jungle', [/expedition stays claimed/i, /its egg remains/i, /food is a separate ledger row/i]],
+      ['quest:daily', [/stays claimed/i]],
+      ['season:rungs', [/season rungs/i]],
+      ['battle:1-1', [/stars/i]],
+    ];
+    const ids = cases.map(([reason], n) => {
+      ctx.economy.apply('u1', { cash: 1 }, reason, 100 + n);
+      return ctx.db.select().from(schema.txLog).all().at(-1)!.id;
+    });
+    cases.forEach(([reason, wanted], n) => {
+      const line = lineFor(ctx, 'u1', 1, ids[n]!);
+      for (const w of wanted) expect(line, `${reason} ${w}`).toMatch(w);
+      expect(line, reason).not.toMatch(/unrecognised/i);
+    });
+  });
+
+  it('keeps a genuine entry on a payout — `sell` is the row that narrowed the rule', () => {
+    // `sell` pays cash OUT and is in SIDE_EFFECTS: the only reason that is both. Gating the
+    // whole note on "is this a charge" — the first version of this rule — made the most
+    // consequential note in the table unreachable from either surface, while
+    // tests/tx-reasons.test.ts went on asserting it directly and passing.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 120, shards: 2 }, 'sell:triceratops', 100);
+    const sold = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(lineFor(ctx, 'u1', 1, sold.id)).toMatch(/does not bring it back/i);
+    // Discriminating: it is the ENTRY that survives, not the suppression being reverted —
+    // the same row must not also carry the fallback.
+    expect(lineFor(ctx, 'u1', 1, sold.id)).not.toMatch(/unrecognised/i);
+  });
+
+  it('marks rows that predate a reset, using a real reset — not a hand-inserted row', () => {
+    // adminReset UPDATEs the users row and never touches createdAt (that column means
+    // account CREATION), so the boundary cannot be users.createdAt — it has to come from
+    // the marker row adminReset itself writes into tx_log.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: -50 }, 'build:x', 100);   // before the reset
+    const before = ctx.db.select().from(schema.txLog).all().at(-1)!;
+
+    ctx.setNow(200);
+    adminReset(ctx, 'u1');   // writes the boundary marker at createdAt=200
+    const marker = ctx.db.select().from(schema.txLog).all().at(-1)!;
+
+    ctx.economy.apply('u1', { cash: 20 }, 'collect', 300);    // after the reset
+    const after = ctx.db.select().from(schema.txLog).all().at(-1)!;
+
+    expect(lineFor(ctx, 'u1', 1, before.id)).toMatch(/pre-reset/i);
+    expect(lineFor(ctx, 'u1', 1, after.id)).not.toMatch(/pre-reset/i);
+    // The marker itself must never read like a chargeable row an operator might try to
+    // reverse: no reason tag in the ordinary `reason` format, no "unrecognised" warning.
+    const markerLine = lineFor(ctx, 'u1', 1, marker.id);
+    expect(markerLine).toMatch(/account reset/i);
+    expect(markerLine).not.toMatch(/unrecognised/i);
+    expect(markerLine).not.toContain('`admin:reset`');
+  });
+
+  it('pages, and the page buttons carry the TARGET id', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    for (let n = 0; n < PAGE_SIZE + 3; n++) ctx.economy.apply('u1', { cash: 1 }, 'collect', n);
+    const p = ledgerPayload(ctx, 'u1', 1);
+    expect(JSON.stringify(p.components)).toContain('admin:ledger:u1:2');
+  });
+
+  it('names the player rather than showing a bare snowflake, and names food rather than keying it', () => {
+    // A raw id is not something an operator can check a refund against, and `ferns` is a code
+    // identifier, not a word to put in front of a human.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { foods: { ferns: -2 } }, 'feed:trex', 100);
+    const foodRow = ctx.db.select().from(schema.txLog).all().find((r) => r.foodId !== null)!;
+    expect(ledgerPayload(ctx, 'u1', 1).embeds[0].data.title).toContain('Reg');
+    expect(lineFor(ctx, 'u1', 1, foodRow.id)).toContain('-2 Ferns');
+    expect(lineFor(ctx, 'u1', 1, foodRow.id)).not.toContain('ferns');
+  });
+
+  it('renders a row that moved nothing as such, never as a bare 0', () => {
+    // Every feed and every cash-neutral trade writes a zero-delta base row alongside its real
+    // one. Reversing it is inert AND permanently consumes that row's single reversal, so it
+    // must never read like an amount an operator can hand back.
+    //
+    // Read through show-all, because the default view now hides exactly these rows — the
+    // assertion is unchanged, only the view it is made against, since the wording still has to
+    // be right on the surface that does print them. What hides them is pinned separately below.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { foods: { ferns: -2 } }, 'feed:trex', 100);
+    const base = ctx.db.select().from(schema.txLog).all().find((r) => r.foodId === null)!;
+    expect(base.cashDelta).toBe(0);
+    expect(base.shardsDelta).toBe(0);
+    expect(lineFor(ctx, 'u1', 1, base.id, true)).toMatch(/no movement/i);
+  });
+
+  it('cuts the reset boundary on the row id, so a charge in the same millisecond is still pre-reset', () => {
+    // A millisecond holds more than one row, so a strict `createdAt <` comparison leaves a
+    // charge stamped at the reset's own instant on the reversible side of a boundary it
+    // actually predates. The marker is the FIRST insert in adminReset's transaction and
+    // tx_log.id is AUTOINCREMENT, so the id is an exact cut with no tie possible.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.setNow(100);
+    ctx.economy.apply('u1', { cash: -50 }, 'build:x', 100);
+    const before = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    adminReset(ctx, 'u1');                       // marker stamped at the SAME instant, 100
+    const marker = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(marker.createdAt).toBe(before.createdAt);   // the tie a timestamp cannot break
+    expect(lineFor(ctx, 'u1', 1, before.id)).toMatch(/pre-reset/i);
+    // Both surfaces must agree, so the refusal is checked against the very same tie.
+    expect(() => adminReverse(ctx, 'u1', before.id)).toThrow(/reset/i);
+  });
+});
+
+// The zero-movement filter. On the live table 112 of 173 rows were feed base rows — zero-delta
+// rows written alongside the food row that actually moved something — so page one of a real
+// ledger was almost all 'no movement' and the charges an operator opens this view to find sat
+// pages back. They are hidden by default and revealed by show-all.
+describe('/admin ledger zero-movement filter', () => {
+  // 12 feeds, each writing a zero-delta base row plus a food row: 24 rows, split exactly in
+  // half, which is roughly the live table's own shape and puts BOTH views over PAGE_SIZE — so
+  // the page count and the pager can each be read off one fixture.
+  const FEEDS = 12;
+  function seedFeeds(c: ReturnType<typeof makeCtx>) {
+    getOrCreateUser(c, 'u1', 'One');
+    c.db.update(schema.foodInventory).set({ qty: 1000 })
+      .where(and(eq(schema.foodInventory.userId, 'u1'), eq(schema.foodInventory.foodId, 'ferns'))).run();
+    for (let n = 0; n < FEEDS; n++) c.economy.apply('u1', { foods: { ferns: -2 } }, 'feed:trex', 100 + n);
+  }
+  const baseRows = (c: ReturnType<typeof makeCtx>) =>
+    c.db.select().from(schema.txLog).all().filter((r) => r.foodId === null);
+
+  it('hides rows that moved nothing by default, and keeps the ones beside them', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { foods: { ferns: -2 } }, 'feed:trex', 100);
+    const all = ctx.db.select().from(schema.txLog).all();
+    const base = all.find((r) => r.foodId === null)!;
+    const food = all.find((r) => r.foodId !== null)!;
+
+    expect(idsOn(ctx, 'u1', 1)).toEqual([food.id]);
+    // Discriminating in both directions: a filter that dropped the whole feed, or one that
+    // dropped nothing, satisfies exactly one of these two.
+    expect(idsOn(ctx, 'u1', 1)).not.toContain(base.id);
+    // And the operator is told, in the singular — a filtered list that reads like a complete
+    // one is how somebody concludes a charge does not exist.
+    expect(footerOf(ctx, 'u1', 1)).toMatch(/1 row that moved nothing hidden/i);
+  });
+
+  it('lists them when show-all is set, and says so', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { foods: { ferns: -2 } }, 'feed:trex', 100);
+    const base = ctx.db.select().from(schema.txLog).all().find((r) => r.foodId === null)!;
+
+    expect(idsOn(ctx, 'u1', 1, true)).toContain(base.id);
+    // The other half of "a filtered view must not look like a complete one": an operator who
+    // turns show-all on for an account that happens to have none would otherwise be left
+    // checking whether the option took.
+    expect(footerOf(ctx, 'u1', 1, true)).toMatch(/including those that moved nothing/i);
+    expect(footerOf(ctx, 'u1', 1, true)).not.toMatch(/hidden/i);
+  });
+
+  it('says the rows are hidden rather than that there are none', () => {
+    // A player whose every row moved nothing HAS a history, and 'No transactions.' denies it —
+    // the same failure the footer note exists to prevent, in the one case where there is no
+    // line left to hang it on.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 0 }, 'trade:7', 100);
+    expect(ledgerPayload(ctx, 'u1', 1).embeds[0].data.description).toBe('No rows moved anything.');
+    expect(footerOf(ctx, 'u1', 1)).toMatch(/1 row that moved nothing hidden/i);
+    // Discriminating: a player with genuinely no rows must still read as having none.
+    getOrCreateUser(ctx, 'u2', 'Two');
+    expect(ledgerPayload(ctx, 'u2', 1).embeds[0].data.description).toBe('No transactions.');
+  });
+
+  it('counts pages over the filtered set, not the full one', () => {
+    const ctx = makeCtx();
+    seedFeeds(ctx);
+    expect(ctx.db.select().from(schema.txLog).all()).toHaveLength(FEEDS * 2);
+    // 12 rows filtered against 24 unfiltered, at PAGE_SIZE 10: two pages against three. A
+    // paginate() still handed the full row set reads 1/3 here, and pages an operator through
+    // a page that renders empty.
+    expect(footerOf(ctx, 'u1', 1)).toContain(`Page 1/2`);
+    expect(footerOf(ctx, 'u1', 1, true)).toContain(`Page 1/3`);
+    expect(footerOf(ctx, 'u1', 1)).toMatch(new RegExp(`${FEEDS} rows that moved nothing hidden`, 'i'));
+  });
+
+  it('keeps the reset marker in view, though it moved nothing either', () => {
+    // The marker is zero-delta by construction, so the movement test alone would hide it — and
+    // it is the one row the operator cannot do without: every row below it is unreversible, and
+    // adminReverse refuses them by that boundary whether this view drew it or not.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { foods: { ferns: -2 } }, 'feed:trex', 100);
+    const feedBase = ctx.db.select().from(schema.txLog).all().find((r) => r.foodId === null)!;
+    adminReset(ctx, 'u1');
+    const marker = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(marker.cashDelta).toBe(0);
+    expect(marker.shardsDelta).toBe(0);
+
+    expect(idsOn(ctx, 'u1', 1)).toContain(marker.id);
+    expect(idsOn(ctx, 'u1', 1, true)).toContain(marker.id);
+    expect(lineFor(ctx, 'u1', 1, marker.id)).toMatch(/account reset/i);
+    // Discriminating: the filter really is running in this fixture — the OTHER zero-delta row
+    // is gone, so the marker survives a live filter rather than an inert one.
+    expect(idsOn(ctx, 'u1', 1)).not.toContain(feedBase.id);
+  });
+
+  it('still marks a charge as reversed when the reversal row is filtered out of view', () => {
+    // The already-reversed map is derived over the player's WHOLE row set, never the rendered
+    // one. Narrow it to what is on screen and a charge whose compensating row is hidden reads
+    // as un-reversed — and the operator's next move on a charge that reads that way is to
+    // reverse it, which EconomyService refuses, but only after they have decided the player is
+    // owed money.
+    //
+    // The zero-delta reversal row is INSERTED rather than produced: EconomyService.reverse
+    // negates its target's deltas, so a moving charge always gets a moving reversal and this
+    // exact pairing is not reachable through it today. What is pinned here is the derivation's
+    // DOMAIN — the sibling case below is the reachable one, and both break under the same edit.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: -300 }, 'build:paddock_plains', 100);
+    const charge = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    ctx.db.insert(schema.txLog).values({
+      userId: 'u1', cashDelta: 0, shardsDelta: 0, reason: 'reverse',
+      createdAt: 200, reversesId: charge.id,
+    }).run();
+    const reversal = ctx.db.select().from(schema.txLog).all().at(-1)!;
+
+    expect(idsOn(ctx, 'u1', 1)).not.toContain(reversal.id);   // the reversal really is hidden
+    expect(idsOn(ctx, 'u1', 1)).toContain(charge.id);         // and the charge really is not
+    expect(lineFor(ctx, 'u1', 1, charge.id)).toMatch(/already reversed by #/i);
+    // Discriminating: it names the row that did it, so a mark stamped on every charge for free
+    // would not satisfy this.
+    expect(lineFor(ctx, 'u1', 1, charge.id)).toContain(`already reversed by #${reversal.id}`);
+  });
+
+  it('still marks a charge as reversed when the reversal row sits on another page', () => {
+    // The reachable sibling of the case above, and the same invariant: neither the filter nor
+    // the page may narrow what the map is built from.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: -300 }, 'build:paddock_plains', 100);
+    const charge = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    const { reversalId } = ctx.economy.reverse(charge.id, 200);
+    // Exactly PAGE_SIZE - 1 more rows, so the total is PAGE_SIZE + 1 and the split falls
+    // BETWEEN the pair: the reversal is the last row on page 1 and the charge is alone on
+    // page 2. One row either side of that and the two land on the same page, which is what
+    // this test was doing before a mutation run caught it passing for free.
+    for (let n = 0; n < PAGE_SIZE - 1; n++) ctx.economy.apply('u1', { cash: 1 }, 'collect', 300 + n);
+
+    expect(idsOn(ctx, 'u1', 1)).toContain(reversalId);      // the reversal is on page 1
+    expect(idsOn(ctx, 'u1', 1)).not.toContain(charge.id);   // and the charge has fallen off it
+    expect(idsOn(ctx, 'u1', 2)).toEqual([charge.id]);
+    expect(lineFor(ctx, 'u1', 2, charge.id)).toContain(`already reversed by #${reversalId}`);
+  });
+
+  // The /dex list defect, applied to this list: `pageRow`'s customId is
+  // `<prefix>:<action>:<userId>:<page>` and has nowhere to put filter state, so paging a
+  // FILTERED list through it silently returns the UNFILTERED page — wrong rows, wrong count,
+  // no error anywhere. The flag therefore rides in the ledger's own page-button id and is
+  // parsed back out, and these are the tests that hold it there.
+  describe('the pager carries the show-all flag across a page change', () => {
+    function nextId(c: ReturnType<typeof makeCtx>, showAll: boolean): string {
+      const json = ledgerPayload(c, 'u1', 1, showAll).components[0]!.toJSON() as
+        { components: Array<{ custom_id: string; label: string }> };
+      return json.components.find((c2) => c2.label === 'Next ▶')!.custom_id;
+    }
+    const rendered = (r: unknown) =>
+      (JSON.parse(JSON.stringify(r)) as { embeds: Array<{ description: string; footer: { text: string } }> }).embeds[0]!;
+
+    it('mints the flag into the button id, both ways round', () => {
+      const ctx = makeCtx();
+      seedFeeds(ctx);
+      // Pinned literally: the shape is the contract the handler parses, and a slug that
+      // silently changed spelling would degrade to the default at the far end with nothing
+      // failing. 39 characters at a 19-digit snowflake, well inside Discord's 100.
+      expect(nextId(ctx, false)).toBe('admin:ledger:u1:2:-');
+      expect(nextId(ctx, true)).toBe('admin:ledger:u1:2:all');
+    });
+
+    it('routes a show-all Next to the show-all page 2, and hands the flag on again', async () => {
+      const ctx = makeCtx();
+      seedFeeds(ctx);
+      const customId = nextId(ctx, true);
+      const b = fakeButton({ customId, user: 'owner', componentIds: [customId] });
+      await routeInteraction(ctx, testRegistry, b.asInteraction());
+
+      expect(b.replies).toHaveLength(1);
+      const e = rendered(b.replies[0]);
+      // 2/3, not 2/2: the page count itself gives the dropped flag away, because the filtered
+      // list is a page shorter. This is the assertion the /dex defect would have failed.
+      expect(e.footer.text).toContain('Page 2/3');
+      expect(e.footer.text).toMatch(/including those that moved nothing/i);
+      // And the rows really are the unfiltered ones — at least one zero-movement row is listed.
+      expect(baseRows(ctx).some((r) => e.description.includes(`\`#${r.id}\``))).toBe(true);
+      // The flag has to survive every hop, not just the first: page 2's own buttons carry it.
+      expect(JSON.stringify(b.replies[0])).toContain('admin:ledger:u1:3:all');
+    });
+
+    it('routes a default Next to the filtered page 2, still filtered', async () => {
+      const ctx = makeCtx();
+      seedFeeds(ctx);
+      const customId = nextId(ctx, false);
+      const b = fakeButton({ customId, user: 'owner', componentIds: [customId] });
+      await routeInteraction(ctx, testRegistry, b.asInteraction());
+
+      const e = rendered(b.replies[0]);
+      expect(e.footer.text).toContain('Page 2/2');
+      expect(e.footer.text).toMatch(/rows that moved nothing hidden/i);
+      // The mirror of the assertion above: NO zero-movement row survives onto this page.
+      expect(baseRows(ctx).some((r) => e.description.includes(`\`#${r.id}\``))).toBe(false);
+    });
+
+    it('degrades an unrecognised flag slug to the default rather than erroring', async () => {
+      // Everything after the prefix is client-supplied. An id from an older deploy, or a
+      // forged one, must land on the hidden default — the direction where the footer then says
+      // rows are missing — never on an error and never on a silently widened view.
+      const ctx = makeCtx();
+      seedFeeds(ctx);
+      const customId = 'admin:ledger:u1:2:yes';
+      const b = fakeButton({ customId, user: 'owner', componentIds: [customId] });
+      await routeInteraction(ctx, testRegistry, b.asInteraction());
+
+      expect(b.replies).toHaveLength(1);
+      expect(rendered(b.replies[0]).footer.text).toContain('Page 2/2');
+      expect(rendered(b.replies[0]).footer.text).toMatch(/hidden/i);
+    });
+  });
+
+  it('lets /admin reverse take a hidden row’s id — hiding is display, not permission', () => {
+    // The filter must never become a guard by accident. A zero-movement row is pointless to
+    // reverse, not forbidden, and an operator who typed its id would otherwise get a refusal
+    // for a reason no message anywhere explains.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { foods: { ferns: -2 } }, 'feed:trex', 100);
+    const base = ctx.db.select().from(schema.txLog).all().find((r) => r.foodId === null)!;
+    expect(idsOn(ctx, 'u1', 1)).not.toContain(base.id);   // it is not on screen
+    const out = adminReverse(ctx, 'u1', base.id);          // and it is still reversible
+    expect(out.txId).toBe(base.id);
+    expect(out.moved).toMatch(/no movement/i);
+  });
+});
+
+// Every test above reaches ledgerPayload directly or through the pager, so the COMMAND branch
+// — the one an operator actually types — had no coverage at all, its ephemeral flag included.
+// That flag is the whole reason /admin ledger is safe to run in a live channel: without it a
+// player's complete financial history posts publicly, and the entire suite stayed green.
+describe('/admin ledger command', () => {
+  it('answers ephemerally with the player’s rows', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: -300 }, 'build:paddock_plains', 100);
+    const charge = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    const i = fakeCommand({ name: 'admin', sub: 'ledger', user: 'owner', options: { user: 'u1' } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    // And it is the real ledger, not an empty shell that would satisfy the flag check alone.
+    expect(JSON.stringify(i.replies[0])).toContain(`#${charge.id}`);
+    expect(JSON.stringify(i.replies[0])).toContain('lot still stands');
+  });
+
+  it('honours the page option', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    for (let n = 0; n < PAGE_SIZE + 3; n++) ctx.economy.apply('u1', { cash: 1 }, 'collect', n);
+    const i = fakeCommand({ name: 'admin', sub: 'ledger', user: 'owner',
+      options: { user: 'u1', page: 2 } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    expect(JSON.stringify(i.replies[0])).toContain('Page 2/2');
+  });
+
+  it('wires the show-all option through to the view', async () => {
+    // The option and the parameter are two different things, and a handler that read the
+    // option and then never passed it — or never read it at all — leaves every ledgerPayload
+    // test above green while the operator's only way to see a hidden row does nothing.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { foods: { ferns: -2 } }, 'feed:trex', 100);
+    const base = ctx.db.select().from(schema.txLog).all().find((r) => r.foodId === null)!;
+
+    const off = fakeCommand({ name: 'admin', sub: 'ledger', user: 'owner', options: { user: 'u1' } });
+    await adminModule.commands[0].execute(ctx, off.asChatInput());
+    // Backtick-delimited, so `#5` cannot be satisfied by a `#15` elsewhere in the payload.
+    expect(JSON.stringify(off.replies[0])).not.toContain(`\`#${base.id}\``);
+
+    const on = fakeCommand({ name: 'admin', sub: 'ledger', user: 'owner',
+      options: { user: 'u1', 'show-all': true } });
+    await adminModule.commands[0].execute(ctx, on.asChatInput());
+    expect(JSON.stringify(on.replies[0])).toContain(`\`#${base.id}\``);
+    // Still ephemeral — the option must not have taken the reply off that path.
+    expect((on.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+
+  it('is refused for a non-owner and leaks no rows', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: -300 }, 'build:paddock_plains', 100);
+    const i = fakeCommand({ name: 'admin', sub: 'ledger', user: 'u2', options: { user: 'u1' } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    // The refusal itself, not merely the absence of a leak: a handler that silently did
+    // nothing would satisfy the second assertion on its own.
+    expect(replyText(i.replies[0])).toMatch(/owner only/i);
+    expect(JSON.stringify(i.replies)).not.toContain('lot still stands');
+  });
+});
+
+// The brief's own three tests above only call ledgerPayload directly — never the component
+// handler, never routeInteraction. Dispatching through the real ModuleRegistry (testRegistry)
+// is what catches a wiring mistake findComponent's PREFIX match can make: it compares only
+// customId.split(':')[0], so a component registered with prefix 'admin:ledger' (three
+// segments long) would never match an 'admin:ledger:<uid>:<page>' click at all and the pager
+// would be a dead button in production while every offline test above still passed.
+describe('/admin ledger component', () => {
+  function build() {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    for (let n = 0; n < PAGE_SIZE + 3; n++) ctx.economy.apply('u1', { cash: 1 }, 'collect', n);
+    return ctx;
+  }
+  function nextButtonId(ctx: ReturnType<typeof makeCtx>): string {
+    const p = ledgerPayload(ctx, 'u1', 1);
+    const json = p.components[0]!.toJSON() as { components: Array<{ custom_id: string; label: string }> };
+    return json.components.find((c) => c.label === 'Next ▶')!.custom_id;
+  }
+
+  it('routes the real Next button through the registry and pages the ledger', async () => {
+    const ctx = build();
+    const customId = nextButtonId(ctx);
+    const b = fakeButton({ customId, user: 'owner', componentIds: [customId] });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(b.deferOpts).toHaveLength(0);   // dispatched, not rejected by the router guard
+    expect(b.replies).toHaveLength(1);     // i.update() ran — the handler, not the no-op arm
+    expect(JSON.stringify(b.replies[0])).toContain('Page 2/2');
+  });
+
+  it('the target clicking their own audit log is rejected — the gate is ownerId, never the customId segment', async () => {
+    const ctx = build();
+    const customId = nextButtonId(ctx);   // customId's own segment names u1, the target
+    const b = fakeButton({ customId, user: 'u1', componentIds: [customId] });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(b.replies).toHaveLength(0);          // no i.update() — the target never sees page 2
+    expect(b.deferOpts).toHaveLength(1);
+    expect(b.deferOpts[0]).toMatchObject({ kind: 'update' });
+  });
+});
+
+describe('/admin reverse', () => {
+  const seed = (c: ReturnType<typeof makeCtx>) => {
+    getOrCreateUser(c, 'u1', 'One');                                     // 500 cash
+    c.economy.apply('u1', { cash: -300 }, 'build:paddock_plains', 100);  // -> 200
+    return c.db.select().from(schema.txLog).all().at(-1)!;
+  };
+  const cashOf = (c: ReturnType<typeof makeCtx>, id: string) =>
+    c.db.select().from(schema.users).where(eq(schema.users.discordId, id)).get()!.cash;
+  const reversalOf = (c: ReturnType<typeof makeCtx>, id: number) =>
+    c.db.select().from(schema.txLog).all().find((r) => r.reversesId === id);
+
+  it('reverses and reports what the money did not undo', () => {
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    const out = adminReverse(ctx, 'u1', charge.id);
+    expect(out.sideEffect).toMatch(/lot still stands/i);
+    expect(out.notified).toBe(false);
+    expect(cashOf(ctx, 'u1')).toBe(500);
+    // The money came back as a compensating row pointing at the charge, never an edit of it.
+    expect(reversalOf(ctx, charge.id)!.cashDelta).toBe(300);
+  });
+
+  it('refuses an unknown transaction id', () => {
+    const ctx = makeCtx();
+    seed(ctx);
+    expect(() => adminReverse(ctx, 'u1', 9999)).toThrow(AdminError);
+    expect(() => adminReverse(ctx, 'u1', 9999)).toThrow(/no transaction/i);
+  });
+
+  it('refuses a row belonging to another player', () => {
+    // The user option is redundant on purpose: it is the confirmation step that turns a
+    // mistyped id into a refusal rather than a refund to the wrong person.
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    getOrCreateUser(ctx, 'u2', 'Two');
+    expect(() => adminReverse(ctx, 'u2', charge.id, 'sorry about that')).toThrow(AdminError);
+    expect(() => adminReverse(ctx, 'u2', charge.id, 'sorry about that')).toThrow(/different player/i);
+    // Discriminating: neither the named player nor the row's real owner was paid.
+    expect(cashOf(ctx, 'u2')).toBe(500);
+    expect(cashOf(ctx, 'u1')).toBe(200);
+    // ORDERING, checked with a note in hand: a refusal must never tell a player money moved.
+    // This one catches a notify hoisted above the guards; the overdraw test below catches the
+    // narrower hoist, above the reversal but below them.
+    expect(ctx.notifications).toHaveLength(0);
+  });
+
+  it('refuses a charge that predates a reset, using a real reset — not a hand-inserted row', () => {
+    // adminReset UPDATEs the users row and never touches createdAt (that column means account
+    // CREATION), so the boundary cannot come from users.createdAt — it is the marker row the
+    // reset itself writes into the ledger.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: -50 }, 'build:x', 100);
+    const before = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    ctx.setNow(200);
+    adminReset(ctx, 'u1');                                   // writes the marker at 200
+    ctx.economy.apply('u1', { cash: -20 }, 'build:y', 300);
+    const after = ctx.db.select().from(schema.txLog).all().at(-1)!;
+
+    expect(() => adminReverse(ctx, 'u1', before.id)).toThrow(/reset/i);
+    expect(reversalOf(ctx, before.id)).toBeUndefined();
+    // Discriminating: it is the boundary that refuses, not the reversal path being broken —
+    // the same shape of charge on the other side of the marker reverses cleanly.
+    expect(() => adminReverse(ctx, 'u1', after.id)).not.toThrow();
+    expect(cashOf(ctx, 'u1')).toBe(500);
+  });
+
+  it('refuses the reset marker row itself', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.setNow(200);
+    adminReset(ctx, 'u1');
+    const marker = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(() => adminReverse(ctx, 'u1', marker.id)).toThrow(AdminError);
+    // Reversing a zero-delta row is economically inert, so a balance assertion would prove
+    // nothing. What must not happen is a nonsense "reverses #<marker>" row landing in the
+    // very ledger this feature exists to make readable.
+    expect(reversalOf(ctx, marker.id)).toBeUndefined();
+  });
+
+  it('refuses a reversal that would overdraw the player, and names the shortfall', () => {
+    // Reversal is symmetric on purpose: reversing a credit takes the cash back. A player who
+    // already spent it cannot pay, and "insufficient cash" alone does not tell the operator
+    // whether they are 5 short or 5,000,000 short.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');                             // 500
+    ctx.economy.apply('u1', { cash: 1000 }, 'admin:give', 100);    // -> 1500
+    const credit = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    ctx.economy.apply('u1', { cash: -1400 }, 'build:x', 200);      // -> 100
+    expect(() => adminReverse(ctx, 'u1', credit.id, 'clawing back a mis-grant')).toThrow(AdminError);
+    expect(() => adminReverse(ctx, 'u1', credit.id, 'clawing back a mis-grant')).toThrow(/900 short/);
+    // The rollback is the guard, not a pre-check: nothing moved and nothing was recorded.
+    expect(cashOf(ctx, 'u1')).toBe(100);
+    expect(reversalOf(ctx, credit.id)).toBeUndefined();
+    // ORDERING — the assertion that pins "notify AFTER the commit, never before". This refusal
+    // comes from inside the economy transaction, i.e. BELOW every guard, so a notify block
+    // hoisted above the reverse call would queue a note here even though the money never
+    // moved. It is the only case in this suite that can see that hoist.
+    expect(ctx.notifications).toHaveLength(0);
+  });
+
+  it('surfaces the ledger primitive’s own refusals as operator errors', () => {
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    adminReverse(ctx, 'u1', charge.id);
+    const reversal = reversalOf(ctx, charge.id)!;
+    expect(() => adminReverse(ctx, 'u1', charge.id)).toThrow(AdminError);
+    expect(() => adminReverse(ctx, 'u1', charge.id)).toThrow(/already reversed/i);
+    expect(() => adminReverse(ctx, 'u1', reversal.id)).toThrow(AdminError);
+    expect(() => adminReverse(ctx, 'u1', reversal.id)).toThrow(/terminal/i);
+  });
+
+  it('leaves the side-effect note empty for a payout, but keeps it for an unrecognised charge', () => {
+    // The ledger view drops the FALLBACK on a payout under a reason SIDE_EFFECTS has never
+    // heard of, so that a future income path cannot fill the column with
+    // "unrecognised — check manually" and train the operator to skip it. Both halves of this
+    // feature answer for the same row, so the reversal reply has to agree — and reversing a
+    // CREDIT, the symmetric case, is exactly where they disagreed.
+    //
+    // The subject used to be `collect`, which now carries an entry of its own — the whole
+    // point of the table covering every emitted reason is that the suppression is a backstop
+    // for reasons nobody has taught it yet, so that is what this now exercises.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 40 }, 'unknown-payout-reason', 100);
+    const payout = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(adminReverse(ctx, 'u1', payout.id).sideEffect).toBe('');
+    expect(cashOf(ctx, 'u1')).toBe(500);
+    // Discriminating: this is not a blanket suppression. A genuine debit under a reason
+    // nothing recognises must still warn — fail CLOSED for money actually taken.
+    ctx.economy.apply('u1', { cash: -5 }, 'totally-unknown-reason', 200);
+    const mystery = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(adminReverse(ctx, 'u1', mystery.id).sideEffect).toMatch(/unrecognised/i);
+    // And a live payout reason is answered rather than left blank: `collect` is the row an
+    // active park generates over and over, and a blank there is indistinguishable from
+    // "this row left nothing behind".
+    ctx.economy.apply('u1', { cash: 7 }, 'collect', 300);
+    const collected = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(adminReverse(ctx, 'u1', collected.id).sideEffect).not.toBe('');
+  });
+
+  it('names the entry when the reversed row is a payout that HAS one', () => {
+    // The other half of the narrowed rule, on the surface that reads it aloud: reversing a
+    // sale returns the cash and cannot bring the dino back, which is the single most
+    // consequential thing an operator can be told at this moment. Suppressing it because the
+    // row happened to be a credit is the defect this pins shut.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 120, shards: 2 }, 'sell:triceratops', 100);
+    const sold = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    expect(adminReverse(ctx, 'u1', sold.id).sideEffect).toMatch(/does not bring it back/i);
+    // Discriminating: the reversal really did run symmetric — the sale's cash and shards
+    // both came back out — so this is the live path, not a formatting helper called in
+    // isolation.
+    expect(cashOf(ctx, 'u1')).toBe(500);
+    const u = ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!;
+    expect(u.shards).toBe(0);
+  });
+
+  it('drops the whole clause from the reply when the reversed row was a payout', async () => {
+    // Subject is an UNRECOGNISED payout: every reason src/ actually emits now carries an
+    // entry, so the only rows the suppression still governs are the ones a future feature
+    // will ship before anyone updates the table.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 40 }, 'unknown-payout-reason', 100);
+    const payout = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    const i = fakeCommand({ name: 'admin', sub: 'reverse', user: 'owner',
+      options: { user: 'u1', tx: payout.id } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    const text = replyText(i.replies[0]);
+    expect(text).toMatch(/reversed/i);
+    expect(text).not.toMatch(/unrecognised/i);
+    expect(text).not.toMatch(/not undone/i);
+    expect(cashOf(ctx, 'u1')).toBe(500);
+  });
+
+  it('queues a note to the player when one is given, and keeps it on the row', () => {
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    const out = adminReverse(ctx, 'u1', charge.id, 'double-charged by a stale button');
+    expect(out.notified).toBe(true);
+    expect(ctx.notifications.map((n) => n.message).join(' ')).toMatch(/stale button/);
+    expect(reversalOf(ctx, charge.id)!.note).toBe('double-charged by a stale button');
+  });
+
+  it('collapses a note’s interior whitespace so it cannot inject a ledger line', () => {
+    // The ledger renders one row per line. A note carrying a newline puts a line of the
+    // operator's own text into the middle of the embed, indistinguishable from a real row.
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    adminReverse(ctx, 'u1', charge.id, 'refund\n`#999` `landmark:6` -160,000,000 cash');
+    expect(reversalOf(ctx, charge.id)!.note).not.toContain('\n');
+    // The harm, not just the character: the page must carry exactly one line per row.
+    const description = ledgerPayload(ctx, 'u1', 1).embeds[0].data.description!;
+    expect(description.split('\n')).toHaveLength(ctx.db.select().from(schema.txLog).all().length);
+  });
+
+  it('caps the note it stores', () => {
+    // The note is rendered into /admin ledger's embed description, which Discord caps at
+    // 4096 characters — a page of uncapped notes would overflow it and reject the reply.
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    adminReverse(ctx, 'u1', charge.id, 'x'.repeat(500));
+    expect(reversalOf(ctx, charge.id)!.note).toHaveLength(200);
+  });
+
+  it('keeps the reversal committed when the notification throws', () => {
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    ctx.notify = () => Promise.reject(new Error('DMs closed'));
+    expect(() => adminReverse(ctx, 'u1', charge.id, 'here you go')).not.toThrow();
+    // The money moved even though telling the player failed.
+    expect(cashOf(ctx, 'u1')).toBe(500);
+    expect(reversalOf(ctx, charge.id)).toBeDefined();
+  });
+
+  it('replies through the command layer, saying the note was queued rather than sent', async () => {
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    const i = fakeCommand({ name: 'admin', sub: 'reverse', user: 'owner',
+      options: { user: 'u1', tx: charge.id, note: 'double-charged by a stale button' } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    const text = replyText(i.replies[0]);
+    expect(text).toMatch(/lot still stands/i);
+    // Delivery depends on the player's routing and mute settings, so the reply must claim
+    // only that the note was queued.
+    expect(text).toMatch(/queued/i);
+    expect(text).not.toMatch(/\bsent\b/i);
+    expect(cashOf(ctx, 'u1')).toBe(500);
+  });
+
+  it('names the row, the amount and the resulting balance in the confirmation', async () => {
+    // The operator's last chance to notice a mistyped id. The redundant `user` option cannot
+    // catch a transposed digit that still lands on a row belonging to the RIGHT player, and a
+    // reply reading only "Reversed for @player" is indistinguishable from success whichever
+    // row was hit — two reversals in a row produced identical text.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    adminGive(ctx, 'u1', 'One', { cash: 9_000_000 });                      // -> 9,000,500
+    ctx.economy.apply('u1', { cash: -5_000_000 }, 'landmark:1', 100);      // -> 4,000,500
+    const charge = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    const i = fakeCommand({ name: 'admin', sub: 'reverse', user: 'owner',
+      options: { user: 'u1', tx: charge.id } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    const text = replyText(i.replies[0]);
+    expect(text).toContain(`#${charge.id}`);                 // which row
+    expect(text).toContain('+5,000,000 cash');               // what moved
+    expect(text).toContain('9,000,500 cash · 0 shards');     // what they hold now
+  });
+
+  it('shows a clawback as a negative, so reversing the wrong row is visible in the reply', async () => {
+    // The dangerous mistype is not an unknown id — it is a valid one on the right player that
+    // happens to be a PAYOUT, where the reversal takes cash out instead of handing it back.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 40 }, 'collect', 100);                 // -> 540
+    const payout = ctx.db.select().from(schema.txLog).all().at(-1)!;
+    const i = fakeCommand({ name: 'admin', sub: 'reverse', user: 'owner',
+      options: { user: 'u1', tx: payout.id } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    const text = replyText(i.replies[0]);
+    expect(text).toContain('-40 cash');
+    expect(text).toContain('500 cash · 0 shards');
+  });
+
+  it('reports the food it moved by name, and the stack the player is left holding', () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'One');                                     // 10 ferns
+    ctx.economy.apply('u1', { foods: { ferns: -2 } }, 'feed:trex', 100);    // -> 8
+    const foodRow = ctx.db.select().from(schema.txLog).all().find((r) => r.foodId !== null)!;
+    const out = adminReverse(ctx, 'u1', foodRow.id);
+    expect(out.moved).toBe('+2 Ferns');
+    expect(out.balance).toContain('10 Ferns');
+    expect(out.txId).toBe(foodRow.id);
+  });
+
+  it('answers a refusal ephemerally through the command layer instead of throwing', async () => {
+    const ctx = makeCtx();
+    const charge = seed(ctx);
+    getOrCreateUser(ctx, 'u2', 'Two');
+    const i = fakeCommand({ name: 'admin', sub: 'reverse', user: 'owner',
+      options: { user: 'u2', tx: charge.id } });
+    await adminModule.commands[0].execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toMatch(/different player/i);
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect(cashOf(ctx, 'u2')).toBe(500);
+  });
 });
