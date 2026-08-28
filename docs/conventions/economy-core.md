@@ -40,7 +40,8 @@ down exists to spell out, row kind by row kind.
 
 **A reversal is a compensating ROW, never an edit.** `tx_log` is append-only — nothing in
 `src/` UPDATEs or DELETEs a ledger row. `reverses_id` leans on that: it is deliberately
-not a DB-level foreign key; see `docs/conventions/schema-and-migrations.md`.
+not a DB-level foreign key — `§reverses-id-not-a-foreign-key` in
+`docs/conventions/schema-and-migrations.md`.
 
 ## reversed-flag-is-derived
 

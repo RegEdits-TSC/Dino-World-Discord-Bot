@@ -103,8 +103,6 @@ read or edited. Read one directly when you are planning against it rather than e
 <!-- UNMIGRATED: everything below moves to docs/conventions/ and this marker
      is deleted by the final task. Nothing may be added below this line. -->
 
-- `expireStale` survives in the `/trade accept|decline|cancel` autocomplete provider
-  only because that list's `status` filter is what hides a dead trade.
 - The fakes in `tests/harness.ts` (`fakeCommand`/`fakeAutocomplete`/`fakeButton`)
   enforce the real interaction lifecycle — reply-once, and defer-before-
   editReply/followUp — throwing the same `InteractionAlreadyReplied`/
@@ -169,9 +167,7 @@ read or edited. Read one directly when you are planning against it rather than e
   it must never fall back to archetype art, because `rosterFor`'s lead entry on a
   1-dino squad IS the boss. One merged `thumb` ref feeds `dress()` (F1-F3), F4's
   `setThumbnail`, and both `files` arrays, so the F1/F4 upload contract holds
-  without a second code path. `revealPayload` is the other archetype surface: it
-  ships the rarity crack as `image` and the archetype as `thumbnail`, two files on
-  one `i.update` payload, each degrading independently.
+  without a second code path.
 - Food is typed (`src/data/foods.ts`, 3 tiers × 2 diets) and lives in the
   `food_inventory` table — `users.food` no longer exists. Feeding sets
   `hunger = fillTo` (up to 150): `comfortAt` clamps the hunger term at 100, and
@@ -179,26 +175,6 @@ read or edited. Read one directly when you are planning against it rather than e
   two-point trapezoid over-/under-pays overfed dinos. Autocomplete labels use
   `FoodDef.fallback` unicode, never `emojiTag`/`foodEmoji` (custom tags render
   as literal text in autocomplete).
-- `migrateDb` (`src/core/db/index.ts`) brackets `migrate()` with
-  `foreign_keys = OFF`/`ON`, toggled OUTSIDE the migration's own transaction, at the
-  connection level, before `migrate()` even starts. This is load-bearing, not
-  cleanup: drizzle wraps every migration in a transaction, so a `PRAGMA foreign_keys`
-  statement embedded in the migration SQL itself is a no-op there — but a pragma set
-  before that transaction begins stays in effect for its whole duration, which is
-  why `migrateDb`'s outer bracket (and not a per-migration one) is what lets a
-  table-recreate migration (SQLite column drop) run `DROP TABLE` against child rows
-  on a **populated** DB (`createDb` sets FK on) without throwing.
-  What the "seed a parent **and** a child row, then run the real `migrateDb`" recipe
-  (the "production path" block in `tests/migration.test.ts`) actually proves is
-  narrower than it sounds: a well-formed recreate PASSES that test, bracket and all —
-  the recipe does not demonstrate that a recreate "would fail on production", because
-  it demonstrably doesn't. What it catches is (1) a regression that removes or
-  weakens the bracket, (2) a lesser raw-SQL replay or an empty-DB substitute standing
-  in for the real migrator, either of which gives a false green on exactly that
-  regression, and (3) a recreate that mishandles data — drops or resets a column —
-  even though FK enforcement passes clean. The actual gate against an UNNECESSARY
-  recreate, one drizzle-kit could have expressed as a plain `ALTER TABLE` instead, is
-  reading the emitted SQL by eye; the populated-row test cannot do that job for you.
 - Battles: `Ctx` carries `sleep(ms)` for the fight cinematic — real
   `setTimeout` in `src/index.ts`, instant stub in `tests/harness.ts` `makeCtx`
   and `scripts/test-live.ts`; every future Ctx construction site must provide
@@ -273,18 +249,6 @@ read or edited. Read one directly when you are planning against it rather than e
   assertion in this file uses — at 400 seeds the ladder's own gaps between adjacent
   bosses are smaller than its sampling noise, so a real inversion can read as a clean
   pass. Tune a boss by measuring at 3,000 seeds, not 400.
-- Dino art is keyed on archetype×diet, with a per-species file as an optional override
-  (`§dino-art-archetype-diet-with-species-override` in `docs/conventions/art-resolver.md`),
-  so a species with no file of its own costs no art. `support-carnivore`
-  shipped with zero species using it for exactly that reason; Archelon (uncommon,
-  support archetype, carnivore diet) now does, and it needed no new art at all —
-  proof the guarantee holds. That fixed cost has
-  a fidelity price: `archetype` is a combat concept, not a body-plan one, so
-  outliers share art loosely — `swift-carnivore` covers both `velociraptor` and
-  `quetzalcoatlus` (a beaked pterosaur), rendered as a scaled toothy theropod.
-  Accepted deliberately: a per-species `silhouette` field was considered and
-  declined, since it would have traded 8 images for roughly 12 plus a migration
-  across all 40 species files, to fix fidelity for a handful of outliers.
 - `HELP_TOPICS` (`src/modules/help/index.ts`) stores a LAZY art descriptor
   (`art?: { kind, name }`), never a built `ImageRef` — `assetImage` returns a
   fresh `AttachmentBuilder` per call and the map is module-level (same class of
@@ -293,72 +257,7 @@ read or edited. Read one directly when you are planning against it rather than e
   text-only embed when `buildParkSnapshot`/`renderPark` throws. Adding or
   removing a topic KEY changes the `/help` builder choices and forces
   `npm run deploy-commands`; adding a field to the value type does not.
-- Escrow is DERIVED, never stored: `locksFor(ctx, userId)` (`src/core/locks.ts`)
-  returns `{ dinos, eggs }` maps of id → `LockReason`, built from the pending,
-  unexpired trades the user SENT (only the offer side is ever escrowed, and the
-  offer belongs to `fromUser`) plus their unclaimed `breedings` rows. The
-  `dinos.locked`/`eggs.locked` columns were dropped in migration 0005 — a stale
-  lock is no longer representable, so **no caller ever has to sweep before reading
-  one**. That retired 11 of the 14 `expireStale` calls; the 3 that survive
-  (all in `src/modules/trading/index.ts`) exist only to flip `status` for
-  `/trade list` display and history, and `expireStale` is no longer load-bearing
-  for escrow at all.
-  Two properties keep this design honest, and both must survive future work:
-  (1) **batch-per-user, not per-row** — callers build one `Locks` and test
-  membership; never add a per-id `isLocked(dinoId)`, it becomes an N+1 inside
-  `/dino list` and every autocomplete provider. Pure formatters therefore take
-  the lock as an ARGUMENT (`eggLabel(egg, now, locked)` in
-  `src/core/autocomplete.ts`, `eggListPayload(..., locks)` in
-  `src/modules/hatchery/embeds.ts`) and their callers build the map once.
-  (2) **expiry is evaluated at read time** — a trade escrows iff
-  `createdAt + TRADE_EXPIRY_MS > now`; nothing sweeps.
-  Enforcement still lands only at paths that CONSUME an item, never at paths that
-  merely use one: `sellDino`, `incubateEgg` and `hatchEgg` reject escrowed rows,
-  while battling an escrowed dino stays legal (`src/modules/battles/service.ts`)
-  because it neither consumes nor transfers. `verifySide`'s `forTradeId` is not an
-  exploit: at accept time the offer side is escrowed BY THAT VERY TRADE, so
-  `acceptTrade` waives that one lock and nothing else — a second pending trade or an
-  unclaimed breeding still blocks the transfer. It must stay a trade id, never a
-  blanket boolean: escrow carries two reasons now, and waiving both would let a
-  breeding's parents be traded away mid-flight, which `src/core/db/schema.ts`'s
-  `breedings` note relies on being impossible. That check reads back ONE reason per
-  id, so `locksFor` resolves breedings after trades on purpose — the fail-safe
-  overwrite direction. Never swap those two loops.
-  `createTrade`'s `verifySide` refuses an incubating egg, so an escrowed *and*
-  incubating row can only be legacy data — `hatchEgg`'s guard is unreachable through
-  the public API and its test builds the state by inserting the pending trade row
-  directly. One subtlety survives the rewrite: the `/trade offer` autocomplete builds
-  locks for the resolved `ownerId`, NOT `i.user.id`, because the `want-*` options list
-  the TARGET's inventory — a test pins this by escrowing the target's dino in a trade
-  with a third user, so reading the wrong id fails it. Scaling note: `locksFor` runs two
-  table filters per call, but filters in SQL (unlike `expireStale`, which still filters by
-  user in JS). Both were unindexed until migration 0018, which added `trades_status_from`
-  and `breedings_user_claimed` to cover exactly those two reads — the trades index leads
-  with `status` rather than the user because `expireStale` filters on `status` alone and
-  has no user scope to narrow it.
-- Provenance survives the hatch: `hatchEgg` inserts the dino with
-  `viaTrade: egg.viaTrade`. `eggs.viaTrade` had no reader before this; the three
-  readers of `dinos.viaTrade` are all in the shop module, so dropping it at the hatch
-  boundary silently reopened the alt-to-main shard funnel. Breeding is the third
-  boundary: `startBreeding` snapshots `parentA.viaTrade || parentB.viaTrade` onto the
-  `breedings` row (both parents are guaranteed present there, and the flag is only ever
-  set, never cleared), and `claimBreeding` reads that frozen column back verbatim —
-  `startBreeding` is the column's sole writer. Deliberately NOT re-derived from a fresh
-  read of the live parents at claim time: they're nullable by then (a parent can be sold
-  or traded away between start and claim) and a second source would only give the two a
-  way to disagree. Any future path that MINTS an item from an existing one has to carry
-  it too.
-- `adminReset` must delete from every table `locksFor` reads — `trades` and now
-  `breedings` — not only the tables holding the player's own items. The parents are
-  deleted moments earlier, so a surviving pending breeding holds a Gene Lab slot busy
-  forever and leaves a claimable pairing whose parents no longer exist.
-- Gene Lab: a dino holds 0–2 traits (`src/data/traits.ts`) and **never two from
-  one domain** — `TraitDomain` is `income | care | combat | meta`, and both
-  `pickTrait` (fresh rolls) and `spliceTrait` (re-rolls) exclude every domain
-  already occupied by the dino's surviving traits before drawing, so the rule
-  holds without any caller checking it. That's also what makes cancelling
-  pairs like `prolific` + `runt` structurally impossible — they share the
-  `income` domain. `hungerAt(hungerAtFed, lastFedAt, at, drainMs)`
+- `hungerAt(hungerAtFed, lastFedAt, at, drainMs)`
   (`src/core/clock.ts`) takes `drainMs` as a **required** parameter on
   purpose: a default would let a call site silently keep the flat 48h global
   rate instead of a trait-adjusted one (Hardy drains 25% slower, Grazer and
@@ -366,12 +265,9 @@ read or edited. Read one directly when you are planning against it rather than e
   prevent. Every production call site passes `drainMsFor(d.traits)` — never
   the bare constant — including `startBreeding`'s hunger-≥50 gate
   (`src/modules/genelab/service.ts`), `/feed all`'s hungriest-first sort, and
-  `comfortAt`. Breeding and splicing both hold a dino in escrow the same way
-  trading does: `locksFor` (`src/core/locks.ts`, documented in full above)
-  resolves a doubly-locked dino as `'breeding'` because it evaluates
-  `breedings` after `trades` — the fail-safe direction, since a breeding lock
-  can never be waived by a trade's `forTradeId` exemption. **Never swap those
-  two loops.**
+  `comfortAt`. Those multipliers come off the trait table, where a dino never holds
+  two traits from one domain —
+  `§trait-domains-never-doubled` in `docs/conventions/escrow-and-item-moves.md`.
 - Daily loop: one substrate, `track(ctx, userId, stat, delta)` (`src/core/stats.ts`),
   upserts a lifetime `user_stats` counter. Every call site sits inside the action's own
   existing transaction (or, where there isn't one already, is atomic on its own) — a
@@ -379,7 +275,8 @@ read or edited. Read one directly when you are planning against it rather than e
   measuring. Quest progress is **derived, never stored**: a `daily_quests` row freezes
   `baseline` (the counter's value at roll time) and `target`; `questProgress`
   (`src/modules/daily/service.ts`) computes `clamp(current - baseline, 0, target)` at
-  read time, same philosophy as the Gene Lab's derived escrow locks above — nothing
+  read time, the same philosophy as escrow locks (`§escrow-derived-never-stored` in
+  `docs/conventions/escrow-and-item-moves.md`) — nothing
   sweeps, nothing drifts, a missing `user_stats` row reads 0 at both baseline and
   progress. The roller (`pickBoard`) enforces three hard rules when it draws the day's
   3 quests from `QUESTS` (`src/data/quests.ts`): (a) no two slots share a stat; (b) at
@@ -402,15 +299,10 @@ read or edited. Read one directly when you are planning against it rather than e
   exempted by name (`EXEMPT_COMMANDS`/`EXEMPT_PREFIXES`) so there's no hint about the
   screen the user is already looking at; and an interaction that never replied (the
   errored path) is skipped, since `followUp` on an unreplied interaction throws.
-- Two constants in `src/data/progression.ts` are frozen by deliberate design decisions,
-  not values to keep in sync as content ships — do not "fix" either to track the
-  roster. `COLLECTION_TARGET` (190) is the rarity-weight sum of the species
-  roster the collection term shipped against; it must never become a live sum
-  over `allSpecies()` — a live denominator would tax every existing player's
-  rating each time a new species ships, and the collection term's
-  `Math.min(1, ...)` clamp is precisely what lets new species act as alternate
-  paths to the existing target instead of moving it. `NPC_LEVEL_SANITY_CAP`
-  (12, enforced in `tests/battle-content.test.ts`) must never be raised to
+- `NPC_LEVEL_SANITY_CAP` (`src/data/progression.ts`, 12, enforced in
+  `tests/battle-content.test.ts`) is frozen by a deliberate design decision, not a value
+  to keep in sync as content ships — do not "fix" it to track the roster. It must never
+  be raised to
   accommodate a new boss: simulation during the Abyssal Trench / Containment
   Site work showed a boss whose effective level (`npcLevel + levelBonus`)
   exceeded it was unwinnable, which is why both new bosses were tuned down on
@@ -421,7 +313,8 @@ read or edited. Read one directly when you are planning against it rather than e
   data point against ever raising it.
 - Living world: `worldEventFor(now)` / `eventMods(now)` (`src/core/world.ts`)
   are pure functions of a UTC timestamp — the day's event is DERIVED, never
-  stored, same philosophy as escrow locks and quest progress above.
+  stored, the same philosophy as quest progress above and as escrow locks
+  (`§escrow-derived-never-stored` in `docs/conventions/escrow-and-item-moves.md`).
   `WORLD_SALT` (`0x2c0`) is XORed into the day index before seeding
   `mulberry32` specifically so UTC days 0–4 all resolve to Clear Skies
   (fully neutral mods): `makeCtx` defaults `nowMs` to 0 (`tests/harness.ts`),
@@ -449,25 +342,12 @@ read or edited. Read one directly when you are planning against it rather than e
   that `accruedIncome` needed, for two knobs that already had a one-shot
   alternative (Heat Wave/Cold Snap scale `feedCostFor` instead of drain rate;
   Blood Moon scales `energyCostFor` instead of regen). For the same reason
-  `hungerAt` requires `drainMs` (see the Gene Lab bullet above),
+  `hungerAt` requires `drainMs` (see the `hungerAt` bullet above),
   `feedCostFor` (`src/modules/care/service.ts`) and `energyCostFor`
   (`src/modules/battles/service.ts`) both take `now` as a REQUIRED
   parameter, never defaulted — a default would let a call site silently keep
   the unmodified rate/cost, reintroducing the exact bug the parameter exists
   to prevent.
-  Every price or cost a world event can scale is quoted and charged through
-  exactly one helper — `eggPriceAt` / `foodPriceAt` / `roundCharge`
-  (`src/modules/shop/service.ts`), `sellCashAt` / `roundPayout`
-  (`src/modules/shop/shards.ts`), `feedCostFor`, `energyCostFor` — never a
-  raw table value re-multiplied inline at each call site. When this pattern
-  was introduced, egg price, food price, and sell cash each had three
-  separate read sites (a display quote, an autocomplete label, and the
-  actual charge or payout) and stage energy cost had five (the `runFight`
-  gate, its error text, and its debit all read one local `cost` computed
-  once, plus the chapters embed and the stage autocomplete each call
-  `energyCostFor` independently) that would otherwise have had to agree by
-  hand. Route any future price/cost surface through the matching helper
-  rather than re-deriving it.
   `EventMods.hatchTraitOdds` (`src/data/world-events.ts`) is a
   `[0-trait, 1-trait, 2-trait]` array of FRACTIONS summing to 1 — the same
   convention as `WILD_SLOT_ODDS`/`BRED_SLOT_ODDS` (`src/data/traits.ts`) —
@@ -495,8 +375,10 @@ read or edited. Read one directly when you are planning against it rather than e
   (`src/modules/admin/service.ts`), so a collision would let one player's reset or
   fast-forward silently kill or shift alerts for every server.
   `alerts_sent` (`schema.alertsSent`, read/written via `src/modules/park/alert-record.ts`)
-  is deliberately NOT the same kind of thing as the derived escrow locks or derived quest
-  progress documented above — it's a record of a SIDE EFFECT (a DM already sent for a
+  is deliberately NOT the same kind of thing as derived quest progress above, or the
+  derived escrow locks (`§escrow-derived-never-stored` in
+  `docs/conventions/escrow-and-item-moves.md`) — it's a record of a SIDE EFFECT
+  (a DM already sent for a
   specific instant), not a value re-derived at read time, because the underlying
   conditions aren't monotone: `incomeCapAlertFor`'s `pending` can drop to 0 and jump back
   up to a fresh capped payout the moment its owner feeds, so "has this exact instant
@@ -569,18 +451,6 @@ read or edited. Read one directly when you are planning against it rather than e
   against an explicit tolerance, so raising the cap or shipping a third drain trait moves the
   gate on its own. Any future cap raise is a decision about how long a dino may earn nothing,
   not a balance question.
-  The three-kinds-per-biome decor catalog (`src/data/decor.ts`, grown from 12 kinds to 23)
-  is a precondition for the cap, not incidental content: `tests/roster.test.ts`'s "every
-  species can reach the enrichment cap" test is the machine gate, and it would fail on the
-  original 12-kind table, where coast, tundra and volcanic each offered only one kind.
-  Never ship a species whose `biomeTags` aren't covered by at least `ENRICHMENT_CAP_KINDS`
-  distinct decor kinds.
-  Everything after a `/dex list` pager customId's prefix is CLIENT-supplied, so
-  `parseDexFilters` (`src/modules/dex/service.ts`) validates each slug against the real
-  union and degrades an unrecognised one (including the `-` placeholder) to "no filter" —
-  a raw slug reaching `dexRows` would match nothing and render an empty compendium. The
-  command path reads its own options through that same parser rather than casting, so
-  there is exactly one validated way into `DexFilters`.
   Alert tolerance had to widen for enrichment: `ALERT_INSTANT_EPSILON_MS`
   (`src/modules/park/alert-record.ts`, 2 hours) exists because a decor purchase moves a
   dino's `escapeAt` by only 34–65 minutes (one or two rungs) — comfortably inside the 12h
@@ -589,23 +459,6 @@ read or edited. Read one directly when you are planning against it rather than e
   suppress the legitimate case where a fed dino's escape instant leaves the window and
   later genuinely re-enters it, which is exactly what comparing `firedForMs` (with
   tolerance, not just presence) exists to allow.
-  `recordSpeciesSeen` (`src/core/species-seen.ts`) has exactly three write sites, each
-  inside the transaction that mints or transfers the dino so a rollback can't leave a
-  credit behind: `hatchEgg` (`src/modules/hatchery/service.ts`), a trade's receiving side
-  (`src/modules/trading/service.ts`), and `/admin give` (`src/modules/admin/service.ts`).
-  Eggs are deliberately NOT credited at any point, including a species-pinned Mythic egg
-  bought with shards — the dex only credits a species once a DINO of it actually exists,
-  never a promise of one.
-  A fourth writer exists but runs exactly once, by hand: `npm run backfill-species-seen`
-  (`scripts/backfill-species-seen.ts`), an operator step to be run AFTER migration 0010,
-  never as migration SQL — a failure there would block boot. It credits every player for
-  every species still in their inventory via `INSERT OR IGNORE` + `MIN(hatched_at_ms)`, so
-  a real `recordSpeciesSeen` credit always wins and re-running it is safe. Worth knowing
-  because **once it has run there is no trace that the table was seeded rather than
-  accumulated**: `species_seen` looks identical either way, and a species a player sold or
-  traded away before the backfill reads as never-seen — `tx_log` has no species column, so
-  that history is genuinely gone, which is the accepted cost of backfilling from live
-  inventory instead of shipping every dex empty.
   Standing hazard, now worse than before: retiring a decor `kind` from `DECOR`
   (`src/data/decor.ts`) silently drops every paddock relying on it — `matchedKindCount`
   treats an unknown slug as a non-match rather than throwing, the same tolerance
@@ -613,11 +466,6 @@ read or edited. Read one directly when you are planning against it rather than e
   1.0 → 0.75 fall; now it can also cost a rung on top — a paddock sitting at fit 1.10 in
   reliance on a since-retired kind silently drops to 1.05 or 1.00 the next time anything
   reads it, with no error and no record of what changed.
-- `tx_log.reverses_id` is deliberately NOT a DB-level foreign key. The table is
-  append-only — nothing in `src/` UPDATEs or DELETEs a ledger row, and a reversal is a
-  compensating row rather than an edit (`§reversal-is-a-compensating-row` in
-  `docs/conventions/economy-core.md`) — so nothing can ever dangle: the constraint would
-  buy nothing and costs drizzle type inference.
 - Specs in this repo are dated records of a decision as it was made, so a spec proven
   wrong after implementation is deliberately NOT corrected in place. The worked example is
   `docs/superpowers/specs/2026-08-27-operator-refunds-design.md` §3 case 6, whose
@@ -714,9 +562,6 @@ read or edited. Read one directly when you are planning against it rather than e
   badge; and 689 goes stale the moment the calendar crosses 2026-09-04 with nothing able
   to detect it, silently renumbering every badge already earned. 690 needs no recompute
   regardless of actual ship date.
-  Two migrations, not one: **0015** (`season_progress` + `season_claims`, both tables,
-  no column drop) and **0016** (`season_progress.hinted_rung`, added in a later task for
-  one-shot hint suppression — see below). Both apply on the same boot.
   `season_progress` rows are RETAINED per season rather than swept on rollover, unlike
   `rollDailyQuests`'s delete-every-other-key sweep — because `badgeAt` on a PAST row is
   the permanent record of that season's capstone, and a sweep would destroy the
@@ -794,13 +639,6 @@ read or edited. Read one directly when you are planning against it rather than e
   lots is never nudged — reachable in principle (60 shop purchases alone clears rung 1)
   but accepted rather than special-cased, since that player still sees the rung on
   `/season` itself.
-- Two constants behind park attendance are FROZEN, `COLLECTION_TARGET`'s rule applied
-  twice over: `ATTENDANCE_SPECIES_TARGET` (40) and `ATTRACTION_DRAW_TARGET` (210)
-  (`src/data/attendance.ts`) must never
-  become live counts over `allSpecies()`/`ATTRACTIONS` — a live denominator taxes every
-  existing park the moment new content ships, and the `min(1, …)` clamp on each is what
-  makes a new species or a new attraction kind an ALTERNATE PATH to the same target
-  rather than silent inflation of it.
 - `attendanceScores` (`src/modules/leaderboards/service.ts`), the board-wide twin of
   `attendanceOf` (`src/modules/park/attendance.ts`), is DELIBERATELY LAXER — it
   matches `recomputeRating`'s `assigned` filter and checks only the stored `escapedAt`,
@@ -808,22 +646,3 @@ read or edited. Read one directly when you are planning against it rather than e
   command has touched since an escape. That gap is bounded and self-correcting: it
   converges the next time anything settles the row, the same standing lag `/top`
   already accepts elsewhere on this board.
-- Migration 0018's read indexes are not a blanket `user_id` sweep and must not become
-  one. Every composite
-  primary key in this schema already leads with `user_id`, so those tables need nothing —
-  the only two that gained an index (`season_progress`, `user_guilds`) did so because their
-  hot read filters the key's *non-leftmost* column, which the key cannot serve. `tx_log`
-  used to have no filtered read anywhere in `src/` at all; operator refunds
-  (`docs/conventions/admin-ledger.md`) gave it its first, and the rule survives with one
-  carve-out. The reads are: by `id`, which the
-  primary key already serves; by `reverses_id`, the double-reversal guard inside
-  `EconomyService.reverse`; and two per-player reads, `/admin ledger`'s scan by `user_id` and
-  `adminReverse`'s reset-boundary lookup, which filters `(user_id, reason)` — worth knowing
-  before revisiting this decision, since the composite is the shape an index would have to
-  serve. `tx_log_reverses` (migration 0019) is
-  **PARTIAL** — `where reverses_id is not null`, the same shape as `timers_due` — so an
-  ordinary charge, on what will become the largest table in the schema, never enters the
-  index and pays essentially nothing for it, while the guard stays logarithmic. `user_id`
-  stays deliberately UNINDEXED and should: it would charge write cost on every economy
-  transaction in the game to serve a command an operator runs a few times a month. See the
-  per-index comments in `src/core/db/schema.ts` for which read each one serves.
