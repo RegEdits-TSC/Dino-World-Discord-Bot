@@ -74,7 +74,26 @@ export function allGlobEntries(manifest: Manifest): GlobEntry[];
 export function checkOrphans(files: string[], globEntries: GlobEntry[], errors: string[]): void;
 export function checkDeadGlobs(files: string[], globEntries: GlobEntry[], errors: string[]): void;
 export function checkUnfiledRules(manifest: Manifest, ruleMap: RuleMap, errors: string[]): void;
+export interface CrossDocRef {
+  anchor: string;
+  slug: string;
+}
+
+export interface CrossDocSource {
+  name: string;
+  text: string;
+}
+
+export interface CrossDocContext {
+  migrationComplete: boolean;
+  errors: string[];
+  info: string[];
+  docDir?: string;
+}
+
 export function auditDoc(doc: ManifestDoc, ctx: AuditDocContext): void;
+export function crossDocRefs(text: string): CrossDocRef[];
+export function checkCrossDocAnchors(sources: CrossDocSource[], ctx: CrossDocContext): void;
 export function checkOverCap(
   hasMarker: boolean,
   lines: number,

@@ -4,7 +4,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { auditDoc, checkOverCap } from '../scripts/conventions-audit.mjs';
+import {
+  auditDoc,
+  checkCrossDocAnchors,
+  checkOverCap,
+  crossDocRefs,
+} from '../scripts/conventions-audit.mjs';
 import type { ManifestDoc } from '../scripts/conventions-audit.mjs';
 
 const manifest = JSON.parse(readFileSync('docs/conventions/manifest.json', 'utf8'));
@@ -311,6 +316,116 @@ describe('fixture-driven check coverage (checks 4-8, exercised directly)', () =>
       });
     }
   );
+});
+
+// Check 9 exists because check 5 structurally cannot see these: check 5 resolves
+// only the anchors a doc cites in its OWN "## Headlines" block, against that
+// doc's OWN headings, so a §anchor sitting in body prose and naming ANOTHER doc
+// was unverified forever. The first such pointer written was already wrong and
+// reached review for exactly that reason. These drive the real check against a
+// throwaway fixture directory, never a tracked path.
+describe('fixture-driven check coverage (check 9, exercised directly)', () => {
+  function withFixtureDir(run: (dir: string) => void): void {
+    const dir = mkdtempSync(join(tmpdir(), 'conventions-crossdoc-fixture-'));
+    try {
+      run(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  function writeTarget(dir: string, slug: string, heading: string): void {
+    writeFileSync(
+      join(dir, `${slug}.md`),
+      ['## Headlines', '', `- a headline. §${heading}`, '', `## ${heading}`, '', 'Body.', ''].join('\n')
+    );
+  }
+
+  it('fires on an anchor naming another doc with no such heading, clears once the heading exists', () => {
+    withFixtureDir((dir) => {
+      writeTarget(dir, 'target-doc', 'somewhere-else');
+      const sources = [
+        { name: 'source-doc.md', text: 'See `§missing-anchor` in `docs/conventions/target-doc.md`.' },
+      ];
+
+      let errors: string[] = [];
+      checkCrossDocAnchors(sources, { migrationComplete: true, errors, info: [], docDir: dir });
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain('[cross-doc-anchor]');
+      expect(errors[0]).toContain('§missing-anchor');
+      expect(errors[0]).toContain('docs/conventions/target-doc.md');
+
+      writeTarget(dir, 'target-doc', 'missing-anchor');
+      errors = [];
+      checkCrossDocAnchors(sources, { migrationComplete: true, errors, info: [], docDir: dir });
+      expect(errors).toEqual([]);
+    });
+  });
+
+  it('defers an unwritten target while migration is incomplete, and errors once it completes', () => {
+    withFixtureDir((dir) => {
+      const sources = [
+        { name: 'source-doc.md', text: 'See `§some-anchor` in `docs/conventions/not-written-yet.md`.' },
+      ];
+
+      // Incomplete: reported on the info line, never silently dropped.
+      let errors: string[] = [];
+      let info: string[] = [];
+      checkCrossDocAnchors(sources, { migrationComplete: false, errors, info, docDir: dir });
+      expect(errors).toEqual([]);
+      expect(info).toHaveLength(1);
+      expect(info[0]).toContain('[cross-doc-deferred]');
+      expect(info[0]).toContain('not-written-yet.md §some-anchor');
+
+      // Complete: the same reference is a hard error.
+      errors = [];
+      info = [];
+      checkCrossDocAnchors(sources, { migrationComplete: true, errors, info, docDir: dir });
+      expect(info).toEqual([]);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain('which does not exist');
+    });
+  });
+
+  it('says nothing about a doc-level pointer that carries no anchor', () => {
+    withFixtureDir((dir) => {
+      const errors: string[] = [];
+      const info: string[] = [];
+      checkCrossDocAnchors(
+        [
+          {
+            name: 'source-doc.md',
+            text: 'The full statement lives in `docs/conventions/not-written-yet.md`.',
+          },
+        ],
+        { migrationComplete: true, errors, info, docDir: dir }
+      );
+      expect(errors).toEqual([]);
+      expect(info).toEqual([]);
+    });
+  });
+
+  it('pairs an anchor with the doc beside it, in either order and across a line break', () => {
+    expect(crossDocRefs('stated at `§a-rule` in\n`docs/conventions/other-doc.md`.')).toEqual([
+      { anchor: 'a-rule', slug: 'other-doc' },
+    ]);
+    expect(crossDocRefs("`docs/conventions/other-doc.md`'s `§a-rule` says so.")).toEqual([
+      { anchor: 'a-rule', slug: 'other-doc' },
+    ]);
+  });
+
+  it('leaves a same-doc anchor unpaired, even one sentence after an unrelated doc is named', () => {
+    // The real false pairing this guard exists for, caught on check 9's first
+    // run: park-progression names schema-and-migrations.md, ends the sentence,
+    // then cites its OWN §park-target-frozen some 60 characters later.
+    expect(crossDocRefs('`§own-section` below carries it.')).toEqual([]);
+    expect(
+      crossDocRefs(
+        'stated in full in `docs/conventions/schema-and-migrations.md`. The two frozen ' +
+          'denominators it depends on are tabulated at `§own-section` above.'
+      )
+    ).toEqual([]);
+  });
 });
 
 describe('CLAUDE.md core', () => {

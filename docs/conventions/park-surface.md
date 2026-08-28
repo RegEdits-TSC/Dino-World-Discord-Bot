@@ -14,7 +14,7 @@ suites that cover them (`tests/park.test.ts`, `tests/park-tabs.test.ts`,
 - The Park tab `deferUpdate()`s BEFORE rendering and then `editReply`s: `RENDER_TIMEOUT_MS` is 3000, Discord's whole initial-response window, and renders serialize process-wide, so rendering first can lose the interaction to 10062. §park-tab-defers-before-render
 - `settleEscapes` runs ONCE per interaction in `renderTab`, never per builder — it is write-bearing and `buildParkSnapshot` settles again internally. §settle-escapes-once-per-interaction
 - `bumpLegacyBest` fires once per `/park view` COMMAND invocation and never from a tab click; every tab builder and the whole visit path read the pure `legacyRank` instead, so a navigation click never mutates a row. §bump-legacy-best-once-per-command
-- Collect must stay the first button of the first row — `tests/park.test.ts` indexes `components[0].toJSON().components[0]` positionally. §collect-first-button-first-row
+- Collect must stay the first button of the first row — `tests/park.test.ts:208-218` indexes `components[0].toJSON().components[0]` positionally. §collect-first-button-first-row
 - `park:goto:landmark` and `park:goto:guests` reply EPHEMERALLY and never `i.update`: those handlers re-render their own message with no tab row, so updating in place strands the player one click from losing navigation. §goto-surfaces-reply-ephemerally
 - Tabs are a UI win, not a performance win: a tab switch re-pays the whole render's `SELECT`s, and about half of them are exact duplicates from `toClockDinos` running four times — any dedup must preserve the settle-escapes-once ordering. §park-view-select-cost-and-dupes
 - `withParkImage` APPENDS to `files` rather than assigning: it is the one sanctioned hand-touch of that key in `src/`, so `park.png` stacks onto whatever a payload already carries without clobbering it. §withparkimage-appends
@@ -51,7 +51,7 @@ why it exists. Any future `/park` subcommand MUST be added as its own `case`; th
 no longer a fallthrough to lean on, and none should be reintroduced.
 
 The park COMPONENT handler carries the identical rule for the identical reason, stated
-at `§park-component-default-arm` in
+at `§component-default-arm-must-acknowledge` in
 `docs/conventions/command-and-handler-surface.md`.
 
 ## park-feature-autocomplete-manifest
@@ -107,7 +107,7 @@ the pure `legacyRank` instead, so a navigation click never mutates a row.
 
 ## collect-first-button-first-row
 
-**Collect must stay the first button of the first row** — `tests/park.test.ts`
+**Collect must stay the first button of the first row** — `tests/park.test.ts:208-218`
 indexes `components[0].toJSON().components[0]` positionally.
 
 ## goto-surfaces-reply-ephemerally
@@ -249,7 +249,8 @@ both pass the owner check and both pass the allowlist, and for a PADDOCK — dup
 design, unlike a facility, which `DuplicateFacilityError` already stops
 (`§one-facility-per-kind` in `docs/conventions/park-progression.md`) — the second
 click builds a second one. The cost is not the cash but the SLOT: `lotSlots` caps at 10
-and a duplicate lot is permanent (`§duplicate-lots-are-permanent`, same doc), which is
+and a duplicate lot is permanent (`§duplicate-lots-are-permanent` in
+`docs/conventions/park-progression.md`), which is
 what stops this being triaged as minor. `lotCount` is a sound anchor precisely
 because it is monotone under those same rules — `buildLot` only ever increases it.
 

@@ -12,6 +12,8 @@
 //   6. Over cap        — CLAUDE.md is longer than claudeMdMaxLines.
 //   7. Missing headline — a rule's id appears in no headline line of its doc.
 //   8. Summarized body — a doc's body is thinner than its rules' word budget warrants.
+//   9. Cross-doc anchor — a doc (or CLAUDE.md) cites §name alongside another
+//      docs/conventions/<slug>.md, and that slug's file has no "## name" heading.
 //
 // Checks 4, 5, 7 and 8 are meaningless before a doc actually has a body: this
 // project ships the manifest (task 2) long before it ships the 28 doc files
@@ -30,6 +32,13 @@
 // exactly the length the rule map recorded when it was measured, so that
 // this exact audit can pass clean at the manifest's own commit, before
 // task 4 (which adds the <!-- UNMIGRATED --> marker) has run at all.
+//
+// Check 9 runs against whatever doc files exist, but defers a reference
+// whose TARGET file does not exist yet — the same migrationComplete
+// predicate check 4 uses — because a doc written in task 6 may legitimately
+// point at one task 11 has not written. A deferred reference is printed on
+// the info line rather than dropped, so it is visible while it waits, and it
+// becomes a hard error the moment migration completes.
 
 import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -229,6 +238,105 @@ export function auditDoc(doc, { ruleWordCountById, migrationComplete, errors, in
   }
 }
 
+// Check 9: cross-doc anchor. Check 5 resolves only the anchors a doc cites in
+// its OWN "## Headlines" block, against that doc's OWN "## " headings — so a
+// §anchor sitting in BODY prose and naming ANOTHER doc is unverified forever.
+// That gap is not hypothetical: the first such pointer written was already
+// wrong (park-surface cited §park-component-default-arm, an id that exists in
+// no doc and no manifest entry) and it reached review precisely because nothing
+// looked at it. Deduplication is the whole point of splitting CLAUDE.md, so
+// every remaining relocation task writes more of these.
+//
+// Pairing rule: scan a source's full text for §anchors and
+// docs/conventions/<slug>.md paths in document order, and pair an anchor with a
+// path when that path is the ADJACENT token — nothing else of either kind
+// between them — and within PAIR_WINDOW characters, looking forward first and
+// then back. Both orders occur in the real prose ("§a in `docs/…/b.md`" and
+// "`docs/…/b.md`'s §a"), and a pair is routinely split across a line break, so
+// this scans the joined text rather than line by line. Two shapes stay
+// deliberately silent: an anchor with no path beside it is a same-doc reference
+// and belongs to check 5, and a path with no anchor beside it names a whole doc,
+// where there is no name to get wrong.
+//
+// Adjacency and a character window are NOT enough on their own, and the first
+// run proved it: park-progression names schema-and-migrations.md, ends the
+// sentence, and cites its own §park-target-frozen 60 characters later — paired
+// backwards, that reads as a cross-doc reference to a doc that has no such
+// heading. So a pair must also carry no SENTENCE BREAK between its two tokens
+// (terminal punctuation followed by whitespace, or a blank line). A reference
+// and the doc it names are always in one clause together; a same-doc anchor in
+// the next sentence never is.
+const CROSS_DOC_REF_RE = /§([A-Za-z0-9_-]+)|docs\/conventions\/([a-z0-9-]+)\.md/g;
+const PAIR_WINDOW = 120;
+
+export function crossDocRefs(text) {
+  const tokens = [];
+  for (const m of text.matchAll(CROSS_DOC_REF_RE)) {
+    tokens.push({
+      kind: m[1] === undefined ? 'doc' : 'anchor',
+      value: m[1] === undefined ? m[2] : m[1],
+      start: m.index,
+      end: m.index + m[0].length,
+    });
+  }
+  const SENTENCE_BREAK = new RegExp('[.;!?]\\s|\\n\\s*\\n');
+  const joined = (from, to) =>
+    to - from <= PAIR_WINDOW && !SENTENCE_BREAK.test(text.slice(from, to));
+
+  const refs = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.kind !== 'anchor') continue;
+    const next = tokens[i + 1];
+    if (next && next.kind === 'doc' && joined(token.end, next.start)) {
+      refs.push({ anchor: token.value, slug: next.value });
+      continue;
+    }
+    const prev = tokens[i - 1];
+    if (prev && prev.kind === 'doc' && joined(prev.end, token.start)) {
+      refs.push({ anchor: token.value, slug: prev.value });
+    }
+  }
+  return refs;
+}
+
+// `sources` is [{ name, text }] — CLAUDE.md plus every doc file that exists.
+export function checkCrossDocAnchors(sources, { migrationComplete, errors, info, docDir = DOC_DIR }) {
+  const headingsBySlug = new Map(); // slug -> Set of headings, or null when the file is absent
+  const deferred = [];
+  for (const source of sources) {
+    for (const { anchor, slug } of crossDocRefs(source.text)) {
+      if (!headingsBySlug.has(slug)) {
+        const path = docFilePath(slug, docDir);
+        headingsBySlug.set(slug, existsSync(path) ? extractH2Headings(readFileSync(path, 'utf8')) : null);
+      }
+      const headings = headingsBySlug.get(slug);
+      if (headings === null) {
+        if (migrationComplete) {
+          errors.push(
+            `[cross-doc-anchor] ${source.name}: cites §${anchor} in docs/conventions/${slug}.md, which does not exist`
+          );
+        } else {
+          deferred.push(`${source.name} -> ${slug}.md §${anchor}`);
+        }
+        continue;
+      }
+      if (!headings.has(anchor)) {
+        errors.push(
+          `[cross-doc-anchor] ${source.name}: cites §${anchor} in docs/conventions/${slug}.md, ` +
+            `which has no "## ${anchor}" heading`
+        );
+      }
+    }
+  }
+  if (deferred.length > 0) {
+    info.push(
+      `[cross-doc-deferred] ${deferred.length} cross-doc anchor(s) name a doc not written yet, ` +
+        `enforced once migration completes: ${deferred.join('; ')}`
+    );
+  }
+}
+
 // Check 6: over cap. Skipped while CLAUDE.md still carries the
 // <!-- UNMIGRATED --> marker (task 4) — that marker means "still trimming,
 // still expected to be long". It is ALSO skipped for as long as CLAUDE.md is
@@ -252,6 +360,16 @@ export function checkOverCap(hasMarker, lines, manifest, ruleMapSourceLines, err
       `[over-cap] CLAUDE.md is ${lines} lines, over the ${manifest.claudeMdMaxLines}-line cap, and no longer carries the UNMIGRATED marker`
     );
   }
+}
+
+// The [{ name, text }] sources check 9 scans: every doc whose file exists.
+function docSources(docs, docDir = DOC_DIR) {
+  const sources = [];
+  for (const doc of docs) {
+    const path = docFilePath(doc.slug, docDir);
+    if (existsSync(path)) sources.push({ name: path, text: readFileSync(path, 'utf8') });
+  }
+  return sources;
 }
 
 export function main() {
@@ -282,6 +400,9 @@ export function main() {
       errors
     );
     auditDoc(doc, { ruleWordCountById, migrationComplete, errors, info });
+    // Check 9, scoped: only the references THIS doc makes, so a doc task still
+    // lands green on its own rather than on the state of the other 28.
+    checkCrossDocAnchors(docSources([doc]), { migrationComplete, errors, info });
   } else {
     const files = trackedFiles();
     const globEntries = allGlobEntries(manifest);
@@ -292,6 +413,13 @@ export function main() {
       auditDoc(doc, { ruleWordCountById, migrationComplete, errors, info });
     }
     checkOverCap(claudeMdHasMarker, claudeMdLines, manifest, ruleMap.source.lines, errors);
+    // Check 9, whole repo: every doc file that exists, plus CLAUDE.md itself,
+    // which points into docs/conventions/ from below the UNMIGRATED marker and
+    // can name a rule just as wrongly.
+    checkCrossDocAnchors(
+      [{ name: CLAUDE_MD_PATH, text: claudeMdContent }, ...docSources(manifest.docs)],
+      { migrationComplete, errors, info }
+    );
   }
 
   for (const line of info) console.log(line);
