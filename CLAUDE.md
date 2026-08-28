@@ -1112,10 +1112,24 @@
   redundant — the reachable one splits the pair across a page boundary (it takes exactly
   `PAGE_SIZE + 1` rows to land the reversal at the end of page 1 and the charge alone on page 2;
   one row either side and both land on the same page, which is how that test passed for free
-  until a mutation run caught it), and the other hand-inserts a zero-delta reversal row, a state
-  `EconomyService.reverse` cannot produce today because it negates its target's deltas.
+  until a mutation run caught it), and the other hand-inserts a zero-delta reversal row whose
+  TARGET moved something — that PAIRING is what `EconomyService.reverse` cannot produce, because
+  a moving charge always gets a moving reversal: cash and shards negate to non-zero, a food row
+  reverses to another food row, and a food row with `foodDelta === 0` throws rather than writing.
+  A zero-delta reversal ROW on its own is perfectly reachable — reversing a zero-movement row
+  takes the non-food branch, so `post` writes one with `skipBaseRow` false — and an earlier
+  revision of this line claimed otherwise, which is a plausible thing for the next implementer
+  to build on and false. What makes that reachable one useless for this test is that its target
+  is a zero-movement row too, so the target is hidden as well and there is no visible charge left
+  to check the mark on.
   **Hiding is a DISPLAY choice and never a permission**: `/admin reverse` still accepts a hidden
-  row's id, and a test pins that. The footer names the hidden count whenever there is one, and
+  row's id, and a test pins that. Doing so writes a reversal that is itself hidden — see the
+  reachable case above — so `EconomyService`'s later refusal, "#N was already reversed by #M",
+  names a row the default view will not show. No money is involved and `show-all` reveals both,
+  so nothing is at risk; it is worth knowing only because it is the one place the filter hides an
+  operator's OWN recorded action, and an operator who goes looking for #M and cannot find it will
+  conclude the message is wrong rather than that the row is filtered.
+  The footer names the hidden count whenever there is one, and
   confirms the wider view when show-all is set — an operator who cannot tell a filtered list from
   a complete one eventually concludes a charge does not exist. For the same reason a player whose
   every row was filtered away reads "No rows moved anything.", never "No transactions.": one of
