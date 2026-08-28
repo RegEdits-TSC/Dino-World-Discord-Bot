@@ -60,6 +60,7 @@ export function resetBoundaryOf(rows: Array<typeof schema.txLog.$inferSelect>): 
 // named, never keyed: `meat_basic` is a code identifier, not something to put in front of a
 // human, and an id the catalog no longer carries falls back to itself rather than crashing.
 export function movementOf(r: typeof schema.txLog.$inferSelect): string {
+  if (movedNothing(r)) return 'no movement';
   const sign = (n: number) => `${n > 0 ? '+' : ''}${n.toLocaleString('en-US')}`;
   if (r.foodId !== null && r.foodDelta !== 0) {
     return `${sign(r.foodDelta)} ${Object.hasOwn(FOODS, r.foodId) ? FOODS[r.foodId as FoodId].name : r.foodId}`;
@@ -67,7 +68,20 @@ export function movementOf(r: typeof schema.txLog.$inferSelect): string {
   const parts: string[] = [];
   if (r.cashDelta) parts.push(`${sign(r.cashDelta)} cash`);
   if (r.shardsDelta) parts.push(`${sign(r.shardsDelta)} shards`);
-  return parts.join(' ') || 'no movement';
+  return parts.join(' ');
+}
+
+// True for exactly the rows movementOf renders as 'no movement' — no cash, no shards, and no
+// food quantity. The predicate is what the ledger view hides by default (112 of the live
+// table's 173 rows were these, because every feed writes one alongside its food row), and it
+// lives HERE, beside the renderer, rather than as a second condition in ledger.ts: a filter
+// that disagreed with the text would either hide a row rendering a real figure or list one
+// reading 'no movement' under a heading promising the opposite. Never compare against the
+// rendered STRING to get this — that is the same mistake knownSideEffectFor exists to prevent,
+// and it breaks silently the next time the wording is edited.
+export function movedNothing(r: typeof schema.txLog.$inferSelect): boolean {
+  if (r.foodId !== null && r.foodDelta !== 0) return false;
+  return r.cashDelta === 0 && r.shardsDelta === 0;
 }
 
 // What the player holds now, in words — read AFTER the reversal commits, so the operator sees

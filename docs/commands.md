@@ -145,7 +145,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 | `/settings world-news` | Turn the daily world bulletin on or off for this server | **Requires the Manage Server permission**. Posts to the channel set by `/settings channel` — needs one configured to actually post |
 | `/admin give` | Grant resources to a player | Autocomplete: dino-species. **Bot owner only** |
 | `/admin inspect` | Dump a player's raw state | **Bot owner only** |
-| `/admin ledger` | Read a player's transaction ledger | **Bot owner only** |
+| `/admin ledger` | Read a player's transaction ledger | Rows that moved nothing — every feed writes one alongside its food row — are hidden by default and the footer says how many; `show-all: true` lists them. Hiding is display only: `/admin reverse` still takes a hidden row's id. **Bot owner only** |
 | `/admin reverse` | Reverse one ledger transaction | Names the player as a confirmation, and moves money only — whatever the charge bought stays. Refuses a charge from before a reset, and reversing a credit takes the cash back. **Bot owner only** |
 | `/admin reset` | Reset a player to a fresh start | **Bot owner only** |
 | `/admin fast-forward` | Advance a player's clock, for testing | **Bot owner only** |

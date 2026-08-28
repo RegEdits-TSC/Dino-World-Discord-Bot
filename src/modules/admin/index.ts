@@ -12,7 +12,7 @@ import { requireOwner } from './guard.js';
 import { adminGive, adminReset, adminFastForward, adminReverse, AdminError, NOTE_MAX } from './service.js';
 import { FOODS, type FoodId } from '../../data/foods.js';
 import { emojiTag } from '../../core/emojis.js';
-import { ledgerPayload } from './ledger.js';
+import { ledgerPayload, parseShowAll } from './ledger.js';
 
 const RARITIES: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
 
@@ -58,7 +58,12 @@ export const adminModule: ModuleManifest = {
           .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true)))
         .addSubcommand((s) => s.setName('ledger').setDescription('Read a player’s transaction ledger')
           .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true))
-          .addIntegerOption((o) => o.setName('page').setDescription('Page').setMinValue(1)))
+          .addIntegerOption((o) => o.setName('page').setDescription('Page').setMinValue(1))
+          // A boolean, so it needs no AUTOCOMPLETE_OPTIONS entry in tests/contract.test.ts.
+          // The description names what appears, not what the flag is called: hidden rows are
+          // every feed's zero-delta base row and every cash-neutral trade's.
+          .addBooleanOption((o) => o.setName('show-all')
+            .setDescription('Also list rows that moved nothing — every feed writes one')))
         .addSubcommand((s) => s.setName('reverse').setDescription('Reverse one ledger transaction')
           .addUserOption((o) => o.setName('user').setDescription('Player').setRequired(true))
           .addIntegerOption((o) => o.setName('tx').setDescription('Transaction id').setRequired(true).setMinValue(1))
@@ -106,7 +111,8 @@ export const adminModule: ModuleManifest = {
             await i.reply({ content: `♻️ Reset <@${target.id}> to a fresh start.`, flags: MessageFlags.Ephemeral });
           } else if (sub === 'ledger') {
             const page = i.options.getInteger('page') ?? 1;
-            await i.reply({ ...ledgerPayload(ctx, target.id, page), flags: MessageFlags.Ephemeral });
+            const showAll = i.options.getBoolean('show-all') ?? false;
+            await i.reply({ ...ledgerPayload(ctx, target.id, page, showAll), flags: MessageFlags.Ephemeral });
           } else if (sub === 'reverse') {
             const out = adminReverse(ctx, target.id, i.options.getInteger('tx', true),
               i.options.getString('note') ?? undefined);
@@ -164,12 +170,18 @@ export const adminModule: ModuleManifest = {
       // on the id's own action segment the same way, rather than adding a second entry.
       prefix: 'admin',
       async execute(ctx, i) {
-        const [, action, targetId, pageStr] = i.customId.split(':');
+        const [, action, targetId, pageStr, showAllSlug] = i.customId.split(':');
         if (action !== 'ledger') { await i.deferUpdate(); return; }
         // The id segment is the TARGET, not the clicker — the park:tour precedent — so the
         // gate is ownership of the BOT, never a match against the segment.
         if (i.user.id !== ctx.config.ownerId) { await i.deferUpdate(); return; }
-        await i.update(ledgerPayload(ctx, targetId!, Number(pageStr)));
+        // The show-all flag rides in the customId (ledgerPageRow, ./ledger.ts) and is read
+        // back here. Paging with a hardcoded default instead is the /dex list defect: the
+        // filter is silently dropped on the first Next click and the operator is looking at a
+        // different list than the one they asked for, with nothing to tell them. Everything
+        // after the prefix is client-supplied, so parseShowAll degrades an unrecognised slug
+        // to the default rather than erroring.
+        await i.update(ledgerPayload(ctx, targetId!, Number(pageStr), parseShowAll(showAllSlug)));
       },
     },
   ],

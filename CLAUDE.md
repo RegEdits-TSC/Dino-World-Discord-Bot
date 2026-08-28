@@ -1077,6 +1077,51 @@
   the pager), so the flag now has its own `fakeCommand({ sub: 'ledger' })` test. The
   ephemerality is also what lets the pager's ownership check be described as defence in depth
   rather than the only lock; weaken one and the other stops being enough.
+  **The ledger hides rows that moved nothing, which makes it a FILTERED list — so its page
+  buttons carry the flag and must never go back through the shared `pageRow`.** On the live
+  table 112 of 173 rows were zero-movement, because every feed writes a zero-delta base row
+  alongside the food row that actually moved something, so page one was almost entirely "no
+  movement" and the charges an operator opens this view to find sat pages back. Hiding them
+  costs nothing: reversing one moves no money AND permanently consumes that row's single
+  reversal, so there was never anything to reach for. `movedNothing`
+  (`src/modules/admin/service.ts`) is the predicate, and it lives beside `movementOf` and is
+  called BY it — one definition, so the filter and the words "no movement" cannot disagree.
+  Never re-derive it in `ledger.ts`, and never get it by comparing against the rendered
+  string: that is the mistake `knownSideEffectFor`'s `string | null` exists to prevent, and it
+  breaks silently the next time the wording is edited. The **reset marker is exempt** and takes
+  its own branch ahead of the movement test in both the filter and the renderer — it is
+  zero-delta by construction and it is the one boundary the operator cannot do without, since
+  `adminReverse` refuses everything below it.
+  The customId is `admin:ledger:<targetId>:<page>:<all|->` — the `dexPageRow` precedent
+  (`src/modules/dex/embeds.ts`) followed rather than rediscovered. `pageRow`'s
+  `<prefix>:<action>:<userId>:<page>` has nowhere to put filter state, and paging a filtered
+  list through it silently returns the UNFILTERED page: wrong rows, wrong count, no error.
+  **Do not widen `pageRow`** for this any more than the dex did — its four other callers
+  (`ach`, `hatch`, `park:dinos`, `trade:list`) have no business knowing about a ledger flag.
+  `parseShowAll` recognises exactly one literal and degrades everything else — the `-`
+  placeholder, a stale id from an older deploy, a forged value, a missing segment — to the
+  DEFAULT, which hides: that is the safe direction, because the footer then says rows are
+  missing, whereas degrading toward showing would silently widen a view the operator did not
+  ask to widen.
+  **Both derivations stay over the FULL row set, whatever the filter or the page renders.**
+  `reversedBy` and `resetBoundaryOf` are built from `rows`, never from the filtered `shown`
+  nor the paginated `items`. Narrow either and a charge whose compensating row is hidden — or
+  merely on another page — reads as un-reversed, and the operator's next move on a charge that
+  reads that way is to reverse it: `EconomyService` refuses the second one, but only after they
+  have already decided the player is owed money. Two tests hold this, and they are not
+  redundant — the reachable one splits the pair across a page boundary (it takes exactly
+  `PAGE_SIZE + 1` rows to land the reversal at the end of page 1 and the charge alone on page 2;
+  one row either side and both land on the same page, which is how that test passed for free
+  until a mutation run caught it), and the other hand-inserts a zero-delta reversal row, a state
+  `EconomyService.reverse` cannot produce today because it negates its target's deltas.
+  **Hiding is a DISPLAY choice and never a permission**: `/admin reverse` still accepts a hidden
+  row's id, and a test pins that. The footer names the hidden count whenever there is one, and
+  confirms the wider view when show-all is set — an operator who cannot tell a filtered list from
+  a complete one eventually concludes a charge does not exist. For the same reason a player whose
+  every row was filtered away reads "No rows moved anything.", never "No transactions.": one of
+  those players has a history and the other does not. Adding the `show-all` option is a builder
+  change, so it needs `npm run deploy-commands`; it is a boolean, so it needs no
+  `AUTOCOMPLETE_OPTIONS` entry in `tests/contract.test.ts` and moves no command count.
   **`sideEffectFor` (`src/data/tx-reasons.ts`) fails CLOSED** on a reason prefix it does not
   know — "unrecognised — check manually", never a blank — because a blank note and "this
   charge left nothing behind" are indistinguishable to an operator, and a new spend path can
