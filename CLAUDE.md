@@ -103,28 +103,8 @@ read or edited. Read one directly when you are planning against it rather than e
 <!-- UNMIGRATED: everything below moves to docs/conventions/ and this marker
      is deleted by the final task. Nothing may be added below this line. -->
 
-- Slash commands live in `ModuleManifest`s (`src/core/modules.ts`). Commands
-  may define `autocomplete?(ctx, i)`: providers only ever `i.respond(...)`
-  (never `reply`/`defer`), never call `getOrCreateUser` (no row creation on
-  keystrokes), and are read-only — the only permitted write is `settleEscapes`
-  (guard on the user row existing first: it crashes for unknown users). Escrow
-  no longer needs a sweep here: `locksFor` (`src/core/locks.ts`) is a pure read.
-  `expireStale` survives in the `/trade accept|decline|cancel` provider only
-  because that list's `status` filter is what hides a dead trade. Router-level
-  errors degrade to an empty suggestion list.
-- Registering a new module touches 5 sites: modules.json, `src/core/module-list.ts`
-  (the `ALL_MODULES` array), tests/registry-load.test.ts (command count),
-  tests/config.test.ts (expected modules), and `tests/contract.test.ts:49`
-  (the top-level command count in "every builder serializes" — that same file
-  also enforces a bidirectional autocomplete manifest, so any option flagged
-  `.setAutocomplete(true)` needs a matching entry in `AUTOCOMPLETE_OPTIONS`
-  there too). `src/index.ts` and `src/deploy-commands.ts` both import
-  `ALL_MODULES` from that one list rather than declaring their own, so they no
-  longer need a manual edit.
-- A builder change is easy to miss. Example: `/sell`'s `dino` option now sets
-  `.setAutocomplete(true)` — its autocomplete handler already existed but was
-  dead because the builder never advertised the option as autocompleting to
-  Discord — and that builder change needed the same one-time redeploy.
+- `expireStale` survives in the `/trade accept|decline|cancel` autocomplete provider
+  only because that list's `status` filter is what hides a dead trade.
 - The fakes in `tests/harness.ts` (`fakeCommand`/`fakeAutocomplete`/`fakeButton`)
   enforce the real interaction lifecycle — reply-once, and defer-before-
   editReply/followUp — throwing the same `InteractionAlreadyReplied`/
@@ -143,22 +123,8 @@ read or edited. Read one directly when you are planning against it rather than e
 - Embed art ships from `assets/images/` via `assetImage` (`src/core/images.ts`);
   a missing file means the embed renders without the image — absent art is
   never an error. Generation prompts live in `docs/assets/prompts.md`.
-  **Always wire art with `attach(embed, payload, slot, assetImage(...))`** — it
-  sets the embed slot and appends the file together, so the two can never drift
-  apart (that drift shipped three attachment defects in round 2). A null ref is
-  a total no-op: `payload.files` is not even created, so an art-free payload
-  never ships an empty attachment array — `tests/hatchery.test.ts` and
-  `tests/notify-handlers.test.ts` both assert `files` is `undefined`, not `[]`.
-  `attach` APPENDS, so two calls on one payload both survive and **call order is
-  upload order**: several tests pin `files.map((f) => f.name)` with `toEqual`,
-  and three mock `assetImage` as a `mockImplementationOnce` queue keyed on
-  1st-call/2nd-call identity, so never reorder the calls, never hoist the
-  lookups above them, and never collect refs into an array first. A ternary that
-  guards on *domain data* (`best ? assetImage(...) : null` in shop,
-  `featured ? … : null` in hatchery) stays outside `attach` — it is not an
-  asset miss. `tests/images.test.ts`'s "no source file hand-assigns an embed
-  payload files array" guard bans the old `payload.files = [...]` idiom outright.
-  `fightFrames` (`src/modules/battles/embeds.ts`) is the one exception: every ref
+  `fightFrames` (`src/modules/battles/embeds.ts`) is the one exception to the
+  `attach` rule: every ref
   it builds is dressed onto several embeds and the files are then split across two
   payloads by the F1/F4 contract — do not convert any of them, however many there
   are. Separately, `withParkImage` (`src/modules/park/embeds.ts`) still
@@ -188,8 +154,8 @@ read or edited. Read one directly when you are planning against it rather than e
   site that never gains a seed depends on it, as does every filename pin in the suite
   written against a base name. Derive that set if you actually need the figure
   (`grep -rho '[A-Za-z0-9_-]*\.webp' tests/ | sort | uniq -c`) and never write it into
-  prose — the next pin to land makes it wrong, silently, the same reason the router-guard
-  passage below carries no counts. With a seed the pick is
+  prose — the next pin to land makes it wrong, silently, the same reason the router guard
+  in `docs/conventions/router-and-registry.md` carries no counts. With a seed the pick is
   ``mulberry32(hashSeed(`${kind}:${name}:${seed}`))`` scaled over `variantCount + 1`, so
   index 0 is always the base and the seeded path agrees with the unseeded one wherever
   no variant exists.
@@ -227,16 +193,6 @@ read or edited. Read one directly when you are planning against it rather than e
   since `dinoImage` passes no seed on either of its two lookups. That list is a snapshot,
   not an invariant — re-derive it with `grep -rn 'assetImage(' src/` and read the third
   argument, because a call site gaining a seed moves its base out of this class silently.
-  Five bases are **half-seeded**, which is subtler than either: `banners/trading`,
-  `leaderboards`, `guests` and `duel` are each unseeded at the surface they belong to
-  (`src/modules/trading/index.ts`, `leaderboards/index.ts`, `guests/embeds.ts`,
-  `duels/embeds.ts`) yet reach a SEEDED resolver through
-  `assetImage(t.art.kind, t.art.name, i.user.id)` (`src/modules/help/index.ts`), so a face
-  shipped for one of them would vary on `/help topic:trading` while `/trade` itself never
-  did; `banners/season` is the mirror image, seeded in `park/alert-embeds.ts` and unseeded
-  on `/season`. Seeding those five surfaces is real scope and was deliberately left undone
-  — do it in the change that ships the face, not before. `banners/help` was a sixth until
-  the `/help` overview was seeded too, so the two call sites that render it now agree.
   **Nothing in the suite proves a committed variant is REACHABLE**, and that is a
   deliberate omission rather than a gap to close: `tests/asset-variants.test.ts` proves the
   inverse — every variant has a committed base, numbering starts at 2 and never skips — so
@@ -255,10 +211,7 @@ read or edited. Read one directly when you are planning against it rather than e
   `tests/rolls.test.ts` pins known input/output pairs. **Never take its result modulo
   anything** — FNV-1a's low bits carry less avalanche than a PRNG's, which is why every
   selection in this repo runs it through `mulberry32` first.
-  Seeds by family, as shipped: **`eggs` and `hatch` on the egg's own row id**, so one egg
-  keeps one identity from purchase through to the reveal — the crack is the EGG's face,
-  not the hatched dino's — and **`banners` and site banners on the viewer's Discord id**,
-  a stable face per player per surface. Two departures from "the viewer", both
+  Two departures from the default of seeding a banner on the viewer's Discord id, both
   deliberate: `animalsPayload` (`src/modules/park/embeds.ts`) seeds on `user.discordId`,
   the park OWNER, because `park:vtab:<targetId>:animals` puts a visitor on someone else's
   tab and seeding on the clicker would give one park two faces; and `/shop view`'s egg
@@ -276,12 +229,7 @@ read or edited. Read one directly when you are planning against it rather than e
   `src/modules/care/index.ts`; `care_neglect`/`season` in
   `src/modules/park/alert-embeds.ts`) and why `/help` seeds both its no-variant topics and
   its no-variant overview banner harmlessly. Those arms start working on their own the day
-  their base gains a face, with no edit here. What must never happen on an
-  `assetImage('banners', …)` line is hoisting
-  the NAME into a `const`, or passing a **quoted string literal** as the seed:
-  `scrapeBannerNames` (`tests/images.test.ts`) reads one source line at a time and takes
-  every quoted string after the match, so the first loses the name entirely and the second
-  demands that `assets/images/banners/<seed>.webp` exist.
+  their base gains a face, with no edit here.
   **Audit art call sites with `grep -rn 'assetImage(' src/`, never by kind literal.**
   `src/modules/help/index.ts` calls `assetImage(t.art.kind, t.art.name, i.user.id)` — the
   kind is a VARIABLE read off `HELP_TOPICS`, the only such call site in `src/`, and it is
@@ -289,12 +237,7 @@ read or edited. Read one directly when you are planning against it rather than e
   this feature — the plan, three reconnaissance passes, two implementers — grepped for the
   literal and every one of them missed it; that one line serves every art-bearing help
   topic and it shipped unseeded until a reviewer read the file.
-  **A seeded call site needs a test that can detect the seed.** Four seeded sites shipped
-  where deleting the seed argument left the whole suite green, because the user ids in
-  those fixtures hashed to index 0 — which IS the base file — so the pin read identically
-  seeded or unseeded and proved nothing. Each has a guard now under an id that genuinely
-  moves the face; pick that id by resolving it against the real `assetImage`, never by
-  assuming one will differ. The matching hazard on the mock side:
+  The matching hazard, on the mock side of a seeded call site's test:
   `mockImplementationOnce((kind, name) => realAssetImage(kind, name))` silently DROPS the
   seed and the test keeps passing while exercising nothing. Three files carried mocks of
   that shape, one of them a file-wide spy that would have handed the base file to every
@@ -331,19 +274,6 @@ read or edited. Read one directly when you are planning against it rather than e
   trusting this count, since the next sweep-style test to land will add a
   sixth without anyone remembering to update this line) — and only
   `npm run typecheck` catches a stale one.
-- Two assets in one payload: call `attach()` for both and the second can never
-  clobber the first — appending is exactly what `attach` does, and hand-assigning
-  `payload.files` (the idiom that shipped those defects) is banned outright by
-  `tests/images.test.ts`. What `attach` cannot do for you is DEDUPE, and that
-  hazard is still live: attachment names are basenames only — `assetImage`
-  (`src/core/images.ts`) names the file after the RESOLVED face — `${name}.webp`, or
-  `${name}-vN.webp` where a seed picked a variant — with no `kind` prefix either way, so
-  two refs on one payload must resolve to distinct names. Same-named uploads make
-  `attachment://<name>.webp` ambiguous and one of the two embed slots renders the
-  wrong picture. `<site>-banner.webp` vs `<site>-thumb.webp` is safe; naming the
-  hatch cracks `hatch/<rarity>.webp` would NOT have been, against
-  `eggs/<rarity>.webp` — hence `<rarity>-crack`. Two-asset payloads are routine
-  now (shop, expeditions, hatchery, battles), so check the names, not the count.
 - `fightFrames` picks its thumbnail once, up front: the boss portrait on a boss
   stage, else the archetype art of `rosterFor(stage, squad.length)[0]` — the same
   lead enemy the Enemies field opens with, so the frame can never disagree with
@@ -362,17 +292,9 @@ read or edited. Read one directly when you are planning against it rather than e
   (`assets/emojis/manifest.json` tracks deployed hashes so reruns only touch
   what changed). Runtime lookup is `emojiTag` / `rarityEmoji`
   (`src/core/emojis.ts`) — unicode fallback when the map isn't loaded, so a
-  missing emoji is never an error. **Never call `emojiTag` in a module-level
-  constant** (the map loads after client ready, so module init would freeze
-  the fallback permanently), and **never put a custom emoji tag in an
-  autocomplete label** (Discord renders it as literal text there). Neither
-  mistake fails a test, because tests load no map. **Never pass a rarity tag
-  (`rarityEmoji(...)`) to `ButtonBuilder.setEmoji`** — unlike every other call
-  site, `setEmoji` throws rather than degrading: `resolvePartialEmoji('')`
-  returns `null` and the builder rejects it, and the six rarity gems
-  legitimately return `''` when no map is loaded. Today only `dw_cash` is
-  passed to `setEmoji`, so this is currently safe, but it's a live hazard for
-  future button work. Known resvg gotcha:
+  missing emoji is never an error. Neither the module-constant `emojiTag` mistake nor
+  the custom-emoji-tag-in-an-autocomplete-label mistake fails a test, because tests
+  load no map. Known resvg gotcha:
   `<ellipse fill="url(#gradient)">` with the default `objectBoundingBox`
   gradientUnits renders solid black — use `gradientUnits="userSpaceOnUse"`
   with `y1`/`y2` set to the ellipse's own pre-transform bbox instead (same
@@ -488,14 +410,7 @@ read or edited. Read one directly when you are planning against it rather than e
   `i.update`, so both paths must stay identical. That replay is why F4's
   payload can reach two send sites — `presentFight`'s closing `editReply` and,
   if a Skip races it, the button handler's `i.update`
-  (`src/modules/battles/index.ts:34-46`): discord.js's `MessagePayload` pushes
-  into `options.attachments` and `create()` only shallow-copies it, so one
-  payload object forwarded to both sends accumulates duplicate attachment ids
-  on whichever resolves second. Invisible to `tests/battles-embeds.test.ts`,
-  which builds `FramePayload`s directly and never constructs a
-  `MessagePayload`. `finalPayload()` there is the fix and the pattern to copy
-  for any future payload reused across two send sites: hand each call its own
-  fresh `attachments: []`, never forward the same object twice. Those same two
+  (`src/modules/battles/index.ts:34-46`). Those same two
   send sites also need ORDERING, not just unshared arrays: `entry.skipped` is
   only observable between frames, so a Skip landing while a beat frame's
   `editReply` is in flight cannot stop that PATCH, and a beat frame landing after
@@ -870,11 +785,6 @@ read or edited. Read one directly when you are planning against it rather than e
   now errors visibly instead of silently doing nothing. The switch's own comment records
   why it exists. Any future `/park` subcommand MUST be added as its own `case`; there is
   no longer a fallthrough to lean on, and none should be reintroduced.
-  The park COMPONENT handler had the same hole and got the same fix: its `action` chain is
-  now a `switch` with a `default` arm that `deferUpdate()`s, because an unrecognised
-  `park:*` action previously returned without acknowledging and Discord painted "This
-  interaction failed" after 3 seconds. A stale id from an older deploy lands there. Any
-  future park component action MUST be added as its own `case`.
   A payload reaching `deliverNotification` must never carry an `attachments` key — the
   inverse of the `i.update` rule the battles bullet above documents. `fightFrames`'s F1/F4
   sends need an explicit `attachments: []` on every call because two send sites reuse one
@@ -938,15 +848,7 @@ read or edited. Read one directly when you are planning against it rather than e
   original 12-kind table, where coast, tundra and volcanic each offered only one kind.
   Never ship a species whose `biomeTags` aren't covered by at least `ENRICHMENT_CAP_KINDS`
   distinct decor kinds.
-  `/dex list` is the one paginated surface that does NOT use the shared `pageRow`
-  (`src/core/paginate.ts`): its list is FILTERED, and `pageRow`'s
-  `<prefix>:<action>:<userId>:<page>` customId has nowhere to put that state, so paging
-  through it silently returned the unfiltered page — wrong rows, wrong title suffix, wrong
-  page count, no error. `dexPageRow` (`src/modules/dex/embeds.ts`) builds
-  `dex:page:<uid>:<page>:<rarity|->:<diet|->:<archetype|->` instead — 59 of Discord's 100
-  customId characters at worst — and `pageRow` stays untouched for its four other callers
-  (`ach`, `hatch`, `park:dinos`, `trade:list`). Any future filtered list needs the same
-  treatment; do not widen `pageRow`. Everything after the prefix is CLIENT-supplied, so
+  Everything after a `/dex list` pager customId's prefix is CLIENT-supplied, so
   `parseDexFilters` (`src/modules/dex/service.ts`) validates each slug against the real
   union and degrades an unrecognised one (including the `-` placeholder) to "no filter" —
   a raw slug reaching `dexRows` would match nothing and render an empty compendium. The
@@ -1000,31 +902,13 @@ read or edited. Read one directly when you are planning against it rather than e
   `landmarkTierOf(ctx, userId) + 1` — which is what removes the refund path rather
   than merely deferring it: with only one buyable rung at any moment, there is no
   wrong one to click.
-  That argument holds for the FUNCTION and not for the SURFACE, and the difference
-  cost real money before it was fixed. `park:landmark:buy:<uid>` carried no tier and
-  its handler answered with `i.reply`, so an old `/park landmark` message kept its
-  original label and a live button forever while `buyLandmark` re-derived `current + 1`
-  on every click: four clicks of one button labelled "Build Stone Marker" charged
-  5,000,000, then 10,000,000, then 20,000,000, then 40,000,000 — 32x its own label,
-  against a feature that ships no refund path precisely because a monotone ladder was
-  believed to have nothing to mis-buy. The customId is now
-  `park:landmark:buy:<uid>:<tier>` (the `hatch:crack:<eggId>` /
-  `dex:page:<uid>:<page>:<slugs>` precedent — 40 of Discord's 100 characters at a
-  20-digit snowflake), and the handler validates the parsed tier as an integer rung and
-  rejects anything that is no longer `current + 1`, in that order, after the owner check
-  and before any read or write. The success path additionally answers with `i.update` of
-  a freshly built `landmarkPayload`, so the message just used advances to the next rung —
-  but that is a second layer only, never the guard: any OTHER open message still holds a
-  stale button, which is why the tier check is what actually protects the purchase. The
-  top of the ladder is deliberately NOT pre-rejected — at tier 6 no `offered` can equal
-  `current + 1`, so the click falls through to `buyLandmark`'s `LandmarkMaxedError`,
-  whose text names `LANDMARKS[MAX_LANDMARK_TIER - 1].name` rather than a retyped
-  literal. Any future button that spends money needs the same treatment: the rung, page
-  or amount it was minted for belongs in the customId, because a Discord message is
-  durable and its label is not re-derived.
+  The top of the ladder is deliberately NOT pre-rejected — at tier 6 no offered tier
+  can equal `current + 1`, so the click falls through to `buyLandmark`'s
+  `LandmarkMaxedError`, whose text names `LANDMARKS[MAX_LANDMARK_TIER - 1].name`
+  rather than a retyped literal.
 - Operator refunds (`/admin ledger`, `/admin reverse`) are the first readers `tx_log` has
   ever had. It was written at every economy call site and read by nothing, so after a wrong
-  charge — the landmark stale button above is the worked example — the operator could hand
+  charge — the landmark stale button is the worked example — the operator could hand
   cash back with `/admin give` but could not see what had actually been charged, could not
   tell whether they had already made the player whole, and left no record that the grant was
   remediation rather than a gift. Reversing that landmark charge is now possible, and the
@@ -1217,9 +1101,7 @@ read or edited. Read one directly when you are planning against it rather than e
   confirms the wider view when show-all is set — an operator who cannot tell a filtered list from
   a complete one eventually concludes a charge does not exist. For the same reason a player whose
   every row was filtered away reads "No rows moved anything.", never "No transactions.": one of
-  those players has a history and the other does not. Adding the `show-all` option is a builder
-  change, so it needs `npm run deploy-commands`; it is a boolean, so it needs no
-  `AUTOCOMPLETE_OPTIONS` entry in `tests/contract.test.ts` and moves no command count.
+  those players has a history and the other does not.
   **`sideEffectFor` (`src/data/tx-reasons.ts`) fails CLOSED** on a reason prefix it does not
   know — "unrecognised — check manually", never a blank — because a blank note and "this
   charge left nothing behind" are indistinguishable to an operator, and a new spend path can
@@ -1268,121 +1150,8 @@ read or edited. Read one directly when you are planning against it rather than e
   from "fell back" needs `knownSideEffectFor`'s `string | null`, never a string comparison
   against the fallback text — that would work today and break silently the next time the
   wording is edited. Fail closed for money actually taken, never for money paid out.
-  One general rule this feature nearly shipped broken, worth stating on its own: **a
-  component's `prefix` must be the FIRST customId segment and nothing more.**
-  `ModuleRegistry.findComponent` (`src/core/modules.ts`) resolves a handler by
-  `customId.split(':')[0]`, so registering `prefix: 'admin:ledger'` matches nothing at all —
-  `routeInteraction`'s `if (comp)` falls straight through, the interaction is never
-  acknowledged, and Discord paints "This interaction failed" after three seconds. The ledger
-  pager was written that way and would have shipped dead. Nothing STRUCTURAL catches it: the
-  registry's boot-time duplicate check only rejects a REPEATED prefix, never an unreachable
-  one, and the router's real-payload sweep builds a synthetic registry from a hardcoded prefix
-  list rather than resolving any real manifest's. What catches it is a per-component ROUTED
-  test — one that dispatches the real minted customId through `routeInteraction` against a
-  registry built from the real `ALL_MODULES` and asserts a reply lands — and the ledger pager
-  has one (`tests/admin.test.ts`, "routes the real Next button through the registry"). Every
-  new component needs its own; the generic gates will not cover you.
-  Only one entry per prefix may exist, so a handler takes the
-  whole prefix and branches on the id's own action segment internally — `park` dispatching
-  `park:tab`, `park:vtab` and `park:tour` from one entry is the pattern — acknowledging an
-  unrecognised action with `deferUpdate`, never a bare `return`, for exactly the reason the
-  park component handler's own `default` arm already documents.
-- **A component handler must verify
-  the clicked customId is actually present on the message that carries it**:
-  `clickedIdIsOnMessage(i)` (`src/core/components.ts`) walks `Message#components` —
-  Discord's own record of the buttons the bot put there, unforgeable by the client —
-  and matches the whole id by exact equality, never a prefix. It fails CLOSED (no
-  components, no authority) and recurses into v2 containers, because failing to look
-  inside a nesting component would break a legitimate click rather than admit a forged
-  one. `duel:accept|decline` is the first caller and the reason the rule exists: without
-  it, any player could force a duel on any other and move their Elo, and a forged
-  `duel:decline` could blank an unrelated bot message via `i.update`.
-  **Message authorship is NOT a substitute** — the first fix bound the challenger
-  segment to `Message#interactionMetadata.user.id`, which proves only that the anchoring
-  message came from SOME interaction of that player's; a public `/park view`, a
-  `/duel record`, or their genuine challenge card addressed to a THIRD player all
-  satisfy it, and the original exploit reproduced unchanged against it. The button set
-  is the check; `interactionMetadata` is not read anywhere in `src/` any more.
-  **That check is now enforced once, for every component, by the router itself.**
-  `routeInteraction` gates `comp.execute` on `clickedIdIsOnMessage(interaction)`, so a
-  forged customId anchored on a message that does not carry that button is rejected
-  before any handler runs. Four placement details are each load-bearing: it sits AFTER
-  `findComponent`, inside `if (comp)` (hoisting it would make the router acknowledge
-  every unclaimed customId prefix in existence, replacing the fully-silent no-op pinned
-  since the router was written); it rejects with `await i.deferUpdate()` and a
-  `logger.warn`, never a bare `return` (which paints "This interaction failed" after 3s
-  on every rejected click, an innocent pager double-click included) and never a distinct
-  text reply (an oracle telling an attacker the GUARD, not the handler, stopped him);
-  it `return`s BEFORE `postDispatch`, because `deferUpdate()` sets `i.deferred = true`
-  and `dailyRouterHooks.postDispatch` gates only on `!i.deferred && !i.replied`, so
-  falling through would emit a real quest/season followUp for a forged click and burn
-  the one-shot `notifiedAt` / `hintedRung` stamps; and it lives inside the existing
-  `try`, so a `deferUpdate()` that throws on an expired interaction is caught rather
-  than becoming an unhandled rejection. Module-level `clickedIdIsOnMessage` calls are
-  DEFENCE IN DEPTH from here on — the duel one stays because callers that invoke
-  `comp.execute` directly bypass the router entirely: `scripts/test-live.ts`, and four
-  S1 regression fixtures in `tests/duels.test.ts` that dispatch the same way (via
-  `duelsModule.components[0].execute`, not through the router) and therefore FAIL
-  LOUDLY — not pass vacuously — if the duel handler's own call is deleted.
-  Nearly every rejected click is a harmless repeat of the action that just ran — a
-  repaint race bounded to milliseconds — with one exception worth knowing: `alertPayload`
-  (`src/modules/park/alert-embeds.ts`) puts Feed all / Collect / Mute on ONE row and any
-  one of them wipes all three, so a click rejected there can be a DIFFERENT real action
-  the user wanted, not merely a repeat of the one that just ran.
-  **This closes CROSS-MESSAGE anchoring only, and misreading that is the most likely way
-  the guard causes harm.** It does NOT protect against stale-same-message replay — the
-  class that already cost real money on `park:landmark:buy`, whose stale buttons sat on
-  their own messages and would pass this guard cleanly. Every future button that spends
-  money, turns a page or names a rung still needs that state in its customId and
-  validated in its handler; the router guard relaxes none of that.
-  Select menus are routed now, and the guard was extended in the same change, exactly as
-  this paragraph called for while selects were still unrouted: they dispatch through their
-  own `selects` array and `findSelect` on `ModuleRegistry` (never by widening
-  `ComponentDef.execute` — see that type's own doc comment for why), and
-  `routeInteraction` gates the select branch on `clickedIdIsOnMessage` too, with the same
-  fail-closed `deferUpdate` + `logger.warn` rejection the button branch uses. That guard
-  proves the bot minted THIS MENU on THIS MESSAGE and nothing about `i.values`, which ride
-  outside the `custom_id` on a separate client-supplied channel. **The router calls a
-  second guard centrally for the same reason it hoisted the first one** — this repo's own
-  history is the argument, since the id guard exists because a per-handler check was
-  forgotten once already: `submittedValuesAreOnMessage` (`src/core/components.ts`) runs
-  right after `clickedIdIsOnMessage` passes (it reads the menu's own options off the
-  message, so it's only meaningful once the menu is known to be the bot's), with the same
-  rejection shape and its own distinct `logger.warn` message so the two rejections read
-  apart in logs — the client sees no difference either way. No select handler validates
-  its own values as a way of satisfying this; a handler still owns any DOMAIN validation
-  beyond "these values were on this menu" (e.g. that an offered option is still legal for
-  the current state of a multi-step flow). One binding consequence: **never mint a select
-  with `min_values: 0`** — a legitimately empty submission from one now fails this guard
-  closed, since the router enforces it for every select with no opt-out. Give an optional
-  selection an explicit "none" option instead. Modals remain UNROUTED, and so do the
-  non-string select kinds (user/role/mentionable/channel, component types 5-8) — routing
-  string selects did not cover them, since `isStringSelectMenu()` is false for all four; a
-  future implementer wiring one up needs its own predicate and its own pair of guards. If
-  modals are ever routed, extend `clickedIdIsOnMessage`'s walk to follow
-  `SectionComponent.accessory` and `LabelComponent.component`, both of which sit outside
-  `.components`, in the same change. And if a button or select is ever minted onto a
-  message the bot does not own, add an explicit greppable flag on `ComponentDef`/
-  `SelectDef` — never a prefix exception list inside the router.
-  The guard's tests are its only evidence, and that is not a figure of speech: the
-  overwhelming majority of `fakeButton` sites never reach `routeInteraction` at all —
-  only three test files dispatch through it — and `npm run test:live` bypasses the router
-  by its own design, so both existing gates are blind to this seam and a simulated version
-  of the guard ran the whole suite green. The nine cases live in `tests/router.test.ts`
-  ("router component guard", plus the real-payload sweep that reads every minted id out
-  of the builder JSON rather than hand-typing it) and `tests/harness.test.ts` (the
-  `fakeButton` default `componentIds: [customId]`, load-bearing for every direct-execute
-  site). Do NOT add `componentIds` to the direct-execute sites: they test handler logic
-  and the default already models the truth.
-  **This passage deliberately carries no counts, and none should be added back.** Earlier
-  revisions pinned exact figures ("90 of 101", then "132 of 143") and both went stale — the
-  second time because the very commit correcting the number added five `fakeButton` sites of
-  its own, so it was wrong on arrival. A count written into prose is wrong the moment the
-  next test lands, and it is wrong silently. Derive the figures when you actually need them:
-  `grep -rc 'fakeButton(' tests/` summed, minus the one declaration site in
-  `tests/harness.ts`, gives the total; `grep -rl 'routeInteraction(' tests/` cross-referenced
-  against each of those files' own `fakeButton(` count gives the router-dispatching share.
-  The duel handler pairs it with a second rule worth copying: a client-supplied INSTANT
+- The duel handler pairs the customId guards with a second rule worth copying: a
+  client-supplied INSTANT
   needs clamping from ABOVE as well as below. `expiresAtMs` was bounded only as
   "finite and in the future", and `challengeAlreadyResolved`
   (`src/modules/duels/service.ts`) derives its replay window's lower edge from it —
@@ -1512,26 +1281,7 @@ read or edited. Read one directly when you are planning against it rather than e
   number, not just an equality check.
 - `/park` has an `autocomplete()` now — its first — serving `feature`'s `dino` option,
   so `'park feature': ['dino']` lives in `tests/contract.test.ts`'s
-  `AUTOCOMPLETE_OPTIONS` manifest. `park:tour:<targetUserId>`
-  (`src/modules/park/index.ts`) and `top:visit:<targetUserId>`
-  (`src/modules/leaderboards/index.ts`) are the repo's first customIds whose id
-  segment is a TARGET rather than an owner — visiting is public and read-only, so
-  neither carries an ownership check and neither should ever grow one; turning either
-  into an ownership check would make Next park / Visit work only for the player whose
-  park happens to already be on screen.
-  Both of those visiting surfaces render somebody else's park behind an interaction, and
-  BOTH acknowledge before they render — `park:tour` with `deferUpdate` + `editReply`
-  (a tour advances ONE message rather than accumulating one per hop; `deferReply` would
-  post a new one), `top:visit` with `deferReply` + `editReply` (the board it sits on must
-  survive the click). That ordering is not stylistic: `visitPayload` awaits `renderPark`,
-  whose own `RENDER_TIMEOUT_MS` (`src/core/render/client.ts`) is 3000 — Discord's ENTIRE
-  initial-response window — and renders serialize process-wide through one chain, so queue
-  wait stacks on top of the timeout. Rendering first cost the interaction to 10062 and
-  showed "This interaction failed" with no park, which is also the one case `visitPayload`'s
-  own `catch { png = undefined }` text-only degrade can never be delivered for. The
-  existence check stays AHEAD of the acknowledgement at all three surfaces (`park:tour`,
-  `top:visit`, `/park view user:`), because "That player has no park yet" is an EPHEMERAL
-  answer and either defer would have committed it to a public message.
+  `AUTOCOMPLETE_OPTIONS` manifest.
   Player-typed free text that reaches a public embed DESCRIPTION or a bot-authored,
   non-ephemeral message's CONTENT is defanged, never rejected outright: `defangLinks`
   (`src/core/text.ts`) splits the `](` sequence, because both surfaces render
@@ -1776,70 +1526,6 @@ read or edited. Read one directly when you are planning against it rather than e
   stays deliberately UNINDEXED and should: it would charge write cost on every economy
   transaction in the game to serve a command an operator runs a few times a month. See the
   per-index comments in `src/core/db/schema.ts` for which read each one serves.
-- Select menus route through their own `selects?: SelectDef[]` on `ModuleManifest`
-  (`src/core/modules.ts`) with their own `findSelect` and their own boot-time duplicate
-  check — NEVER by widening `ComponentDef.execute`. That declaration uses method syntax,
-  so its parameter is bivariant: widening it was measured to break exactly ONE call site
-  under `npm run typecheck` and go green everywhere else, while letting a select reach any
-  of the seventeen button handlers minted across this codebase's modules, every one of
-  which opens with `i.customId.split(':')` and none of which reads `i.values`. A select and
-  a button MAY share a prefix — separate namespaces — but two selects may not.
-  `routeInteraction` gates the select branch on TWO guards, both enforced centrally by the
-  router — never left to individual select handlers as their only proof. The Lots tab's
-  Build and Upgrade menus (below), the first select handlers to exist, re-implement
-  `submittedValuesAreOnMessage` as defence in depth, for the same direct-execute-bypass
-  reason the build allowlist is duplicated below, but never `clickedIdIsOnMessage` — that
-  one the router alone proves — in a fixed order: `clickedIdIsOnMessage` first (exactly as
-  it gates buttons), then
-  `submittedValuesAreOnMessage` (`src/core/components.ts`), only once the first guard has
-  already passed, since it reads the menu's own options off the message and is meaningless
-  before the menu itself is known to be the bot's. Each has the same `deferUpdate` +
-  `logger.warn` rejection shape as the button branch, and each guard's `logger.warn` carries
-  its own distinct message, so the two rejections read apart in logs even though the client
-  cannot tell them apart either way. `clickedIdIsOnMessage` proves the bot minted THIS MENU
-  on THIS MESSAGE and **nothing about `i.values`**, which arrive on a separate
-  client-supplied channel; `submittedValuesAreOnMessage` is what proves every submitted
-  value was one the bot actually offered on this menu. A select handler still owns any
-  DOMAIN validation beyond that — e.g. that an offered option is still legal for the
-  CURRENT state of a multi-step flow — and no handler NEEDS to re-prove "these values were
-  on this menu", because the router already has. A handler MAY keep its own copy as defence
-  in depth, and the Lots tab's Build and Upgrade menus (below) do exactly that: the router
-  is not on the path when `execute` is invoked directly, which is how
-  `scripts/test-live.ts` and all but a handful of this suite's dispatch sites reach a
-  handler. What is forbidden is treating a handler-level copy as the PRIMARY enforcement —
-  the router's is primary, and a new select must not ship relying on its own check instead.
-  It is ALL-OR-NOTHING: a partly
-  valid submission is rejected rather than filtered, since a shortened values array is a
-  selection the player never made. Only `submittedValuesAreOnMessage` needs a `Set` for
-  this — `offered = new Set(menu.options.map(o => o.value))`, never an object keyed by
-  value, since `__proto__` and `constructor` read back truthy from a plain object.
-  `clickedIdIsOnMessage` carries no equivalent risk to guard against: it never indexes into
-  anything by an attacker-supplied key, only walks `Message#components` and compares each
-  candidate to `i.customId` with `===`.
-  Nothing in the installed discord.js or discord-api-types claims Discord's gateway
-  validates submitted values, selection counts, or clicks on a `disabled` component, so
-  this repo assumes none of it is enforced. **Never close a select flow by disabling the
-  menu** — neither guard reads `disabled`, so a disabled select is not a lock. Remove the
-  component instead. **Never mint a select with `min_values: 0`** either, now that the
-  router enforces `submittedValuesAreOnMessage` for every select with no opt-out: a menu
-  minted that way can legitimately submit an empty `values` array, which the guard fails
-  closed on. A flow that needs an optional selection must give it an explicit "none" option
-  instead of relying on an empty submission.
-  Modals are still NOT routed, and neither are the non-string select kinds — user, role,
-  mentionable and channel selects, Discord component types 5-8. Routing STRING selects
-  did not cover them: `isStringSelectMenu()` reads false for all four, so they fall through
-  the router's top-level predicate check to the same silent no-op modals get. A future
-  implementer wiring one of those kinds up needs its own predicate, its own registry
-  namespace and its own pair of guards — not the assumption that "selects are routed now"
-  already covers it. If modals are ever routed, extend `clickedIdIsOnMessage`'s walk
-  to follow `SectionComponent.accessory` and `LabelComponent.component` in the same change —
-  both sit outside `.components`.
-  `tests/lib/discord-limits.ts` knows the select rules (25 options, 100-char label and
-  value, alone in its row — the alone-in-its-row rule is checked for every select type,
-  3 and 5-8, since it's identical for all of them; the option-count/label/value rules only
-  apply to type 3, since the other four don't carry an `options` array at all);
-  `tests/contract.test.ts` structurally CANNOT catch a select-menu mistake, since it walks
-  command options only.
 - The Lots tab's Build and Upgrade select menus follow the `park:landmark:buy` lesson,
   which they would otherwise repeat in a worse form. A menu option's `value` is an
   IDENTITY plus a STALENESS ANCHOR and never a price: `park:build` carries `<kind>`,
@@ -1864,7 +1550,8 @@ read or edited. Read one directly when you are planning against it rather than e
   The menu handler's identical allowlist is DEFENCE IN DEPTH, never the only guard — it
   earns its place because nearly every `fakeButton` site, and every case in
   `scripts/test-live.ts`, calls `execute` directly rather than through `routeInteraction`
-  (see the no-counts note in the router-guard section above).
+  (see the no-counts note under `router-guard-test-evidence` in
+  `docs/conventions/router-and-registry.md`).
   `upgradeLot(ctx, userId, lotId, expectedLevel)` takes the anchor as a REQUIRED fourth
   parameter — never defaulted, the same rule as `hungerAt(…, drainMs)`, `feedCostFor(now)`
   and `energyCostFor(now)` — and throws `StaleLevelError(expected, actual)`. Its guard order
