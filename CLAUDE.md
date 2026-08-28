@@ -120,115 +120,25 @@ read or edited. Read one directly when you are planning against it rather than e
   cosmetic review. It's REST-only: it deploys builders and posts messages over
   `discord.js`'s REST client, never logging in a second gateway session, so
   it's safe to run against the dev guild while the bot is live.
-- Embed art ships from `assets/images/` via `assetImage` (`src/core/images.ts`);
-  a missing file means the embed renders without the image — absent art is
-  never an error. Generation prompts live in `docs/assets/prompts.md`.
-  `fightFrames` (`src/modules/battles/embeds.ts`) is the one exception to the
-  `attach` rule: every ref
+- `fightFrames` (`src/modules/battles/embeds.ts`) is the one exception to the rule that
+  every embed image is wired through `attach` (`§always-use-attach` in
+  `docs/conventions/embed-payload-builders.md`): every ref
   it builds is dressed onto several embeds and the files are then split across two
   payloads by the F1/F4 contract — do not convert any of them, however many there are.
-- Art variants: a surface with more than one committed face ships `<base>-v2.webp`,
-  `-v3.webp`, … beside an untouched `<base>.webp`, and `assetImage(kind, name, seed?)`
-  (`src/core/images.ts`) picks which one. **Omitting the seed returns the base file**,
-  and that default is a compatibility contract rather than a convenience: every call
-  site that never gains a seed depends on it, as does every filename pin in the suite
-  written against a base name. Derive that set if you actually need the figure
-  (`grep -rho '[A-Za-z0-9_-]*\.webp' tests/ | sort | uniq -c`) and never write it into
-  prose — the next pin to land makes it wrong, silently, the same reason the router guard
-  in `docs/conventions/router-and-registry.md` carries no counts. With a seed the pick is
-  ``mulberry32(hashSeed(`${kind}:${name}:${seed}`))`` scaled over `variantCount + 1`, so
-  index 0 is always the base and the seeded path agrees with the unseeded one wherever
-  no variant exists.
-  **No variant count is hardcoded anywhere, and none should be.** `variantCount` scans
-  from `-v2` upward and stops at the first gap — exactly the invariant
-  `tests/asset-variants.test.ts` enforces (numbering starts at 2, never skips; every
-  variant has a committed base), which the resolver now DEPENDS on rather than merely
-  agrees with: a gap makes a face unreachable, an orphan makes a resolved name miss.
-  The families do not carry the same number of faces — `sites` ships fewer per base than
-  `eggs`, `hatch` and `banners`, and `battles` and `dinos` ship none — so never write a
-  uniform face count into code, a test or a doc; `ls assets/images/<kind> | grep -- '-v'`
-  is the answer. Shipping one more face needs no code edit and is **never inert — for a
-  base resolved through a SEEDED call site**: a seed's
-  draw is fixed and only `floor(draw * (count + 1))` moves, so raising a base's count
-  re-partitions that draw and **half of its seeds land on a different face** — exactly
-  half, provably, at every count. That is ONE rule, not a general case plus a mild one: the
-  `0 → 1` step that gives a variant-free base its first face obeys it too, and differs only
-  in that there is no other variant to move BETWEEN, so its moving half simply leaves the
-  base file — which is the whole point of shipping the face. Two real seeds that did move:
-  `banners/dino_roster` seed `u1` is `-v3` at three variants and `-v4` at four
-  (`tests/park.test.ts:1210`); `sites/coastal_dig-banner` seed `u2` is `-v2` at two and
-  `-v3` at three (`tests/battles-embeds.test.ts:290-291`). **Which half moves is not
-  knowable by eye, so budget for re-deriving every committed `-vN` pin on that base from
-  the real `assetImage`, never by hand** — half of them staying put is not something you
-  can find out without checking all of them.
-  **The converse is the trap, and it is the majority case: a base reached only by UNSEEDED
-  calls gains nothing from a new face — not eventually, but never — and nothing fails to
-  say so.** Dropping `banners/lots-v2.webp` into the repo today changes nothing, forever:
-  `lotsPayload` (`src/modules/park/embeds.ts`) is that base's only call site and it omits
-  the seed, so `assetImage` returns `lots.webp` and no test moves. Same for
-  `banners/rescue`, `achievements`, `dex`, `gene_splice`, `landmark` and every `event-*`;
-  for every `sites/<id>-thumb`; for every `battles/boss-<id>-portrait` (which must never
-  gain faces anyway — a boss is a named individual, one face is the point, and
-  `src/modules/battles/embeds.ts` says so at the call site); and for all of `dinos/`,
-  since `dinoImage` passes no seed on either of its two lookups. That list is a snapshot,
-  not an invariant — re-derive it with `grep -rn 'assetImage(' src/` and read the third
-  argument, because a call site gaining a seed moves its base out of this class silently.
-  **Nothing in the suite proves a committed variant is REACHABLE**, and that is a
-  deliberate omission rather than a gap to close: `tests/asset-variants.test.ts` proves the
-  inverse — every variant has a committed base, numbering starts at 2 and never skips — so
-  a face shipped for an unseeded-only base is a dead file that passes every gate green. A
-  machine gate was declined because the art bank is closed, which leaves this paragraph as
-  the only thing standing between a future art drop and a file nothing can ever render.
-  The hashed string is **composite on purpose** — `kind:name:seed`. `eggs` and `hatch`
-  ship one variant set per rarity apiece, with equal counts, so hashing a bare egg id
-  would pick the same index in both — egg #42 showing `common-v2` and then
-  `common-crack-v2` — collapsing two independent picks into one for a consistency
-  nobody can perceive. Same reasoning as `WORLD_SALT` (`src/core/world.ts`) and
-  `DEAL_SALT` (`src/modules/shop/service.ts`). `hashSeed` moved into `src/core/rolls.ts`
-  for this and now has two callers with different reasons to care that it never changes:
-  `rollDailyQuests` derives every player's daily board from it, so a changed hash
-  silently rerolls every board in flight AND reshuffles every face, with nothing failing.
-  `tests/rolls.test.ts` pins known input/output pairs. **Never take its result modulo
-  anything** — FNV-1a's low bits carry less avalanche than a PRNG's, which is why every
-  selection in this repo runs it through `mulberry32` first.
-  `/shop view`'s egg preview is a deliberate departure from the default of seeding a
-  banner on the viewer's Discord id: it
-  takes **no** seed at all, because it previews which rarities CAN be bought
-  before any egg exists — there is simply nothing there to seed from. That is the whole
-  reason, and an earlier revision of this line added a second one that does not hold:
-  seeding it on the viewer would NOT be what makes the preview disagree with the egg
-  actually bought, because it disagrees either way — every other egg surface resolves on
-  `String(egg.id)`, so an unseeded preview shows the base while the bought egg usually
-  shows a face. Don't re-add it. The banner on that same reply does take a seed: a banner
-  has no object to key on, so it keys on who is looking.
-  Seeding a base that ships no variants is a documented **no-op**, not a defect —
-  `pickVariant` returns the name unchanged when `variantCount` is 0 — which is why two
-  ternaries carry the seed across variant-free arms (`care_neglect` in
-  `src/modules/care/index.ts`; `care_neglect`/`season` in
-  `src/modules/park/alert-embeds.ts`) and why `/help` seeds both its no-variant topics and
-  its no-variant overview banner harmlessly. Those arms start working on their own the day
-  their base gains a face, with no edit here.
-  **Audit art call sites with `grep -rn 'assetImage(' src/`, never by kind literal.**
+- How many filename pins the suite holds against a base art name is a figure to derive,
+  never one to write into prose:
+  `grep -rho '[A-Za-z0-9_-]*\.webp' tests/ | sort | uniq -c` if you actually need it. The
+  next pin to land makes a written count wrong, silently — the same reason
+  `§router-guard-test-evidence` in `docs/conventions/router-and-registry.md` carries no
+  counts. The resolver default that makes such a pin valid at all is
+  `§unseeded-returns-base` in `docs/conventions/art-resolver.md`.
+- **Audit art call sites with `grep -rn 'assetImage(' src/`, never by kind literal.**
   `src/modules/help/index.ts` calls `assetImage(t.art.kind, t.art.name, i.user.id)` — the
   kind is a VARIABLE read off `HELP_TOPICS`, the only such call site in `src/`, and it is
   invisible to an `assetImage('sites'` / `assetImage('banners'` grep. Every enumeration on
   this feature — the plan, three reconnaissance passes, two implementers — grepped for the
   literal and every one of them missed it; that one line serves every art-bearing help
   topic and it shipped unseeded until a reviewer read the file.
-  The matching hazard, on the mock side of a seeded call site's test:
-  `mockImplementationOnce((kind, name) => realAssetImage(kind, name))` silently DROPS the
-  seed and the test keeps passing while exercising nothing. Three files carried mocks of
-  that shape, one of them a file-wide spy that would have handed the base file to every
-  new pin in the file it governs. **Any mock of `assetImage` must forward every
-  argument** — `(...args) => realAssetImage(...args)`.
-  Variant choice is a deliberate carve-out from "randomness comes from `ctx.rng()`", taken
-  knowingly rather than assumed. It is not the only seeded draw that bypasses `ctx.rng()`
-  — `rollDailyQuests`, `worldEventFor`, `dailyEggOffers` and `dailyDeal` all do — but it
-  is the only one that needs neither a clock nor a `ctx` at all: all four key off a day
-  derived from `ctx.now()`, while `pickVariant` is a pure function of
-  `(kind, name, seed)` over ids already in scope. That is what keeps `ctx` out of a dozen
-  pure display builders, and it is also what makes a Discord edit re-render the same face
-  it sent the first time.
 - Passive notifications carry a `NotifyPayload` (`src/core/notify.ts`):
   `string | { content?, embeds?, files?, components?, allowedMentions? }`.
   `Ctx.notify`'s third argument stays `message: string` on purpose — a string
@@ -262,59 +172,6 @@ read or edited. Read one directly when you are planning against it rather than e
   without a second code path. `revealPayload` is the other archetype surface: it
   ships the rarity crack as `image` and the archetype as `thumbnail`, two files on
   one `i.update` payload, each degrading independently.
-- Custom app emojis are hand-authored SVG in `assets/emojis/svg/`, rendered to
-  committed 128×128 transparent PNGs in `assets/emojis/png/` by
-  `npm run build-emojis` (`src/build-emojis.ts` + the `renderSvg` helper in
-  `src/core/render-svg.ts`, which decodes via `@napi-rs/canvas`'s bundled
-  resvg), and uploaded to Discord by `npm run deploy-emojis`
-  (`assets/emojis/manifest.json` tracks deployed hashes so reruns only touch
-  what changed). Runtime lookup is `emojiTag` / `rarityEmoji`
-  (`src/core/emojis.ts`) — unicode fallback when the map isn't loaded, so a
-  missing emoji is never an error. Neither the module-constant `emojiTag` mistake nor
-  the custom-emoji-tag-in-an-autocomplete-label mistake fails a test, because tests
-  load no map. Known resvg gotcha:
-  `<ellipse fill="url(#gradient)">` with the default `objectBoundingBox`
-  gradientUnits renders solid black — use `gradientUnits="userSpaceOnUse"`
-  with `y1`/`y2` set to the ellipse's own pre-transform bbox instead (same
-  stop colors/offsets, just a different coordinate system). `circle`/`rect`/
-  `polygon` gradients are unaffected. Worked example from `dw_food.svg`'s
-  `<ellipse cx="27" cy="30" rx="18" ry="14">`: `y1 = cy - ry = 30 - 14 = 16`,
-  `y2 = cy + ry = 30 + 14 = 44` — exactly the bbox `objectBoundingBox` would
-  have used. Separately: `tests/emoji-assets.test.ts` rejects any PNG whose opaque pixels are more
-  than 2% pure `#000000` (`MAX_BLACK_SHARE`), calibrated against the currency trio, none of which
-  use pure black — if a future SVG legitimately needs pure black across more of the canvas than
-  that, raise the threshold deliberately rather than fighting the guard.
-- `@napi-rs/canvas` decodes **raster** buffers asynchronously — PNG and WebP
-  alike. Setting `Image.src` from raster bytes and drawing in the same tick
-  silently yields a blank canvas, with no error. Always `await img.decode()`
-  before drawing one. **SVG** buffers decode synchronously, which is why
-  `renderSvg` needs no await and why every icon the park renderer draws (HUD
-  coin, lot icons, rarity dino chips) is read from `assets/emojis/svg/*.svg`
-  rather than a raster. That asymmetry is what splits `src/core/render/art.ts`
-  in two: `loadSvgImage` is synchronous, the three `assets/images/park/*.webp`
-  rasters are `await img.decode()`d inside `loadParkArt`, and
-  `renderParkPng(snap, art = EMPTY_ART)` **stays synchronous** — never move a
-  raster decode into it. `worker.ts` top-level-awaits
-  `loadParkArt().catch(() => EMPTY_ART)`: `loadParkArt` must never reject and
-  the `.catch` is belt-and-braces, because a rejected worker module boot fires
-  `client.ts`'s `error` handler, which terminates and nulls the worker — every
-  later `/park view` then silently loses its image and respawns another doomed
-  worker. Art never crosses `postMessage` (a canvas `Image` is not
-  structured-cloneable), `drawImage(null)` throws so every art site needs its
-  own non-null guard, and each `null` falls back to the flat fill / emoji glyph
-  in `src/data/render-icons.ts` — that file is the live fallback path, not dead
-  code.
-- Every file under `assets/images/` is **WebP q95** — `assetImage`
-  (`src/core/images.ts`) is the only path builder for them and appends `.webp`,
-  so flipping the format there propagates to every `attachment://` URL and every
-  `files[].name`. `scripts/fit-art.mjs` emits the same format. Three things are
-  deliberately NOT WebP: `assets/emojis/png/` (Discord's app-emoji upload expects
-  PNG and `manifest.json` hashes those exact bytes), `assets/emojis/svg/` (the
-  park renderer needs synchronous decode), and `park.png` — the `/park view`
-  render OUTPUT buffer from `renderParkPng`, an in-memory PNG (`canvas.toBuffer
-  ('image/png')`), not a committed asset. `tests/images.test.ts`'s "ships every
-  file under assets/images as .webp" test guards that nothing under
-  `assets/images/` regresses to another format.
 - Food is typed (`src/data/foods.ts`, 3 tiers × 2 diets) and lives in the
   `food_inventory` table — `users.food` no longer exists. Feeding sets
   `hunger = fillTo` (up to 150): `comfortAt` clamps the hunger term at 100, and
@@ -398,53 +255,6 @@ read or edited. Read one directly when you are planning against it rather than e
   PATCH in either interleaving; the lock is free during `ctx.sleep`, so a Skip
   clicked between frames still answers instantly. Any future third writer to a
   presented message must go through the same queue.
-  Embed art kinds are `eggs | sites | banners | battles | hatch | dinos`
-  (`assetImage`, `src/core/images.ts`); `hatch/<rarity>-crack.webp` is the
-  hatch-reveal image and its attachment name never collides with
-  `eggs/<rarity>.webp`. `assets/images/dinos/<archetype>-<diet>.webp` is a fixed
-  set of 8 (1024×1024 transparent cutouts, `fit-art.mjs cutout`, so a 31px
-  margin against the boss portraits' 24px — deliberate, recorded in
-  `docs/assets/prompts.md`): **art is keyed on archetype×diet, with a per-species file
-  as an OPTIONAL override** — `dinoImage(speciesId, archetype, diet)`
-  (`src/core/images.ts`) tries `dinos/<speciesId>.webp` first and falls back to
-  `dinos/<archetype>-<diet>.webp`, so a species with no file of its own costs no art and
-  adding a species stays a data-only change. All five dino-art call sites go through that
-  helper (`park/embeds.ts`, `duels/embeds.ts`, `dex/embeds.ts`, `hatchery/embeds.ts`,
-  `battles/embeds.ts`), never a bare `assetImage('dinos', …)`; `park/embeds.ts` needed
-  `Featured` (`park/showcase.ts`) to carry `speciesId` for it, a typecheck-only break that
-  `npm run build` and `npm test` both miss. Mocking `assetImage` can NOT intercept the two
-  lookups inside `dinoImage` — that call is module-internal — so a test that needs a
-  dino-art miss must mock `dinoImage` itself (`tests/hatchery.test.ts` and
-  `tests/battles-embeds.test.ts` both do). `support-carnivore`
-  shipped with zero species using it for exactly that reason; Archelon (uncommon,
-  support archetype, carnivore diet) now does, and it needed no new art at all —
-  proof the guarantee holds. That fixed cost has
-  a fidelity price: `archetype` is a combat concept, not a body-plan one, so
-  outliers share art loosely — `swift-carnivore` covers both `velociraptor` and
-  `quetzalcoatlus` (a beaked pterosaur), rendered as a scaled toothy theropod.
-  Accepted deliberately: a per-species `silhouette` field was considered and
-  declined, since it would have traded 8 images for roughly 12 plus a migration
-  across all 40 species files, to fix fidelity for a handful of outliers.
-  Banners are
-  1536×1024 (asserted in `tests/images.test.ts`) and transparent cutouts
-  1024×1024; `node scripts/fit-art.mjs banner|ground|cutout <src> <dest>`
-  produces the banners and the hatch cracks via `banner`/`cutout`, but NOT the
-  eggs or the boss portraits — those came from a one-off pass with a tighter
-  24px margin (vs the script's 31px) and, for the eggs, an egg-axis bias. The
-  season ground rasters (`park/ground-wet|dry|cold.webp`) come from `ground`,
-  cover-scaled to 1200×800 rather than banner's 1536×1024 — the park renderer's
-  canvas never needs more than that. `docs/assets/prompts.md` carries the
-  numbers and the two families' divergence; the cracks additionally keep
-  multiple disconnected alpha regions on purpose (falling shell fragments), so
-  the egg pass's "largest connected region" step must never be applied to them.
-  `assets/images/battles/` ships committed boss portraits
-  (`boss-<siteId>-portrait.webp`, 1024×1024 transparent cutouts pinned by
-  `tests/images.test.ts`); `assetImage`'s null-degrade still holds, so the
-  campaign stays fully playable if any of them is removed. Never stage a test
-  fixture inside `assets/images/` — vitest runs test files in parallel forks,
-  so a `writeFileSync`/`rmSync` on a committed asset path can be observed (or
-  deleted) by another file mid-run; `tests/battles-embeds.test.ts` mocks
-  `assetImage` instead.
   `tests/battle-balance.test.ts` asserts boss win rates under BOTH neutral mods and
   Blood Moon (`enemyHp` 1.15, the only event that touches combat). Under an event only
   the TRAITED floor (>=0.85) is asserted — requiring the untraited floor there too is
@@ -463,6 +273,18 @@ read or edited. Read one directly when you are planning against it rather than e
   assertion in this file uses — at 400 seeds the ladder's own gaps between adjacent
   bosses are smaller than its sampling noise, so a real inversion can read as a clean
   pass. Tune a boss by measuring at 3,000 seeds, not 400.
+- Dino art is keyed on archetype×diet, with a per-species file as an optional override
+  (`§dino-art-archetype-diet-with-species-override` in `docs/conventions/art-resolver.md`),
+  so a species with no file of its own costs no art. `support-carnivore`
+  shipped with zero species using it for exactly that reason; Archelon (uncommon,
+  support archetype, carnivore diet) now does, and it needed no new art at all —
+  proof the guarantee holds. That fixed cost has
+  a fidelity price: `archetype` is a combat concept, not a body-plan one, so
+  outliers share art loosely — `swift-carnivore` covers both `velociraptor` and
+  `quetzalcoatlus` (a beaked pterosaur), rendered as a scaled toothy theropod.
+  Accepted deliberately: a per-species `silhouette` field was considered and
+  declined, since it would have traded 8 images for roughly 12 plus a migration
+  across all 40 species files, to fix fidelity for a handful of outliers.
 - `HELP_TOPICS` (`src/modules/help/index.ts`) stores a LAZY art descriptor
   (`art?: { kind, name }`), never a built `ImageRef` — `assetImage` returns a
   fresh `AttachmentBuilder` per call and the map is module-level (same class of
@@ -580,16 +402,6 @@ read or edited. Read one directly when you are planning against it rather than e
   exempted by name (`EXEMPT_COMMANDS`/`EXEMPT_PREFIXES`) so there's no hint about the
   screen the user is already looking at; and an interaction that never replied (the
   errored path) is skipped, since `followUp` on an unreplied interaction throws.
-- Bot profile branding lives in `assets/branding/` — **not** `assets/images/`, whose
-  every file must be WebP (`tests/images.test.ts`). Discord takes GIF only for an
-  animated avatar or banner, at 512×512 and 680×240; those dimensions are contract
-  values asserted in `tests/branding.test.ts`, so `scripts/make-gif.ts`'s over-budget
-  ladder lowers frame rate (12 → 10 → 8) and never the canvas. `npm run deploy-branding`
-  is an operator step, not part of any build: Discord rate-limits profile edits to
-  roughly 2/hour, hence `--avatar-only` / `--banner-only`. It asserts the returned
-  asset hash starts with `a_` — Discord's own confirmation that it stored the
-  animation rather than a single static frame, which is otherwise a silent failure.
-  Regeneration prompts and the ffmpeg flag reasoning are in `docs/assets/prompts.md`.
 - Two constants in `src/data/progression.ts` are frozen by deliberate design decisions,
   not values to keep in sync as content ships — do not "fix" either to track the
   roster. `COLLECTION_TARGET` (190) is the rarity-weight sum of the species
@@ -673,24 +485,6 @@ read or edited. Read one directly when you are planning against it rather than e
   would silently delete or shift the world broadcast timer for every server.
   `'0'` can never collide with a real snowflake — Discord IDs start far
   above that range.
-  The season's cosmetic ground art is wired the same "id crosses, asset doesn't" way as the
-  event system's own art: `buildParkSnapshot` (`src/modules/park/snapshot.ts`) is the only place
-  with a `Ctx`, so it alone stamps `ParkSnapshot.season = seasonFor(ctx.now())` — an OPTIONAL
-  field, so the handful of hand-built `ParkSnapshot` test fixtures that predate seasons keep
-  compiling and keep resolving to the base ground, exactly like a snapshot built before this
-  feature shipped would. `renderParkPng` (`src/core/render/draw.ts`) never calls `seasonFor`
-  or reads a clock itself — it stays a pure function of its `(snapshot, art)` arguments, which is
-  what the byte-identical-output pin in `tests/render-draw.test.ts` requires. `ParkArt.groundBySeason`
-  (`src/core/render/art.ts`) is a `Record<Season, Image | null>`, exhaustively null-initialized in
-  `EMPTY_ART` the same way `dinoChips` is: a lookup miss on a real `Season` value must never read
-  back `undefined`, because `drawImage(undefined)` throws exactly like `drawImage(null)` does and
-  costs the whole park image. The fallback chain in `groundImage` (`draw.ts`) is
-  `groundBySeason[season] ?? ground ?? <flat fill>` — a missing or unloaded seasonal raster
-  degrades to the base ground, never to a blank canvas, and a snapshot with no `season` at all
-  (every pre-season fixture) skips the seasonal lookup entirely. The three rasters load inside
-  `loadParkArt`'s existing `Promise.all` alongside the base ground and both plates, so they
-  inherit the same never-rejects guarantee for free — no second `Promise.all`, no separate
-  top-level await for `worker.ts` to guard.
 - Proactive park alerts (escape warning + income cap) run on their own 15-minute sweep
   timer, `alert_sweep` (`SWEEP_MS`, `src/modules/park/alert-sweep.ts`) — separate from the
   30-second scheduler tick that drives the five passive notifications above. It enqueues
@@ -847,12 +641,6 @@ read or edited. Read one directly when you are planning against it rather than e
   `<= ctx.now()`) is defence-in-depth, not a second lock — under the clamp the two are
   provably equivalent, and reverting the bound to `ctx.now()` with the clamp still in
   place leaves all 88 duel tests green.
-- The landmark cell (`drawLandmark`, `src/core/render/draw.ts`) is drawn as one extra
-  grid cell AFTER the build slot, so every tile that existed before landmarks shipped
-  keeps the exact coordinates it already had — which is why adding it broke none of
-  `tests/render-draw.test.ts`'s pinned pixel samples. A missing or unloaded art band
-  degrades to a flat plinth fill rather than reaching `drawImage(null)`, which throws
-  and would cost the whole park image.
 - `/top`'s `scored()` (`src/modules/leaderboards/service.ts`) costs a FIXED number of
   `.select()` queries per metric, independent of roster size: 1 for cash/rating (the
   candidate scan alone), 2 for stars (+ `battle_progress`), 2 for collection
