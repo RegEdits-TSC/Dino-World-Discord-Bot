@@ -100,9 +100,10 @@ boundary of 0 means "never reset" for nearly every player and "reset before this
 for a handful, and nothing can tell those apart, so the note would have printed on the
 majority of ledgers, forever, about a condition most of them do not have. That is the same
 mistake as the unrecognised-side-effect fallback filling every payout row
-(`docs/conventions/economy-core.md`): a line an operator sees on every render is a line
-they stop seeing. Say it once, where it is read — `§boundary-blind-to-pre-deploy-resets`
-in `docs/conventions/admin-service.md` is that one place. The rule generalises to any
+(`§payout-suppresses-only-the-fallback` in `docs/conventions/economy-core.md`): a line an
+operator sees on every render is a line they stop seeing. Say it once, where it is read —
+`§boundary-blind-to-pre-deploy-resets` in `docs/conventions/admin-service.md` is that one
+place. The rule generalises to any
 future footer note: if it would fire on most renders about a condition most of them do not
 have, state it in the docs instead.
 

@@ -181,7 +181,7 @@ rule, and why that second mistake fails with nothing going red, are
 
 The suppression rule itself lives in ONE place, `sideEffectNoteFor`
 (`src/modules/admin/service.ts`), which both the ledger renderer and `adminReverse`'s
-reply call and neither re-derives. This pair is where the shared-helper rule in
+reply call and neither re-derives. This pair is where `§one-helper-two-surfaces` in
 `docs/conventions/economy-core.md` came from: these two DID disagree once, the ledger
 suppressing the note while the reply kept printing it.
 

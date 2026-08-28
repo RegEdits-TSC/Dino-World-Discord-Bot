@@ -39,11 +39,8 @@ down exists to spell out, row kind by row kind.
 ## reversal-is-a-compensating-row
 
 **A reversal is a compensating ROW, never an edit.** `tx_log` is append-only — nothing in
-`src/` UPDATEs or DELETEs a ledger row. The schema leans on that fact rather than
-duplicating it: `reverses_id` is deliberately not a DB-level foreign key, because nothing
-can ever dangle in an append-only table, so the constraint would buy nothing and costs
-drizzle type inference. That decision is stated in full in
-`docs/conventions/schema-and-migrations.md`.
+`src/` UPDATEs or DELETEs a ledger row. `reverses_id` leans on that: it is deliberately
+not a DB-level foreign key; see `docs/conventions/schema-and-migrations.md`.
 
 ## reversed-flag-is-derived
 
