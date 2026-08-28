@@ -126,27 +126,7 @@ read or edited. Read one directly when you are planning against it rather than e
   `fightFrames` (`src/modules/battles/embeds.ts`) is the one exception to the
   `attach` rule: every ref
   it builds is dressed onto several embeds and the files are then split across two
-  payloads by the F1/F4 contract — do not convert any of them, however many there
-  are. Separately, `withParkImage` (`src/modules/park/embeds.ts`) still
-  **appends** to `files` rather than assigning, so `park.png` can stack onto
-  whatever a payload already carries without clobbering it. `dashboardPayload`
-  (the Park tab, `src/modules/park/embeds.ts`) calls no `attach()` of its
-  own, though — it ships no art beyond whatever `withParkImage` adds, at all
-  three call sites that wrap it: `/park view` on your own park and
-  `renderTab`'s `park` branch (both `src/modules/park/index.ts`), plus
-  `visitPayload` (`src/modules/park/visit.ts`). The featured dino's
-  thumbnail lives on the ANIMALS tab instead (`animalsPayload`), attached
-  alongside the roster banner via two `attach()` calls of its own — a
-  different builder for a different tab, never wrapped by `withParkImage`.
-  `visitPayload` no longer hand-builds `components: []` the way an earlier
-  version did: it calls `dashboardPayload(user, 0, { …, visit: true })`
-  directly and takes ITS `components` (and, defensively, its `files`, though
-  `dashboardPayload` never sets that key today) — `visit: true` already
-  suppresses `park:collect` at the source (that button carries no user id,
-  so a viewer clicking it on someone else's park card would collect the
-  CLICKER's own income) while still minting the tab row, so there is neither
-  a components array to hand-build nor a featured-dino upload to forward: a
-  visited Park tab never carries one.
+  payloads by the F1/F4 contract — do not convert any of them, however many there are.
 - Art variants: a surface with more than one committed face ships `<base>-v2.webp`,
   `-v3.webp`, … beside an untouched `<base>.webp`, and `assetImage(kind, name, seed?)`
   (`src/core/images.ts`) picks which one. **Omitting the seed returns the base file**,
@@ -211,11 +191,9 @@ read or edited. Read one directly when you are planning against it rather than e
   `tests/rolls.test.ts` pins known input/output pairs. **Never take its result modulo
   anything** — FNV-1a's low bits carry less avalanche than a PRNG's, which is why every
   selection in this repo runs it through `mulberry32` first.
-  Two departures from the default of seeding a banner on the viewer's Discord id, both
-  deliberate: `animalsPayload` (`src/modules/park/embeds.ts`) seeds on `user.discordId`,
-  the park OWNER, because `park:vtab:<targetId>:animals` puts a visitor on someone else's
-  tab and seeding on the clicker would give one park two faces; and `/shop view`'s egg
-  preview takes **no** seed at all, because it previews which rarities CAN be bought
+  `/shop view`'s egg preview is a deliberate departure from the default of seeding a
+  banner on the viewer's Discord id: it
+  takes **no** seed at all, because it previews which rarities CAN be bought
   before any egg exists — there is simply nothing there to seed from. That is the whole
   reason, and an earlier revision of this line added a second one that does not hold:
   seeding it on the viewer would NOT be what makes the preview disagree with the egg
@@ -572,16 +550,6 @@ read or edited. Read one directly when you are planning against it rather than e
   `breedings` after `trades` — the fail-safe direction, since a breeding lock
   can never be waived by a trade's `forTradeId` exemption. **Never swap those
   two loops.**
-- One facility of each kind per park (`buildLot` throws `DuplicateFacilityError`,
-  whose `message` is the facility's display name). Paddocks stay duplicable — more of
-  one kind IS the capacity progression. `facilityLevel` (`src/modules/park/service.ts`)
-  resolves a kind to its highest-level row and is the single source for `capHours`,
-  `facilityBonusPct` and `incubatorSlots`, so pre-existing duplicate rows on a live DB
-  resolve to the best facility rather than to whichever the unordered SELECT returned
-  first. It returns 0 for an absent kind on purpose: `Math.max()` over an empty array
-  is `-Infinity` and neither level table guards its index, so a bare reduce would
-  return `undefined` and poison `accruedIncome` with `NaN`. There is no cleanup
-  migration and no way to delete a duplicate lot short of `adminReset`.
 - Daily loop: one substrate, `track(ctx, userId, stat, delta)` (`src/core/stats.ts`),
   upserts a lifetime `user_stats` counter. Every call site sits inside the action's own
   existing transaction (or, where there isn't one already, is atomic on its own) — a
@@ -632,9 +600,7 @@ read or edited. Read one directly when you are planning against it rather than e
   asset hash starts with `a_` — Discord's own confirmation that it stored the
   animation rather than a single static frame, which is otherwise a silent failure.
   Regeneration prompts and the ffmpeg flag reasoning are in `docs/assets/prompts.md`.
-- Park rating (`src/data/progression.ts`) is a 1000-point scale (`RATING_SCALE`):
-  every star figure anywhere in the game or its docs is `rating / 100`, ceiling
-  10.0★. Two constants in that file are frozen by deliberate design decisions,
+- Two constants in `src/data/progression.ts` are frozen by deliberate design decisions,
   not values to keep in sync as content ships — do not "fix" either to track the
   roster. `COLLECTION_TARGET` (190) is the rarity-weight sum of the species
   roster the collection term shipped against; it must never become a live sum
@@ -773,18 +739,6 @@ read or edited. Read one directly when you are planning against it rather than e
   warning it exists to send — and it would also turn "escapes are only settled when a
   command touches your park" (the Escapes section of `docs/gameplay.md`) into a lie, since
   a background timer isn't a command anyone touched.
-  `/park`'s dispatch used to be a trap for the next subcommand: before `/park landmark`
-  shipped, there was no subcommand switch, only a chain of explicit `=== 'rename'` /
-  `=== 'alerts'` checks with the view path as the fallthrough, so a brand-new
-  subcommand nobody had written a branch for fell through unguarded and rendered the
-  dashboard — reporting success for a command that did nothing. `execute`
-  (`src/modules/park/index.ts`) now dispatches on a real `switch (i.options.getSubcommand())`
-  with a `case` for `rename`, `alerts` and `landmark`, `case 'view': break;` to reach the
-  dashboard path below the switch, and a `default` arm that replies
-  `'Unknown /park subcommand.'` ephemerally and returns — so an unrecognised subcommand
-  now errors visibly instead of silently doing nothing. The switch's own comment records
-  why it exists. Any future `/park` subcommand MUST be added as its own `case`; there is
-  no longer a fallthrough to lean on, and none should be reintroduced.
   A payload reaching `deliverNotification` must never carry an `attachments` key — the
   inverse of the `i.update` rule the battles bullet above documents. `fightFrames`'s F1/F4
   sends need an explicit `attachments: []` on every call because two send sites reuse one
@@ -808,17 +762,6 @@ read or edited. Read one directly when you are planning against it rather than e
   ⇒ exactly 1.0", and it's the reason shipping enrichment moved no existing income or
   escape figure anywhere in the suite — every fixture that predates the feature used at
   most one matching decor kind.
-  `paddockFitBase` (no enrichment) vs `paddockFit` (enrichment included) is a REAL split,
-  not a display-only clamp: `recomputeRating` (`src/modules/park/rating.ts`) is
-  `baseComfortAt`'s ONLY caller, specifically so `ratingHighWater` — monotone, and the gate
-  behind lot slots, expedition sites, battle chapters, the shop ceiling and the Mythic
-  unlock — can never move just because a paddock got decorated past its first match. A
-  `Math.min(1, comfort)` clamp on the enriched value is NOT a substitute: it bounds the
-  ceiling, not the sensitivity, so a hunger-80 dino at fit 1.05 would still read 0.84 there
-  instead of the correct pre-enrichment 0.80. `/dino list`'s own `Math.min(1, d.comfort)`
-  clamp (`dinoListPayload`, `src/modules/park/index.ts`) is a different, legitimate use of
-  that same shape — it only bounds what's DISPLAYED, never what's computed or stored, and
-  the rung is broken out as its own `enriched +N%` mark rather than folded into the percentage.
   The ladder stops at fit 1.10 for a real mechanical reason, not just balance: past a point
   `escapeAt` outruns `hungerZero` and a dino sits at comfort 0 — earning nothing — while its
   8h grace runs out. The boundary is **not** a bare fit of 1.5, and the earlier "`12/fit < 8`
@@ -886,29 +829,10 @@ read or edited. Read one directly when you are planning against it rather than e
   1.0 → 0.75 fall; now it can also cost a rung on top — a paddock sitting at fit 1.10 in
   reliance on a since-retired kind silently drops to 1.05 or 1.00 the next time anything
   reads it, with no error and no record of what changed.
-- Landmarks (`src/data/landmarks.ts`) are the endgame cash sink, and deliberately live
-  on `users.landmarkTier` rather than shipping as a `DECOR` kind, even though a
-  cosmetic decor item would have reused an existing catalog. `recomputeRating`
-  (`src/modules/park/rating.ts`) sums `l.level + l.decor.length` as a flat length with
-  no filter or weight, so a decor-shaped cosmetic would be worth +8.75 rating per tile
-  (0.35 park weight × 1000 `RATING_SCALE` ÷ 40 `PARK_TARGET`) to a park below
-  saturation and exactly 0 to a maxed one — power for the mid-game, nothing for the
-  endgame, precisely backwards for a sink whose whole job is to matter most at the
-  endgame. A `users` column reads from nothing rating cares about (`rating.ts`,
-  `clock.ts`, `lotSlots`, `matchedKindCount` all ignore it), so staying powerless is
-  structural, not a rule someone has to remember to enforce.
-  The ladder (`buyLandmark`, `src/modules/park/landmarks.ts`) is a monotone integer
-  with no tier argument — the only legal purchase is always
-  `landmarkTierOf(ctx, userId) + 1` — which is what removes the refund path rather
-  than merely deferring it: with only one buyable rung at any moment, there is no
-  wrong one to click.
-  The top of the ladder is deliberately NOT pre-rejected — at tier 6 no offered tier
-  can equal `current + 1`, so the click falls through to `buyLandmark`'s
-  `LandmarkMaxedError`, whose text names `LANDMARKS[MAX_LANDMARK_TIER - 1].name`
-  rather than a retyped literal.
 - Operator refunds (`/admin ledger`, `/admin reverse`) are the first readers `tx_log` has
   ever had. It was written at every economy call site and read by nothing, so after a wrong
-  charge — the landmark stale button is the worked example — the operator could hand
+  charge — the landmark stale button (`§money-button-carries-its-rung` in
+  `docs/conventions/command-and-handler-surface.md`) is the worked example — the operator could hand
   cash back with `/admin give` but could not see what had actually been charged, could not
   tell whether they had already made the player whole, and left no record that the grant was
   remediation rather than a gift. Reversing that landmark charge is now possible, and the
@@ -923,7 +847,8 @@ read or edited. Read one directly when you are planning against it rather than e
   its writes in ONE transaction, and better-sqlite3 is synchronous with no suspension point
   inside it, so a double reversal is structurally impossible rather than checked by
   convention — the same no-suspension-point argument `park:buildyes`' `lotCount` anchor
-  rests on, except here the transaction callback is synchronous by construction, so the
+  rests on (`§no-await-between-check-and-write` in `docs/conventions/park-surface.md`),
+  except here the transaction callback is synchronous by construction, so the
   window cannot be reopened by dropping an `await` into it the way that one can.
   **Reversals are terminal**, and the reason is the derived flag rather than squeamishness
   about double-entry: reversing a reversal is perfectly coherent bookkeeping, but it leaves
@@ -1106,7 +1031,8 @@ read or edited. Read one directly when you are planning against it rather than e
   know — "unrecognised — check manually", never a blank — because a blank note and "this
   charge left nothing behind" are indistinguishable to an operator, and a new spend path can
   ship without a `SIDE_EFFECTS` entry. `SIDE_EFFECTS` is null-prototype for the same reason `PADDOCKS` and
-  `FACILITIES` are — a plain object reads back a truthy `constructor`/`__proto__` and claims
+  `FACILITIES` are (`§null-prototype-catalog-maps` in `docs/conventions/park-progression.md`)
+  — a plain object reads back a truthy `constructor`/`__proto__` and claims
   a side effect that is not there. What a payout suppresses is **only that fallback, never a
   genuine entry**, and the difference is not a nicety — the first version of this rule gated
   the WHOLE note on "is this row a charge", which reads correctly for every reason the table
@@ -1167,71 +1093,6 @@ read or edited. Read one directly when you are planning against it rather than e
   `<= ctx.now()`) is defence-in-depth, not a second lock — under the clamp the two are
   provably equivalent, and reverting the bound to `ctx.now()` with the clamp still in
   place leaves all 88 duel tests green.
-- Legacy rank (`legacyPoints`/`legacyRank`, `src/modules/park/ranks.ts`) is DERIVED,
-  same philosophy as escrow locks and quest progress documented above, and must NEVER
-  be rebuilt on top of `user_stats`. Migration `0006_daily_loop.sql` backfilled only 6
-  of that table's 18 counters from existing history (`stages_first_cleared`,
-  `lots_built`, `trades_completed`, `breedings_started`, `breedings_claimed`,
-  `expeditions_claimed`); the other twelve — including `dinos_fed`, `eggs_hatched` and
-  `battles_fought` — start at 0 for every pre-0006 account and are unrecoverable. A
-  rank built on that table would under-rank exactly the oldest, most invested players,
-  the inversion the feature exists to prevent. It sums three sources that are each
-  already monotone and already complete for every account instead: species discovered
-  (`dexProgress`, max 52), achievement tiers claimed (`earnedTierCount`, max 48), and
-  battle stars (`battle_progress.stars`, max 105) — 205 points total, nothing spent,
-  nothing stored.
-  **"Already complete for every account" is true of two of those three, and only
-  transitively true of the achievement term** — say so rather than repeating the clean
-  version. `earnedTierCount` counts `achievement_claims`, which is the right thing to
-  count and is never lost, but every `ACHIEVEMENTS` track (`src/data/achievements.ts`)
-  is gated on a `user_stats` counter, and 7 of the 12 sit on counters `0006` did not
-  backfill: `eggs_hatched`, `dinos_fed`, `income_collected`, `battles_fought`,
-  `battles_won`, `splices_done`, `dinos_sold`. (The other five — `expeditions_claimed`,
-  `stages_first_cleared`, `trades_completed`, `breedings_claimed`, `lots_built` — are
-  covered; `breedings_started` is backfilled but has no track, which is why 6 backfilled
-  counters cover only 5 tracks.) A pre-0006 account therefore cannot claim 28 of the 48
-  achievement points out of history it actually lived — **13.7% of the 205 ceiling
-  inherits exactly the gap `user_stats` was rejected to avoid.** The code is still right:
-  the shortfall is re-earnable by playing, where a rank built ON `user_stats` would have
-  been permanently unrecoverable, and the dex and battle-star terms are complete in the
-  full sense. Do not "fix" this by re-deriving the rank from counters.
-  `legacyRank` resolves `max(stored legacyRankBest, computed legacyPoints)`, never the
-  stored value alone — the column is a safety net, so a missed write is harmless and
-  only matters when the computed value DROPS. The write lives in a separate
-  `bumpLegacyBest(ctx, userId)` and must NEVER be folded into `legacyRank`, because
-  `src/modules/park/visit.ts` calls that for another player's id and would otherwise
-  mutate the row of a user who took no action.
-- `capHours`, `breedingSlots`, `incubatorSlots` and `facilityBonusPct`
-  (`src/modules/park/service.ts`, `src/modules/hatchery/service.ts`) each resolve a
-  facility's level through the shared `levelValue` helper, which clamps a level ABOVE its
-  per-level array to the array's top entry instead of indexing off the end into
-  `undefined`. This is the safe direction on purpose: neither `npm test` nor
-  `npm run typecheck` can see the alternative failure (`tsconfig` has `strict` but not
-  `noUncheckedIndexedAccess`), and the failure mode is silent rather than a crash — an
-  unguarded `capHours` reading `undefined` past its array's end turns `from + undefined`
-  into `NaN`, and the Collect button on `/park view` renders the literal text
-  "Collect NaN". `facilityBonusPct` was the last holdout, on its own inline `?? 0`: it
-  could not produce `NaN`, but an over-range level silently zeroed that facility's whole
-  income contribution rather than clamping, so it now goes through `levelValue` too and
-  the rule has no exceptions. Any future per-level facility array needs the same guard,
-  never a raw index.
-- `PARK_TARGET` (`src/data/progression.ts`, 40) must never move, for any reason,
-  including to compensate for a new cash sink or a new content ceiling. It's the
-  denominator of the rating's park term, so raising it is a retroactive rating CUT for
-  every park already at or past today's cap — and since stored `parkRating` only
-  updates on a rating-changing action (see "When it actually updates" in
-  `docs/gameplay.md`), the cut lands on accounts that did nothing wrong. `TRADE_MIN_RATING`
-  (400, `src/data/trade.ts`) is checked against that same droppable stored value at
-  both `createTrade` and `acceptTrade` (`src/modules/trading/service.ts`), so a target
-  raise can silently revoke `/trade` for players already sitting near the gate and can
-  kill trades already pending in a recipient's inbox, not just future ones.
-  Also worth correcting here: an earlier assumption — that at least two decor pieces
-  were mandatory to reach a 10.0★ park — never actually held. `buildLot` blocks
-  duplicate FACILITIES only and explicitly exempts paddocks (building more of one
-  paddock kind IS the capacity progression), so `VC L5 + 9 paddocks L4` alone reaches
-  `parkRaw` 41 against `PARK_TARGET` 40 with zero decor ever placed. The park term has
-  always been saturable on lot levels alone; 38 was the ceiling of one particular
-  build, never of the game.
 - The landmark cell (`drawLandmark`, `src/core/render/draw.ts`) is drawn as one extra
   grid cell AFTER the build slot, so every tile that existed before landmarks shipped
   keeps the exact coordinates it already had — which is why adding it broke none of
@@ -1279,36 +1140,8 @@ read or edited. Read one directly when you are planning against it rather than e
   `Proxy`, at two roster sizes (3 and 30) and both scopes (global and server) — a
   rewrite that reads any table twice, or scopes the wrong one, fails a specific pinned
   number, not just an equality check.
-- `/park` has an `autocomplete()` now — its first — serving `feature`'s `dino` option,
-  so `'park feature': ['dino']` lives in `tests/contract.test.ts`'s
-  `AUTOCOMPLETE_OPTIONS` manifest.
-  Player-typed free text that reaches a public embed DESCRIPTION or a bot-authored,
-  non-ephemeral message's CONTENT is defanged, never rejected outright: `defangLinks`
-  (`src/core/text.ts`) splits the `](` sequence, because both surfaces render
-  `[text](url)` as a masked link with arbitrary visible text — 80 characters of motto is
-  ample for `[Free Nitro](https://evil.tld)`. A TITLE does not render it — `dashboardPayload`'s
-  `.setTitle(user.parkName)` (`src/modules/park/embeds.ts`) was never exposed. The
-  client-wide `allowedMentions: { parse: [] }` kills mention injection and does nothing
-  about markdown. Three call sites now defang BEFORE storing, and every confirmation
-  echo agrees with what was stored — a half-closed vector (store defanged, echo raw) is
-  worse than a documented open one: `setMotto` (`src/modules/park/showcase.ts`) returns
-  what it wrote, so `/park motto`'s echo just reads that back; `renameDino`
-  (`src/modules/park/dinos.ts`, whose nicknames reach public battle embeds) defangs what
-  it stores but returns `void`, so `/dino rename`'s echo (`src/modules/park/index.ts`)
-  re-defangs the trimmed input itself rather than trusting the raw option — the fourth
-  `defangLinks` call, and the only one that isn't at a store site; `/park rename`
-  (`src/modules/park/index.ts`, pre-existing code that writes `parkName` directly rather
-  than through a service — left that way on purpose, not restructured into one) now
-  defangs once and reuses that single value for both the write and the reply. That last
-  one closes a real vector, not a theoretical one: `parkName` reaches `landmarkPayload`'s
-  public embed DESCRIPTION on `/park landmark` (`src/modules/park/embeds.ts`), which
-  replies non-ephemerally, so an un-defanged park name was a live masked link there. It
-  runs AFTER the trim and BEFORE the length check at every store site — defanging only
-  ever lengthens a string, so a guard that ran first would no longer govern what is
-  actually stored, and a motto or nickname landing exactly at its cap after `](` is
-  rejected rather than stored one character over. The design spec explicitly said no
-  sanitisation should be added; that line is superseded (see its own note).
-  One path stays open, by design rather than oversight: `/top`'s leaderboard embed
+- One text-injection path into a public surface stays open, by design rather than
+  oversight: `/top`'s leaderboard embed
   description (`src/modules/leaderboards/index.ts`) interpolates `r.displayName`, sourced
   from `i.user.displayName` — Discord's own guild nickname / global display name, not
   text a player types into any of our commands — for every OTHER player on the board, so
@@ -1419,97 +1252,22 @@ read or edited. Read one directly when you are planning against it rather than e
   lots is never nudged — reachable in principle (60 shop purchases alone clears rung 1)
   but accepted rather than special-cased, since that player still sees the rung on
   `/season` itself.
-- Park guests (`/guests`, migration 0017) adds attendance as a fifth progression axis:
-  `attendanceFrom(distinctSpecies, drawTotal, vcLevel)` (`src/data/attendance.ts`) is
-  derived at read time and stored never, same philosophy as escrow locks, quest progress
-  and world events. Two constants are FROZEN, `COLLECTION_TARGET`'s rule applied twice
-  over: `ATTENDANCE_SPECIES_TARGET` (40) and `ATTRACTION_DRAW_TARGET` (210) must never
+- Two constants behind park attendance are FROZEN, `COLLECTION_TARGET`'s rule applied
+  twice over: `ATTENDANCE_SPECIES_TARGET` (40) and `ATTRACTION_DRAW_TARGET` (210)
+  (`src/data/attendance.ts`) must never
   become live counts over `allSpecies()`/`ATTRACTIONS` — a live denominator taxes every
   existing park the moment new content ships, and the `min(1, …)` clamp on each is what
   makes a new species or a new attraction kind an ALTERNATE PATH to the same target
-  rather than silent inflation of it. `attendanceOf` (`src/modules/park/attendance.ts`)
-  is PURE and must never write, because it's read for OTHER players' parks (`/top`, a
-  visit, another player's card); the monotone high-water is stamped separately, only in
-  a write context, by `recomputeRating` (`src/modules/park/rating.ts`) — the same
-  `legacyRank`/`bumpLegacyBest` split `src/modules/park/ranks.ts` already established.
-  `recomputeRating` now stamps TWO high-waters in one `UPDATE` — `ratingHighWater` and
-  `attendanceHighWater`, each independently `Math.max`ed against its stored value in the
-  same call — so every existing rating-triggering action (assign, build, upgrade,
-  decorate, feed, rescue, trade) moves attendance's high-water too, with no new call
-  sites and no risk of the two drifting apart. `/guests view` and `/guests claim`
-  (`src/modules/guests/embeds.ts`, via `attendanceOf` → `toClockDinos`) are two surfaces
-  that render attendance without calling `settleEscapes` first, unlike the park card
-  (own or visited), which always settles before rendering it. This is safe, not merely
-  tolerated, because `attendanceOf`'s own dino predicate is TIME-AWARE: it filters on
-  `escapeMoment(d, now) === null` (`src/modules/park/attendance.ts`), not the stored
-  `escapedAt` column, so a live-escaped-but-unsettled dino stops counting toward the
-  variety term the instant it crosses, with no settle call needed. The board-wide twin,
-  `attendanceScores` (`src/modules/leaderboards/service.ts`), is DELIBERATELY LAXER — it
+  rather than silent inflation of it.
+- `attendanceScores` (`src/modules/leaderboards/service.ts`), the board-wide twin of
+  `attendanceOf` (`src/modules/park/attendance.ts`), is DELIBERATELY LAXER — it
   matches `recomputeRating`'s `assigned` filter and checks only the stored `escapedAt`,
   so a board row can read higher than that player's own `/guests view` for a park no
   command has touched since an escape. That gap is bounded and self-correcting: it
   converges the next time anything settles the row, the same standing lag `/top`
-  already accepts elsewhere on this board. Never filter `attendanceOf` on the stored
-  column instead of `escapeMoment` — that was the pre-fix behaviour (defect F2), and it
-  let `attendanceHighWater` — monotone, with no path back down — bank guests from dinos
-  that were long gone, since neither `/guests build` nor `/build` nor `/upgrade` calls
-  `settleEscapes` and nothing else had settled them.
-- `recomputeRating` must never be hoisted back above `/guests`' subcommand switch
-  (`src/modules/guests/index.ts`). It used to run unconditionally for every subcommand,
-  to stamp the attendance high-water before anything read it — but it writes three
-  columns in one `UPDATE`, and one of them is `parkRating`, the LIVE value, which falls
-  freely as comfort decays. `liveRating` (`src/modules/trading/service.ts`) is a plain
-  `SELECT` of that same column, checked against `TRADE_MIN_RATING` at both `createTrade`
-  and `acceptTrade`, so opening `/guests view` after a few hours of hunger drain could
-  have dropped a park below the trade gate and killed a pending offer — a state change
-  caused by reading a screen. `view` is a pure read and deliberately never recomputes;
-  `build` and `claim` still call it, because each reads the high-water as its own unlock
-  gate and each mutates regardless, so the `parkRating` write riding along carries no
-  surprise. The high-water still advances on every build, claim, feed, assign, upgrade
-  and decorate, so nothing becomes unreachable.
-- `/park view` renders one of four tabs — `park | animals | lots | prestige`
-  (`ParkTab`, `src/modules/park/embeds.ts`) — swapped in place. `dashboardPayload` keeps
-  its name and IS the Park tab; `animalsPayload`, `lotsPayload` and `prestigePayload` are
-  the others. Two customId families: `park:tab:<uid>:<tab>` is owner-checked, and
-  `park:vtab:<targetId>:<tab>` carries a TARGET and deliberately is not — the `park:tour`
-  precedent. Never merge them into one shape with a flag.
-  **Every tab switch sends an explicit `attachments: []`.** `landmarkPayload` and the
-  guests view get away with the omit-idiom because they always `attach()` on every call,
-  so their `files` key alone already replaces the message's whole attachment set
-  (discord.js `MessagePayload` — see the `fightFrames` bullet above); an explicit
-  `attachments: []` there would be redundant, not wrong. A tab switch can't rely on that
-  shortcut: the Park tab's own payload carries no `files` key at all when `renderPark`
-  fails (its `RENDER_TIMEOUT_MS` is 3000, Discord's whole initial-response window, so a
-  slow render is a real case, not a theoretical one), and without `attachments: []` the
-  PREVIOUS tab's uploads — worst case the Animals tab's roster banner plus a
-  featured-dino thumbnail, two files — would survive as orphan attachment cards under the
-  failed render's embed.
-  The Park tab `deferUpdate()`s BEFORE rendering and then `editReply`s, for that same
-  timeout reason — renders serialize process-wide, so rendering before acknowledging can
-  lose the interaction to 10062. The other three tabs are synchronous and `i.update`
-  directly.
-  `settleEscapes` runs ONCE per interaction in `renderTab`, never per builder: it is
-  write-bearing and `buildParkSnapshot` settles again internally.
-  `bumpLegacyBest` fires once per `/park view` COMMAND invocation — coupled to the fact
-  that the Park tab is always the first screen a fresh `/park view` renders, not to the
-  Park tab itself. `renderTab`'s `park` branch (a `park:tab`/`park:vtab` click navigating
-  to or back to that tab) never calls it; every tab builder and the whole visit path read
-  the pure `legacyRank` instead, so a navigation click never mutates a row.
-  **Collect must stay the first button of the first row** — `tests/park.test.ts:208-218`
-  indexes `components[0].toJSON().components[0]` positionally.
-  Routed surfaces (`park:goto:landmark`, `park:goto:guests`) reply EPHEMERALLY and never
-  `i.update`: a routed payload mints components under a foreign prefix, and those handlers
-  re-render their own message with no tab row, so updating in place would strand the
-  player one click from losing navigation.
-  Tabs are a UI win, not a performance win: `/park view` costs 23 `SELECT`s per render, and
-  a tab switch re-pays them. Migration 0018 indexed the tables behind that path —
-  `lots_user`, `dinos_user_lot`, `attractions_user` among them — so those reads are index
-  searches rather than full scans. But the count is unchanged, and **12 of the 23 are exact
-  duplicates**, because `toClockDinos` runs four times per render with no memoization
-  between calls. Deduplicating them is the larger remaining win and is still open; it is
-  not a free change, since it has to preserve the "settle escapes once per interaction"
-  ordering `renderTab` depends on.
-  Indexes here are not a blanket `user_id` sweep and must not become one. Every composite
+  already accepts elsewhere on this board.
+- Migration 0018's read indexes are not a blanket `user_id` sweep and must not become
+  one. Every composite
   primary key in this schema already leads with `user_id`, so those tables need nothing —
   the only two that gained an index (`season_progress`, `user_guilds`) did so because their
   hot read filters the key's *non-leftmost* column, which the key cannot serve. `tx_log`
@@ -1526,69 +1284,3 @@ read or edited. Read one directly when you are planning against it rather than e
   stays deliberately UNINDEXED and should: it would charge write cost on every economy
   transaction in the game to serve a command an operator runs a few times a month. See the
   per-index comments in `src/core/db/schema.ts` for which read each one serves.
-- The Lots tab's Build and Upgrade select menus follow the `park:landmark:buy` lesson,
-  which they would otherwise repeat in a worse form. A menu option's `value` is an
-  IDENTITY plus a STALENESS ANCHOR and never a price: `park:build` carries `<kind>`,
-  `park:upgrade` carries `<lotId>:<expectedLevel>`. Prices are re-derived by `buildLot` /
-  `upgradeLot` at execution, and the label is a display copy no handler reads back.
-  The level anchor is load-bearing: `upgradeCostFor` is a pure function of `(kind, level)`
-  and paddock cost is `buildCost * 2.5 ** level`, so a stale option charges the NEXT rung's
-  price. Measured worst case is `hatchery_lab` — a label reading 25,000 against a charge of
-  2,250,000, **90x**, against the landmark defect's 32x.
-  `PADDOCKS` and `FACILITIES` (`src/data/paddocks.ts`, `src/data/facilities.ts`) are
-  NULL-PROTOTYPE maps —
-  `Object.assign(Object.create(null) as Record<string, XDef>, { … } satisfies Record<string, XDef>)`.
-  The `as` and the `satisfies` are both required: `Object.assign(Object.create(null), {…})`
-  returns `any`, which silently discards the literal's type check. Before this, a select
-  menu could hand `buildLot` a prototype key — `PADDOCKS['constructor']` read back truthy
-  through `Object`, so its `!paddock && !facility` check did not fire, and the write
-  survived only because the resulting `NaN` cost bound as `NULL` against
-  `users.cash NOT NULL`, a schema accident rather than validation. `/build` could not reach
-  it because its `kind` comes from `addChoices`; a select menu value could.
-  `buildLot` now owns an explicit
-  `if (!Object.hasOwn(PADDOCKS, kind) && !Object.hasOwn(FACILITIES, kind)) throw new UnknownKindError(kind)`.
-  The menu handler's identical allowlist is DEFENCE IN DEPTH, never the only guard — it
-  earns its place because nearly every `fakeButton` site, and every case in
-  `scripts/test-live.ts`, calls `execute` directly rather than through `routeInteraction`
-  (see the no-counts note under `router-guard-test-evidence` in
-  `docs/conventions/router-and-registry.md`).
-  `upgradeLot(ctx, userId, lotId, expectedLevel)` takes the anchor as a REQUIRED fourth
-  parameter — never defaulted, the same rule as `hungerAt(…, drainMs)`, `feedCostFor(now)`
-  and `energyCostFor(now)` — and throws `StaleLevelError(expected, actual)`. Its guard order
-  is not-found, then stale, then maxLevel, so `/upgrade`'s `lotRow?.level ?? -1` sentinel
-  still reports 'No such lot.' for an unknown id. **The caller must pass the CLIENT-SUPPLIED
-  anchor**: passing a level the caller just read makes the comparison a tautology that can
-  never fire, which compiles, typechecks and passes every test. `/upgrade` is the one
-  exception and says so at the call site — it quotes no frozen label, so it has no anchor to
-  carry.
-  `confirmPayload` (`src/modules/park/embeds.ts`) ships `content: ''`, `attachments: []` and
-  RETAINS the tab row. The `attachments: []` is load-bearing rather than redundant:
-  `lotsPayload` attaches `banners/lots.webp` on every call, and an `i.update` carrying
-  neither `files` nor an explicit `attachments` strands that banner as an orphan attachment
-  card.
-  Error mapping is PER MENU. The service layer overloads two classes: `UnknownKindError`
-  means unknown *kind* in `buildLot` and unknown *lot* in `upgradeLot`; `LotLimitError`
-  means *slot cap* in one and *already max level* in the other. A shared mapping tells a
-  player "All lots full" when they meant "already max level".
-  Both spends sit behind a confirm rendered ONTO the card via `i.update`, never an
-  ephemeral follow-up — the Lots tab must not be left displaying a state it is about to
-  change. The confirm CLICK is a second layer only, never the guard — another open message
-  may still hold a stale button. What actually locks the upgrade is the REQUIRED
-  `expectedLevel` on `upgradeLot`: the handler's own fresh read stays because it needs
-  `lot.kind`/`lot.level` to quote the price in the `InsufficientFundsError` arm and to name
-  the two levels in the stale rejection, NOT because it is the thing standing between a
-  stale button and the money. Build has no service-level twin, because a build has no
-  level to anchor on and its price never moves — so `park:buildyes:<uid>:<kind>:<lotCount>`
-  carries the owner's LOT COUNT and the handler's own check of it is the whole lock. That
-  anchor is not decoration: two `park:buildyes` clicks landing before the first repaint
-  both pass the owner check and both pass the allowlist, and for a PADDOCK — duplicable by
-  design, unlike a facility, which `DuplicateFacilityError` already stops — the second
-  click builds a second one. The cost is not the cash: `lotSlots` caps at 10, no demolish
-  path exists anywhere in this codebase, and a duplicate lot can only be removed by
-  `adminReset`, so the slot is gone permanently. `lotCount` is a sound anchor precisely
-  because it is monotone under those same rules — `buildLot` only ever increases it.
-  **No `await` may sit between reading `lots.length` for that check and calling
-  `buildLot`**: better-sqlite3 is synchronous and Node is single-threaded, so a
-  check-then-write with no suspension point between them cannot interleave with a second
-  interaction, and that — not the read itself — is what closes the race. Introducing an
-  await there reopens it silently.
