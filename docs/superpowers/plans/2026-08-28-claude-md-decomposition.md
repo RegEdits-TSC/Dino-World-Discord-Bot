@@ -12,6 +12,26 @@
 
 **Input artifact:** `docs/superpowers/plans/artifacts/2026-08-28-claude-md-rule-map.json` — the measured rule map: 28 docs with trigger globs, 8 always-core rules, and all 335 rules with `id`, `doc`, `sourceLines`, `summary` and `compressible`. Every task below reads it. It is the RAW measured partition; the spec's §5 amendments are applied in Task 2 as a reviewable diff.
 
+## Execution decisions
+
+Settled before execution, 2026-08-28:
+
+- **Task 1 runs alone**, and its findings decide whether the rest proceeds.
+- **Tasks 2-15 land on a branch and merge by squash PR**, matching every feature
+  since #38. The spec, plan and rule map are already on `main`, as the operator
+  refunds work did.
+- **Task 1 must run in the primary working directory, not a worktree** — only the
+  `.claude/settings.json` this session reads is honoured, and a worktree's copy is
+  invisible to it. Hook settings are hot-reloaded by a file watcher, so no session
+  restart is needed. A project-settings hook may raise a workspace-trust dialog on
+  first run; accept it, and verify registration with `/hooks`.
+- **The hook ships gated.** It is registered in Task 3 but no-ops unless
+  `CLAUDE_CONVENTIONS_ENABLED=1`, so 327 rules can be moved with zero blast radius
+  across other sessions. Task 15 flips it deliberately.
+- **Summarization is a gate failure, not a judgement call** — the audit enforces a
+  body word-count floor (Task 2, check 8), and `park-surface` and
+  `router-and-registry` additionally get read against source by hand in Task 15.
+
 ## Global Constraints
 
 - **This plan changes no file under `src/`.** No migration, no `npm run deploy-commands`, no emoji deploy, no bot restart. If a task finds itself editing `src/`, it has gone wrong.
@@ -21,6 +41,9 @@
 - **Never weaken a check to make it pass.** The gate exists because the growth this fixes was unenforced.
 - **No attribution of any kind** in commits, docs, or file contents.
 - `npm test`, `npm run typecheck`, `npm run build` stay green at every commit.
+- **A hook never exits 2.** On `PreToolUse`, exit 2 blocks the tool call outright,
+  whatever else it prints; other non-zero codes are non-blocking. Every hook here
+  exits 0 on every path, including malformed input.
 
 ## File Structure
 
@@ -258,6 +281,12 @@ Amendment §3.2 — set `"bodyRequired": true` on the six rule ids listed in the
 5. **Broken anchor** — a headline citing `§name` with no matching `## name` heading in that doc's body.
 6. **Over cap** — `CLAUDE.md` longer than `claudeMdMaxLines`, once `CLAUDE.md` no longer carries the `<!-- UNMIGRATED -->` marker of Task 4.
 7. **Missing headline** — a rule filed in a doc whose id appears in no headline line of that doc.
+8. **Summarized body** — a doc whose body is shorter than 70% of the summed
+   `wordCount` of the rules it absorbed, read from the rule map. The audit can prove
+   a rule id is present; only this catches a passage that was compressed on its way
+   across. Report the shortfall per doc, not just a pass/fail, so a legitimate cut
+   (a principle deduplicated to its home under §7) can be told apart from a lost
+   *why* and waived deliberately in the doc task's commit message.
 
 Glob support needed: `**`, `*`, and literal paths. Match against forward-slash paths as `git ls-files` emits them.
 
@@ -300,7 +329,7 @@ function run(payload: object, stateDir: string): string {
   return execFileSync('node', ['.claude/hooks/conventions.mjs'], {
     input: JSON.stringify(payload),
     encoding: 'utf8',
-    env: { ...process.env, CLAUDE_CONVENTIONS_STATE_DIR: stateDir },
+    env: { ...process.env, CLAUDE_CONVENTIONS_ENABLED: '1', CLAUDE_CONVENTIONS_STATE_DIR: stateDir },
   });
 }
 
@@ -339,6 +368,15 @@ describe('conventions hook', () => {
     expect(out.trim()).toBe('');
   });
 
+  it('is inert unless explicitly enabled', () => {
+    const out = execFileSync('node', ['.claude/hooks/conventions.mjs'], {
+      input: JSON.stringify(payload('src/modules/battles/service.ts')),
+      encoding: 'utf8',
+      env: { ...process.env, CLAUDE_CONVENTIONS_ENABLED: '', CLAUDE_CONVENTIONS_STATE_DIR: mkdtempSync(join(tmpdir(), 'c-')) },
+    });
+    expect(out.trim()).toBe('');
+  });
+
   it('never fails the tool call on a malformed payload', () => {
     const dir = mkdtempSync(join(tmpdir(), 'c-'));
     expect(() =>
@@ -360,7 +398,10 @@ Expected: FAIL — cannot find `.claude/hooks/conventions.mjs`.
 - [ ] **Step 3: Implement the hook**
 
 Behaviour, in order:
-1. Read stdin; on any parse failure, exit 0 silently. **A hook must never break the tool call it precedes.**
+0. If `CLAUDE_CONVENTIONS_ENABLED` is not set to `1`, exit 0 immediately with empty
+   stdout. The hook ships registered but inert; Task 15 flips it. This is what keeps
+   327 rules in motion from disrupting any other session in this repo.
+1. Read stdin; on any parse failure, exit 0 silently. **A hook must never break the tool call it precedes** — and specifically never exits 2, which would block the call.
 2. Take `tool_input.file_path`; normalise backslashes to `/` and make it repo-relative. Missing path → exit 0.
 3. Match against every non-fallback doc's `triggerGlobs`. If none match, match the `fallback` doc. A file may match several docs — inject all of them.
 4. Drop any doc already injected for this `session_id` + `agent_id` (absent `agent_id` means the main thread). State lives in one JSON file under `CLAUDE_CONVENTIONS_STATE_DIR`, defaulting to the OS temp dir. **A state read or write that throws is swallowed** — degrade to injecting again, never to crashing.
@@ -370,7 +411,7 @@ Behaviour, in order:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run tests/conventions-hook.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Register the hook**
 
@@ -684,7 +725,19 @@ Expected: exit 0 — zero orphans, zero dead globs, zero unfiled rules, every an
 
 Read each, and record which docs fired: `src/modules/park/index.ts` (expect `command-and-handler-surface` + `park-surface` + `embed-payload-builders`), `src/data/species/allosaurus.ts` (`species-and-dex`), `drizzle/0019_*.sql` (`schema-and-migrations`), `assets/emojis/svg/dw_cash.svg` (`emoji-pipeline`), and a file you create at `src/core/scratch-probe.ts` (`fallback` — then delete it).
 
-- [ ] **Step 6: Full verification**
+- [ ] **Step 6: Read the two riskiest docs against source**
+
+`park-surface` and `router-and-registry` hold the money rules, the customId anchor
+table and the contradicting attachments pair. Read each against
+`git show 1b92fac:CLAUDE.md` and confirm every *why* survived — not merely every
+rule id. Report any clause that was compressed away, and restore it.
+
+- [ ] **Step 7: Enable the hook**
+
+Set `CLAUDE_CONVENTIONS_ENABLED=1` in `.claude/settings.json`'s `env` block, then
+confirm with `/hooks` that both handlers are registered from Project Settings.
+
+- [ ] **Step 8: Full verification**
 
 ```bash
 npm run typecheck && npm test && npm run build
@@ -693,14 +746,14 @@ git diff --stat 1b92fac -- src/
 
 Expected: all green; the `src/` diff is **empty** — this plan changes no source file.
 
-- [ ] **Step 7: Record the outcome**
+- [ ] **Step 9: Record the outcome**
 
 Append to the spec's §11 the measured after-figures: final `CLAUDE.md` line count, per-doc line counts, and the docs fired for each of the five files in step 5.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add CLAUDE.md tests/conventions.test.ts docs/superpowers/specs/2026-08-28-claude-md-decomposition-design.md
+git add CLAUDE.md .claude/settings.json tests/conventions.test.ts docs/superpowers/specs/2026-08-28-claude-md-decomposition-design.md
 git commit -m "Complete the CLAUDE.md decomposition"
 ```
 
