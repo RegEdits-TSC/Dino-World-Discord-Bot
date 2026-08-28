@@ -178,7 +178,8 @@
         },
         {
           "id": "new-face-is-inert-for-unseeded-bases",
-          "sourceLines": "121-132"
+          "sourceLines": "121-132",
+          "bodyRequired": true
         },
         {
           "id": "no-test-proves-a-variant-is-reachable",

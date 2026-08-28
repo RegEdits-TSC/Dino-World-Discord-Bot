@@ -26,13 +26,14 @@
 //
 // Checks 1, 2, 3 and 6 always run — they are not indexed by any one doc's
 // file. Check 6 carries one more guard of its own, explained at its
-// implementation below: it also does nothing until the repo has visibly
-// started shedding CLAUDE.md into docs/conventions/, so that this exact
-// audit can pass clean at the manifest's own commit, before task 4 (which
-// adds the <!-- UNMIGRATED --> marker) has run at all.
+// implementation below: it also does nothing while CLAUDE.md is still
+// exactly the length the rule map recorded when it was measured, so that
+// this exact audit can pass clean at the manifest's own commit, before
+// task 4 (which adds the <!-- UNMIGRATED --> marker) has run at all.
 
 import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 const MANIFEST_PATH = 'docs/conventions/manifest.json';
 const RULE_MAP_PATH = 'docs/superpowers/plans/artifacts/2026-08-28-claude-md-rule-map.json';
@@ -49,11 +50,11 @@ function readJson(path) {
 // non-slash characters — a whole path segment or part of one, e.g.
 // "battle-*.test.ts"), and "**" (any run of characters, crossing slashes).
 // No dependency; the manifest's 200-odd globs use nothing else.
-function escapeRegexChar(ch) {
+export function escapeRegexChar(ch) {
   return ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
 }
 
-function globToRegex(glob) {
+export function globToRegex(glob) {
   let pattern = '';
   for (let i = 0; i < glob.length; i++) {
     const ch = glob[i];
@@ -79,12 +80,12 @@ function trackedFiles() {
     .filter((line) => line.length > 0);
 }
 
-function wordCount(text) {
+export function wordCount(text) {
   const trimmed = text.trim();
   return trimmed === '' ? 0 : trimmed.split(/\s+/).length;
 }
 
-function lineCount(text) {
+export function lineCount(text) {
   const lines = text.split(/\r\n|\n/);
   if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
   return lines.length;
@@ -104,7 +105,7 @@ function extractH2Headings(text) {
 // under its own "## name" headings, one per anchor. Splits the file into the
 // headline block's own text (excluded from the body-word check) and the body
 // (everything else, anchors included).
-function splitDoc(content) {
+export function splitDoc(content) {
   const lines = content.split(/\r\n|\n/);
   let headlinesAt = -1;
   for (let i = 0; i < lines.length; i++) {
@@ -130,11 +131,11 @@ function splitDoc(content) {
   return { headlineText, bodyText, bodyHeadings: extractH2Headings(bodyText) };
 }
 
-function docFilePath(slug) {
-  return `${DOC_DIR}/${slug}.md`;
+export function docFilePath(slug, docDir = DOC_DIR) {
+  return `${docDir}/${slug}.md`;
 }
 
-function allGlobEntries(manifest) {
+export function allGlobEntries(manifest) {
   const entries = [];
   for (const doc of manifest.docs) {
     for (const glob of doc.triggerGlobs) {
@@ -144,21 +145,21 @@ function allGlobEntries(manifest) {
   return entries;
 }
 
-function checkOrphans(files, globEntries, errors) {
+export function checkOrphans(files, globEntries, errors) {
   for (const file of files) {
     const claimed = globEntries.some((g) => g.re.test(file));
     if (!claimed) errors.push(`[orphan] ${file} — matches no triggerGlobs entry in any doc`);
   }
 }
 
-function checkDeadGlobs(files, globEntries, errors) {
+export function checkDeadGlobs(files, globEntries, errors) {
   for (const g of globEntries) {
     const hit = files.some((f) => g.re.test(f));
     if (!hit) errors.push(`[dead-glob] ${g.doc}: "${g.glob}" matches no tracked file`);
   }
 }
 
-function checkUnfiledRules(manifest, ruleMap, errors) {
+export function checkUnfiledRules(manifest, ruleMap, errors) {
   const filed = new Set();
   for (const doc of manifest.docs) for (const r of doc.rules) filed.add(r.id);
   for (const id of manifest.alwaysCore) filed.add(id);
@@ -169,9 +170,11 @@ function checkUnfiledRules(manifest, ruleMap, errors) {
   }
 }
 
-// Checks 4, 5, 7 and 8 for one doc.
-function auditDoc(doc, { ruleWordCountById, migrationComplete, errors, info }) {
-  const path = docFilePath(doc.slug);
+// Checks 4, 5, 7 and 8 for one doc. `docDir` defaults to the real
+// docs/conventions/ but is overridable so tests can point this at a
+// throwaway fixture directory instead of writing into a tracked path.
+export function auditDoc(doc, { ruleWordCountById, migrationComplete, errors, info, docDir = DOC_DIR }) {
+  const path = docFilePath(doc.slug, docDir);
   const fileExists = existsSync(path);
   const needsFile = doc.rules.length > 0;
 
@@ -228,16 +231,22 @@ function auditDoc(doc, { ruleWordCountById, migrationComplete, errors, info }) {
 
 // Check 6: over cap. Skipped while CLAUDE.md still carries the
 // <!-- UNMIGRATED --> marker (task 4) — that marker means "still trimming,
-// still expected to be long". It is ALSO skipped for as long as not one
-// doc file exists yet: task 4 (which adds the marker) runs before every
-// doc-writing task, so "zero doc files exist" proves task 4 has not run
-// either, which means CLAUDE.md is simply still its original, un-migrated
-// self and has nothing yet to be judged against. The moment any doc file
-// appears, this second guard falls away on its own — task 4 will always
-// have already run by then, so the marker alone governs from there on.
-function checkOverCap(claudeMdContent, hasMarker, lines, manifest, anyConventionDocExists, errors) {
+// still expected to be long". It is ALSO skipped for as long as CLAUDE.md is
+// still EXACTLY the length the rule map recorded when it was measured
+// (`source.lines` in docs/superpowers/plans/artifacts/2026-08-28-claude-md-
+// rule-map.json — 1829 today): at that exact length the file is provably
+// untouched since the measurement, so there is nothing yet for the cap to be
+// judged against. This is deliberately NOT tied to docs/conventions/ file
+// existence (an earlier version was): that guard went quiet the moment
+// every doc file was deleted, which silences check 4 too — a fully broken
+// repo (CLAUDE.md regrown past cap, marker stripped, every doc file gone)
+// would audit clean. Comparing CLAUDE.md's own line count against the rule
+// map's fixed, recorded figure can't be gamed that way — the instant anyone
+// edits CLAUDE.md at all, its length stops matching 1829, and this check
+// goes live on its own, independent of what docs/conventions/ holds.
+export function checkOverCap(hasMarker, lines, manifest, ruleMapSourceLines, errors) {
   if (hasMarker) return;
-  if (!anyConventionDocExists) return;
+  if (lines === ruleMapSourceLines) return;
   if (lines > manifest.claudeMdMaxLines) {
     errors.push(
       `[over-cap] CLAUDE.md is ${lines} lines, over the ${manifest.claudeMdMaxLines}-line cap, and no longer carries the UNMIGRATED marker`
@@ -245,7 +254,7 @@ function checkOverCap(claudeMdContent, hasMarker, lines, manifest, anyConvention
   }
 }
 
-function main() {
+export function main() {
   const scopeSlug = process.argv[2];
 
   const manifest = readJson(MANIFEST_PATH);
@@ -256,9 +265,6 @@ function main() {
   const claudeMdHasMarker = claudeMdContent.includes(UNMIGRATED_MARKER);
   const claudeMdLines = lineCount(claudeMdContent);
   const migrationComplete = !claudeMdHasMarker && claudeMdLines <= manifest.claudeMdMaxLines;
-  const anyConventionDocExists = manifest.docs.some(
-    (d) => d.rules.length > 0 && existsSync(docFilePath(d.slug))
-  );
 
   const errors = [];
   const info = [];
@@ -285,7 +291,7 @@ function main() {
     for (const doc of manifest.docs) {
       auditDoc(doc, { ruleWordCountById, migrationComplete, errors, info });
     }
-    checkOverCap(claudeMdContent, claudeMdHasMarker, claudeMdLines, manifest, anyConventionDocExists, errors);
+    checkOverCap(claudeMdHasMarker, claudeMdLines, manifest, ruleMap.source.lines, errors);
   }
 
   for (const line of info) console.log(line);
@@ -300,4 +306,10 @@ function main() {
   process.exit(0);
 }
 
-main();
+// Only run as a CLI when executed directly (`node scripts/conventions-audit.mjs`);
+// tests/conventions.test.ts imports the check functions above without
+// triggering this, so it can exercise them against fixture data instead of
+// the real repo.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}
