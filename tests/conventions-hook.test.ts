@@ -81,6 +81,19 @@ const FIXTURE_MANIFEST: Manifest = {
       rules: [{ id: 'fixture-rule-e', sourceLines: '4-4' }],
     },
     {
+      // Shares fixture-solo's glob on purpose: 107 of 849 real tracked
+      // files match more than one doc, which is the normal state for all
+      // of tasks 5-12, and the version of this suite before this fix round
+      // never exercised a match set where one sibling has a body and
+      // another doesn't. Its .md file is deliberately never written by
+      // writeFixtureDocs — individual tests write it partway through when
+      // they need to simulate the file "landing" mid-session.
+      slug: 'fixture-lonely-overlap',
+      title: 'a doc sharing a glob with fixture-solo whose body starts absent',
+      triggerGlobs: ['src/solo/**'],
+      rules: [{ id: 'fixture-rule-g', sourceLines: '6-6' }],
+    },
+    {
       slug: 'fixture-toplevel',
       title: 'a non-fallback doc that overlaps the fallback glob',
       triggerGlobs: ['src/*.ts'],
@@ -184,6 +197,69 @@ describe('conventions hook: fixture-driven behaviour', () => {
       expect(out).toContain('fixture-solo');
       expect(out).toContain('OVERLAP_MARKER');
       expect(out).toContain('docs/conventions/fixture-solo-2.md');
+    });
+  });
+
+  // Controller Ruling 10: a doc whose body file is absent (renderDoc returns
+  // null) and a doc whose body render genuinely throws are, prior to this
+  // pair of tests, indistinguishable to the suite — main()'s outer catch
+  // swallows either, and every existing assertion is `out.trim() === ''`.
+  // 107 of 849 tracked files match more than one doc, which is the normal
+  // state for all of tasks 5-12, so a mixed match set (one doc present, one
+  // absent) is not an edge case, it is the common one.
+  it('a doc with a missing body does not block a sibling doc that has one from injecting', () => {
+    withFixture((paths) => {
+      setupFixture(paths);
+      // "src/solo/thing.ts" matches fixture-solo (has a body), fixture-solo-2
+      // (has a body) and fixture-lonely-overlap (does not, yet).
+      const out = run(payload('src/solo/thing.ts'), {
+        CLAUDE_CONVENTIONS_MANIFEST_PATH: paths.manifestPath,
+        CLAUDE_CONVENTIONS_DOCS_DIR: paths.docsDir,
+        CLAUDE_CONVENTIONS_STATE_DIR: paths.stateDir,
+      });
+      expect(out).toContain('fixture-solo');
+      expect(out).toContain('docs/conventions/fixture-solo.md');
+    });
+  });
+
+  it('a missing doc in a mixed match set is not marked seen, so it injects once its file lands', () => {
+    withFixture((paths) => {
+      setupFixture(paths);
+      const env = {
+        CLAUDE_CONVENTIONS_MANIFEST_PATH: paths.manifestPath,
+        CLAUDE_CONVENTIONS_DOCS_DIR: paths.docsDir,
+        CLAUDE_CONVENTIONS_STATE_DIR: paths.stateDir,
+      };
+
+      // First call: fixture-lonely-overlap matches alongside two docs that
+      // do have bodies, but its own body doesn't exist yet.
+      const first = run(payload('src/solo/thing.ts'), env);
+      expect(first).toContain('fixture-solo');
+      expect(first).not.toContain('LONELY_OVERLAP_LANDED_MARKER');
+
+      // Its body "lands" mid-session.
+      writeFileSync(
+        join(paths.docsDir, 'fixture-lonely-overlap.md'),
+        [
+          '## Headlines',
+          '',
+          '- fixture-rule-g: LONELY_OVERLAP_LANDED_MARKER. §eta',
+          '',
+          '## eta',
+          '',
+          'Body prose that only exists once the file lands.',
+          '',
+        ].join('\n')
+      );
+
+      // Second call, same file, same session+agent: fixture-solo and
+      // fixture-solo-2 are now deduped (their state WAS written on the
+      // first call, despite the missing sibling in that same batch), and
+      // fixture-lonely-overlap injects for the first time now that it has
+      // a body — proving the first call never recorded it as "seen".
+      const second = run(payload('src/solo/thing.ts'), env);
+      expect(second).not.toContain('fixture-solo');
+      expect(second).toContain('LONELY_OVERLAP_LANDED_MARKER');
     });
   });
 
@@ -353,6 +429,57 @@ describe('conventions hook: fixture-driven behaviour', () => {
       expect(runRaw(JSON.stringify({ tool_input: {} }), env).trim()).toBe('');
       expect(runRaw(JSON.stringify({ tool_input: { file_path: '' } }), env).trim()).toBe('');
     });
+  });
+});
+
+// Controller Ruling 9: the hook resolved the edited file's path against
+// CLAUDE_PROJECT_DIR (or process.cwd() as a fallback), but read the
+// manifest and doc bodies from bare repo-relative strings, which
+// readFileSync resolves against process.cwd() only. Whenever the hook
+// process's cwd differs from the project root, that manifest read throws,
+// run() returns early, and the hook exits 0 with empty stdout — identical
+// to the correct, designed-silence output for the whole tasks-5-12 window,
+// so no existing test (including the "real-repo integration" tests just
+// below, which never move cwd) could see it. .claude/settings.json itself
+// invokes this script via the absolute `${CLAUDE_PROJECT_DIR}`-qualified
+// path, which only makes sense on the assumption that cwd is NOT already
+// the project root — so the bug contradicted the very file that wires the
+// hook up.
+describe('conventions hook: repo root resolution', () => {
+  it('resolves the manifest and doc bodies via CLAUDE_PROJECT_DIR even when the process cwd is somewhere else entirely', () => {
+    const fakeRoot = mkdtempSync(join(tmpdir(), 'conv-hook-fakeroot-'));
+    const elsewhere = mkdtempSync(join(tmpdir(), 'conv-hook-elsewhere-'));
+    const stateDir = mkdtempSync(join(tmpdir(), 'conv-hook-state-'));
+    try {
+      // A fixture "repo" laid out at the DEFAULT repo-relative locations
+      // (docs/conventions/manifest.json, docs/conventions/<slug>.md) under
+      // fakeRoot — deliberately no CLAUDE_CONVENTIONS_MANIFEST_PATH or
+      // CLAUDE_CONVENTIONS_DOCS_DIR override, since those would bypass the
+      // exact default-path-resolution code path this test exists to check.
+      const fakeDocsDir = join(fakeRoot, 'docs', 'conventions');
+      mkdirSync(fakeDocsDir, { recursive: true });
+      writeFileSync(join(fakeDocsDir, 'manifest.json'), JSON.stringify(FIXTURE_MANIFEST));
+      writeFixtureDocs(fakeDocsDir);
+
+      const absoluteHookPath = join(process.cwd(), HOOK_PATH);
+      const out = execFileSync('node', [absoluteHookPath], {
+        input: JSON.stringify(payload('src/solo/thing.ts')),
+        encoding: 'utf8',
+        cwd: elsewhere,
+        env: {
+          ...process.env,
+          CLAUDE_CONVENTIONS_ENABLED: '1',
+          CLAUDE_PROJECT_DIR: fakeRoot,
+          CLAUDE_CONVENTIONS_STATE_DIR: stateDir,
+        },
+      });
+      expect(out).toContain('fixture-solo');
+      expect(out).toContain('docs/conventions/fixture-solo.md');
+    } finally {
+      rmSync(fakeRoot, { recursive: true, force: true });
+      rmSync(elsewhere, { recursive: true, force: true });
+      rmSync(stateDir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -29,12 +29,11 @@ const STATE_FILE_NAME = 'conventions-hook-state.json';
 
 // ---- pure / IO-isolated helpers, exported for direct testing ----
 
-// Claude Code hook payloads deliver `tool_input.file_path` absolute, with
-// Windows backslashes (e.g. `C:\Users\...\src\core\locks.ts`), while the
-// manifest's triggerGlobs are forward-slash and repo-relative. Feeding the
-// raw value to the matcher matches nothing — this step is required, not
-// defensive (see docs/superpowers/plans/artifacts/2026-08-28-hook-spike-
-// findings.md).
+// The hook runtime delivers `tool_input.file_path` absolute, with Windows
+// backslashes (e.g. `C:\Users\...\src\core\locks.ts`), while the manifest's
+// triggerGlobs are forward-slash and repo-relative. Feeding the raw value
+// to the matcher matches nothing — this step is required, not defensive
+// (see docs/superpowers/plans/artifacts/2026-08-28-hook-spike-findings.md).
 export function normalizeFilePath(rawPath, repoRoot) {
   if (typeof rawPath !== 'string' || rawPath.length === 0) return null;
   const forward = rawPath.replace(/\\/g, '/');
@@ -199,7 +198,16 @@ function run(payload) {
   const relPath = normalizeFilePath(filePath, repoRoot);
   if (!relPath) return;
 
-  const manifestPath = process.env.CLAUDE_CONVENTIONS_MANIFEST_PATH || DEFAULT_MANIFEST_PATH;
+  // The default manifest/docs paths are repo-relative, and readFileSync
+  // resolves a relative path against process.cwd() — NOT against repoRoot.
+  // A hook process can run with a cwd that differs from the project root
+  // (settings.json itself invokes this script via the absolute
+  // ${CLAUDE_PROJECT_DIR}-qualified path, which only makes sense if cwd
+  // isn't assumed to already be the project root), so the defaults must be
+  // joined against repoRoot explicitly. An env override, when given, is
+  // used as-is — every caller that sets one (this repo's own tests) already
+  // hands it an absolute path.
+  const manifestPath = process.env.CLAUDE_CONVENTIONS_MANIFEST_PATH || join(repoRoot, DEFAULT_MANIFEST_PATH);
   let manifest;
   try {
     manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
@@ -218,7 +226,7 @@ function run(payload) {
   const remaining = matched.filter((d) => !alreadySeen.has(d.slug));
   if (remaining.length === 0) return;
 
-  const docsDir = process.env.CLAUDE_CONVENTIONS_DOCS_DIR || DEFAULT_DOCS_DIR;
+  const docsDir = process.env.CLAUDE_CONVENTIONS_DOCS_DIR || join(repoRoot, DEFAULT_DOCS_DIR);
   const { text, injectedSlugs } = buildInjection(remaining, docsDir);
   if (text === '') return;
 
