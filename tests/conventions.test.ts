@@ -312,3 +312,44 @@ describe('fixture-driven check coverage (checks 4-8, exercised directly)', () =>
     }
   );
 });
+
+describe('CLAUDE.md core', () => {
+  const md = readFileSync('CLAUDE.md', 'utf8');
+  const core = md.split('## Topics')[0];
+
+  it('opens with the eight tripwires', () => {
+    for (const phrase of [
+      '`.js` extension',
+      'ctx.now()',
+      'ctx.rng()',
+      'better-sqlite3',
+      'deploy-commands',
+      'one bot process per token',
+      'addChoices',
+      'customId',
+      'npm run typecheck',
+    ]) {
+      expect(core, `core is missing: ${phrase}`).toContain(phrase);
+    }
+
+    // The brief's version of this list greps the core for the bare string
+    // `.js`, which is also a substring of `.json` and `.mjs` — both of which
+    // appear in any honest topic index — so that assertion passes on prose
+    // that never states the ESM rule at all. Bind the extension to the
+    // imports it governs instead.
+    expect(core, 'core must state the ESM relative-import rule').toMatch(
+      /relative import[\s\S]{0,120}`\.js` extension/
+    );
+  });
+
+  it('indexes every doc in the manifest', () => {
+    // Scoped to the index itself rather than the whole file: while the
+    // UNMIGRATED marker stands, everything below it is the un-split original,
+    // where a slug could match prose instead of an index line naming it.
+    const topics = md.split('## Topics')[1]?.split('<!-- UNMIGRATED')[0] ?? '';
+    expect(topics, 'CLAUDE.md has no "## Topics" index').not.toBe('');
+    for (const d of manifest.docs) {
+      expect(topics, `index is missing ${d.slug}`).toContain(d.slug);
+    }
+  });
+});
