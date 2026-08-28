@@ -1,0 +1,1819 @@
+{
+  "version": 1,
+  "claudeMdMaxLines": 120,
+  "alwaysCore": [
+    "esm-js-extension",
+    "ctx-clock-and-rng",
+    "db-sync-never-awaited",
+    "deploy-commands-on-builder-change",
+    "one-bot-instance-per-token",
+    "large-option-sets-use-autocomplete-not-addchoices",
+    "customid-state-anchor",
+    "build-does-not-typecheck-tests"
+  ],
+  "docs": [
+    {
+      "slug": "admin-ledger",
+      "title": "src/modules/admin/ledger.ts and src/modules/admin/index.ts",
+      "triggerGlobs": [
+        "src/modules/admin/ledger.ts",
+        "src/modules/admin/index.ts"
+      ],
+      "rules": [
+        {
+          "id": "ledger-must-be-ephemeral",
+          "sourceLines": "1073-1079"
+        },
+        {
+          "id": "ledger-hides-zero-movement-rows",
+          "sourceLines": "1080-1086"
+        },
+        {
+          "id": "reset-marker-exempt-from-filter",
+          "sourceLines": "1091-1094"
+        },
+        {
+          "id": "ledger-pager-carries-filter-state",
+          "sourceLines": "1095-1100"
+        },
+        {
+          "id": "parse-show-all-degrades-to-hide",
+          "sourceLines": "1101-1105"
+        },
+        {
+          "id": "derive-over-full-row-set",
+          "sourceLines": "1106-1111"
+        },
+        {
+          "id": "hiding-is-display-not-permission",
+          "sourceLines": "1125-1131"
+        },
+        {
+          "id": "footer-and-empty-state-wording",
+          "sourceLines": "1132-1136"
+        },
+        {
+          "id": "no-caveat-printed-on-every-render",
+          "sourceLines": "1033-1039"
+        },
+        {
+          "id": "note-max-cap-at-both-ends",
+          "sourceLines": "1064-1067"
+        }
+      ]
+    },
+    {
+      "slug": "admin-service",
+      "title": "src/modules/admin/service.ts",
+      "triggerGlobs": [
+        "src/modules/admin/service.ts",
+        "src/modules/admin/guard.ts",
+        "tests/admin.test.ts",
+        "drizzle/**",
+        "src/core/db/schema.ts"
+      ],
+      "rules": [
+        {
+          "id": "admin-covers-daily-tables",
+          "sourceLines": "610-614"
+        },
+        {
+          "id": "fastforward-column-guards",
+          "sourceLines": "614-619"
+        },
+        {
+          "id": "reverse-confirmation-names-row-amount-balance",
+          "sourceLines": "984-990"
+        },
+        {
+          "id": "moved-read-off-committed-row-shared-renderer",
+          "sourceLines": "990-995"
+        },
+        {
+          "id": "movement-rendering-food-names-and-no-movement",
+          "sourceLines": "996-1000"
+        },
+        {
+          "id": "spec-createdAt-boundary-is-false",
+          "sourceLines": "1001-1008"
+        },
+        {
+          "id": "reset-marker-row-and-shared-boundary",
+          "sourceLines": "1009-1014"
+        },
+        {
+          "id": "boundary-cut-on-row-id-not-timestamp",
+          "sourceLines": "1018-1023"
+        },
+        {
+          "id": "boundary-blind-to-pre-deploy-resets",
+          "sourceLines": "1024-1032"
+        },
+        {
+          "id": "reversal-note-is-a-queued-dm",
+          "sourceLines": "1045-1052"
+        },
+        {
+          "id": "reversal-note-is-not-mute-aware",
+          "sourceLines": "1053-1057"
+        },
+        {
+          "id": "notify-fires-after-commit-unawaited",
+          "sourceLines": "1057-1061"
+        },
+        {
+          "id": "notify-ordering-test-must-see-below-guards",
+          "sourceLines": "1061-1064"
+        },
+        {
+          "id": "collapse-whitespace-before-capping",
+          "sourceLines": "1067-1072"
+        },
+        {
+          "id": "moved-nothing-single-predicate",
+          "sourceLines": "1086-1091"
+        },
+        {
+          "id": "suppression-lives-in-one-helper",
+          "sourceLines": "1180-1183"
+        },
+        {
+          "id": "page-boundary-pairing-tests",
+          "sourceLines": "1111-1124"
+        }
+      ]
+    },
+    {
+      "slug": "art-asset-files",
+      "title": "assets/images/, the fit-art scripts and docs/assets/prompts.md",
+      "triggerGlobs": [
+        "assets/images/**",
+        "docs/assets/prompts.md",
+        "scripts/fit-art.mjs",
+        "scripts/clear-backdrop.mjs",
+        "scripts/count-regions.mjs",
+        "scripts/measure-margins.mjs",
+        "scripts/check-band-contrast.mjs",
+        "scripts/lib/**",
+        "tests/images.test.ts",
+        "tests/asset-variants.test.ts",
+        "tests/art-pipeline.test.ts",
+        "tests/fit-art-cli.test.ts",
+        "tests/docs-assets.test.ts",
+        "tests/lib/backdrop.ts"
+      ],
+      "rules": [
+        {
+          "id": "variant-file-naming",
+          "sourceLines": "87-89"
+        },
+        {
+          "id": "no-uniform-face-count",
+          "sourceLines": "104-107"
+        },
+        {
+          "id": "one-more-face-moves-half-the-seeds",
+          "sourceLines": "107-120",
+          "bodyRequired": true
+        },
+        {
+          "id": "new-face-is-inert-for-unseeded-bases",
+          "sourceLines": "121-132"
+        },
+        {
+          "id": "no-test-proves-a-variant-is-reachable",
+          "sourceLines": "143-148",
+          "bodyRequired": true
+        },
+        {
+          "id": "assets-images-are-webp-q95",
+          "sourceLines": "310-313, 318-320"
+        },
+        {
+          "id": "three-deliberate-non-webp",
+          "sourceLines": "313-318"
+        },
+        {
+          "id": "no-test-fixtures-in-assets",
+          "sourceLines": "453-457"
+        },
+        {
+          "id": "boss-portraits-stay-single-faced",
+          "sourceLines": "127-129"
+        },
+        {
+          "id": "boss-portraits-committed-and-degradable",
+          "sourceLines": "450-453"
+        },
+        {
+          "id": "art-dimensions-and-fit-art-modes",
+          "sourceLines": "438-446"
+        },
+        {
+          "id": "cracks-keep-disconnected-alpha",
+          "sourceLines": "446-449"
+        },
+        {
+          "id": "art-prompts-live-in-docs",
+          "sourceLines": "48-48"
+        }
+      ]
+    },
+    {
+      "slug": "art-resolver",
+      "title": "src/core/images.ts and src/core/rolls.ts",
+      "triggerGlobs": [
+        "src/core/images.ts",
+        "src/core/rolls.ts",
+        "tests/dino-image.test.ts",
+        "tests/species-art.test.ts",
+        "tests/rolls.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "unseeded-returns-base",
+          "sourceLines": "89-92"
+        },
+        {
+          "id": "seeded-pick-formula",
+          "sourceLines": "95-98"
+        },
+        {
+          "id": "composite-hash-key",
+          "sourceLines": "149-154"
+        },
+        {
+          "id": "variant-count-never-hardcoded",
+          "sourceLines": "99-103"
+        },
+        {
+          "id": "seeding-variantless-base-is-noop",
+          "sourceLines": "176-182"
+        },
+        {
+          "id": "variant-choice-bypasses-ctx-rng",
+          "sourceLines": "206-213"
+        },
+        {
+          "id": "art-missing-file-degrades",
+          "sourceLines": "46-48"
+        },
+        {
+          "id": "embed-art-kinds",
+          "sourceLines": "411-414"
+        },
+        {
+          "id": "dino-art-archetype-diet-with-species-override",
+          "sourceLines": "414-425"
+        },
+        {
+          "id": "hashseed-must-never-change",
+          "sourceLines": "154-158"
+        },
+        {
+          "id": "never-modulo-a-hash",
+          "sourceLines": "158-160"
+        },
+        {
+          "id": "shop-preview-takes-no-seed",
+          "sourceLines": "167-175"
+        },
+        {
+          "id": "mock-assetimage-forwards-every-arg",
+          "sourceLines": "200-205"
+        },
+        {
+          "id": "mock-dinoimage-not-assetimage",
+          "sourceLines": "425-428"
+        }
+      ]
+    },
+    {
+      "slug": "battle-content-and-balance",
+      "title": "src/data/battle/ and src/data/sites.ts",
+      "triggerGlobs": [
+        "src/data/battle/**",
+        "src/data/sites.ts",
+        "tests/battle-*.test.ts",
+        "tests/elo.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "chapter-id-equals-site-id",
+          "sourceLines": "354-358"
+        },
+        {
+          "id": "chapter-ships-data-only",
+          "sourceLines": "358-362"
+        },
+        {
+          "id": "new-gate-kind-costs-engine-change",
+          "sourceLines": "362-368"
+        },
+        {
+          "id": "rosterfor-single-source",
+          "sourceLines": "369-374"
+        },
+        {
+          "id": "npc-level-sanity-cap-frozen",
+          "sourceLines": "639-648"
+        },
+        {
+          "id": "hpmult-not-atkmult",
+          "sourceLines": "461-468"
+        },
+        {
+          "id": "retune-late-bosses-together",
+          "sourceLines": "468-470"
+        },
+        {
+          "id": "boss-multipliers-may-be-below-one",
+          "sourceLines": "470-471"
+        },
+        {
+          "id": "tune-at-3000-seeds",
+          "sourceLines": "471-475"
+        },
+        {
+          "id": "balance-asserts-both-mod-sets",
+          "sourceLines": "458-461"
+        }
+      ]
+    },
+    {
+      "slug": "bot-profile-branding",
+      "title": "assets/branding/ and the GIF pipeline that fills it",
+      "triggerGlobs": [
+        "assets/branding/**",
+        "src/core/branding.ts",
+        "src/deploy-branding.ts",
+        "src/types/**",
+        "scripts/make-gif.ts",
+        "tests/branding.test.ts",
+        "tests/make-gif.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "branding-not-under-assets-images",
+          "sourceLines": "620-622"
+        },
+        {
+          "id": "branding-gif-dimensions-are-contract",
+          "sourceLines": "621-624"
+        },
+        {
+          "id": "deploy-branding-is-an-operator-step",
+          "sourceLines": "624-626"
+        },
+        {
+          "id": "deploy-branding-asserts-animated-hash",
+          "sourceLines": "626-629"
+        }
+      ]
+    },
+    {
+      "slug": "clock-comfort-and-feeding",
+      "title": "src/core/clock.ts with decor, foods and the care module",
+      "triggerGlobs": [
+        "src/core/clock.ts",
+        "src/data/decor.ts",
+        "src/data/foods.ts",
+        "src/data/care.ts",
+        "src/modules/care/**",
+        "tests/clock.test.ts",
+        "tests/enrichment.test.ts",
+        "tests/care.test.ts",
+        "tests/tundra.test.ts",
+        "tests/dinos.test.ts",
+        "tests/feed-skip.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "hungerat-drainms-required",
+          "sourceLines": "556-564"
+        },
+        {
+          "id": "income-integrated-across-midnights",
+          "sourceLines": "665-670"
+        },
+        {
+          "id": "overfeeding-and-piecewise-income",
+          "sourceLines": "322-325"
+        },
+        {
+          "id": "enrichment-stacks-above-diet-split",
+          "sourceLines": "798-802"
+        },
+        {
+          "id": "enrichment-steps-index-zero-is-one",
+          "sourceLines": "804-810"
+        },
+        {
+          "id": "enrichment-cap-is-mechanical",
+          "sourceLines": "822-839"
+        },
+        {
+          "id": "matched-kind-count-dedupes",
+          "sourceLines": "802-804"
+        },
+        {
+          "id": "retiring-a-decor-kind-degrades-silently",
+          "sourceLines": "896-902"
+        },
+        {
+          "id": "dead-window-gate-derives-from-traits-table",
+          "sourceLines": "839-844"
+        },
+        {
+          "id": "no-events-on-integrated-knobs",
+          "sourceLines": "671-679"
+        },
+        {
+          "id": "required-now-parameter-never-defaulted",
+          "sourceLines": "679-684"
+        },
+        {
+          "id": "food-is-typed-in-its-own-table",
+          "sourceLines": "321-322"
+        },
+        {
+          "id": "food-autocomplete-uses-fallback-unicode",
+          "sourceLines": "325-327"
+        }
+      ]
+    },
+    {
+      "slug": "command-and-handler-surface",
+      "title": "Every modules/*/index.ts",
+      "triggerGlobs": [
+        "src/modules/*/index.ts",
+        "src/core/autocomplete.ts",
+        "tests/contract.test.ts",
+        "tests/autocomplete-*.test.ts",
+        "tests/battles-autocomplete.test.ts",
+        "tests/settings.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "commands-live-in-manifests",
+          "sourceLines": "8-9"
+        },
+        {
+          "id": "module-registration-sites",
+          "sourceLines": "17-25"
+        },
+        {
+          "id": "setautocomplete-must-be-advertised",
+          "sourceLines": "27-30"
+        },
+        {
+          "id": "autocomplete-options-manifest",
+          "sourceLines": "20-23"
+        },
+        {
+          "id": "boolean-option-is-a-builder-change",
+          "sourceLines": "1136-1138"
+        },
+        {
+          "id": "autocomplete-respond-only",
+          "sourceLines": "9-10"
+        },
+        {
+          "id": "autocomplete-no-user-creation",
+          "sourceLines": "10-11"
+        },
+        {
+          "id": "autocomplete-read-only-except-settle-escapes",
+          "sourceLines": "11-12"
+        },
+        {
+          "id": "autocomplete-no-escrow-sweep",
+          "sourceLines": "12-13"
+        },
+        {
+          "id": "autocomplete-errors-degrade-empty",
+          "sourceLines": "15-16"
+        },
+        {
+          "id": "never-emoji-tag-in-autocomplete-label",
+          "sourceLines": "270-272"
+        },
+        {
+          "id": "never-emojitag-in-module-constant",
+          "sourceLines": "268-270"
+        },
+        {
+          "id": "component-prefix-is-first-segment-only",
+          "sourceLines": "1187-1193"
+        },
+        {
+          "id": "one-entry-per-prefix-branch-internally",
+          "sourceLines": "1201-1205"
+        },
+        {
+          "id": "component-default-arm-must-acknowledge",
+          "sourceLines": "783-787"
+        },
+        {
+          "id": "routed-test-per-component",
+          "sourceLines": "1193-1200"
+        },
+        {
+          "id": "repaint-is-second-layer-not-guard",
+          "sourceLines": "931-934"
+        },
+        {
+          "id": "money-button-carries-its-rung",
+          "sourceLines": "919-940"
+        },
+        {
+          "id": "target-segment-customids-no-owner-check",
+          "sourceLines": "1437-1443"
+        },
+        {
+          "id": "existence-check-before-acknowledgement",
+          "sourceLines": "1453-1456"
+        },
+        {
+          "id": "acknowledge-before-slow-render",
+          "sourceLines": "1444-1453"
+        }
+      ]
+    },
+    {
+      "slug": "daily-quests-and-stats",
+      "title": "src/core/stats.ts and the quest half of src/modules/daily/",
+      "triggerGlobs": [
+        "src/modules/daily/index.ts",
+        "src/modules/daily/service.ts",
+        "src/modules/daily/hooks.ts",
+        "src/modules/daily/embeds.ts",
+        "src/data/quests.ts",
+        "src/data/achievements.ts",
+        "src/core/stats.ts",
+        "tests/daily-*.test.ts",
+        "tests/stats.test.ts",
+        "tests/stats-sites.test.ts",
+        "src/modules/*/service.ts"
+      ],
+      "rules": [
+        {
+          "id": "quest-progress-derived",
+          "sourceLines": "584-589"
+        },
+        {
+          "id": "pickboard-three-hard-rules",
+          "sourceLines": "589-592"
+        },
+        {
+          "id": "quest-roll-deterministic",
+          "sourceLines": "592-597"
+        },
+        {
+          "id": "streak-chests-personal-best-only",
+          "sourceLines": "598-602"
+        },
+        {
+          "id": "quest-hint-exemptions",
+          "sourceLines": "602-609"
+        },
+        {
+          "id": "track-inside-the-measured-write",
+          "sourceLines": "580-584"
+        }
+      ]
+    },
+    {
+      "slug": "economy-core",
+      "title": "src/core/economy.ts and src/data/tx-reasons.ts",
+      "triggerGlobs": [
+        "src/core/economy.ts",
+        "src/data/tx-reasons.ts",
+        "tests/economy.test.ts",
+        "tests/tx-reasons.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "reverse-in-one-sync-transaction",
+          "sourceLines": "954-959"
+        },
+        {
+          "id": "reversals-are-terminal",
+          "sourceLines": "960-965"
+        },
+        {
+          "id": "core-guards-know-only-the-row",
+          "sourceLines": "964-965"
+        },
+        {
+          "id": "reversal-is-a-compensating-row",
+          "sourceLines": "948-951"
+        },
+        {
+          "id": "reversed-flag-is-derived",
+          "sourceLines": "951-954"
+        },
+        {
+          "id": "reversal-is-symmetric-and-can-overdraw",
+          "sourceLines": "976-983"
+        },
+        {
+          "id": "reversal-moves-money-only",
+          "sourceLines": "941-947"
+        },
+        {
+          "id": "no-recharge-path-refund-is-final",
+          "sourceLines": "966-975"
+        },
+        {
+          "id": "marker-refusal-lives-in-admin-layer",
+          "sourceLines": "1040-1044"
+        },
+        {
+          "id": "side-effect-fails-closed",
+          "sourceLines": "1139-1142"
+        },
+        {
+          "id": "side-effects-null-prototype-map",
+          "sourceLines": "1142-1144"
+        },
+        {
+          "id": "payout-suppresses-only-the-fallback",
+          "sourceLines": "1144-1156"
+        },
+        {
+          "id": "side-effects-answers-every-reason",
+          "sourceLines": "1157-1167"
+        },
+        {
+          "id": "side-effects-keys-on-the-prefix",
+          "sourceLines": "1167-1170"
+        },
+        {
+          "id": "write-entries-against-the-call-site",
+          "sourceLines": "1171-1179"
+        },
+        {
+          "id": "known-side-effect-returns-nullable",
+          "sourceLines": "1183-1186"
+        }
+      ]
+    },
+    {
+      "slug": "embed-payload-builders",
+      "title": "Every modules/*/embeds.ts, plus the two payload builders not named one",
+      "triggerGlobs": [
+        "src/modules/*/embeds.ts",
+        "src/modules/*/*-embeds.ts",
+        "src/modules/admin/ledger.ts",
+        "src/core/paginate.ts",
+        "tests/paginate.test.ts",
+        "src/modules/care/index.ts",
+        "src/modules/expeditions/index.ts",
+        "src/modules/hatchery/index.ts",
+        "src/modules/help/index.ts",
+        "src/modules/leaderboards/index.ts",
+        "src/modules/park/index.ts",
+        "src/modules/shop/index.ts",
+        "src/modules/trading/index.ts",
+        "src/core/notify.ts"
+      ],
+      "rules": [
+        {
+          "id": "always-use-attach",
+          "sourceLines": "49-51"
+        },
+        {
+          "id": "attach-appends-never-assign-files",
+          "sourceLines": "237-240"
+        },
+        {
+          "id": "attach-null-ref-is-noop",
+          "sourceLines": "51-55"
+        },
+        {
+          "id": "attach-order-is-upload-order",
+          "sourceLines": "55-59"
+        },
+        {
+          "id": "no-hand-assigned-payload-files",
+          "sourceLines": "62-64"
+        },
+        {
+          "id": "domain-ternary-stays-outside-attach",
+          "sourceLines": "59-62"
+        },
+        {
+          "id": "attachment-name-dedupe",
+          "sourceLines": "240-249"
+        },
+        {
+          "id": "payload-never-shared-across-two-sends",
+          "sourceLines": "391-401",
+          "bodyRequired": true
+        },
+        {
+          "id": "never-rarity-emoji-to-seticon",
+          "sourceLines": "272-278"
+        },
+        {
+          "id": "no-min-values-zero",
+          "sourceLines": "1277-1280"
+        },
+        {
+          "id": "never-mint-min-values-zero",
+          "sourceLines": "1745-1749"
+        },
+        {
+          "id": "disabled-is-not-a-lock",
+          "sourceLines": "1741-1745"
+        },
+        {
+          "id": "select-limits-live-in-discord-limits",
+          "sourceLines": "1759-1764"
+        },
+        {
+          "id": "filtered-lists-need-their-own-page-row",
+          "sourceLines": "857-865"
+        },
+        {
+          "id": "banner-call-site-shape",
+          "sourceLines": "182-187"
+        },
+        {
+          "id": "seeds-by-family",
+          "sourceLines": "161-164"
+        },
+        {
+          "id": "half-seeded-bases",
+          "sourceLines": "133-142"
+        },
+        {
+          "id": "seeded-site-needs-a-test-that-can-fail",
+          "sourceLines": "195-200"
+        }
+      ]
+    },
+    {
+      "slug": "emoji-pipeline",
+      "title": "assets/emojis/ and the code that builds, uploads and reads it",
+      "triggerGlobs": [
+        "assets/emojis/**",
+        "src/core/emojis.ts",
+        "src/core/emoji-sync.ts",
+        "src/core/render-svg.ts",
+        "src/core/trait-display.ts",
+        "src/build-emojis.ts",
+        "src/deploy-emojis.ts",
+        "tests/emojis.test.ts",
+        "tests/emoji-assets.test.ts",
+        "tests/deploy-emojis.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "emoji-build-and-deploy-pipeline",
+          "sourceLines": "260-266"
+        },
+        {
+          "id": "emoji-runtime-lookup-degrades",
+          "sourceLines": "266-268"
+        },
+        {
+          "id": "emoji-mistakes-invisible-to-tests",
+          "sourceLines": "271-272"
+        },
+        {
+          "id": "resvg-ellipse-gradient-units",
+          "sourceLines": "278-286"
+        },
+        {
+          "id": "emoji-png-black-share-guard",
+          "sourceLines": "286-289"
+        }
+      ]
+    },
+    {
+      "slug": "escrow-and-item-moves",
+      "title": "src/core/locks.ts and the modules that move an item: trading, shop, hatchery, Gene Lab, expeditions",
+      "triggerGlobs": [
+        "src/core/locks.ts",
+        "src/core/species-seen.ts",
+        "src/modules/trading/**",
+        "src/modules/shop/**",
+        "src/modules/hatchery/**",
+        "src/modules/genelab/**",
+        "src/modules/expeditions/**",
+        "src/data/trade.ts",
+        "src/data/shop.ts",
+        "src/data/sell.ts",
+        "src/data/traits.ts",
+        "src/data/breeding.ts",
+        "tests/locks.test.ts",
+        "tests/trading.test.ts",
+        "tests/trade-validate.test.ts",
+        "tests/shop.test.ts",
+        "tests/shards.test.ts",
+        "tests/hatchery.test.ts",
+        "tests/genelab.test.ts",
+        "tests/genelab-module.test.ts",
+        "tests/expeditions.test.ts",
+        "tests/traits.test.ts",
+        "tests/breeding-data.test.ts",
+        "tests/species-seen.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "escrow-derived-never-stored",
+          "sourceLines": "491-500"
+        },
+        {
+          "id": "locks-batch-per-user",
+          "sourceLines": "501-507"
+        },
+        {
+          "id": "locks-expiry-at-read-time",
+          "sourceLines": "508-509"
+        },
+        {
+          "id": "locksfor-loop-order-breedings-last",
+          "sourceLines": "519-521"
+        },
+        {
+          "id": "escrow-enforced-only-at-consuming-paths",
+          "sourceLines": "510-513"
+        },
+        {
+          "id": "fortradeid-never-a-boolean",
+          "sourceLines": "513-519"
+        },
+        {
+          "id": "expirestale-display-only",
+          "sourceLines": "497-500"
+        },
+        {
+          "id": "autocomplete-expirestale-trade-only",
+          "sourceLines": "14-15"
+        },
+        {
+          "id": "hatchegg-escrow-incubating-guard-unreachable",
+          "sourceLines": "522-525"
+        },
+        {
+          "id": "trade-offer-autocomplete-uses-ownerid",
+          "sourceLines": "525-528"
+        },
+        {
+          "id": "genelab-escrow-lock-order",
+          "sourceLines": "564-569"
+        },
+        {
+          "id": "viatrade-survives-the-hatch",
+          "sourceLines": "534-537"
+        },
+        {
+          "id": "viatrade-frozen-on-breeding-row",
+          "sourceLines": "537-545"
+        },
+        {
+          "id": "mint-carries-provenance",
+          "sourceLines": "544-545"
+        },
+        {
+          "id": "record-species-seen-write-sites",
+          "sourceLines": "879-885"
+        },
+        {
+          "id": "trait-domains-never-doubled",
+          "sourceLines": "550-556"
+        },
+        {
+          "id": "revealpayload-two-files-degrade-independently",
+          "sourceLines": "257-259"
+        },
+        {
+          "id": "one-helper-per-scalable-price",
+          "sourceLines": "685-697"
+        }
+      ]
+    },
+    {
+      "slug": "fights-and-duels",
+      "title": "src/modules/battles/ and src/modules/duels/",
+      "triggerGlobs": [
+        "src/modules/battles/**",
+        "src/modules/duels/**",
+        "tests/battles-embeds.test.ts",
+        "tests/battles-module.test.ts",
+        "tests/duels.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "commit-before-present",
+          "sourceLines": "351-354"
+        },
+        {
+          "id": "fightframes-thumb-picked-once",
+          "sourceLines": "250-253"
+        },
+        {
+          "id": "boss-portrait-never-falls-back-to-archetype",
+          "sourceLines": "253-255"
+        },
+        {
+          "id": "one-merged-thumb-ref",
+          "sourceLines": "255-257"
+        },
+        {
+          "id": "frames-attach-f1-f4-only",
+          "sourceLines": "374-378"
+        },
+        {
+          "id": "f1-f4-unconditional-empty-attachments",
+          "sourceLines": "378-389"
+        },
+        {
+          "id": "frame-contract-gate-and-skip-replay",
+          "sourceLines": "389-391"
+        },
+        {
+          "id": "fightframes-attach-exception",
+          "sourceLines": "64-67"
+        },
+        {
+          "id": "queue-edits-on-presented-message",
+          "sourceLines": "401-410"
+        },
+        {
+          "id": "clamp-client-instant-from-above",
+          "sourceLines": "1307-1322"
+        }
+      ]
+    },
+    {
+      "slug": "help-topics",
+      "title": "src/modules/help/index.ts",
+      "triggerGlobs": [
+        "src/modules/help/index.ts",
+        "tests/help.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "help-topic-key-forces-deploy",
+          "sourceLines": "488-490"
+        },
+        {
+          "id": "help-topics-lazy-art-descriptor",
+          "sourceLines": "483-486"
+        },
+        {
+          "id": "help-park-topic-defers",
+          "sourceLines": "486-488"
+        },
+        {
+          "id": "help-body-must-name-every-subcommand",
+          "sourceLines": "1490-1494"
+        }
+      ]
+    },
+    {
+      "slug": "leaderboards",
+      "title": "src/modules/leaderboards/",
+      "triggerGlobs": [
+        "src/modules/leaderboards/**",
+        "tests/leaderboards.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "top-scored-fixed-query-count",
+          "sourceLines": "1394-1405"
+        },
+        {
+          "id": "leaderboards-query-count-proxy-test",
+          "sourceLines": "1431-1434"
+        },
+        {
+          "id": "legacy-scores-twin-of-points",
+          "sourceLines": "1418-1427"
+        },
+        {
+          "id": "score-terms-roster-intersection",
+          "sourceLines": "1427-1431"
+        },
+        {
+          "id": "attendance-scores-deliberately-laxer",
+          "sourceLines": "1618-1624"
+        },
+        {
+          "id": "season-scores-iterate-stats-keys",
+          "sourceLines": "1406-1412"
+        },
+        {
+          "id": "season-scores-no-baseline-mint",
+          "sourceLines": "1412-1414"
+        },
+        {
+          "id": "no-group-by-null-sum",
+          "sourceLines": "1415-1418"
+        },
+        {
+          "id": "displayname-injection-path-open",
+          "sourceLines": "1483-1489"
+        }
+      ]
+    },
+    {
+      "slug": "notify-and-runtime",
+      "title": "src/index.ts, src/core/context.ts and src/core/notify.ts",
+      "triggerGlobs": [
+        "src/core/notify.ts",
+        "src/core/context.ts",
+        "src/index.ts",
+        "tests/notify.test.ts",
+        "tests/notify-handlers.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "notify-payload-shape",
+          "sourceLines": "214-216"
+        },
+        {
+          "id": "notify-third-arg-stays-string",
+          "sourceLines": "216-218"
+        },
+        {
+          "id": "notify-mention-channel-path-only",
+          "sourceLines": "218-220"
+        },
+        {
+          "id": "client-wide-allowed-mentions-parse-none",
+          "sourceLines": "220-224"
+        },
+        {
+          "id": "per-message-allowed-mentions-replaces",
+          "sourceLines": "224-228"
+        },
+        {
+          "id": "sender-fakes-hand-rolled-grep",
+          "sourceLines": "228-236"
+        },
+        {
+          "id": "ctx-sleep-injected",
+          "sourceLines": "348-351"
+        }
+      ]
+    },
+    {
+      "slug": "park-png-renderer",
+      "title": "src/core/render/, the park rasters it draws and the snapshot it is handed",
+      "triggerGlobs": [
+        "src/core/render/**",
+        "src/data/render-icons.ts",
+        "src/modules/park/snapshot.ts",
+        "assets/images/park/**",
+        "assets/fonts/**",
+        "scripts/render-smoke.mjs",
+        "tests/render-*.test.ts",
+        "tests/park-view-image.test.ts",
+        "tests/park-snapshot.test.ts",
+        "tests/park-art-assets.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "raster-decode-must-be-awaited",
+          "sourceLines": "290-293"
+        },
+        {
+          "id": "svg-decodes-synchronously",
+          "sourceLines": "293-296"
+        },
+        {
+          "id": "renderparkpng-stays-synchronous",
+          "sourceLines": "296-300"
+        },
+        {
+          "id": "loadparkart-never-rejects",
+          "sourceLines": "300-305"
+        },
+        {
+          "id": "art-never-crosses-postmessage",
+          "sourceLines": "305-306"
+        },
+        {
+          "id": "drawimage-null-needs-guard",
+          "sourceLines": "306-309"
+        },
+        {
+          "id": "render-park-png-stays-pure",
+          "sourceLines": "720-722"
+        },
+        {
+          "id": "ground-by-season-exhaustive-null-init",
+          "sourceLines": "722-726"
+        },
+        {
+          "id": "ground-image-fallback-chain",
+          "sourceLines": "726-729"
+        },
+        {
+          "id": "seasonal-rasters-in-existing-promise-all",
+          "sourceLines": "729-732"
+        },
+        {
+          "id": "landmark-cell-appended-last",
+          "sourceLines": "1388-1391"
+        },
+        {
+          "id": "landmark-art-degrades-flat",
+          "sourceLines": "1391-1393"
+        },
+        {
+          "id": "season-stamped-only-in-snapshot",
+          "sourceLines": "715-720"
+        }
+      ]
+    },
+    {
+      "slug": "park-progression",
+      "title": "Lots, rating, ranks, attendance and guests - the park's derived numbers",
+      "triggerGlobs": [
+        "src/modules/park/service.ts",
+        "src/modules/park/rating.ts",
+        "src/modules/park/ranks.ts",
+        "src/modules/park/attendance.ts",
+        "src/modules/park/landmarks.ts",
+        "src/modules/park/escapes.ts",
+        "src/modules/guests/**",
+        "src/data/paddocks.ts",
+        "src/data/facilities.ts",
+        "src/data/progression.ts",
+        "src/data/landmarks.ts",
+        "src/data/attendance.ts",
+        "src/data/attractions.ts",
+        "docs/gameplay.md",
+        "tests/rating.test.ts",
+        "tests/ranks.test.ts",
+        "tests/attendance.test.ts",
+        "tests/guests.test.ts",
+        "tests/attractions-content.test.ts",
+        "tests/landmarks.test.ts",
+        "tests/escapes.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "one-facility-per-kind",
+          "sourceLines": "570-572"
+        },
+        {
+          "id": "facilitylevel-resolves-highest-row",
+          "sourceLines": "572-576"
+        },
+        {
+          "id": "facilitylevel-zero-for-absent-kind",
+          "sourceLines": "576-579"
+        },
+        {
+          "id": "duplicate-lots-are-permanent",
+          "sourceLines": "578-579"
+        },
+        {
+          "id": "level-value-clamp",
+          "sourceLines": "1357-1370"
+        },
+        {
+          "id": "null-prototype-catalog-maps",
+          "sourceLines": "1774-1783",
+          "bodyRequired": true
+        },
+        {
+          "id": "buildlot-owns-the-kind-allowlist",
+          "sourceLines": "1784-1789"
+        },
+        {
+          "id": "upgradelot-required-anchor",
+          "sourceLines": "1790-1793"
+        },
+        {
+          "id": "rating-scale-1000",
+          "sourceLines": "630-632"
+        },
+        {
+          "id": "park-target-frozen",
+          "sourceLines": "1371-1376"
+        },
+        {
+          "id": "park-term-saturable-without-decor",
+          "sourceLines": "1381-1387"
+        },
+        {
+          "id": "base-vs-enriched-fit-is-a-real-split",
+          "sourceLines": "811-818"
+        },
+        {
+          "id": "recompute-stamps-two-highwaters",
+          "sourceLines": "1607-1611"
+        },
+        {
+          "id": "trade-gate-reads-droppable-rating",
+          "sourceLines": "1376-1380"
+        },
+        {
+          "id": "legacy-rank-not-user-stats",
+          "sourceLines": "1323-1335"
+        },
+        {
+          "id": "achievement-term-inherits-gap",
+          "sourceLines": "1336-1350"
+        },
+        {
+          "id": "legacy-high-water-write-split",
+          "sourceLines": "1351-1356"
+        },
+        {
+          "id": "attendance-derived-read-time",
+          "sourceLines": "1594-1597"
+        },
+        {
+          "id": "attendance-of-is-pure",
+          "sourceLines": "1602-1606"
+        },
+        {
+          "id": "attendance-predicate-is-time-aware",
+          "sourceLines": "1611-1628"
+        },
+        {
+          "id": "recompute-not-above-guests-switch",
+          "sourceLines": "1629-1641"
+        },
+        {
+          "id": "landmark-monotone-ladder",
+          "sourceLines": "914-918"
+        },
+        {
+          "id": "landmark-top-rung-error-text",
+          "sourceLines": "935-937"
+        },
+        {
+          "id": "landmark-users-column-not-decor",
+          "sourceLines": "903-913"
+        }
+      ]
+    },
+    {
+      "slug": "park-surface",
+      "title": "The /park command, its card, and the files that store player-typed text",
+      "triggerGlobs": [
+        "src/modules/park/index.ts",
+        "src/modules/park/embeds.ts",
+        "src/modules/park/visit.ts",
+        "src/modules/park/showcase.ts",
+        "src/modules/park/dinos.ts",
+        "src/core/text.ts",
+        "tests/park.test.ts",
+        "tests/park-tabs.test.ts",
+        "tests/visit.test.ts",
+        "tests/showcase.test.ts",
+        "tests/lot-menus.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "park-subcommand-switch-with-default",
+          "sourceLines": "771-782"
+        },
+        {
+          "id": "park-tabs-two-customid-families",
+          "sourceLines": "1642-1647"
+        },
+        {
+          "id": "tab-switch-explicit-attachments",
+          "sourceLines": "1648-1658"
+        },
+        {
+          "id": "park-tab-defers-before-render",
+          "sourceLines": "1659-1662"
+        },
+        {
+          "id": "settle-escapes-once-per-interaction",
+          "sourceLines": "1663-1664"
+        },
+        {
+          "id": "bump-legacy-best-once-per-command",
+          "sourceLines": "1665-1669"
+        },
+        {
+          "id": "collect-first-button-first-row",
+          "sourceLines": "1670-1671"
+        },
+        {
+          "id": "park-view-select-cost-and-dupes",
+          "sourceLines": "1676-1683"
+        },
+        {
+          "id": "display-only-comfort-clamp-is-legitimate",
+          "sourceLines": "818-821"
+        },
+        {
+          "id": "withparkimage-appends",
+          "sourceLines": "67-69"
+        },
+        {
+          "id": "dashboardpayload-ships-no-art-of-its-own",
+          "sourceLines": "69-77"
+        },
+        {
+          "id": "visitpayload-reuses-dashboard-components",
+          "sourceLines": "78-82"
+        },
+        {
+          "id": "visit-suppresses-park-collect",
+          "sourceLines": "81-86"
+        },
+        {
+          "id": "animals-tab-seeds-on-owner",
+          "sourceLines": "164-167"
+        },
+        {
+          "id": "confirm-payload-shape",
+          "sourceLines": "1799-1803"
+        },
+        {
+          "id": "confirm-rendered-onto-the-card",
+          "sourceLines": "1808-1810"
+        },
+        {
+          "id": "confirm-click-is-not-the-guard",
+          "sourceLines": "1810-1815"
+        },
+        {
+          "id": "buildyes-lotcount-anchor",
+          "sourceLines": "1815-1824"
+        },
+        {
+          "id": "no-await-between-check-and-write",
+          "sourceLines": "1825-1829"
+        },
+        {
+          "id": "per-menu-error-mapping",
+          "sourceLines": "1804-1807"
+        },
+        {
+          "id": "menu-value-is-identity-plus-anchor",
+          "sourceLines": "1765-1773"
+        },
+        {
+          "id": "caller-passes-client-supplied-anchor",
+          "sourceLines": "1794-1798"
+        },
+        {
+          "id": "defang-user-text-on-public-surfaces",
+          "sourceLines": "1457-1464"
+        },
+        {
+          "id": "defang-before-store-echo-must-agree",
+          "sourceLines": "1464-1478"
+        },
+        {
+          "id": "defang-after-trim-before-length-check",
+          "sourceLines": "1478-1482"
+        },
+        {
+          "id": "park-feature-autocomplete-manifest",
+          "sourceLines": "1435-1437"
+        },
+        {
+          "id": "goto-surfaces-reply-ephemerally",
+          "sourceLines": "1672-1675"
+        }
+      ]
+    },
+    {
+      "slug": "prose-and-specs",
+      "title": "CLAUDE.md, docs/ and the repo's community files",
+      "triggerGlobs": [
+        "CLAUDE.md",
+        "README.md",
+        "docs/*.md",
+        "docs/superpowers/**",
+        "CONTRIBUTING.md",
+        "CODE_OF_CONDUCT.md",
+        "SECURITY.md",
+        "LICENSE",
+        ".github/ISSUE_TEMPLATE/**",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        ".github/dependabot.yml",
+        ".claude/**",
+        ".env.example",
+        ".gitignore",
+        "docs/conventions/**"
+      ],
+      "rules": [
+        {
+          "id": "never-write-pin-counts-in-prose",
+          "sourceLines": "92-95"
+        },
+        {
+          "id": "no-counts-in-prose",
+          "sourceLines": "233-236"
+        },
+        {
+          "id": "specs-are-dated-records",
+          "sourceLines": "1014-1017"
+        },
+        {
+          "id": "audit-by-grepping-assetimage",
+          "sourceLines": "188-194"
+        }
+      ]
+    },
+    {
+      "slug": "router-and-registry",
+      "title": "src/core/router.ts, components.ts, modules.ts and the registry files they read",
+      "triggerGlobs": [
+        "src/core/router.ts",
+        "src/core/components.ts",
+        "src/core/modules.ts",
+        "src/core/module-list.ts",
+        "src/core/config.ts",
+        "src/core/logger.ts",
+        "src/deploy-commands.ts",
+        "modules.json",
+        "tests/router.test.ts",
+        "tests/components.test.ts",
+        "tests/modules.test.ts",
+        "tests/registry-load.test.ts",
+        "tests/config.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "clicked-id-on-message",
+          "sourceLines": "1213-1221"
+        },
+        {
+          "id": "submitted-values-guard",
+          "sourceLines": "1267-1277"
+        },
+        {
+          "id": "router-enforces-two-select-guards",
+          "sourceLines": "1709-1724"
+        },
+        {
+          "id": "router-guard-placement",
+          "sourceLines": "1228-1243"
+        },
+        {
+          "id": "router-guard-test-evidence",
+          "sourceLines": "1289-1298",
+          "bodyRequired": true
+        },
+        {
+          "id": "guard-scope-cross-message-only",
+          "sourceLines": "1254-1259"
+        },
+        {
+          "id": "authorship-not-authority",
+          "sourceLines": "1222-1227"
+        },
+        {
+          "id": "module-guard-defence-in-depth",
+          "sourceLines": "1243-1248"
+        },
+        {
+          "id": "handler-guard-copies-are-defence-in-depth",
+          "sourceLines": "1724-1733"
+        },
+        {
+          "id": "selects-own-namespace",
+          "sourceLines": "1260-1267"
+        },
+        {
+          "id": "selects-have-their-own-namespace",
+          "sourceLines": "1701-1707"
+        },
+        {
+          "id": "select-and-button-may-share-prefix",
+          "sourceLines": "1707-1708"
+        },
+        {
+          "id": "select-submission-all-or-nothing",
+          "sourceLines": "1733-1735"
+        },
+        {
+          "id": "offered-values-must-be-a-set",
+          "sourceLines": "1735-1740"
+        },
+        {
+          "id": "modals-and-other-selects-unrouted",
+          "sourceLines": "1280-1286"
+        },
+        {
+          "id": "modals-and-nonstring-selects-unrouted",
+          "sourceLines": "1750-1758"
+        },
+        {
+          "id": "foreign-message-needs-flag",
+          "sourceLines": "1286-1288"
+        },
+        {
+          "id": "alert-row-rejection-exception",
+          "sourceLines": "1249-1253"
+        }
+      ]
+    },
+    {
+      "slug": "schema-and-migrations",
+      "title": "src/core/db/ and drizzle/",
+      "triggerGlobs": [
+        "src/core/db/**",
+        "drizzle/**",
+        "drizzle.config.ts",
+        "scripts/backfill-species-seen.ts",
+        "tests/db.test.ts",
+        "tests/migration.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "migratedb-fk-bracket-outside-transaction",
+          "sourceLines": "328-336"
+        },
+        {
+          "id": "populated-migration-test-proves-less-than-it-sounds",
+          "sourceLines": "337-345"
+        },
+        {
+          "id": "unnecessary-recreate-caught-only-by-reading-sql",
+          "sourceLines": "345-347"
+        },
+        {
+          "id": "indexes-not-a-blanket-user-id-sweep",
+          "sourceLines": "1684-1694"
+        },
+        {
+          "id": "tx-log-partial-index-and-unindexed-user",
+          "sourceLines": "1694-1700"
+        },
+        {
+          "id": "locks-read-indexes",
+          "sourceLines": "528-533"
+        },
+        {
+          "id": "reverses-id-not-a-foreign-key",
+          "sourceLines": "949-951"
+        },
+        {
+          "id": "season-two-migrations",
+          "sourceLines": "1514-1516"
+        },
+        {
+          "id": "species-seen-backfill-is-an-operator-step",
+          "sourceLines": "886-895"
+        },
+        {
+          "id": "reset-covers-every-table-the-feature-reads",
+          "sourceLines": "546-549"
+        }
+      ]
+    },
+    {
+      "slug": "season-track",
+      "title": "src/modules/daily/season.ts, its embeds, its hooks and src/data/seasons.ts",
+      "triggerGlobs": [
+        "src/modules/daily/season.ts",
+        "src/modules/daily/season-embeds.ts",
+        "src/modules/daily/hooks.ts",
+        "src/data/seasons.ts",
+        "tests/season*.test.ts",
+        "src/core/world.ts"
+      ],
+      "rules": [
+        {
+          "id": "season-carries-no-modifiers",
+          "sourceLines": "1496-1501"
+        },
+        {
+          "id": "season-epoch-written-literal",
+          "sourceLines": "1501-1513"
+        },
+        {
+          "id": "season-rows-retained-never-derive-past",
+          "sourceLines": "1517-1525"
+        },
+        {
+          "id": "badge-stamped-only-in-write-context",
+          "sourceLines": "1526-1529"
+        },
+        {
+          "id": "stamp-season-badge-guard-and-order",
+          "sourceLines": "1530-1533"
+        },
+        {
+          "id": "hinted-rung-high-water-stamp-after-send",
+          "sourceLines": "1565-1576"
+        },
+        {
+          "id": "season-claim-customid-carries-index",
+          "sourceLines": "1577-1583"
+        },
+        {
+          "id": "season-day1-bankable-pool-ratio",
+          "sourceLines": "1543-1549"
+        },
+        {
+          "id": "season-caps-need-not-bind",
+          "sourceLines": "1550-1557"
+        },
+        {
+          "id": "season-measured-economy",
+          "sourceLines": "1558-1564"
+        }
+      ]
+    },
+    {
+      "slug": "species-and-dex",
+      "title": "src/data/species/, the frozen targets beside it, and the dex that credits it",
+      "triggerGlobs": [
+        "src/data/species/**",
+        "src/data/types.ts",
+        "src/data/rarity.ts",
+        "src/data/progression.ts",
+        "src/data/attendance.ts",
+        "src/modules/dex/**",
+        "tests/roster.test.ts",
+        "tests/data.test.ts",
+        "tests/dex.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "collection-target-frozen",
+          "sourceLines": "632-639"
+        },
+        {
+          "id": "attendance-targets-frozen",
+          "sourceLines": "1597-1602"
+        },
+        {
+          "id": "decor-catalog-covers-every-biome",
+          "sourceLines": "845-850"
+        },
+        {
+          "id": "archetype-art-fidelity-accepted",
+          "sourceLines": "428-437"
+        },
+        {
+          "id": "validate-client-supplied-customid-segments",
+          "sourceLines": "865-870"
+        }
+      ]
+    },
+    {
+      "slug": "test-harness-and-gates",
+      "title": "tests/harness.ts, scripts/test-live.ts and the build config",
+      "triggerGlobs": [
+        "tests/harness.ts",
+        "tests/harness.test.ts",
+        "tests/journeys.test.ts",
+        "tests/lib/discord-limits.ts",
+        "tests/discord-limits.test.ts",
+        "scripts/test-live.ts",
+        "vitest.config.ts",
+        "tsconfig.json",
+        "tsconfig.test.json",
+        "package.json",
+        "package-lock.json",
+        ".github/workflows/ci.yml"
+      ],
+      "rules": [
+        {
+          "id": "harness-lifecycle-enforced",
+          "sourceLines": "31-34"
+        },
+        {
+          "id": "harness-validates-payload-limits",
+          "sourceLines": "34-35"
+        },
+        {
+          "id": "harness-option-getters-from-builder",
+          "sourceLines": "35-40"
+        },
+        {
+          "id": "test-live-rest-only-gallery",
+          "sourceLines": "41-45"
+        },
+        {
+          "id": "router-hooks-skip-direct-execute",
+          "sourceLines": "1534-1542"
+        }
+      ]
+    },
+    {
+      "slug": "timers-and-alerts",
+      "title": "The scheduler, the park alert sweep and the world broadcast timer",
+      "triggerGlobs": [
+        "src/modules/park/alert-detect.ts",
+        "src/modules/park/alert-embeds.ts",
+        "src/modules/park/alert-record.ts",
+        "src/modules/park/alert-sweep.ts",
+        "src/core/scheduler.ts",
+        "src/modules/world/broadcast.ts",
+        "tests/alert-*.test.ts",
+        "tests/scheduler.test.ts",
+        "tests/world-broadcast.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "alert-sweep-own-timer-cadence",
+          "sourceLines": "733-735"
+        },
+        {
+          "id": "alert-sweep-sentinel-userid",
+          "sourceLines": "735-741"
+        },
+        {
+          "id": "broadcast-timer-sentinel-userid",
+          "sourceLines": "705-714"
+        },
+        {
+          "id": "alerts-sent-is-a-side-effect-record",
+          "sourceLines": "742-748"
+        },
+        {
+          "id": "already-sent-compares-instant-not-existence",
+          "sourceLines": "748-751"
+        },
+        {
+          "id": "escape-tiers-order-and-collapse-direction",
+          "sourceLines": "752-762"
+        },
+        {
+          "id": "sweep-never-settles-escapes",
+          "sourceLines": "763-770"
+        },
+        {
+          "id": "alert-instant-epsilon",
+          "sourceLines": "871-878"
+        },
+        {
+          "id": "notify-payload-omits-attachments",
+          "sourceLines": "788-797",
+          "bodyRequired": true
+        },
+        {
+          "id": "season-nudge-anchored-to-true-end",
+          "sourceLines": "1584-1589"
+        },
+        {
+          "id": "season-nudge-inherits-lots-guard",
+          "sourceLines": "1589-1593"
+        }
+      ]
+    },
+    {
+      "slug": "world-events",
+      "title": "src/core/world.ts, src/data/world-events.ts and the /world module",
+      "triggerGlobs": [
+        "src/core/world.ts",
+        "src/data/world-events.ts",
+        "src/modules/world/index.ts",
+        "src/modules/world/embeds.ts",
+        "tests/world.test.ts",
+        "tests/world-effects.test.ts",
+        "tests/world-income.test.ts",
+        "tests/world-module.test.ts"
+      ],
+      "rules": [
+        {
+          "id": "world-event-derived-not-stored",
+          "sourceLines": "649-652"
+        },
+        {
+          "id": "world-events-order-frozen",
+          "sourceLines": "660-661"
+        },
+        {
+          "id": "world-salt-day-zero-epoch",
+          "sourceLines": "652-660"
+        },
+        {
+          "id": "seasons-carry-no-modifiers",
+          "sourceLines": "661-664"
+        },
+        {
+          "id": "hatch-trait-odds-are-fractions",
+          "sourceLines": "698-704"
+        }
+      ]
+    },
+    {
+      "slug": "fallback",
+      "title": "No doc claims this file yet",
+      "fallback": true,
+      "triggerGlobs": [
+        "src/core/*.ts",
+        "src/data/*.ts",
+        "src/*.ts",
+        "src/modules/*/*.ts",
+        "scripts/*",
+        "tests/*.ts"
+      ],
+      "rules": []
+    }
+  ]
+}
