@@ -1,5 +1,5 @@
 // Stop hook: names the operator steps this session's changes will owe once
-// they merge, as `additionalContext`.
+// they merge, as a `systemMessage`.
 //
 // Why a second hook at all. The PreToolUse hook next door fires when a file
 // is EDITED — hours or days before `deploy-emojis`, `deploy-branding`, a
@@ -8,37 +8,51 @@
 // doc claims that path, so shipping new art currently never mentions the
 // gallery at all. Only `deploy-commands` survives in CLAUDE.md's core.
 // These five steps run against the live bot; nothing about editing a file
-// is the moment to be told about them, and the end of a session is.
+// is the moment to be told about them, and the end of a response is.
+//
+// `systemMessage`, NOT `hookSpecificOutput.additionalContext`. Stop fires
+// after the response has finished, so there is no model context left to add
+// to and the runtime does not support `additionalContext` on this event —
+// a payload sent that way is silently discarded. `systemMessage` is a
+// TOP-LEVEL common field and is surfaced to the user, which is the right
+// audience anyway: these are operator steps, not model instructions. It is
+// one string per invocation, so the whole checklist ships as one message.
 //
 // Ships registered but INERT, exactly as conventions.mjs does: unless
 // CLAUDE_CONVENTIONS_ENABLED is exactly "1" this hook does nothing at all
 // (Task 15 flips that env var on for both hooks together). Without the
 // gate, committing this file would start printing operator checklists at
-// the end of every session in this repo from that commit onward — the same
+// the end of every response in this repo from that commit onward — the same
 // blast radius the gate exists to prevent for the convention docs.
 //
 // A hook must never break the session it is trying to help. Exit code 2
 // BLOCKS; this hook never emits it, and every failure mode below (malformed
 // stdin, a directory that is not a git repo, a git binary that is missing
-// or fails, an oversized diff) degrades to silence rather than an error.
+// or fails, an oversized diff, an unreadable state file) degrades to
+// silence or to speaking again, never to an error.
 //
 // The glob matcher is imported from scripts/conventions-audit.mjs rather
 // than reimplemented, for the same reason conventions.mjs imports it: two
 // matchers in one repo eventually disagree, and the disagreement is silent.
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { globToRegex } from '../../scripts/conventions-audit.mjs';
 
+const STATE_FILE_NAME = 'session-close-hook-state.json';
+
 // ---- the mapping ----
 //
-// Each entry: the repo paths that imply the step, and the step itself. The
-// text says what is owed AND why — an operator handed a bare command list
-// learns nothing about ordering or risk, which is most of what these five
-// steps are. Ordered as emitted: artwork uploads first, the deploy that
-// changes what Discord shows next, the gallery review last, since it
-// renders against whatever is by then deployed.
+// Each entry: the repo paths that imply the step, and the one line an
+// operator reads. Command plus one clause — the clause carries the ordering
+// or the risk, which is the part a bare command list loses, and the long
+// reasoning already lives in docs/conventions/ where it can be gone back to.
+// Ordered as emitted: artwork uploads first, then the deploy that changes
+// what Discord shows, then the gallery review, which renders against
+// whatever is by then deployed.
 
 const EMOJI_GLOBS = ['assets/emojis/**'];
 const BRANDING_GLOBS = ['assets/branding/**'];
@@ -52,14 +66,19 @@ const ART_GLOBS = ['assets/images/**', 'src/modules/*/embeds.ts', 'src/modules/*
 // "A command builder changed" is not a path, so this is a deliberate
 // over-report in two layers. BUILDER_GLOBS are the files that literally
 // construct a SlashCommandBuilder or decide which modules are deployed.
-// BUILDER_DATA_GLOBS are the content files those builders read their
-// `addChoices` lists out of — /dex's rarity, diet and archetype choices,
-// /admin's food choices, /build's kind choices, /hatchery's mythic choices,
-// /guests' attraction choices — any of which can move the deployed option
-// set with no builder file in the diff at all. Under-reporting here leaves
-// a live bot whose slash commands do not match its code, and the mismatch
-// is silent until a player hits the option that moved; over-reporting costs
-// one idempotent redeploy.
+// BUILDER_DATA_GLOBS are the content tables those builders read their
+// `addChoices` lists out of, all four verified in code:
+//   PADDOCKS / FACILITIES -> src/modules/park/index.ts (kindChoices)
+//   ATTRACTIONS           -> src/modules/guests/index.ts (attractionChoices)
+//   FOODS                 -> src/modules/admin/index.ts
+//   speciesByRarity       -> src/modules/hatchery/index.ts (mythicChoices)
+// Any of those can move the deployed option set with no builder file in the
+// diff at all. /dex's rarity, diet and archetype choices are NOT examples of
+// this and must not be cited as such: they are hand-written literals in
+// src/modules/dex/service.ts, outside src/data entirely. Under-reporting
+// here leaves a live bot whose slash commands do not match its code, and
+// the mismatch is silent until a player hits the option that moved;
+// over-reporting costs one idempotent redeploy.
 const BUILDER_GLOBS = [
   'src/modules/*/index.ts',
   'src/core/modules.ts',
@@ -69,93 +88,131 @@ const BUILDER_GLOBS = [
 ];
 const BUILDER_DATA_GLOBS = ['src/data/**'];
 
-const DEPLOY_COMMANDS_TAIL =
-  'Requires exactly one running bot instance per token. Skipping it leaves a live bot whose slash ' +
-  'commands do not match its code, and the mismatch is silent until a player hits the option that moved.';
+const ONE_INSTANCE = 'one bot instance per token, or live commands drift from the code.';
 
 const STEPS = [
   {
     id: 'build-emojis',
     globs: EMOJI_GLOBS,
     line:
-      '- `npm run build-emojis` — assets/emojis/ changed. Re-renders the committed 128x128 PNGs from the ' +
-      'hand-authored SVGs. It has to run BEFORE the deploy: assets/emojis/manifest.json tracks hashes of ' +
-      'those PNG bytes, so deploying without rebuilding uploads the previous artwork and reports success.',
+      '- `npm run build-emojis` — re-render the PNGs first: the deploy hashes those bytes, so deploying ' +
+      'without it ships the old art and reports success.',
   },
   {
     id: 'deploy-emojis',
     globs: EMOJI_GLOBS,
     line:
-      '- `npm run deploy-emojis` — uploads to Discord only the emojis whose manifest hash moved, so a rerun ' +
-      'is cheap. Until it runs, emojiTag/rarityEmoji fall back to unicode rather than erroring, which is why ' +
-      'a forgotten deploy looks like nothing at all is wrong.',
+      '- `npm run deploy-emojis` — uploads only what the manifest shows changed; until it runs, emoji ' +
+      'degrade to unicode with no error.',
   },
   {
     id: 'deploy-branding',
     globs: BRANDING_GLOBS,
     line:
-      '- `npm run deploy-branding` — assets/branding/ changed. Discord rate-limits profile edits to roughly ' +
-      '2 per hour, which is the whole reason `--avatar-only` / `--banner-only` exist: budget the two runs ' +
-      'rather than firing both and losing one to the limit. It asserts the returned asset hash starts with ' +
-      '`a_`, Discord’s own confirmation that it stored the animation rather than a single static frame — ' +
-      'without that check the failure is silent.',
+      '- `npm run deploy-branding` — Discord allows roughly 2 per hour, hence `--avatar-only` / ' +
+      '`--banner-only`; it checks the returned hash starts `a_`, or the animation was silently dropped.',
   },
   {
     id: 'migration',
     globs: SCHEMA_GLOBS,
     line:
-      '- Migration — drizzle/ or src/core/db/schema.ts changed. The migration itself needs no command: it ' +
-      'applies on the next boot. Any DATA backfill it needs is a SEPARATE manual operator step, run AFTER ' +
-      'that migration and never as migration SQL, because a failure inside migration SQL blocks boot. ' +
-      '`npm run backfill-species-seen` is the worked precedent (INSERT OR IGNORE, so re-running it is safe); ' +
-      'run it only if this migration is the one it belongs to.',
+      '- Migration applies on next boot. Any data backfill is a separate step run after it, never as ' +
+      'migration SQL (a failure there blocks boot) — `npm run backfill-species-seen` is the precedent.',
   },
   {
     id: 'deploy-commands',
     globs: BUILDER_GLOBS,
-    line:
-      '- `npm run deploy-commands` — a command builder file changed. ' + DEPLOY_COMMANDS_TAIL,
+    line: '- `npm run deploy-commands` — a command builder file changed; ' + ONE_INSTANCE,
   },
   {
     id: 'deploy-commands',
     globs: BUILDER_DATA_GLOBS,
     line:
-      '- `npm run deploy-commands` — a file under src/data/ changed, and builders read their `addChoices` ' +
-      'lists straight out of those tables (rarities, diets, archetypes, foods, paddock kinds, attractions, ' +
-      'mythic species), so the deployed option set can move with no builder file in the diff. This one ' +
-      'over-reports on purpose. ' + DEPLOY_COMMANDS_TAIL,
+      '- `npm run deploy-commands` — a src/data table changed and builders read choice lists from it ' +
+      '(paddock kinds, attractions, foods, mythic species); ' + ONE_INSTANCE,
   },
   {
     id: 'test:live',
     globs: ART_GLOBS,
     line:
-      '- `npm run test:live` — art or an embed builder changed. It posts the payload gallery (every case’s ' +
-      'real embeds, components and images) to TEST_CHANNEL_ID, and it is the only cosmetic check this art ' +
-      'can get: nothing in the offline suite looks at a rendered embed. REST-only, so it is safe to run ' +
-      'against the dev guild while the bot is live.',
+      '- `npm run test:live` — the only cosmetic check this art gets; REST-only, so it is safe while the ' +
+      'bot is live.',
   },
 ];
 
-const HEADER =
-  'Operator steps this session’s changes will owe. These run against the live bot and cannot be ' +
-  'satisfied by editing a file, so they belong to whoever merges this, not to the edit that caused them:';
+const HEADER = 'Operator steps owed once this merges — they run against the live bot, not against a file:';
 
-// ---- helpers ----
+// ---- the mapping, applied ----
 
-export function owedLines(files) {
+// Returns the owed steps in emission order, each named at most once even
+// though `deploy-commands` has two entries (a builder file and a src/data
+// table both owe the same command, and the more specific reason wins by
+// coming first).
+export function owedSteps(files) {
   const paths = files.filter((f) => typeof f === 'string' && f.length > 0);
   if (paths.length === 0) return [];
   const seen = new Set();
-  const lines = [];
+  const owed = [];
   for (const step of STEPS) {
     if (seen.has(step.id)) continue;
     const regexes = step.globs.map((g) => globToRegex(g));
     if (!paths.some((p) => regexes.some((re) => re.test(p)))) continue;
     seen.add(step.id);
-    lines.push(step.line);
+    owed.push(step);
   }
-  return lines;
+  return owed;
 }
+
+// ---- per-session state ----
+//
+// Stop fires once per RESPONSE, not once per session. Without state, an
+// ordinary content session — `src/data/**` is in the net, so most of them —
+// would print the identical checklist after every single turn, and this
+// repo's own conventions name that failure directly: a line an operator
+// sees on every render is a line they stop seeing. So each step is named
+// once per session, and a later turn that newly owes something still speaks.
+//
+// This keeps a state file of its OWN rather than sharing conventions.mjs's.
+// Both hooks do read-modify-write on a single JSON object, and PreToolUse
+// fires many times per turn, so a shared file would let either clobber the
+// other's record. The direction that failure takes here is "print the whole
+// checklist again next turn" — precisely what this state exists to prevent.
+
+function stateFilePath(stateDir) {
+  return join(stateDir, STATE_FILE_NAME);
+}
+
+// agent_id is folded in for the same reason conventions.mjs folds it in:
+// session_id is shared with every subagent. Stop carries none today, in
+// which case this reduces to the session id alone.
+export function stateKey(sessionId, agentId) {
+  return `${sessionId ?? ''}::${agentId ?? ''}`;
+}
+
+export function loadState(stateDir) {
+  try {
+    const path = stateFilePath(stateDir);
+    if (!existsSync(path)) return {};
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    // A corrupt or unreadable state file degrades to "nothing said yet":
+    // the checklist repeats, which is noisy, never fatal.
+    return {};
+  }
+}
+
+export function saveState(stateDir, state) {
+  try {
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(stateFilePath(stateDir), JSON.stringify(state));
+  } catch {
+    // Swallowed deliberately (see loadState): a failed write just means the
+    // next turn says it again.
+  }
+}
+
+// ---- what the session changed ----
 
 function git(args, cwd) {
   try {
@@ -205,6 +262,12 @@ function trunkMergeBase(cwd) {
 //
 // `--exclude-standard` is what keeps generated output (park.png renders,
 // dist/) from triggering a deploy.
+//
+// Known silence, accepted: a commit the trunk ref ALREADY contains is not
+// reported, because the merge base is then that commit itself. That is work
+// already on trunk, whose operator steps belong to the merge that put it
+// there rather than to a later session reading it back, so the omission
+// fails safe.
 export function changedFiles(cwd) {
   const base = trunkMergeBase(cwd);
   const committed = base ? git(['diff', '--name-only', base, 'HEAD'], cwd) : [];
@@ -221,7 +284,7 @@ function readStdin() {
   }
 }
 
-function run() {
+function run(payload) {
   const repoRoot = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 
   // CLAUDE_CONVENTIONS_TOUCHED is the test seam, and takes precedence
@@ -234,15 +297,23 @@ function run() {
       ? touched.split(/\r?\n/).map((f) => f.trim().replace(/\\/g, '/')).filter((f) => f.length > 0)
       : changedFiles(repoRoot);
 
-  const lines = owedLines(files);
-  if (lines.length === 0) return;
+  const owed = owedSteps(files);
+  if (owed.length === 0) return;
+
+  const stateDir = process.env.CLAUDE_CONVENTIONS_STATE_DIR || tmpdir();
+  const key = stateKey(payload?.session_id, payload?.agent_id);
+  const state = loadState(stateDir);
+  const alreadySaid = new Set(Array.isArray(state[key]) ? state[key] : []);
+
+  const fresh = owed.filter((step) => !alreadySaid.has(step.id));
+  if (fresh.length === 0) return;
+
+  state[key] = [...alreadySaid, ...fresh.map((step) => step.id)];
+  saveState(stateDir, state);
 
   process.stdout.write(
     JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'Stop',
-        additionalContext: [HEADER, ...lines].join('\n'),
-      },
+      systemMessage: [HEADER, ...fresh.map((step) => step.line)].join('\n'),
     })
   );
 }
@@ -252,13 +323,14 @@ function main() {
     if (process.env.CLAUDE_CONVENTIONS_ENABLED !== '1') return;
     const raw = readStdin();
     if (raw === null) return;
+    let payload;
     try {
-      JSON.parse(raw);
+      payload = JSON.parse(raw);
     } catch {
       // A payload this hook cannot parse is a payload it will not act on.
       return;
     }
-    run();
+    run(payload);
   } catch {
     // Never break the session.
   } finally {

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { matchDocs } from '../.claude/hooks/conventions.mjs';
@@ -558,17 +558,40 @@ describe('conventions hook: every manifest doc is reachable', () => {
 
 const CLOSE_HOOK_PATH = '.claude/hooks/session-close.mjs';
 
-const STOP_PAYLOAD = JSON.stringify({ hook_event_name: 'Stop', session_id: 's1' });
+// Stop fires once per RESPONSE, and the hook names each owed step only once
+// per session, so every call below gets a FRESH session id — otherwise one
+// test's checklist would silence the next one's. The tests that exercise
+// the dedupe itself pass an explicit id and deliberately reuse it.
+//
+// One state dir for the whole file, never the OS tmpdir default: vitest runs
+// test files in parallel forks, and the real hook's default state file would
+// then be read-modify-written by several of them at once.
+const CLOSE_STATE_DIR = mkdtempSync(join(tmpdir(), 'session-close-state-'));
+afterAll(() => rmSync(CLOSE_STATE_DIR, { recursive: true, force: true }));
+
+let sessionSeq = 0;
+function freshSession(): string {
+  return `s${process.pid}-${++sessionSeq}`;
+}
+
+function stopPayload(sessionId: string): string {
+  return JSON.stringify({ hook_event_name: 'Stop', session_id: sessionId });
+}
 
 // The env seam: CLAUDE_CONVENTIONS_TOUCHED stands in for the git reads, so
 // the mapping can be exercised without staging changes in a real tree.
-function close(files: string[], env: Record<string, string | undefined> = {}): string {
+function close(
+  files: string[],
+  env: Record<string, string | undefined> = {},
+  sessionId: string = freshSession()
+): string {
   return execFileSync('node', [CLOSE_HOOK_PATH], {
-    input: STOP_PAYLOAD,
+    input: stopPayload(sessionId),
     encoding: 'utf8',
     env: {
       ...process.env,
       CLAUDE_CONVENTIONS_ENABLED: '1',
+      CLAUDE_CONVENTIONS_STATE_DIR: CLOSE_STATE_DIR,
       CLAUDE_CONVENTIONS_TOUCHED: files.join('\n'),
       ...env,
     },
@@ -624,12 +647,21 @@ describe('session-close checklist: the mapping', () => {
   });
 
   it('names deploy-commands for a data file too, since builders read their choice lists from src/data', () => {
-    // src/modules/dex/index.ts calls addChoices(...RARITIES.map(...)) and
-    // src/modules/park/index.ts builds its kind choices from PADDOCKS — so a
-    // data edit can move the deployed option set with no builder file in the
-    // diff at all. Over-report here; under-reporting leaves a live bot whose
-    // slash commands do not match its code.
-    expect(close(['src/data/paddocks.ts'])).toContain('deploy-commands');
+    // src/modules/park/index.ts builds its kind choices from PADDOCKS and
+    // FACILITIES, guests/index.ts from ATTRACTIONS, admin/index.ts from
+    // FOODS, hatchery/index.ts from speciesByRarity — so a data edit can
+    // move the deployed option set with no builder file in the diff at all.
+    // Over-report here; under-reporting leaves a live bot whose slash
+    // commands do not match its code.
+    const out = close(['src/data/paddocks.ts']);
+    expect(out).toContain('deploy-commands');
+
+    // The examples the operator reads have to be things that really live in
+    // src/data. /dex's rarity, diet and archetype choices are NOT: they are
+    // hand-written literals in src/modules/dex/service.ts, and citing them
+    // would send a maintainer narrowing this net to the wrong file.
+    expect(out).toContain('paddock kinds, attractions, foods, mythic species');
+    expect(out).not.toMatch(/rarit|archetype/i);
   });
 
   it('says nothing when nothing relevant changed', () => {
@@ -653,10 +685,37 @@ describe('session-close checklist: the mapping', () => {
     expect(out).toContain('a command builder file changed');
   });
 
-  it('emits a Stop hookSpecificOutput envelope, not bare text', () => {
+  // Stop runs after the response has finished, so there is no model context
+  // left to add to: the event does not support
+  // hookSpecificOutput.additionalContext, and a payload sent that way is
+  // discarded in silence. The right field is the TOP-LEVEL systemMessage,
+  // which is surfaced to the user — the correct audience for an operator
+  // step in any case. An earlier revision of this suite asserted the
+  // discarded shape and so enforced the bug.
+  it('emits a top-level systemMessage and no hookSpecificOutput at all', () => {
     const parsed = JSON.parse(close(['assets/emojis/svg/dw_cash.svg']));
-    expect(parsed.hookSpecificOutput.hookEventName).toBe('Stop');
-    expect(typeof parsed.hookSpecificOutput.additionalContext).toBe('string');
+    expect(typeof parsed.systemMessage).toBe('string');
+    expect(parsed.systemMessage).toContain('deploy-emojis');
+    expect(parsed.hookSpecificOutput).toBeUndefined();
+  });
+
+  // (c): as model context the long form was fine; as a terminal message to a
+  // human it was a wall. Every reason is kept, compressed to command plus one
+  // clause, with the full reasoning left in docs/conventions/.
+  it('keeps the whole checklist readable — one line per step, none of them a paragraph', () => {
+    const parsed = JSON.parse(
+      close([
+        'assets/emojis/svg/dw_cash.svg',
+        'assets/branding/avatar.gif',
+        'drizzle/0020_x.sql',
+        'src/data/paddocks.ts',
+        'assets/images/banners/x.webp',
+      ])
+    );
+    const lines = String(parsed.systemMessage).split('\n');
+    expect(lines).toHaveLength(7); // header + six owed steps
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(220);
+    expect(parsed.systemMessage.length).toBeLessThan(1200);
   });
 });
 
@@ -671,7 +730,12 @@ describe('session-close checklist: never breaks the session', () => {
       const res = spawnSync('node', [CLOSE_HOOK_PATH], {
         input,
         encoding: 'utf8',
-        env: { ...process.env, CLAUDE_CONVENTIONS_ENABLED: '1', CLAUDE_CONVENTIONS_TOUCHED: 'README.md' },
+        env: {
+          ...process.env,
+          CLAUDE_CONVENTIONS_ENABLED: '1',
+          CLAUDE_CONVENTIONS_STATE_DIR: CLOSE_STATE_DIR,
+          CLAUDE_CONVENTIONS_TOUCHED: 'README.md',
+        },
       });
       expect(res.status).toBe(0);
       expect(res.stdout.trim()).toBe('');
@@ -683,15 +747,74 @@ describe('session-close checklist: never breaks the session', () => {
   // execFileSync not throwing, so a future `process.exit(2)` fails loudly.
   it('never exits 2, even on the path that has something to say', () => {
     const res = spawnSync('node', [CLOSE_HOOK_PATH], {
-      input: STOP_PAYLOAD,
+      input: stopPayload(freshSession()),
       encoding: 'utf8',
       env: {
         ...process.env,
         CLAUDE_CONVENTIONS_ENABLED: '1',
+        CLAUDE_CONVENTIONS_STATE_DIR: CLOSE_STATE_DIR,
         CLAUDE_CONVENTIONS_TOUCHED: 'assets/emojis/svg/dw_cash.svg',
       },
     });
     expect(res.status).toBe(0);
+    expect(res.stdout).toContain('deploy-emojis');
+  });
+});
+
+// ---- speaks once per session ----
+//
+// Stop fires per RESPONSE, not per session. `src/data/**` is in the builder
+// net, so an ordinary content session owes deploy-commands on its very first
+// turn and would otherwise reprint the identical checklist after every turn
+// for the rest of the session — and a line an operator sees on every render
+// is a line they stop seeing.
+describe('session-close checklist: names each step once per session', () => {
+  it('says nothing on a second identical invocation in the same session', () => {
+    const session = freshSession();
+    const first = close(['assets/emojis/svg/dw_cash.svg'], {}, session);
+    const second = close(['assets/emojis/svg/dw_cash.svg'], {}, session);
+    expect(first).toContain('deploy-emojis');
+    expect(second.trim()).toBe('');
+  });
+
+  it('still speaks when a later turn newly owes a step, and names only the new one', () => {
+    const session = freshSession();
+    const first = close(['assets/emojis/svg/dw_cash.svg'], {}, session);
+    expect(first).toContain('build-emojis');
+
+    // The same emoji work, plus art this turn: only test:live is new.
+    const second = close(['assets/emojis/svg/dw_cash.svg', 'assets/images/banners/x.webp'], {}, session);
+    expect(second).toContain('test:live');
+    expect(second).not.toContain('build-emojis');
+  });
+
+  it('treats a different session as a fresh reader', () => {
+    const files = ['assets/emojis/svg/dw_cash.svg'];
+    const session = freshSession();
+    close(files, {}, session);
+    expect(close(files, {}, session).trim()).toBe('');
+    expect(close(files, {}, freshSession())).toContain('deploy-emojis');
+  });
+
+  it('degrades to speaking again, never crashing, when the state file is corrupt', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'session-close-corrupt-'));
+    try {
+      writeFileSync(join(dir, 'session-close-hook-state.json'), '{not valid json');
+      const session = freshSession();
+      const env = { CLAUDE_CONVENTIONS_STATE_DIR: dir };
+      expect(close(['assets/emojis/svg/dw_cash.svg'], env, session)).toContain('deploy-emojis');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps its own state file, so the PreToolUse hook cannot clobber this record', () => {
+    const session = freshSession();
+    close(['assets/emojis/svg/dw_cash.svg'], {}, session);
+    const state = JSON.parse(readFileSync(join(CLOSE_STATE_DIR, 'session-close-hook-state.json'), 'utf8'));
+    expect(state[`${session}::`]).toContain('deploy-emojis');
+    // The conventions hook's own file is a different name in the same dir.
+    expect(existsSync(join(CLOSE_STATE_DIR, 'conventions-hook-state.json'))).toBe(false);
   });
 });
 
@@ -707,12 +830,13 @@ describe('session-close checklist: never breaks the session', () => {
 //     brand-new files, which `git diff` never reports at all.
 function closeInRepo(repoDir: string): { status: number | null; stdout: string } {
   const res = spawnSync('node', [CLOSE_HOOK_PATH], {
-    input: STOP_PAYLOAD,
+    input: stopPayload(freshSession()),
     encoding: 'utf8',
     env: {
       ...process.env,
       CLAUDE_CONVENTIONS_ENABLED: '1',
       CLAUDE_PROJECT_DIR: repoDir,
+      CLAUDE_CONVENTIONS_STATE_DIR: CLOSE_STATE_DIR,
       CLAUDE_CONVENTIONS_TOUCHED: undefined,
     },
   });
@@ -823,5 +947,56 @@ describe('session-close checklist: reads the session from git', () => {
       expect(status).toBe(0);
       expect(stdout.trim()).toBe('');
     });
+  });
+
+  // Documented silence rather than a defect: once the trunk ref already
+  // contains the commit, the merge base IS that commit and the committed
+  // source reports nothing. Those operator steps belong to the merge that
+  // put the work on trunk, not to a later session reading it back, so the
+  // omission fails safe. Pinned so a future change to the ref ladder has to
+  // decide about this case deliberately.
+  it('is silent about a commit the trunk ref already contains', () => {
+    withRepo((dir) => {
+      mkdirSync(join(dir, 'assets', 'emojis', 'svg'), { recursive: true });
+      writeFileSync(join(dir, 'README.md'), 'base\n');
+      git(dir, ['init', '-b', 'main']);
+      git(dir, ['add', '.']);
+      git(dir, ['commit', '-m', 'base']);
+
+      writeFileSync(join(dir, 'assets', 'emojis', 'svg', 'dw_new.svg'), '<svg/>\n');
+      git(dir, ['add', '.']);
+      git(dir, ['commit', '-m', 'add an emoji']);
+      // origin/main now points at the emoji commit, as it would after a merge.
+      git(dir, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+
+      const { status, stdout } = closeInRepo(dir);
+      expect(status).toBe(0);
+      expect(stdout.trim()).toBe('');
+    });
+  });
+});
+
+// Registration is the other untested runtime contract, and the field-name
+// defect this suite just absorbed was exactly that kind of failure: code
+// that is correct on its own terms and never reached. A hook that is not
+// wired into settings.json is as inert as one that writes to a field the
+// runtime discards, and nothing else in the repo checks the wiring.
+describe('hook registration in .claude/settings.json', () => {
+  const settings = JSON.parse(readFileSync('.claude/settings.json', 'utf8'));
+
+  it('registers the conventions hook on PreToolUse, pointing at a script that exists', () => {
+    const commands = settings.hooks.PreToolUse.flatMap((e: { hooks: { command: string }[] }) =>
+      e.hooks.map((h) => h.command)
+    );
+    expect(commands).toContain('node ${CLAUDE_PROJECT_DIR}/.claude/hooks/conventions.mjs');
+    expect(existsSync('.claude/hooks/conventions.mjs')).toBe(true);
+  });
+
+  it('registers the session-close hook on Stop, pointing at a script that exists', () => {
+    const commands = settings.hooks.Stop.flatMap((e: { hooks: { command: string }[] }) =>
+      e.hooks.map((h) => h.command)
+    );
+    expect(commands).toContain('node ${CLAUDE_PROJECT_DIR}/.claude/hooks/session-close.mjs');
+    expect(existsSync('.claude/hooks/session-close.mjs')).toBe(true);
   });
 });
