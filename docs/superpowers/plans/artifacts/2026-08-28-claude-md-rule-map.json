@@ -1,5 +1,5 @@
 {
- "note": "Measured rule map for the CLAUDE.md decomposition. Generated from a rule-level decomposition of CLAUDE.md at commit 1b92fac (1829 lines). This is the RAW partition as measured; the amendments in spec section 5 are applied by Task 2 of the implementation plan, deliberately, so they appear as a reviewable diff.",
+ "note": "Measured rule map for the CLAUDE.md decomposition. Generated from a rule-level decomposition of CLAUDE.md at commit 1b92fac (1829 lines). This is the RAW partition as measured; the amendments in spec section 5 are applied by Task 2 of the implementation plan, deliberately, so they appear as a reviewable diff. The same applies to knownWeaknesses: it records the state at MEASUREMENT time, not the state as shipped. Its first entry (art call-site discipline not reaching the nine assetImage index.ts files) is recorded as Declined with the cost figures measured then; spec section 5.4 REVERSED that decision and the shipped manifest implements the reversal — all nine paths are in embed-payload-builders triggerGlobs, which is why src/modules/park/index.ts is a 3-doc file. Read that entry as history, not as a live warning about an open gap. The entry is deliberately left unedited: this file's value is that it is the unaltered record of what was measured.",
  "source": {
   "file": "CLAUDE.md",
   "commit": "1b92fac",

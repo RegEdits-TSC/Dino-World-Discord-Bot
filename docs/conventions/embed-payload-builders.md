@@ -172,8 +172,10 @@ Seeds by family, as shipped: **`eggs` and `hatch` on the egg's own row id**, so 
 keeps one identity from purchase through to the reveal — the crack is the EGG's face,
 not the hatched dino's — and **`banners` and site banners on the viewer's Discord id**,
 a stable face per player per surface. There are two deliberate departures from seeding a
-banner on the viewer: `animalsPayload` seeds on the park OWNER (`park-surface`), and
-`/shop view`'s egg preview takes no seed at all (`art-resolver`).
+banner on the viewer: `animalsPayload` seeds on the park OWNER
+(§animals-tab-seeds-on-owner in `docs/conventions/park-surface.md`), and `/shop view`'s
+egg preview takes no seed at all (§shop-preview-takes-no-seed in
+`docs/conventions/art-resolver.md`).
 
 ## half-seeded-bases
 

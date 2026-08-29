@@ -116,7 +116,8 @@ open message still holds a stale control.
 
 `pageRow` (`src/core/paginate.ts`) carries `<prefix>:<action>:<userId>:<page>` and
 nothing else, which is why the two filtered lists above mint their own row instead —
-see §filtered-lists-need-their-own-page-row in `embed-payload-builders`. Do not widen
+see §filtered-lists-need-their-own-page-row in
+`docs/conventions/embed-payload-builders.md`. Do not widen
 `pageRow` to hold one caller's state.
 
 ## router-guard-test-evidence
@@ -192,8 +193,9 @@ because the router already has. A select handler still owns any DOMAIN validatio
 that — e.g. that an offered option is still legal for the CURRENT state of a multi-step
 flow.
 
-One binding consequence lives in `embed-payload-builders`: never mint a select with
-`min_values: 0`, since a legitimately empty submission from one fails this guard closed.
+One binding consequence lives at §no-min-values-zero in
+`docs/conventions/embed-payload-builders.md`: never mint a select with `min_values: 0`,
+since a legitimately empty submission from one fails this guard closed.
 
 ## handler-guard-copies-are-defence-in-depth
 

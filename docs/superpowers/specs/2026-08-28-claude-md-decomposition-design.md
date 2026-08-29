@@ -511,6 +511,17 @@ A doc's own length is not what a reader pays. The hook injects the doc's
 `bodyRequired` rule — so `park-progression` at 331 lines contributes far less
 than that at any one trigger.
 
+There are **seven** `bodyRequired` ids, not six: `one-more-face-moves-half-the-seeds`,
+`new-face-is-inert-for-unseeded-bases` and `no-test-proves-a-variant-is-reachable` in
+`art-asset-files`, `payload-never-shared-across-two-sends` in `embed-payload-builders`,
+`null-prototype-catalog-maps` in `park-progression`, `router-guard-test-evidence` in
+`router-and-registry`, and `notify-payload-omits-attachments` in `timers-and-alerts`. The
+manifest is the authority and has always carried seven. The figure of six comes from
+§3.2, whose list is of five numbered ITEMS — and **two of those items are contradicting
+PAIRS, not single rules**, so its item count and its id count differ by two. Stated here
+because the mismatch has already propagated once, through a plan self-review note that
+read "six ids for five rules"; count the manifest, never §3.2.
+
 **The five representative files, and the docs that actually fired:**
 
 | file | docs injected | lines | words |
@@ -536,7 +547,7 @@ the same one §6 named — costs 101 against a predicted 162.
 
 Stated plainly because it cuts against the estimate as well as for it: §6's
 correction factor was applied to the whole rule body, but the hook injects
-headlines and substitutes a full body only for the six `bodyRequired` ids, so the
+headlines and substitutes a full body only for the seven `bodyRequired` ids, so the
 prediction was scored against text most triggers never carry. The direction of
 the error flatters the design; the method that produced it was still wrong, and a
 future change that raises `bodyRequired` coverage would move these numbers back
@@ -567,5 +578,5 @@ step lines, and a second invocation on the same session id is silent, so the
 once-per-session state holds.
 
 **No behaviour change, as predicted.** `git diff 1b92fac -- src/` is empty.
-`npm test` 2496 passing across 121 files, `npm run typecheck` and `npm run build`
+`npm test` 2497 passing across 121 files, `npm run typecheck` and `npm run build`
 clean. No migration, no `deploy-commands`, no restart.

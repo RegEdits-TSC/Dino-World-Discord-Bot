@@ -31,7 +31,8 @@ contract, autocomplete and settings test files that gate them.
 
 Slash commands live in `ModuleManifest`s (`src/core/modules.ts`). Commands
 may define `autocomplete?(ctx, i)`. Components and select menus hang off the same
-manifest — see `router-and-registry` for how the registry resolves them.
+manifest; the router resolves both, and selects get a namespace of their own on it —
+§selects-have-their-own-namespace in `docs/conventions/router-and-registry.md`.
 
 ## autocomplete-respond-only
 
@@ -161,7 +162,8 @@ and before any read or write.
 Any future button that spends money needs the same treatment: the rung, page
 or amount it was minted for belongs in the customId, because a Discord message is
 durable and its label is not re-derived. The full set of anchors shipped today is
-tabulated under §guard-scope-cross-message-only in `router-and-registry`.
+tabulated under §guard-scope-cross-message-only in
+`docs/conventions/router-and-registry.md`.
 
 ## repaint-is-second-layer-not-guard
 
