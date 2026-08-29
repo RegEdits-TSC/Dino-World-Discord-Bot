@@ -32,8 +32,7 @@ empty `memberIds` array without touching the DB).
 Every one of those extra reads is
 ONE query per source TABLE, grouped in JS, never one per candidate. That is the
 batch-per-user rule (`§locks-batch-per-user` in
-`docs/conventions/escrow-and-item-moves.md`) widened to batch-per-board, and it is the
-rule that survives even if a metric's integer changes.
+`docs/conventions/escrow-and-item-moves.md`) widened to batch-per-board.
 
 ## leaderboards-query-count-proxy-test
 
@@ -48,10 +47,6 @@ Deliberately not `GROUP BY`: nothing in `src/` has ever used `groupBy`/`count`/`
 every read here is `.all()` plus a JS reduce, and SQL `SUM()` over an empty row set
 returns NULL where `.reduce(…, 0)` returns 0 — silently turning a fresh account's
 score into `NaN` instead of a clean zero.
-
-The "nothing in `src/` has ever used it" half is the check a future implementer would
-otherwise redo from scratch; the NULL-versus-0 asymmetry is the mechanism that makes the
-answer no.
 
 ## season-scores-iterate-stats-keys
 
@@ -97,9 +92,8 @@ Both score paths intersect `species_seen` against the LIVE species roster
 `achievement_claims` the same way — that term is a plain row count with no roster
 check, which is what keeps the two in agreement rather than one silently diverging.
 
-The asymmetry looks like an oversight and is not: roster-filtering the claims on one side
-only is exactly how the board and the rank come to report different numbers for the same
-player.
+Roster-filtering the claims on one side only is exactly how the board and the rank come to
+report different numbers for the same player.
 
 ## attendance-scores-deliberately-laxer
 
@@ -124,7 +118,3 @@ text a player types into any of our commands — for every OTHER player on the b
 it is also cross-user. Closing it is out of scope here; `getOrCreateUser`
 (`src/modules/park/service.ts`) is where that column is written, at every call site,
 always from `i.user.displayName`.
-
-Left unexplained, an un-defanged interpolation reads as a missed call site under the
-defang rule (`§defang-user-text-on-public-surfaces` in
-`docs/conventions/park-surface.md`) and gets "fixed" or re-reported.

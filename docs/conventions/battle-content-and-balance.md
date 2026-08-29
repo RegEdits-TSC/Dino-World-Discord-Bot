@@ -27,8 +27,8 @@ invariant derives the chapter banner asset (`sites/<chapterId>-banner`) and the
 theme unconditionally, and — for every chapter that does NOT set `starGate` —
 the `unlockRating` co-gate too.
 
-Each of the three is a separate breakage if the ids drift, and the banner is the quietest
-of them: a name with no committed file is never an error, it simply renders without art
+The banner is the quietest of the three: a name with no committed file is never an error,
+it simply renders without art
 (`§art-missing-file-degrades` in `docs/conventions/art-resolver.md`). A drifted id
 therefore loses the banner with no signal at all, while the theme and the gate go wrong
 somewhere else entirely.
@@ -41,9 +41,6 @@ machine gate for all campaign data — including that every `bossId` appears in
 still ships as a data-only PR (new chapter file + index import + WebPs +
 prompt rows) with zero engine changes.
 
-Those four items are the checkable part of the promise: if a change needs a fifth, it is
-not a data-only PR.
-
 ## new-gate-kind-costs-engine-change
 
 That promise is no longer
@@ -53,9 +50,6 @@ unconditional, though: chapter 7 (Founder's Park) needed a real engine change
 campaign-wide star total, not a rating threshold, and the id-derived
 `unlockRating` co-gate had no way to express that. A future chapter that
 needs a genuinely new gate kind will cost an engine change again.
-
-The correction matters more than the example: a reader who saw only the data-only promise
-would scope a new gate kind as a data PR and find the engine change halfway through it.
 
 ## rosterfor-single-source
 
@@ -93,9 +87,7 @@ the number that moved was one boss's, and what it broke was its neighbour's orde
 ## boss-multipliers-may-be-below-one
 
 This retired the old "boss multipliers never fall below 1.0" convention;
-Abyssal Trench's `hpMult` is 0.82 deliberately. The retirement has to be recorded, not
-just applied: a reader who still believed the old convention would see 0.82 as a typo,
-"fix" it upward, and break the ladder.
+Abyssal Trench's `hpMult` is 0.82 deliberately.
 
 ## npc-level-sanity-cap-frozen
 
@@ -110,8 +102,7 @@ exceeded it was unwinnable, which is why both new bosses were tuned down on
 comments in `src/data/battle/chapters/` for the numbers and the reasoning.
 Founder's Park's boss lands exactly on that cap too (`npcLevel` 11 +
 `levelBonus` 1 = 12, zero headroom) — the same tuning tradeoff, one more
-data point against ever raising it, and the evidence that the cap is already touched, so
-the next chapter cannot quietly assume headroom under it.
+data point against ever raising it.
 
 The repo's other frozen constants are denominators, and their shared argument is tabulated
 at `§park-target-frozen` in `docs/conventions/park-progression.md`. This one is

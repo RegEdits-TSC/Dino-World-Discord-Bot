@@ -25,9 +25,6 @@ write (energy, rewards, progress, XP, boss egg) in ONE transaction before the
 first Discord edit, so a crash or Skip mid-cinematic loses animation frames
 only, never state — never move a write into the frame loop.
 
-The parenthesised list is what makes "every write" checkable: all five land together, or
-none of them does.
-
 ## fightframes-thumb-picked-once
 
 `fightFrames` picks its thumbnail once, up front: the boss portrait on a boss
@@ -93,9 +90,6 @@ every embed image is wired through `attach` (`§always-use-attach` in
 `docs/conventions/embed-payload-builders.md`): every ref
 it builds is dressed onto several embeds and the files are then split across two
 payloads by the F1/F4 contract — do not convert any of them, however many there are.
-
-The hedge is deliberate. As refs are added each new one looks individually convertible;
-none of them is, for the reason above.
 
 ## queue-edits-on-presented-message
 
