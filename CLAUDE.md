@@ -137,29 +137,6 @@ read or edited. Read one directly when you are planning against it rather than e
   this feature — the plan, three reconnaissance passes, two implementers — grepped for the
   literal and every one of them missed it; that one line serves every art-bearing help
   topic and it shipped unseeded until a reviewer read the file.
-- Passive notifications carry a `NotifyPayload` (`src/core/notify.ts`):
-  `string | { content?, embeds?, files?, components?, allowedMentions? }`.
-  `Ctx.notify`'s third argument stays `message: string` on purpose — a string
-  is a valid payload, so every call site keeps working and the
-  `ctx.notifications` fake in `tests/harness.ts` is untouched. `deliverNotification`
-  merges the `<@id>` ping through `withMention` on the CHANNEL path only; DMs go
-  out unmentioned. **Channel notifications did not actually ping before this
-  fix**: `src/index.ts` sets `allowedMentions: { parse: [] }` client-wide (so
-  `/dino rename`/`/park rename` can't echo a user-supplied role mention into
-  public content), and that default silently ate the `<@id>` on every
-  channel-routed notification too. `withMention` now sets a per-message
-  `allowedMentions: { users: [userId] }`, which REPLACES the client default for
-  that one message (discord.js `MessagePayload` doesn't merge the two),
-  restoring the ping without making anything else mentionable — the same fix
-  landed on the trade-offer reply. `Sender` fakes are hand-rolled per test
-  file, not in the harness, so a shape change has no single call site to grep
-  — `grep -rl 'channelSend' tests/` is the reliable way to find every one
-  (`tests/notify.test.ts`, `tests/notify-handlers.test.ts`,
-  `tests/journeys.test.ts`, `tests/world-broadcast.test.ts`,
-  `tests/alert-sweep.test.ts` — five today, and re-run the grep rather than
-  trusting this count, since the next sweep-style test to land will add a
-  sixth without anyone remembering to update this line) — and only
-  `npm run typecheck` catches a stale one.
 - `fightFrames` picks its thumbnail once, up front: the boss portrait on a boss
   stage, else the archetype art of `rosterFor(stage, squad.length)[0]` — the same
   lead enemy the Enemies field opens with, so the frame can never disagree with
@@ -168,17 +145,7 @@ read or edited. Read one directly when you are planning against it rather than e
   1-dino squad IS the boss. One merged `thumb` ref feeds `dress()` (F1-F3), F4's
   `setThumbnail`, and both `files` arrays, so the F1/F4 upload contract holds
   without a second code path.
-- Food is typed (`src/data/foods.ts`, 3 tiers × 2 diets) and lives in the
-  `food_inventory` table — `users.food` no longer exists. Feeding sets
-  `hunger = fillTo` (up to 150): `comfortAt` clamps the hunger term at 100, and
-  `accruedIncome` must stay piecewise across the hunger-100 crossing — a plain
-  two-point trapezoid over-/under-pays overfed dinos. Autocomplete labels use
-  `FoodDef.fallback` unicode, never `emojiTag`/`foodEmoji` (custom tags render
-  as literal text in autocomplete).
-- Battles: `Ctx` carries `sleep(ms)` for the fight cinematic — real
-  `setTimeout` in `src/index.ts`, instant stub in `tests/harness.ts` `makeCtx`
-  and `scripts/test-live.ts`; every future Ctx construction site must provide
-  it. The fight pipeline is **commit-before-present**: `runFight` commits every
+- Battles: the fight pipeline is **commit-before-present**: `runFight` commits every
   write (energy, rewards, progress, XP, boss egg) in ONE transaction before the
   first Discord edit, so a crash or Skip mid-cinematic loses animation frames
   only, never state — never move a write into the frame loop. Chapter ids in
@@ -257,17 +224,6 @@ read or edited. Read one directly when you are planning against it rather than e
   text-only embed when `buildParkSnapshot`/`renderPark` throws. Adding or
   removing a topic KEY changes the `/help` builder choices and forces
   `npm run deploy-commands`; adding a field to the value type does not.
-- `hungerAt(hungerAtFed, lastFedAt, at, drainMs)`
-  (`src/core/clock.ts`) takes `drainMs` as a **required** parameter on
-  purpose: a default would let a call site silently keep the flat 48h global
-  rate instead of a trait-adjusted one (Hardy drains 25% slower, Grazer and
-  Skittish 20% faster), reintroducing exactly the bug the parameter exists to
-  prevent. Every production call site passes `drainMsFor(d.traits)` — never
-  the bare constant — including `startBreeding`'s hunger-≥50 gate
-  (`src/modules/genelab/service.ts`), `/feed all`'s hungriest-first sort, and
-  `comfortAt`. Those multipliers come off the trait table, where a dino never holds
-  two traits from one domain —
-  `§trait-domains-never-doubled` in `docs/conventions/escrow-and-item-moves.md`.
 - Daily loop: one substrate, `track(ctx, userId, stat, delta)` (`src/core/stats.ts`),
   upserts a lifetime `user_stats` counter. Every call site sits inside the action's own
   existing transaction (or, where there isn't one already, is atomic on its own) — a
@@ -328,26 +284,6 @@ read or edited. Read one directly when you are planning against it rather than e
   separate, purely cosmetic 30-day/3-season cycle (`SEASON_DAYS`) with no
   modifiers at all — deliberately, since that's what removes every
   season×event stacking question before it can come up.
-  Income is the only effect integrated over time: `accruedIncome`
-  (`src/core/clock.ts`) splits its accrual window at every UTC midnight it
-  crosses and samples `incomeMultAt` at each resulting segment's START, never
-  once at request time — so a day's slice of pending income is always paid
-  at that day's own rate, and delaying `/park view`'s Collect can never
-  retroactively earn a better multiplier for time that already passed.
-  Hunger drain rate and battle energy regen were deliberately never wired to
-  any event: both are either inverted (regen counts up over time, the
-  opposite direction from a one-shot cost) or, like income, accumulate
-  across an arbitrarily long window — scaling either would have forced the
-  same piecewise segment-splitting machinery through `clock.ts`/`energy.ts`
-  that `accruedIncome` needed, for two knobs that already had a one-shot
-  alternative (Heat Wave/Cold Snap scale `feedCostFor` instead of drain rate;
-  Blood Moon scales `energyCostFor` instead of regen). For the same reason
-  `hungerAt` requires `drainMs` (see the `hungerAt` bullet above),
-  `feedCostFor` (`src/modules/care/service.ts`) and `energyCostFor`
-  (`src/modules/battles/service.ts`) both take `now` as a REQUIRED
-  parameter, never defaulted — a default would let a call site silently keep
-  the unmodified rate/cost, reintroducing the exact bug the parameter exists
-  to prevent.
   `EventMods.hatchTraitOdds` (`src/data/world-events.ts`) is a
   `[0-trait, 1-trait, 2-trait]` array of FRACTIONS summing to 1 — the same
   convention as `WILD_SLOT_ODDS`/`BRED_SLOT_ODDS` (`src/data/traits.ts`) —
@@ -355,117 +291,6 @@ read or edited. Read one directly when you are planning against it rather than e
   Writing it on a 0–100 scale (e.g. `[45, 40, 15]`) would put the entire
   cumulative weight under the first step and roll **zero** traits on every
   single Migration Season hatch — the opposite of the intended buff.
-  The world broadcast timer (`src/modules/world/broadcast.ts`) enqueues with
-  a sentinel `userId: '0'`, never a real Discord snowflake, purely because
-  `Scheduler.enqueue` requires a `userId` even though the broadcast isn't
-  per-player. That sentinel is necessary, not incidental: `adminReset`
-  deletes timers BY `userId` and `adminFastForward` shifts them BY `userId`
-  (`src/modules/admin/service.ts`), so if the sentinel could ever collide
-  with a real player's id, resetting or fast-forwarding that one player
-  would silently delete or shift the world broadcast timer for every server.
-  `'0'` can never collide with a real snowflake — Discord IDs start far
-  above that range.
-- Proactive park alerts (escape warning + income cap) run on their own 15-minute sweep
-  timer, `alert_sweep` (`SWEEP_MS`, `src/modules/park/alert-sweep.ts`) — separate from the
-  30-second scheduler tick that drives the five passive notifications above. It enqueues
-  with the same sentinel pattern as the world broadcast timer: `userId: '0'`, because
-  `Scheduler.enqueue` requires one even though the sweep isn't per-player. That sentinel
-  must never collide with a real snowflake for the same reason as the broadcast timer's:
-  `adminReset` deletes timers BY `userId` and `adminFastForward` shifts them BY `userId`
-  (`src/modules/admin/service.ts`), so a collision would let one player's reset or
-  fast-forward silently kill or shift alerts for every server.
-  `alerts_sent` (`schema.alertsSent`, read/written via `src/modules/park/alert-record.ts`)
-  is deliberately NOT the same kind of thing as derived quest progress above, or the
-  derived escrow locks (`§escrow-derived-never-stored` in
-  `docs/conventions/escrow-and-item-moves.md`) — it's a record of a SIDE EFFECT
-  (a DM already sent for a
-  specific instant), not a value re-derived at read time, because the underlying
-  conditions aren't monotone: `incomeCapAlertFor`'s `pending` can drop to 0 and jump back
-  up to a fresh capped payout the moment its owner feeds, so "has this exact instant
-  already been warned about" has no answer without a row that says so. `alreadySent`
-  compares `firedForMs` to the stored value, not mere row existence, so a moved instant
-  (the player fed, reassigned, or spliced) earns exactly one fresh warning rather than
-  being silently suppressed by an old record.
-  Escape alerts have two tiers — heads-up at 12h out (`ESCAPE_WARN_MS`), last call at 1h
-  out (`ESCAPE_LAST_CALL_MS`) — and `ESCAPE_TIERS` is ordered MOST URGENT FIRST on purpose:
-  `recordEscapeSent` collapses every LESS urgent tier behind whichever one just fired,
-  never a more urgent one. Firing last call also marks heads-up sent for that same instant
-  (it logically already happened), but firing heads-up must leave last call free, since
-  that's a genuinely later beat still to come. Reversing `ESCAPE_TIERS`' order breaks tier
-  *selection* — every dino matches heads-up first and last call never fires at all — and
-  reversing the collapse *direction* breaks it a second way: heads-up firing would
-  pre-mark last call as sent (same `firedForMs`, since the dino hasn't been fed), so the
-  real last-call DM at the 1-hour mark would find `alreadySent` already true and silently
-  never go out.
-  The sweep must never call `settleEscapes`: it reads `escapedAt` straight off the row via
-  `toClockDinos`, never a settling call, so a dino crossing the escape threshold mid-sweep
-  still gets its last-call DM before anything stamps it escaped. Calling `settleEscapes`
-  here would race the alert against itself — `escapeAlertsFor` filters out any row with
-  `escapedAt !== null`, so a sweep that settled first would silently swallow the very
-  warning it exists to send — and it would also turn "escapes are only settled when a
-  command touches your park" (the Escapes section of `docs/gameplay.md`) into a lie, since
-  a background timer isn't a command anyone touched.
-  A payload reaching `deliverNotification` must never carry an `attachments` key — the
-  inverse of the `i.update` rule the battles bullet above documents. `fightFrames`'s F1/F4
-  sends need an explicit `attachments: []` on every call because two send sites reuse one
-  `MessagePayload` object and each must shed the other's stale set. `alertPayload`
-  (`src/modules/park/alert-embeds.ts`) is the same one-object-two-send-sites shape
-  (`deliverNotification` tries `channelSend` then falls back to `dmSend` on failure) but
-  needs the opposite fix — omit `attachments` entirely — because discord.js's
-  `MessagePayload.create()` pushes resolved files into that array IN PLACE and only
-  shallow-copies it, so a pre-set key on the shared object would carry a mutation from the
-  first send attempt into the second.
-- Habitat enrichment stacks decor on TOP of the existing diet split, never underneath it:
-  `paddockFit`/`paddockFitBase` (`src/core/clock.ts`) both still return 0.5 off-diet and
-  0.75 on-diet-with-no-match, byte-identical to pre-enrichment behaviour — enrichment only
-  ever applies once a paddock has already reached fit 1.0 (correct diet, ≥1 matching decor
-  kind). `matchedKindCount` (`src/data/decor.ts`) counts DISTINCT decor kinds whose
-  `biomeTags` intersect the resident's, deduped via a `Set` since `decorateLot` appends
-  with no dedupe; `ENRICHMENT_STEPS` (`[1.0, 1.05, 1.1]`, indexed by matched-kinds − 1) is
-  deliberately 1.0 at index 0 — the rung only starts climbing at a SECOND distinct match,
-  never the first. That boundary is load-bearing: three tests (`tests/clock.test.ts`,
-  `tests/tundra.test.ts`, `tests/dinos.test.ts`) each independently pin "one matching tile
-  ⇒ exactly 1.0", and it's the reason shipping enrichment moved no existing income or
-  escape figure anywhere in the suite — every fixture that predates the feature used at
-  most one matching decor kind.
-  The ladder stops at fit 1.10 for a real mechanical reason, not just balance: past a point
-  `escapeAt` outruns `hungerZero` and a dino sits at comfort 0 — earning nothing — while its
-  8h grace runs out. The boundary is **not** a bare fit of 1.5, and the earlier "`12/fit < 8`
-  once fit ≥ 1.5" wording was wrong twice over (inverted inequality, and blind to traits).
-  The real algebra, from `src/core/clock.ts`, is
-  `escapeAt − hungerZero = GRACE_MS − (ESCAPE_COMFORT / fit) · drainMs`, and `drainMs` is
-  `HUNGER_DRAIN_MS / drainMult`, so that dead window opens iff
-  **`fit · drainMult > 1.5`** where `drainMult = modProduct(traits, 'drain')` — independent
-  of `hungerAtFed`, but NOT of the dino's traits. `grazer` (domain `income`) and `skittish`
-  (domain `care`) both carry `drain: 1.20` in DIFFERENT domains, so one dino can legally hold
-  both: `drainMult` 1.44, `drainMs` 33.33h, boundary at fit **1.0417** — under both shipped
-  rungs. Measured against the real `escapeAt`, a grazer+skittish dino's dead window is
-  −20 min (i.e. none) at fit 1.00, **+3.81 min at 1.05 and +25.45 min at 1.10**. This branch
-  is what made the condition reachable at all: before it, fit topped out at 1.00 and no trait
-  combination could cross the line. It ships knowingly — the window is bounded and small, and
-  income stays monotone in enrichment — but the OLD guard (`expect(step).toBeLessThan(1.5)`)
-  was toothless, since it passed while the condition it existed to prevent was already
-  violated. `tests/enrichment.test.ts` now derives `MAX_DRAIN_MULT` (1.44 today) from the real
-  `TRAITS` table — the product of the two largest per-domain `drain` maxima, since a dino holds
-  at most two traits and never two from one domain — and bounds the worst reachable dead window
-  against an explicit tolerance, so raising the cap or shipping a third drain trait moves the
-  gate on its own. Any future cap raise is a decision about how long a dino may earn nothing,
-  not a balance question.
-  Alert tolerance had to widen for enrichment: `ALERT_INSTANT_EPSILON_MS`
-  (`src/modules/park/alert-record.ts`, 2 hours) exists because a decor purchase moves a
-  dino's `escapeAt` by only 34–65 minutes (one or two rungs) — comfortably inside the 12h
-  heads-up window — so a bare `firedForMs` equality check would re-fire a fresh DM on every
-  single decor purchase. Row EXISTENCE alone is not an alternative fix: it would also
-  suppress the legitimate case where a fed dino's escape instant leaves the window and
-  later genuinely re-enters it, which is exactly what comparing `firedForMs` (with
-  tolerance, not just presence) exists to allow.
-  Standing hazard, now worse than before: retiring a decor `kind` from `DECOR`
-  (`src/data/decor.ts`) silently drops every paddock relying on it — `matchedKindCount`
-  treats an unknown slug as a non-match rather than throwing, the same tolerance
-  `traitDefs` gives a retired trait id. Pre-enrichment this could only cost a dino its
-  1.0 → 0.75 fall; now it can also cost a rung on top — a paddock sitting at fit 1.10 in
-  reliance on a since-retired kind silently drops to 1.05 or 1.00 the next time anything
-  reads it, with no error and no record of what changed.
 - Specs in this repo are dated records of a decision as it was made, so a spec proven
   wrong after implementation is deliberately NOT corrected in place. The worked example is
   `docs/superpowers/specs/2026-08-27-operator-refunds-design.md` §3 case 6, whose
@@ -629,16 +454,6 @@ read or edited. Read one directly when you are planning against it rather than e
   read or write; `!Number.isInteger(offered)` is provably redundant (`seasonIndexFor`
   always returns an integer, so the bare `!==` alone rejects every non-integer target)
   but is kept deliberately as explicit boundary validation on client-supplied input.
-  The season-ending nudge rides the EXISTING 15-minute `alert_sweep` timer as a new
-  alert kind, firing only to players holding unclaimed unlocked rungs. `firedForMs` is
-  anchored to the season's true END instant (`(index + 1) * SEASON_DAYS * DAY_MS`), not
-  `now + daysLeft * DAY` — the pre-flight scan on this plan caught that the naive
-  version drifts with time-of-day past the sweep's own epsilon and would have DM'd
-  roughly every 2 hours for the last 3 days of a season instead of once. It inherits the
-  sweep's existing `lots.length === 0` guard, so a player with season points but zero
-  lots is never nudged — reachable in principle (60 shop purchases alone clears rung 1)
-  but accepted rather than special-cased, since that player still sees the rung on
-  `/season` itself.
 - `attendanceScores` (`src/modules/leaderboards/service.ts`), the board-wide twin of
   `attendanceOf` (`src/modules/park/attendance.ts`), is DELIBERATELY LAXER — it
   matches `recomputeRating`'s `assigned` filter and checks only the stored `escapedAt`,
