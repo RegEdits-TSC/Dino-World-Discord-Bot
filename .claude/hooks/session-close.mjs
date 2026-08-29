@@ -47,9 +47,21 @@ const STATE_FILE_NAME = 'session-close-hook-state.json';
 // ---- the mapping ----
 //
 // Each entry: the repo paths that imply the step, and the one line an
-// operator reads. Command plus one clause — the clause carries the ordering
-// or the risk, which is the part a bare command list loses, and the long
-// reasoning already lives in docs/conventions/ where it can be gone back to.
+// operator reads. Every line leads with its backticked command and then
+// carries that step's consequences — the ordering, the risk, or the reason
+// NOT to run it — since a bare command list loses exactly the part that
+// makes these five steps hard. The long-form reasoning lives in
+// docs/conventions/ and is not repeated here.
+//
+// Compression is bounded by meaning, not by a character count. A step whose
+// consequences take two sentences gets two sentences: welding them into one
+// clause is how the deploy-commands line came to read "one bot instance per
+// token, or live commands drift from the code", which asserts a causal
+// relation this repo does not have and lets an operator who confirms a
+// single instance take the line as satisfied and skip the deploy. The
+// migration line is the longest for the same reason — it is the only entry
+// naming a command that should usually NOT be run.
+//
 // Ordered as emitted: artwork uploads first, then the deploy that changes
 // what Discord shows, then the gallery review, which renders against
 // whatever is by then deployed.
@@ -88,7 +100,19 @@ const BUILDER_GLOBS = [
 ];
 const BUILDER_DATA_GLOBS = ['src/data/**'];
 
-const ONE_INSTANCE = 'one bot instance per token, or live commands drift from the code.';
+// TWO STATEMENTS, never one clause. CLAUDE.md carries these as separate
+// rules with separate consequences: a builder change needs the deploy, and
+// until it runs Discord still advertises the old option set; separately,
+// run exactly one bot process per token, because two gateway sessions on
+// one token race for every interaction. Welding them with "or" — as an
+// earlier compression of this line did — reads as "ensure one instance, or
+// else commands drift", so an operator who confirms a single instance can
+// take the line as satisfied and skip the deploy. That is the exact failure
+// the line exists to prevent, and it is worse than having no line at all.
+// Both variants share this so a future edit cannot fix one and leave the
+// other wrong; the full stop between the two sentences is load-bearing.
+const DEPLOY_COMMANDS_CONSEQUENCES =
+  'until it runs, Discord still advertises the old option set. Run exactly one bot instance per token.';
 
 const STEPS = [
   {
@@ -109,27 +133,30 @@ const STEPS = [
     id: 'deploy-branding',
     globs: BRANDING_GLOBS,
     line:
-      '- `npm run deploy-branding` — Discord allows roughly 2 per hour, hence `--avatar-only` / ' +
-      '`--banner-only`; it checks the returned hash starts `a_`, or the animation was silently dropped.',
+      '- `npm run deploy-branding` — Discord allows roughly 2 profile edits per hour, hence ' +
+      '`--avatar-only` / `--banner-only`; it checks the returned hash starts `a_`, or the animation ' +
+      'was silently dropped.',
   },
   {
     id: 'migration',
     globs: SCHEMA_GLOBS,
     line:
-      '- Migration applies on next boot. Any data backfill is a separate step run after it, never as ' +
-      'migration SQL (a failure there blocks boot) — `npm run backfill-species-seen` is the precedent.',
+      '- `npm run backfill-species-seen` — ONLY if this migration is the one it belongs to (it is tied ' +
+      'to 0010); it is INSERT OR IGNORE, so a re-run is safe. The migration itself applies on next boot. ' +
+      'Any data backfill is a separate step run after it, never as migration SQL, since a failure there ' +
+      'blocks boot.',
   },
   {
     id: 'deploy-commands',
     globs: BUILDER_GLOBS,
-    line: '- `npm run deploy-commands` — a command builder file changed; ' + ONE_INSTANCE,
+    line: '- `npm run deploy-commands` — a command builder file changed; ' + DEPLOY_COMMANDS_CONSEQUENCES,
   },
   {
     id: 'deploy-commands',
     globs: BUILDER_DATA_GLOBS,
     line:
       '- `npm run deploy-commands` — a src/data table changed and builders read choice lists from it ' +
-      '(paddock kinds, attractions, foods, mythic species); ' + ONE_INSTANCE,
+      '(paddock kinds, attractions, foods, mythic species); ' + DEPLOY_COMMANDS_CONSEQUENCES,
   },
   {
     id: 'test:live',

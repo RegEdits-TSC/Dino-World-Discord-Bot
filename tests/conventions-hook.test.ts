@@ -622,7 +622,9 @@ describe('session-close checklist: the mapping', () => {
     const out = close(['assets/branding/avatar.gif']);
     expect(out).toContain('deploy-branding');
     expect(out).toContain('--avatar-only');
-    expect(out).toMatch(/2 per hour/);
+    // The rate limit needs its NOUN: "roughly 2 per hour" of what. An
+    // earlier compression dropped it and left a bare number.
+    expect(out).toMatch(/roughly 2 profile edits per hour/);
   });
 
   it('names the backfill as a separate manual step for a schema or migration change', () => {
@@ -632,6 +634,17 @@ describe('session-close checklist: the mapping', () => {
       expect(out).toContain('never as migration SQL');
       expect(out).toMatch(/next boot/);
     }
+  });
+
+  // This is the one line in the whole message that names a runnable command
+  // an operator should usually NOT run: backfill-species-seen is tied to
+  // migration 0010, and it fires on ANY drizzle/ or schema.ts change. A
+  // compression pass dropped that qualifier once, which turns the line from
+  // a warning into an instruction to corrupt unrelated data.
+  it('tells the operator NOT to run the backfill unless this is its migration', () => {
+    const out = close(['drizzle/0021_unrelated.sql']);
+    expect(out).toContain('ONLY if this migration is the one it belongs to');
+    expect(out).toContain('0010');
   });
 
   it('names deploy-commands when a module command file changed', () => {
@@ -677,6 +690,28 @@ describe('session-close checklist: the mapping', () => {
     expect(out.match(/deploy-emojis/g)?.length).toBe(1);
   });
 
+  // CLAUDE.md carries these as two separate rules with two separate
+  // consequences: a builder change needs the deploy, and until it runs
+  // Discord still advertises the old option set; separately, run exactly one
+  // bot process per token, because two gateway sessions race for every
+  // interaction. A compression pass welded them into "one bot instance per
+  // token, or live commands drift from the code" — which asserts that the
+  // drift is CAUSED by the instance count, so an operator who checks and
+  // confirms a single instance can read the line as satisfied and skip the
+  // deploy. That is the exact failure the line exists to prevent, and it is
+  // worse than the line being absent. Pinned for BOTH variants, since they
+  // are separate strings a future edit could fix one at a time.
+  it('states the deploy consequence and the one-instance rule as two separate statements', () => {
+    for (const file of ['src/modules/park/index.ts', 'src/data/paddocks.ts']) {
+      const out = close([file]);
+      expect(out).toContain('until it runs, Discord still advertises the old option set.');
+      expect(out).toContain('Run exactly one bot instance per token.');
+      // The welded form, in any of the shapes it could come back as.
+      expect(out).not.toMatch(/per token, or/);
+      expect(out).not.toMatch(/instance per token, or live commands drift/);
+    }
+  });
+
   it('says deploy-commands once, and with the builder reason, when both a builder file and a data file changed', () => {
     // The two deploy-commands entries share one step id precisely so this
     // can only ever produce one line, and the more specific reason wins.
@@ -699,10 +734,20 @@ describe('session-close checklist: the mapping', () => {
     expect(parsed.hookSpecificOutput).toBeUndefined();
   });
 
-  // (c): as model context the long form was fine; as a terminal message to a
-  // human it was a wall. Every reason is kept, compressed to command plus one
-  // clause, with the full reasoning left in docs/conventions/.
-  it('keeps the whole checklist readable — one line per step, none of them a paragraph', () => {
+  // As model context the long form was fine; as a terminal message to a human
+  // it was a wall. What the guard actually protects is the SHAPE — one line
+  // per owed step, each leading with its command — and the line count is the
+  // exact part of that.
+  //
+  // The character caps are a backstop against a paragraph creeping back in,
+  // deliberately loose, and they are NOT a budget to cut meaning to. They
+  // were 220/1200 until the two `deploy-commands` consequences had to be
+  // un-welded and the migration line's "do not run this" qualifier restored;
+  // the honest response to a longer line was to move the number, not to drop
+  // a consequence. Worst case today is 1227 chars with a 303-char migration
+  // line, so these leave real headroom rather than the 8 characters the
+  // previous numbers had.
+  it('keeps the whole checklist readable — one line per step, each led by its command', () => {
     const parsed = JSON.parse(
       close([
         'assets/emojis/svg/dw_cash.svg',
@@ -714,8 +759,13 @@ describe('session-close checklist: the mapping', () => {
     );
     const lines = String(parsed.systemMessage).split('\n');
     expect(lines).toHaveLength(7); // header + six owed steps
-    for (const line of lines) expect(line.length).toBeLessThanOrEqual(220);
-    expect(parsed.systemMessage.length).toBeLessThan(1200);
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(360);
+    expect(parsed.systemMessage.length).toBeLessThan(1500);
+
+    // Every step line has the same shape, so the list scans as a list. The
+    // migration line was prose without a leading command until this was
+    // pinned, and read as commentary sitting among instructions.
+    for (const line of lines.slice(1)) expect(line).toMatch(/^- `npm run /);
   });
 });
 
