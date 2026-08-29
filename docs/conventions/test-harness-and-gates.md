@@ -6,6 +6,8 @@ Fires on: `tests/harness.ts` and `tests/harness.test.ts`, the cross-module
 decides which gate reads which files — `vitest.config.ts`, `tsconfig.json`,
 `tsconfig.test.json`, `package.json`, `package-lock.json` and `.github/workflows/ci.yml`.
 
+## Headlines
+
 **A green suite proves nothing about a seam it cannot observe.** Every gate here sees a
 bounded slice: the offline suite opens no socket and runs on a fixed clock,
 `npm run test:live` never opens a gateway session and never routes an interaction,
@@ -13,8 +15,6 @@ bounded slice: the offline suite opens no socket and runs on a fixed clock,
 someone taught it. A passing run is evidence about the seams some gate actually watches
 and about nothing else — so before treating one as proof, name the seam the change
 touches and confirm something is looking at it.
-
-## Headlines
 
 - The `tests/harness.ts` fakes (`fakeCommand`/`fakeAutocomplete`/`fakeButton`) enforce the real interaction lifecycle — reply-once, defer-before-`editReply`/`followUp` — throwing the same `InteractionAlreadyReplied`/`InteractionNotReplied` errors discord.js would, so a lifecycle mistake fails offline instead of at runtime. §harness-lifecycle-enforced
 - The fakes validate every reply payload against Discord's message limits, so a breach fails in a test rather than as a rejected API call in production. §harness-validates-payload-limits
