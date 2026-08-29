@@ -14,6 +14,8 @@
 //   8. Summarized body — a doc's body is thinner than its rules' word budget warrants.
 //   9. Cross-doc anchor — a doc (or CLAUDE.md) cites §name alongside another
 //      docs/conventions/<slug>.md, and that slug's file has no "## name" heading.
+//  10. Bare LF        — CLAUDE.md or a docs/conventions/*.md carries a newline
+//      that is not CRLF, in a docs tree that is CRLF throughout.
 //
 // Checks 4, 5, 7 and 8 are meaningless before a doc actually has a body: this
 // project ships the manifest (task 2) long before it ships the 28 doc files
@@ -26,8 +28,10 @@
 // zero filed rules (only the fallback doc, "no doc claims this file yet")
 // never needs a file at all, migration status notwithstanding.
 //
-// Checks 1, 2, 3 and 6 always run — they are not indexed by any one doc's
-// file. Check 6 carries one more guard of its own, explained at its
+// Checks 1, 2, 3, 6 and 10 always run — they are not indexed by any one doc's
+// file. Check 10 additionally runs in scoped mode, over that one doc's own
+// file; the reasoning is at its implementation below. Check 6 carries one
+// more guard of its own, explained at its
 // implementation below: it also does nothing while CLAUDE.md is still
 // exactly the length the rule map recorded when it was measured, so that
 // this exact audit can pass clean at the manifest's own commit, before
@@ -40,7 +44,7 @@
 // the info line rather than dropped, so it is visible while it waits, and it
 // becomes a hard error the moment migration completes.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
@@ -362,6 +366,64 @@ export function checkOverCap(hasMarker, lines, manifest, ruleMapSourceLines, err
   }
 }
 
+// Check 10: bare LF. Every file in this repo's docs tree is CRLF and
+// `core.autocrlf` is true, so a tool that rewrites a doc with LF newlines
+// leaves a silently MIXED file: git normalizes the working-tree copy back to
+// LF before diffing, so `git diff` shows nothing at all, and no test, lint or
+// other check in this repo inspects a newline. It has already happened once —
+// docs/conventions/command-and-handler-surface.md took two bare LFs from a fix
+// round and was caught only because that implementer re-read all 29 docs by
+// hand rather than trusting his own edit. Throughout this project the hazard
+// travelled as a manual convention repeated in every task brief, checked by
+// eye for CLAUDE.md and inherited by none of the 29 files that replaced it.
+// `core.autocrlf` is a per-clone git setting with no .gitattributes behind it,
+// so it protects contributors who happen to have it configured rather than the
+// repo structurally. A convention system whose own file integrity depends on
+// someone remembering to look is the thing this project exists to argue
+// against, so this is the part that does not depend on anyone remembering.
+//
+// The files are read as BYTES, never through a decoder: the entire defect is a
+// newline, which is exactly what a text-decoding read is entitled to
+// normalize, and a check that cannot see its own defect is the failure this
+// repo keeps finding. A bare LF is a 0x0A not immediately preceded by 0x0D,
+// which also catches a wholly-LF file — correctly, since in a CRLF tree that
+// is the same defect, merely uniform rather than mixed.
+export function bareLfCount(bytes) {
+  let count = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === 0x0a && (i === 0 || bytes[i - 1] !== 0x0d)) count += 1;
+  }
+  return count;
+}
+
+// `paths` is the list of files to inspect. An absent path is skipped rather
+// than reported: check 4 already owns "a doc that should exist does not", and
+// saying it twice would only add noise to that doc's own finding.
+export function checkLineEndings(paths, errors) {
+  for (const path of paths) {
+    if (!existsSync(path)) continue;
+    const count = bareLfCount(readFileSync(path));
+    if (count > 0) {
+      errors.push(
+        `[bare-lf] ${path}: ${count} newline(s) are a bare LF rather than CRLF — this docs tree is ` +
+          `CRLF throughout and git diff cannot show the difference`
+      );
+    }
+  }
+}
+
+// Every docs/conventions/*.md on disk, read from the DIRECTORY rather than
+// from manifest.docs (which is what check 9's docSources walks). A doc file
+// that exists without a manifest entry carries a bare LF exactly as well as a
+// filed one does, and there is no reason for this check to be blind to it.
+function conventionDocPaths(docDir = DOC_DIR) {
+  if (!existsSync(docDir)) return [];
+  return readdirSync(docDir)
+    .filter((name) => name.endsWith('.md'))
+    .sort()
+    .map((name) => `${docDir}/${name}`);
+}
+
 // The [{ name, text }] sources check 9 scans: every doc whose file exists.
 function docSources(docs, docDir = DOC_DIR) {
   const sources = [];
@@ -403,6 +465,14 @@ export function main() {
     // Check 9, scoped: only the references THIS doc makes, so a doc task still
     // lands green on its own rather than on the state of the other 28.
     checkCrossDocAnchors(docSources([doc]), { migrationComplete, errors, info });
+    // Check 10, scoped: this doc's own file and nothing else — same rule the
+    // rest of scoped mode follows, which says nothing about CLAUDE.md or the
+    // other 28. It runs here deliberately rather than whole-repo only: the
+    // file a doc task rewrites is precisely the file at risk, and scoped mode
+    // is what a doc task runs, so omitting it would mean the check only ever
+    // fires for whoever next happens to run the full audit — which is the
+    // "somebody will notice later" posture the check exists to replace.
+    checkLineEndings([docFilePath(doc.slug)], errors);
   } else {
     const files = trackedFiles();
     const globEntries = allGlobEntries(manifest);
@@ -420,6 +490,8 @@ export function main() {
       [{ name: CLAUDE_MD_PATH, text: claudeMdContent }, ...docSources(manifest.docs)],
       { migrationComplete, errors, info }
     );
+    // Check 10, whole repo: CLAUDE.md plus every docs/conventions/*.md on disk.
+    checkLineEndings([CLAUDE_MD_PATH, ...conventionDocPaths()], errors);
   }
 
   for (const line of info) console.log(line);

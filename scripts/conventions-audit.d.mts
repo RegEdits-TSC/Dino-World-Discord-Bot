@@ -101,4 +101,11 @@ export function checkOverCap(
   ruleMapSourceLines: number,
   errors: string[]
 ): void;
+// Check 10 takes BYTES, never a decoded string — the defect it looks for is a
+// newline, which is the one thing a text decode is entitled to normalize away.
+// Typed as Uint8Array rather than Buffer so the declaration states the actual
+// requirement (raw bytes) and a test can hand it a literal byte array; a
+// Buffer from readFileSync satisfies it, since Buffer extends Uint8Array.
+export function bareLfCount(bytes: Uint8Array): number;
+export function checkLineEndings(paths: string[], errors: string[]): void;
 export function main(): void;

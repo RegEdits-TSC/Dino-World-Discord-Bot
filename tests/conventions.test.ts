@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   auditDoc,
+  bareLfCount,
   checkCrossDocAnchors,
+  checkLineEndings,
   checkOverCap,
   crossDocRefs,
   lineCount,
@@ -426,6 +428,104 @@ describe('fixture-driven check coverage (check 9, exercised directly)', () => {
           'denominators it depends on are tabulated at `§own-section` above.'
       )
     ).toEqual([]);
+  });
+});
+
+// Check 10 exists because nothing else in this repo can see a newline. Every
+// file in the docs tree is CRLF and `core.autocrlf` is true, so a tool that
+// rewrites a doc with LF produces a MIXED file that `git diff` renders as no
+// change at all — git normalizes the working-tree copy back to LF before
+// diffing. It already bit once: docs/conventions/command-and-handler-surface.md
+// took two bare LFs from a fix round and was caught only by an implementer
+// re-reading all 29 docs by hand. These tests drive the real check against
+// throwaway fixture files (never a tracked path — vitest runs test files in
+// parallel forks) and then against the real tree.
+describe('fixture-driven check coverage (check 10, exercised directly)', () => {
+  function withFixtureDir(run: (dir: string) => void): void {
+    const dir = mkdtempSync(join(tmpdir(), 'conventions-lineending-fixture-'));
+    try {
+      run(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('counts bare LFs over raw BYTES, so no decoding layer can hide one', () => {
+    // Hand-built bytes, never a string: this is the "verify by construction
+    // that it can see its own defect" half. "a\r\nb\nc\r\n" — one CRLF, one
+    // bare LF, one CRLF.
+    const mixed = Uint8Array.from([0x61, 0x0d, 0x0a, 0x62, 0x0a, 0x63, 0x0d, 0x0a]);
+    expect(bareLfCount(mixed)).toBe(1);
+
+    // Pure CRLF: nothing to report.
+    expect(bareLfCount(Uint8Array.from([0x61, 0x0d, 0x0a, 0x62, 0x0d, 0x0a]))).toBe(0);
+
+    // Wholly LF is the same defect in a CRLF tree, merely uniform.
+    expect(bareLfCount(Uint8Array.from([0x61, 0x0a, 0x62, 0x0a]))).toBe(2);
+
+    // A leading LF has no preceding byte to inspect — the i === 0 arm.
+    expect(bareLfCount(Uint8Array.from([0x0a, 0x61]))).toBe(1);
+
+    // A lone CR that is not part of a CRLF is not a newline this check owns.
+    expect(bareLfCount(Uint8Array.from([0x61, 0x0d, 0x62]))).toBe(0);
+    expect(bareLfCount(Uint8Array.from([]))).toBe(0);
+  });
+
+  it('fires on a mixed file with the offending count, and clears on a pure-CRLF one', () => {
+    withFixtureDir((dir) => {
+      const path = join(dir, 'fixture-doc.md');
+      const lines = ['## Headlines', '', '- fixture-rule headline. §fixture', '', '## fixture', '', 'Body prose.', ''];
+
+      // Two bare LFs planted in an otherwise CRLF file — exactly the shape the
+      // real defect took. Written as an explicit Buffer so no encoding layer
+      // between the test and the disk can alter what lands there.
+      const mixed = lines.join('\r\n').replace('## fixture\r\n', '## fixture\n').replace('Body prose.\r\n', 'Body prose.\n');
+      writeFileSync(path, Buffer.from(mixed, 'utf8'));
+
+      let errors: string[] = [];
+      checkLineEndings([path], errors);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain('[bare-lf]');
+      expect(errors[0]).toContain('fixture-doc.md');
+      expect(errors[0]).toContain('2 newline(s)');
+
+      // The same content, pure CRLF: silent.
+      writeFileSync(path, Buffer.from(lines.join('\r\n'), 'utf8'));
+      errors = [];
+      checkLineEndings([path], errors);
+      expect(errors).toEqual([]);
+    });
+  });
+
+  it('reports a wholly-LF file, and skips a path that does not exist', () => {
+    withFixtureDir((dir) => {
+      const path = join(dir, 'all-lf.md');
+      writeFileSync(path, Buffer.from('## a\n\nBody.\n', 'utf8'));
+
+      const errors: string[] = [];
+      // The absent path is check 4's finding to make, not this one's — it must
+      // not double-report, and it must not throw on a doc not written yet.
+      checkLineEndings([join(dir, 'not-written-yet.md'), path], errors);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain('all-lf.md');
+      expect(errors[0]).toContain('3 newline(s)');
+    });
+  });
+
+  it('finds no offender in the real CLAUDE.md or any docs/conventions/*.md', () => {
+    // The regression pin: this is the assertion that fails the day a tool
+    // rewrites one of the 30 files with LF, which is the only signal there is.
+    const paths = [
+      'CLAUDE.md',
+      ...readdirSync('docs/conventions')
+        .filter((name) => name.endsWith('.md'))
+        .sort()
+        .map((name) => `docs/conventions/${name}`),
+    ];
+    expect(paths.length).toBeGreaterThan(1);
+    const errors: string[] = [];
+    checkLineEndings(paths, errors);
+    expect(errors).toEqual([]);
   });
 });
 
