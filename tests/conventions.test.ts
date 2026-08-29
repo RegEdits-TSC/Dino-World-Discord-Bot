@@ -9,6 +9,7 @@ import {
   checkCrossDocAnchors,
   checkOverCap,
   crossDocRefs,
+  lineCount,
 } from '../scripts/conventions-audit.mjs';
 import type { ManifestDoc } from '../scripts/conventions-audit.mjs';
 
@@ -455,6 +456,16 @@ describe('CLAUDE.md core', () => {
     expect(core, 'core must state the ESM relative-import rule').toMatch(
       /relative import[\s\S]{0,120}`\.js` extension/
     );
+  });
+
+  it('has migrated everything out of CLAUDE.md', () => {
+    // The marker is what suppressed checks 4-8 in the audit while the split
+    // was in flight, so its absence is the switch that turns them all on.
+    // Asserting the cap here as well keeps the two facts welded: a future
+    // edit that regrows CLAUDE.md cannot pass by re-adding the marker,
+    // because the first expectation forbids that too.
+    expect(md).not.toContain('UNMIGRATED');
+    expect(lineCount(md)).toBeLessThanOrEqual(manifest.claudeMdMaxLines);
   });
 
   it('indexes every doc in the manifest', () => {

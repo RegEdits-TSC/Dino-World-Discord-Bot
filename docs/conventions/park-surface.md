@@ -196,7 +196,9 @@ IDENTITY plus a STALENESS ANCHOR and never a price: `park:build` carries `<kind>
 The level anchor is load-bearing: `upgradeCostFor` is a pure function of `(kind, level)`
 and paddock cost is `buildCost * 2.5 ** level`, so a stale option charges the NEXT rung's
 price. Measured worst case is `hatchery_lab` — a label reading 25,000 against a charge of
-2,250,000, **90x**. The general rule, and the table of every customId that carries an
+2,250,000, **90x**, against the landmark defect's 32x: that ratio is what "worse form"
+means here, and it is why these menus were anchored before anyone had to be charged.
+The general rule, and the table of every customId that carries an
 anchor, is `§guard-scope-cross-message-only` in
 `docs/conventions/router-and-registry.md`.
 

@@ -1,4 +1,7 @@
 {
+  "env": {
+    "CLAUDE_CONVENTIONS_ENABLED": "1"
+  },
   "hooks": {
     "PreToolUse": [
       {

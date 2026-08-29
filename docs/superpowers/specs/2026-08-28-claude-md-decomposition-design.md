@@ -459,3 +459,113 @@ The growth problem is the reason this was needed, so the fix ships with it:
   fires and nothing else does.
 - No behaviour change: this touches no `src/` file. `npm run deploy-commands` is
   not needed, no migration is involved, and the bot needs no restart.
+
+### Measured outcome
+
+Recorded at the close of the migration, from the shipped tree rather than from
+the estimate. Every figure here is re-derivable: the injection sizes come from
+the hook's own `matchDocs`/`buildInjection`, not from a second implementation
+of them, and the rule trace reads `manifest.json` against the rule map.
+
+**`CLAUDE.md`: 1829 lines -> 101.** Preamble, eight always-true rules, and a
+29-entry topic index. The `<!-- UNMIGRATED -->` marker is gone, which is what
+takes checks 4, 5, 7 and 8 live for absent docs, starts enforcing the 120-line
+cap in check 6, and stops check 9 deferring cross-doc anchors. The audit exits 0
+with every check enforced.
+
+**Rule trace: all 335 accounted for** — 327 filed across 28 topic docs, 8 in
+`manifest.alwaysCore`, none unfiled, none filed twice, and nothing in a doc that
+is absent from the rule map. All 879 tracked files are claimed by some doc, so
+check 1 reports no orphans and the fallback doc covers the remainder by design
+rather than by omission.
+
+**Cross-doc references: 123 verified pairs, 0 broken, 0 deferred.** Seven
+pointers were upgraded in this final pass from a bare rule name or a bare doc
+path to an anchored `§name` + `docs/conventions/<slug>.md` pair, which is the
+only shape check 9 can verify; each added a pair, and the count moved 114 -> 123
+because the frozen-constants table carries three of them.
+
+**Per-doc line counts** (4128 lines total across 29 files):
+
+| doc | lines | doc | lines |
+| --- | ---: | --- | ---: |
+| admin-ledger | 117 | notify-and-runtime | 67 |
+| admin-service | 205 | park-png-renderer | 131 |
+| art-asset-files | 173 | park-progression | 331 |
+| art-resolver | 176 | park-surface | 302 |
+| battle-content-and-balance | 118 | prose-and-specs | 56 |
+| bot-profile-branding | 42 | router-and-registry | 246 |
+| clock-comfort-and-feeding | 179 | schema-and-migrations | 130 |
+| command-and-handler-surface | 201 | season-track | 135 |
+| daily-quests-and-stats | 81 | species-and-dex | 90 |
+| economy-core | 213 | test-harness-and-gates | 81 |
+| embed-payload-builders | 199 | timers-and-alerts | 154 |
+| emoji-pipeline | 77 | world-events | 57 |
+| escrow-and-item-moves | 235 | fallback | 23 |
+| fights-and-duels | 138 | | |
+| help-topics | 46 | | |
+| leaderboards | 125 | | |
+
+A doc's own length is not what a reader pays. The hook injects the doc's
+`## Headlines` block, substituting the full body section only for a
+`bodyRequired` rule — so `park-progression` at 331 lines contributes far less
+than that at any one trigger.
+
+**The five representative files, and the docs that actually fired:**
+
+| file | docs injected | lines | words |
+| --- | --- | ---: | ---: |
+| `src/modules/park/index.ts` | command-and-handler-surface + embed-payload-builders + park-surface | 101 | 2232 |
+| `src/data/species/allosaurus.ts` | species-and-dex | 9 | 202 |
+| `drizzle/0019_operator_refunds.sql` | admin-service + schema-and-migrations | 34 | 964 |
+| `assets/emojis/svg/dw_cash.svg` | emoji-pipeline | 9 | 158 |
+| `src/core/scratch-probe.ts` (created, then deleted) | fallback | 20 | 205 |
+
+The drizzle row is the one departure from the prediction, and it is correct
+rather than a misfile: `admin-service` claims `drizzle/**` because the reset
+marker and the reversal boundary are schema-coupled, so a migration legitimately
+fires two docs. The other four matched exactly.
+
+**Measured injection vs the §6 prediction, which over-stated it.** §6 predicted
+~54-70 lines on a typical file edit. Across all 879 claimed files the real
+distribution is min 8, p25 9, **median 20**, p75 61, p90 61, max 101, mean 31.0;
+restricted to the 189 files under `src/` it is median 17, mean 25.8, max 101. So
+the typical edit costs roughly **a third of the predicted figure**, the p90 costs
+61 against a predicted ~102, and the worst single file — `src/modules/park/index.ts`,
+the same one §6 named — costs 101 against a predicted 162.
+
+Stated plainly because it cuts against the estimate as well as for it: §6's
+correction factor was applied to the whole rule body, but the hook injects
+headlines and substitutes a full body only for the six `bodyRequired` ids, so the
+prediction was scored against text most triggers never carry. The direction of
+the error flatters the design; the method that produced it was still wrong, and a
+future change that raises `bodyRequired` coverage would move these numbers back
+toward the prediction without anything flagging it. The distribution is also more
+bimodal than a single "typical" figure suggests: p25 and the median sit at 9 and
+20 because most files match exactly one doc, while the `src/modules/*/index.ts`
+and `*/embeds.ts` families match three and account for the whole upper tail.
+
+**Hook observation: the PreToolUse injection could not be observed from inside
+the session that enabled it, and that is reported rather than inferred.**
+`CLAUDE_CONVENTIONS_ENABLED` was set in `.claude/settings.json`'s `env` block, but
+the runtime resolves that block at session start, so the hook subprocess in the
+already-running session kept seeing the variable unset and exited at its gate:
+reads of `src/data/species/allosaurus.ts` and `assets/emojis/svg/dw_cash.svg`
+after the edit produced no `additionalContext`, and no state file appeared in
+`os.tmpdir()`. Both hooks were therefore driven directly instead, with the same
+stdin payload shape and the same absolute Windows backslash `file_path` the
+runtime sends; the figures above are from those runs. **The first session started
+after this commit is the first true end-to-end observation, and it has not
+happened yet.**
+
+**The Stop hook's `systemMessage` ran live for the first time here.** Driven
+against this branch's real `git` state it is correctly silent — the branch
+touches no path that owes an operator step. Forced through its
+`CLAUDE_CONVENTIONS_TOUCHED` seam with an emoji, an embeds and a migration path,
+it emits a single top-level `systemMessage` key carrying the header and four
+step lines, and a second invocation on the same session id is silent, so the
+once-per-session state holds.
+
+**No behaviour change, as predicted.** `git diff 1b92fac -- src/` is empty.
+`npm test` 2496 passing across 121 files, `npm run typecheck` and `npm run build`
+clean. No migration, no `deploy-commands`, no restart.

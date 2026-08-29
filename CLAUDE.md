@@ -99,6 +99,3 @@ read or edited. Read one directly when you are planning against it rather than e
   on `src/core/world.ts`, `src/data/world-events.ts`, `src/modules/world/index.ts`.
 - **`fallback`** — no doc claims this file yet. Fires on anything under `src/`, `scripts/` or
   `tests/` that no topic above has claimed.
-
-<!-- UNMIGRATED: everything below moves to docs/conventions/ and this marker
-     is deleted by the final task. Nothing may be added below this line. -->
