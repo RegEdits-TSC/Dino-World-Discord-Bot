@@ -118,11 +118,6 @@ read or edited. Read one directly when you are planning against it rather than e
   cosmetic review. It's REST-only: it deploys builders and posts messages over
   `discord.js`'s REST client, never logging in a second gateway session, so
   it's safe to run against the dev guild while the bot is live.
-- `fightFrames` (`src/modules/battles/embeds.ts`) is the one exception to the rule that
-  every embed image is wired through `attach` (`§always-use-attach` in
-  `docs/conventions/embed-payload-builders.md`): every ref
-  it builds is dressed onto several embeds and the files are then split across two
-  payloads by the F1/F4 contract — do not convert any of them, however many there are.
 - How many filename pins the suite holds against a base art name is a figure to derive,
   never one to write into prose:
   `grep -rho '[A-Za-z0-9_-]*\.webp' tests/ | sort | uniq -c` if you actually need it. The
@@ -137,85 +132,6 @@ read or edited. Read one directly when you are planning against it rather than e
   this feature — the plan, three reconnaissance passes, two implementers — grepped for the
   literal and every one of them missed it; that one line serves every art-bearing help
   topic and it shipped unseeded until a reviewer read the file.
-- `fightFrames` picks its thumbnail once, up front: the boss portrait on a boss
-  stage, else the archetype art of `rosterFor(stage, squad.length)[0]` — the same
-  lead enemy the Enemies field opens with, so the frame can never disagree with
-  the fight. A boss stage whose portrait is missing degrades to **no** thumbnail;
-  it must never fall back to archetype art, because `rosterFor`'s lead entry on a
-  1-dino squad IS the boss. One merged `thumb` ref feeds `dress()` (F1-F3), F4's
-  `setThumbnail`, and both `files` arrays, so the F1/F4 upload contract holds
-  without a second code path.
-- Battles: the fight pipeline is **commit-before-present**: `runFight` commits every
-  write (energy, rewards, progress, XP, boss egg) in ONE transaction before the
-  first Discord edit, so a crash or Skip mid-cinematic loses animation frames
-  only, never state — never move a write into the frame loop. Chapter ids in
-  `src/data/battle/chapters/` MUST equal `EXPEDITION_SITES` keys: that single
-  invariant derives the chapter banner asset (`sites/<chapterId>-banner`) and the
-  theme unconditionally, and — for every chapter that does NOT set `starGate` —
-  the `unlockRating` co-gate too. `tests/battle-content.test.ts` is the
-  machine gate for all campaign data — including that every `bossId` appears in
-  `docs/assets/prompts.md` — so a chapter reusing the existing rating-gate kind
-  still ships as a data-only PR (new chapter file + index import + WebPs +
-  prompt rows) with zero engine changes. That promise is no longer
-  unconditional, though: chapter 7 (Founder's Park) needed a real engine change
-  — `ChapterDef.starGate` plus a branch in `chapterUnlocked`
-  (`src/data/battle/chapters/index.ts`) — because its own unlock condition is a
-  campaign-wide star total, not a rating threshold, and the id-derived
-  `unlockRating` co-gate had no way to express that. A future chapter that
-  needs a genuinely new gate kind will cost an engine change again.
-  `rosterFor(stage, squadSize)` (`src/data/battle/chapters/index.ts`) is the
-  single source of truth for which enemies are fielded and which entry is the
-  boss — `runFight` and `fightFrames` both call it rather than re-deriving the
-  boss by matching `speciesId`, so the fight and its embed always agree on who
-  actually fought; the content test pins the boss as the third authored enemy,
-  which the small-squad slicing branch relies on. `fightFrames`
-  (`src/modules/battles/embeds.ts`) attaches files on **frame 1 and frame 4
-  only**, and each attaching frame uploads exactly the files its embed
-  references. F2/F3 must carry no `files`/`attachments` key at all — F1's
-  uploads survive and their `attachment://` URLs keep resolving. **F1 and F4 both
-  send `attachments: []` unconditionally** (plus their own `files` when the art
-  exists), because a payload carrying `files` (or an explicit `attachments` array)
-  replaces the message's whole attachment set (discord.js `MessagePayload`): that
-  is how F4 sheds the chapter banner it no longer references, how the no-art case
-  avoids stranding F1's upload as a bare attachment card, and — on F1 — how a
-  `battle:again` replay avoids inheriting the *previous* fight's outcome banner,
-  since `presentFight` re-edits the message F4 last wrote and an F1 with neither
-  key would leave that banner live under F1–F3. Both must stay unconditional: a
-  deploy missing `assets/images/sites/` is exactly the case where F1 has no files
-  of its own. Never dress F4 with
-  the chapter banner again. `tests/battles-embeds.test.ts`'s frame-contract test
-  is the machine gate; the skip button replays the same F4 payload via
-  `i.update`, so both paths must stay identical. That replay is why F4's
-  payload can reach two send sites — `presentFight`'s closing `editReply` and,
-  if a Skip races it, the button handler's `i.update`
-  (`src/modules/battles/index.ts:34-46`). Those same two
-  send sites also need ORDERING, not just unshared arrays: `entry.skipped` is
-  only observable between frames, so a Skip landing while a beat frame's
-  `editReply` is in flight cannot stop that PATCH, and a beat frame landing after
-  F4 restores an embed pointing at a chapter banner F4 already dropped — a
-  permanently broken image. `queueEdit` serializes every edit on a presentation
-  behind the previous one and re-checks a guard before sending, so F4 is the last
-  PATCH in either interleaving; the lock is free during `ctx.sleep`, so a Skip
-  clicked between frames still answers instantly. Any future third writer to a
-  presented message must go through the same queue.
-  `tests/battle-balance.test.ts` asserts boss win rates under BOTH neutral mods and
-  Blood Moon (`enemyHp` 1.15, the only event that touches combat). Under an event only
-  the TRAITED floor (>=0.85) is asserted — requiring the untraited floor there too is
-  unsatisfiable without flattening the late campaign. Compensating a boss for an event
-  multiplier goes on `hpMult`, NEVER `atkMult`: on Containment Site (the chapter-6 boss),
-  `atkMult` 1.05 lands neutral traited at 1.0000, breaching the finale ceiling as it then
-  stood (a hardcoded `<=0.99` assertion that has since been replaced — see below),
-  and on Abyssal Trench, `atkMult` 1.05 lands neutral untraited at 0.8650 — below
-  Containment Site's 0.8800 — inverting the monotone ladder. Cutting attack removes the
-  threat, while cutting HP keeps the boss hitting as hard and shortens exposure. HP is
-  the exposure knob, attack is the threat knob. Chapters 5, 6 and 7's bosses must be
-  re-tuned TOGETHER — the monotonicity assertion couples them, so fixing one alone breaks
-  another. This retired the old "boss multipliers never fall below 1.0" convention;
-  Abyssal Trench's `hpMult` is 0.82 deliberately. The monotone ladder itself is now
-  checked at 3,000 seeds with a 0.01 tolerance, never the 400 seeds every other
-  assertion in this file uses — at 400 seeds the ladder's own gaps between adjacent
-  bosses are smaller than its sampling noise, so a real inversion can read as a clean
-  pass. Tune a boss by measuring at 3,000 seeds, not 400.
 - `HELP_TOPICS` (`src/modules/help/index.ts`) stores a LAZY art descriptor
   (`art?: { kind, name }`), never a built `ImageRef` — `assetImage` returns a
   fresh `AttachmentBuilder` per call and the map is module-level (same class of
@@ -255,18 +171,6 @@ read or edited. Read one directly when you are planning against it rather than e
   exempted by name (`EXEMPT_COMMANDS`/`EXEMPT_PREFIXES`) so there's no hint about the
   screen the user is already looking at; and an interaction that never replied (the
   errored path) is skipped, since `followUp` on an unreplied interaction throws.
-- `NPC_LEVEL_SANITY_CAP` (`src/data/progression.ts`, 12, enforced in
-  `tests/battle-content.test.ts`) is frozen by a deliberate design decision, not a value
-  to keep in sync as content ships — do not "fix" it to track the roster. It must never
-  be raised to
-  accommodate a new boss: simulation during the Abyssal Trench / Containment
-  Site work showed a boss whose effective level (`npcLevel + levelBonus`)
-  exceeded it was unwinnable, which is why both new bosses were tuned down on
-  `hpMult` instead of pushed up on level — see those chapter files' own
-  comments in `src/data/battle/chapters/` for the numbers and the reasoning.
-  Founder's Park's boss lands exactly on that cap too (`npcLevel` 11 +
-  `levelBonus` 1 = 12, zero headroom) — the same tuning tradeoff, one more
-  data point against ever raising it.
 - Living world: `worldEventFor(now)` / `eventMods(now)` (`src/core/world.ts`)
   are pure functions of a UTC timestamp — the day's event is DERIVED, never
   stored, the same philosophy as quest progress above and as escrow locks
@@ -297,73 +201,7 @@ read or edited. Read one directly when you are planning against it rather than e
   reset-boundary mechanism is false and shipped as unreachable dead code: the correction
   lives at `§spec-createdAt-boundary-is-false` in `docs/conventions/admin-service.md`, and
   a reader who finds the spec's mechanism should implement from there instead.
-- The duel handler pairs the customId guards with a second rule worth copying: a
-  client-supplied INSTANT
-  needs clamping from ABOVE as well as below. `expiresAtMs` was bounded only as
-  "finite and in the future", and `challengeAlreadyResolved`
-  (`src/modules/duels/service.ts`) derives its replay window's lower edge from it —
-  `[expiresAtMs - TTL, expiresAtMs]`. Narrowing that window's UPPER edge to `ctx.now()`
-  looks tighter and is the opposite: the window is then empty for any anchor past
-  `now + TTL`, the guard returns false unconditionally, and one fixed customId replays
-  forever (three replays turned 1 duel row into 4). The handler's
-  `expiresAtMs <= ctx.now() + DUEL_CHALLENGE_TTL_MS` clamp is what makes the original
-  bound sound: it forces `expiresAtMs - TTL <=` the click that wrote the first row, so a
-  later click of the SAME id recomputes the SAME window and provably finds that row
-  inside it. Only the clamp is load-bearing: relaxing it reopens the incrementing-anchor
-  bypass the bound alone cannot see. The bound (`<= expiresAtMs` rather than
-  `<= ctx.now()`) is defence-in-depth, not a second lock — under the clamp the two are
-  provably equivalent, and reverting the bound to `ctx.now()` with the clamp still in
-  place leaves all 88 duel tests green.
-- `/top`'s `scored()` (`src/modules/leaderboards/service.ts`) costs a FIXED number of
-  `.select()` queries per metric, independent of roster size: 1 for cash/rating (the
-  candidate scan alone), 2 for stars (+ `battle_progress`), 2 for collection
-  (+ `dinos`), 4 for legacy (+ `species_seen`, `achievement_claims`,
-  `battle_progress` via `starScores`), 3 for season (+ `season_progress` scoped to the
-  CURRENT `seasonIndex`, + `user_stats` for the whole board) — one more each for a
-  server-scoped board, which reads `user_guilds` first to resolve `memberIds` (season
-  server-scoped is 4; a guild with zero registered members costs exactly 1 — the
-  `user_guilds` read alone, since both of `seasonScores`' reads short-circuit on an
-  empty `memberIds` array without touching the DB). Every one of those extra reads is
-  ONE query per source TABLE, grouped in JS, never one per candidate — the batch-per-
-  user rule `src/core/locks.ts` already established, widened to batch-per-board.
-  `seasonScores` (the live board-wide twin of `seasonPoints`, never the badge
-  high-water — the same `legacyScores`/`legacyRankBest` split below, drawn for the
-  same reason) iterates `Object.keys(STATS)` when computing each row's deltas, NOT
-  `Object.entries(row.baselines)` — the two agree today, but only the former survives
-  a new `StatId` shipping after live rows already exist; the latter would silently
-  under-report that player against their own `/season` hub, which reads baselines the
-  same STATS-keyed way. A player with no `season_progress` row for the current index
-  scores 0 and is deliberately NOT rolled from this read path — minting a baseline
-  from `/top` would be one write per candidate on every board render.
-  Deliberately not `GROUP BY`: nothing in `src/` has ever used `groupBy`/`count`/`sum`,
-  every read here is `.all()` plus a JS reduce, and SQL `SUM()` over an empty row set
-  returns NULL where `.reduce(…, 0)` returns 0 — silently turning a fresh account's
-  score into `NaN` instead of a clean zero. `legacyScores` is the board-wide twin of
-  `legacyPoints` (`src/modules/park/ranks.ts`) — deliberately, not of `legacyRank`'s
-  `max(stored, computed)` high-water (`legacyRankBest`) — and the two must always agree
-  for a given user — a board that disagrees with the rank on that player's own park card
-  is worse than no board. The pairing with `legacyPoints` and not `legacyRankBest` is also
-  deliberate: the board answers "who is ahead right now" (a live standing that can
-  legitimately fall — see `adminReset`), the park-card title answers "what have you ever
-  earned" (a monotone high-water mark that must never fall), and conflating the two would
-  let a wiped or otherwise-dropped account keep outranking players who are actually ahead
-  of it. Both intersect `species_seen` against the LIVE species roster
-  (a retired species id contributes nothing to either), but neither filters
-  `achievement_claims` the same way — that term is a plain row count with no roster
-  check, which is what keeps the two in agreement rather than one silently diverging.
-  `tests/leaderboards.test.ts` pins every one of those integers via a `select`-counting
-  `Proxy`, at two roster sizes (3 and 30) and both scopes (global and server) — a
-  rewrite that reads any table twice, or scopes the wrong one, fails a specific pinned
-  number, not just an equality check.
-- One text-injection path into a public surface stays open, by design rather than
-  oversight: `/top`'s leaderboard embed
-  description (`src/modules/leaderboards/index.ts`) interpolates `r.displayName`, sourced
-  from `i.user.displayName` — Discord's own guild nickname / global display name, not
-  text a player types into any of our commands — for every OTHER player on the board, so
-  it is also cross-user. Closing it is out of scope here; `getOrCreateUser`
-  (`src/modules/park/service.ts`) is where that column is written, at every call site,
-  always from `i.user.displayName`.
-  Separately, `tests/help.test.ts` scrapes `/park`'s subcommand list straight from the
+- `tests/help.test.ts` scrapes `/park`'s subcommand list straight from the
   REAL builder JSON and fails until `HELP_TOPICS.park.body` (`src/modules/help/index.ts`)
   mentions every one of them — this caught two implementers by surprise on the showcase
   work (`/park motto`, `/park feature`) before each remembered to add a line. Adding a
@@ -454,10 +292,3 @@ read or edited. Read one directly when you are planning against it rather than e
   read or write; `!Number.isInteger(offered)` is provably redundant (`seasonIndexFor`
   always returns an integer, so the bare `!==` alone rejects every non-integer target)
   but is kept deliberately as explicit boundary validation on client-supplied input.
-- `attendanceScores` (`src/modules/leaderboards/service.ts`), the board-wide twin of
-  `attendanceOf` (`src/modules/park/attendance.ts`), is DELIBERATELY LAXER — it
-  matches `recomputeRating`'s `assigned` filter and checks only the stored `escapedAt`,
-  so a board row can read higher than that player's own `/guests view` for a park no
-  command has touched since an escape. That gap is bounded and self-correcting: it
-  converges the next time anything settles the row, the same standing lag `/top`
-  already accepts elsewhere on this board.
