@@ -1033,13 +1033,48 @@ describe('session-close checklist: reads the session from git', () => {
 // runtime discards, and nothing else in the repo checks the wiring.
 describe('hook registration in .claude/settings.json', () => {
   const settings = JSON.parse(readFileSync('.claude/settings.json', 'utf8'));
+  const CONVENTIONS_COMMAND = 'node ${CLAUDE_PROJECT_DIR}/.claude/hooks/conventions.mjs';
 
   it('registers the conventions hook on PreToolUse, pointing at a script that exists', () => {
     const commands = settings.hooks.PreToolUse.flatMap((e: { hooks: { command: string }[] }) =>
       e.hooks.map((h) => h.command)
     );
-    expect(commands).toContain('node ${CLAUDE_PROJECT_DIR}/.claude/hooks/conventions.mjs');
+    expect(commands).toContain(CONVENTIONS_COMMAND);
     expect(existsSync('.claude/hooks/conventions.mjs')).toBe(true);
+  });
+
+  // The command being registered says nothing about WHEN the runtime calls
+  // it. `matcher` is what decides that, and narrowing it — to "Bash", say —
+  // leaves the hook registered, the script present, every other assertion in
+  // this file green, and the injection permanently dead. The failure mode is
+  // silence, which is also a legitimate output in several states this suite
+  // pins, so nothing else here can tell the two apart.
+  it('matches the conventions hook against the file-touching tools, not some other set', () => {
+    const entry = settings.hooks.PreToolUse.find((e: { hooks: { command: string }[] }) =>
+      e.hooks.some((h) => h.command === CONVENTIONS_COMMAND)
+    );
+    expect(entry, 'no PreToolUse entry carries the conventions hook command').toBeDefined();
+    const matcher: string = entry.matcher;
+    // Read as the alternation the runtime treats it as, so adding a tool or
+    // reordering them stays green while dropping one does not.
+    const matched = new Set(matcher.split('|'));
+    for (const tool of ['Edit', 'Write', 'Read', 'MultiEdit']) {
+      expect(matched, `matcher "${matcher}" no longer fires on ${tool}`).toContain(tool);
+    }
+  });
+
+  // Both hooks open with `if (process.env.CLAUDE_CONVENTIONS_ENABLED !== '1')
+  // return;` — the switch that kept them inert across the 30 commits that
+  // moved the rules. Deleting this env block turns both of them off again,
+  // and every other test in this file supplies the variable itself (see
+  // `run` at the top), so none of them would notice.
+  it('sets the env var both hooks gate on, to exactly the string they compare against', () => {
+    expect(settings.env?.CLAUDE_CONVENTIONS_ENABLED).toBe('1');
+    for (const hook of ['.claude/hooks/conventions.mjs', '.claude/hooks/session-close.mjs']) {
+      expect(readFileSync(hook, 'utf8'), `${hook} no longer reads the gate`).toContain(
+        "process.env.CLAUDE_CONVENTIONS_ENABLED !== '1'"
+      );
+    }
   });
 
   it('registers the session-close hook on Stop, pointing at a script that exists', () => {

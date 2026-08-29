@@ -7,7 +7,7 @@ suites that cover them (`tests/park.test.ts`, `tests/park-tabs.test.ts`,
 
 ## Headlines
 
-- Every `/park` subcommand MUST be added as its own `case`: before the switch existed a brand-new subcommand fell through unguarded to the dashboard and reported success for a command that did nothing. §park-subcommand-switch-with-default
+- Every `/park` subcommand MUST be added as its own `case`: before the switch existed a brand-new subcommand fell through unguarded to the dashboard and reported success for a command that did nothing — and it owes its `HELP_TOPICS.park.body` line in the same change, `§help-body-must-name-every-subcommand` in `docs/conventions/help-topics.md`. §park-subcommand-switch-with-default
 - `/park`'s `autocomplete()` serves `feature`'s `dino` option, so `'park feature': ['dino']` has to stay in `tests/contract.test.ts`'s `AUTOCOMPLETE_OPTIONS` manifest — that file enforces the mapping bidirectionally. §park-feature-autocomplete-manifest
 - `park:tab:<uid>:<tab>` is owner-checked and `park:vtab:<targetId>:<tab>` carries a TARGET and deliberately is not; never merge them into one shape with a flag. §park-tabs-two-customid-families
 - Every tab switch sends an explicit `attachments: []` — the Park tab carries no `files` key at all when `renderPark` fails, and without it the PREVIOUS tab's uploads survive as orphan attachment cards under the failed render's embed. §tab-switch-explicit-attachments
@@ -53,6 +53,14 @@ no longer a fallthrough to lean on, and none should be reintroduced.
 The park COMPONENT handler carries the identical rule for the identical reason, stated
 at `§component-default-arm-must-acknowledge` in
 `docs/conventions/command-and-handler-surface.md`.
+
+The same change owes a help line too: `tests/help.test.ts` scrapes `/park`'s subcommand
+list out of the real builder JSON and fails until `HELP_TOPICS.park.body` names every one,
+so a subcommand added without it takes the suite red — `§help-body-must-name-every-subcommand`
+in `docs/conventions/help-topics.md`. That rule is filed with the help doc, which fires on
+`src/modules/help/index.ts` and `tests/help.test.ts` only; this clause is what carries it to
+the file where a `/park` subcommand is actually written, which is where the mistake is made —
+`/park motto` and `/park feature` each landed that way.
 
 ## park-feature-autocomplete-manifest
 

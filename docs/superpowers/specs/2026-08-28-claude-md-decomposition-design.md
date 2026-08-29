@@ -479,27 +479,29 @@ is absent from the rule map. All 879 tracked files are claimed by some doc, so
 check 1 reports no orphans and the fallback doc covers the remainder by design
 rather than by omission.
 
-**Cross-doc references: 123 verified pairs, 0 broken, 0 deferred.** Seven
-pointers were upgraded in this final pass from a bare rule name or a bare doc
-path to an anchored `§name` + `docs/conventions/<slug>.md` pair, which is the
-only shape check 9 can verify; each added a pair, and the count moved 114 -> 123
-because the frozen-constants table carries three of them.
+**Cross-doc references: 131 verified pairs, 0 broken, 0 deferred.** Pointers were
+upgraded throughout from a bare rule name or a bare doc path to an anchored
+`§name` + `docs/conventions/<slug>.md` pair, which is the only shape check 9 can
+verify. The figure is re-derived by running `crossDocRefs` over `CLAUDE.md` plus
+every doc file and resolving each pair against the named doc's headings, which is
+what the audit itself does — do not read it off this line, which was written at 123
+and was stale before the branch closed.
 
-**Per-doc line counts** (4128 lines total across 29 files):
+**Per-doc line counts** (4150 lines total across 29 files):
 
 | doc | lines | doc | lines |
 | --- | ---: | --- | ---: |
 | admin-ledger | 117 | notify-and-runtime | 67 |
 | admin-service | 205 | park-png-renderer | 131 |
 | art-asset-files | 173 | park-progression | 331 |
-| art-resolver | 176 | park-surface | 302 |
-| battle-content-and-balance | 118 | prose-and-specs | 56 |
-| bot-profile-branding | 42 | router-and-registry | 246 |
+| art-resolver | 176 | park-surface | 310 |
+| battle-content-and-balance | 118 | prose-and-specs | 64 |
+| bot-profile-branding | 42 | router-and-registry | 248 |
 | clock-comfort-and-feeding | 179 | schema-and-migrations | 130 |
-| command-and-handler-surface | 201 | season-track | 135 |
+| command-and-handler-surface | 203 | season-track | 135 |
 | daily-quests-and-stats | 81 | species-and-dex | 90 |
 | economy-core | 213 | test-harness-and-gates | 81 |
-| embed-payload-builders | 199 | timers-and-alerts | 154 |
+| embed-payload-builders | 201 | timers-and-alerts | 154 |
 | emoji-pipeline | 77 | world-events | 57 |
 | escrow-and-item-moves | 235 | fallback | 23 |
 | fights-and-duels | 138 | | |
@@ -526,7 +528,7 @@ read "six ids for five rules"; count the manifest, never §3.2.
 
 | file | docs injected | lines | words |
 | --- | --- | ---: | ---: |
-| `src/modules/park/index.ts` | command-and-handler-surface + embed-payload-builders + park-surface | 101 | 2232 |
+| `src/modules/park/index.ts` | command-and-handler-surface + embed-payload-builders + park-surface | 101 | 2246 |
 | `src/data/species/allosaurus.ts` | species-and-dex | 9 | 202 |
 | `drizzle/0019_operator_refunds.sql` | admin-service + schema-and-migrations | 34 | 964 |
 | `assets/emojis/svg/dw_cash.svg` | emoji-pipeline | 9 | 158 |
@@ -539,11 +541,12 @@ fires two docs. The other four matched exactly.
 
 **Measured injection vs the §6 prediction, which over-stated it.** §6 predicted
 ~54-70 lines on a typical file edit. Across all 879 claimed files the real
-distribution is min 8, p25 9, **median 20**, p75 61, p90 61, max 101, mean 31.0;
-restricted to the 189 files under `src/` it is median 17, mean 25.8, max 101. So
-the typical edit costs roughly **a third of the predicted figure**, the p90 costs
-61 against a predicted ~102, and the worst single file — `src/modules/park/index.ts`,
-the same one §6 named — costs 101 against a predicted 162.
+distribution is min 8, p25 9, **median 20**, p75 61, p90 61, max 101, mean 31.1;
+restricted to the 189 files under `src/` it is median 17, p75 38, p90 60, mean
+26.1, max 101. So the typical edit costs roughly **a third of the predicted
+figure**, the p90 costs 61 against a predicted ~102, and the worst single file —
+`src/modules/park/index.ts`, the same one §6 named — costs 101 against a
+predicted 162.
 
 Stated plainly because it cuts against the estimate as well as for it: §6's
 correction factor was applied to the whole rule body, but the hook injects
@@ -555,6 +558,15 @@ toward the prediction without anything flagging it. The distribution is also mor
 bimodal than a single "typical" figure suggests: p25 and the median sit at 9 and
 20 because most files match exactly one doc, while the `src/modules/*/index.ts`
 and `*/embeds.ts` families match three and account for the whole upper tail.
+
+Three globs were widened after that measurement so that two rules reach the file where
+the mistake is made rather than only the file the rule was written about:
+`src/modules/battles/service.ts` joins `clock-comfort-and-feeding` (where
+`energyCostFor`'s required `now` is stated) and, with `src/modules/care/service.ts`,
+joins `escrow-and-item-moves` (the one-helper-per-scalable-price rule names both).
+That makes `battles/service.ts` the partition's only 4-doc file at 60 lines, moves the
+`src/` p75 from 35 to 38 and its p90 from 57 to 60, and leaves every median where it
+was. The figures above are the post-widening ones.
 
 **Hook observation: the PreToolUse injection could not be observed from inside
 the session that enabled it, and that is reported rather than inferred.**
@@ -578,5 +590,31 @@ step lines, and a second invocation on the same session id is silent, so the
 once-per-session state holds.
 
 **No behaviour change, as predicted.** `git diff 1b92fac -- src/` is empty.
-`npm test` 2497 passing across 121 files, `npm run typecheck` and `npm run build`
+`npm test` 2505 passing across 121 files, `npm run typecheck` and `npm run build`
 clean. No migration, no `deploy-commands`, no restart.
+
+### Correction: §7's home list is superseded by `manifest.json`
+
+`docs/conventions/manifest.json` is authoritative wherever it and §7 disagree about which
+doc is a deduplicated principle's HOME. §7 names homes from the ORIGINAL 28-doc naming,
+before the doc set was recut; the recut reassigned rules and the manifest was updated,
+while §7's prose was not. Two task dispatches were derived from §7 and were wrong in
+consecutive tasks, so this is recorded rather than left to be rediscovered:
+
+- **The `attach()` payload principle.** §7's grouping reads as the art docs. All seven
+  `attach` rule ids are filed to `embed-payload-builders`, and `withparkimage-appends` to
+  `park-surface`.
+- **"Derived, never stored — nothing sweeps, nothing drifts".** §7 names
+  `schema-and-migrations` as the home, with escrow as the worked example. The manifest
+  files `escrow-derived-never-stored` to `escrow-and-item-moves`, which is where the
+  worked example actually lives; `schema-and-migrations` carries a pointer to it.
+
+Check 7 is what keeps the disagreement from costing anything rather than merely
+recording it: a doc cannot carry a headline for a rule it is not filed, so a re-home
+taken from §7 fails the audit instead of shipping. Verify a claimed home against
+`manifest.json`, never against §7.
+
+§7 itself is deliberately left as written. A spec here is a dated record of a decision
+as it was made — `§specs-are-dated-records` in `docs/conventions/prose-and-specs.md` —
+and §11 is the section written AFTER implementation, from the shipped tree, which is why
+the correction belongs here and an edit to §7 would not.

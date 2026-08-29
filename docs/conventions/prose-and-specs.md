@@ -46,6 +46,14 @@ reset-boundary mechanism is false and shipped as unreachable dead code: the corr
 lives at `§spec-createdAt-boundary-is-false` in `docs/conventions/admin-service.md`, and
 a reader who finds the spec's mechanism should implement from there instead.
 
+The correction does not always land in a convention doc. Where a spec has a section
+written AFTER implementation — a measured-outcome or verification section — that section
+is the honest place for it, because it was never a record of the decision in the first
+place. The second worked example is this doc set's own spec,
+`docs/superpowers/specs/2026-08-28-claude-md-decomposition-design.md`: its §7 names doc
+homes from a naming the recut replaced, and §11 records that `manifest.json` is
+authoritative over it and names both homes that moved. §7 stays exactly as written.
+
 ## audit-by-grepping-assetimage
 
 **Audit art call sites with `grep -rn 'assetImage(' src/`, never by kind literal.**

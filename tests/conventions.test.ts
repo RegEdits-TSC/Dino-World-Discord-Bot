@@ -178,6 +178,66 @@ describe('fixture-driven check coverage (checks 4-8, exercised directly)', () =>
     });
   });
 
+  // A headline may carry a pointer at ANOTHER doc, and it is the only place
+  // such a pointer reaches a reader — the hook injects the headline block and
+  // nothing else. Check 5 hands that anchor to check 9 rather than resolving
+  // it locally and reporting a heading this doc was never supposed to have.
+  // The hand-off is a re-route, not an exemption: the second half of this test
+  // is what proves check 9 still catches a wrong one.
+  it('check 5 hands a cross-doc anchor in a headline to check 9, which still catches a wrong one', () => {
+    withFixtureDir((dir) => {
+      const doc: ManifestDoc = {
+        slug: 'fixture-doc',
+        title: 'fixture',
+        triggerGlobs: [],
+        rules: [{ id: 'fixture-rule', sourceLines: '1-1' }],
+      };
+      const ruleWordCountById = new Map([['fixture-rule', 5]]);
+      const filePath = join(dir, 'fixture-doc.md');
+      const headline =
+        '- fixture-rule headline, see `§over-there` in `docs/conventions/other-doc.md`. §fixture-anchor';
+      writeFileSync(
+        filePath,
+        ['## Headlines', '', headline, '', '## fixture-anchor', '', 'Body prose.', ''].join('\n')
+      );
+      // The neighbouring doc, carrying the heading the pointer names.
+      writeFileSync(join(dir, 'other-doc.md'), ['## over-there', '', 'Body prose.', ''].join('\n'));
+
+      let errors: string[] = [];
+      auditDoc(doc, { ruleWordCountById, migrationComplete: true, errors, info: [], docDir: dir });
+      // §over-there is not a heading of THIS doc and must not be reported as one;
+      // §fixture-anchor, past the sentence break, is still check 5's to resolve.
+      expect(errors.filter((e) => e.startsWith('[broken-anchor]'))).toEqual([]);
+
+      errors = [];
+      checkCrossDocAnchors([{ name: 'fixture-doc.md', text: readFileSync(filePath, 'utf8') }], {
+        migrationComplete: true,
+        errors,
+        info: [],
+        docDir: dir,
+      });
+      expect(errors).toEqual([]);
+
+      // Now break the pointer at the far end. Check 5 still says nothing —
+      // correctly, it is not that check's anchor — and check 9 reports it.
+      writeFileSync(join(dir, 'other-doc.md'), ['## somewhere-else', '', 'Body prose.', ''].join('\n'));
+      errors = [];
+      auditDoc(doc, { ruleWordCountById, migrationComplete: true, errors, info: [], docDir: dir });
+      expect(errors.filter((e) => e.startsWith('[broken-anchor]'))).toEqual([]);
+
+      errors = [];
+      checkCrossDocAnchors([{ name: 'fixture-doc.md', text: readFileSync(filePath, 'utf8') }], {
+        migrationComplete: true,
+        errors,
+        info: [],
+        docDir: dir,
+      });
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain('[cross-doc-anchor]');
+      expect(errors[0]).toContain('§over-there');
+    });
+  });
+
   it(
     'check 6 (over cap): fires once CLAUDE.md has moved off its measured pre-migration length and lost the ' +
       'marker; guarded against the degenerate end state of every doc file being deleted',

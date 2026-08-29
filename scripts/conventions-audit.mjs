@@ -9,6 +9,7 @@
 //   3. Unfiled rule    — a rule map id is filed in neither a doc nor alwaysCore.
 //   4. Missing doc     — a doc with filed rules has no docs/conventions/<slug>.md.
 //   5. Broken anchor   — a headline cites §name with no matching "## name" in the body.
+//      (One that check 9 pairs with another doc's path is that check's to resolve.)
 //   6. Over cap        — CLAUDE.md is longer than claudeMdMaxLines.
 //   7. Missing headline — a rule's id appears in no headline line of its doc.
 //   8. Summarized body — a doc's body is thinner than its rules' word budget warrants.
@@ -202,10 +203,23 @@ export function auditDoc(doc, { ruleWordCountById, migrationComplete, errors, in
   const content = readFileSync(path, 'utf8');
   const { headlineText, bodyText, bodyHeadings } = splitDoc(content);
 
-  // Check 5: broken anchor.
+  // Check 5: broken anchor. Every §anchor in the headline block resolves
+  // against THIS doc's own "## " headings — except one that check 9 has
+  // already paired with another doc's path, which resolves against THAT
+  // doc's headings instead. Handing those over is a re-route, not a
+  // relaxation: check 9 scans the same text and reports the same anchor
+  // against the file it actually names, so nothing here goes unverified.
+  //
+  // The exemption exists because the hook injects a doc's HEADLINE block and
+  // nothing else (a bodyRequired rule aside), so a cross-doc pointer written
+  // in body prose never reaches the reader at the moment the rule applies.
+  // Without this, the one place a pointer is worth putting is the one place
+  // it could not be written.
+  const crossDocAnchors = new Set(crossDocRefs(headlineText).map((r) => r.anchor));
   const cited = new Set();
   for (const m of headlineText.matchAll(/§([A-Za-z0-9_-]+)/g)) cited.add(m[1]);
   for (const name of cited) {
+    if (crossDocAnchors.has(name)) continue;
     if (!bodyHeadings.has(name)) {
       errors.push(`[broken-anchor] ${doc.slug}: headline cites §${name}, no "## ${name}" heading in the body`);
     }
