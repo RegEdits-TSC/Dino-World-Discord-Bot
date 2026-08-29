@@ -142,13 +142,14 @@ rather than silent inflation of it.
 | Constant | Value | Denominates | Full statement |
 | --- | --- | --- | --- |
 | `PARK_TARGET` | 40 | the rating's park term, over lot levels and decor | here |
-| `COLLECTION_TARGET` | 190 | the rating's collection term — the rarity-weight sum of the roster it shipped against, never a live sum over `allSpecies()` | `docs/conventions/species-and-dex.md` |
-| `ATTENDANCE_SPECIES_TARGET` | 40 | attendance's variety term, never a live count over `allSpecies()` | `docs/conventions/species-and-dex.md` |
-| `ATTRACTION_DRAW_TARGET` | 210 | attendance's draw term, never a live count over `ATTRACTIONS` | `docs/conventions/species-and-dex.md` |
+| `COLLECTION_TARGET` | 190 | the rating's collection term — the rarity-weight sum of the roster it shipped against, never a live sum over `allSpecies()` | §collection-target-frozen in `docs/conventions/species-and-dex.md` |
+| `ATTENDANCE_SPECIES_TARGET` | 40 | attendance's variety term, never a live count over `allSpecies()` | §attendance-targets-frozen in `docs/conventions/species-and-dex.md` |
+| `ATTRACTION_DRAW_TARGET` | 210 | attendance's draw term, never a live count over `ATTRACTIONS` | §attendance-targets-frozen in `docs/conventions/species-and-dex.md` |
 
 Two other frozen constants are deliberately NOT in this table and must not be folded
 into it — their reasoning is specific and a table cannot carry it:
-`NPC_LEVEL_SANITY_CAP` (`docs/conventions/battle-content-and-balance.md`) and
+`NPC_LEVEL_SANITY_CAP` (§npc-level-sanity-cap-frozen in
+`docs/conventions/battle-content-and-balance.md`) and
 `SEASON_EPOCH` (`docs/conventions/season-track.md`).
 
 ## park-term-saturable-without-decor
@@ -209,7 +210,7 @@ Five other sites follow the same split and each names only what is unique to it:
 `§bump-legacy-best-once-per-command` in `docs/conventions/park-surface.md`, the season
 capstone badge stamped only from `postDispatch` (`docs/conventions/season-track.md`),
 and `legacyScores`' pairing with `legacyPoints` rather than the high-water
-(`docs/conventions/leaderboards.md`).
+(§legacy-scores-twin-of-points in `docs/conventions/leaderboards.md`).
 
 ## legacy-rank-not-user-stats
 

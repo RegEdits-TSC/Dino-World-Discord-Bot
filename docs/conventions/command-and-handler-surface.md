@@ -100,7 +100,8 @@ class of mistake avoided.
 
 **Never put a custom emoji tag in an
 autocomplete label** (Discord renders it as literal text there). This mistake fails no
-test either, for the same reason. Food autocomplete labels use `FoodDef.fallback`
+test either, for the same reason — stated in full as §emoji-mistakes-invisible-to-tests
+in `docs/conventions/emoji-pipeline.md`. Food autocomplete labels use `FoodDef.fallback`
 unicode rather than `emojiTag`/`foodEmoji` for exactly this.
 
 ## component-prefix-is-first-segment-only

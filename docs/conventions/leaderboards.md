@@ -118,3 +118,8 @@ text a player types into any of our commands — for every OTHER player on the b
 it is also cross-user. Closing it is out of scope here; `getOrCreateUser`
 (`src/modules/park/service.ts`) is where that column is written, at every call site,
 always from `i.user.displayName`.
+
+This is the deliberate exception to §defang-user-text-on-public-surfaces in
+`docs/conventions/park-surface.md`, which closes every path carrying player-typed text;
+an open path is only intelligible against the closed ones, so read that rule alongside
+this one rather than reading this one as permission.

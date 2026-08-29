@@ -130,7 +130,8 @@ display and history. A call to it anywhere else is the regression to look for.
 The one AUTOCOMPLETE provider that still calls `expireStale` is
 `/trade accept|decline|cancel`, and only because that list's `status` filter is what hides
 a dead trade. It is not there for escrow. Every other provider in the repo is read-only
-and needs no sweep at all, because `locksFor` is a pure read.
+and sweeps nothing — §autocomplete-no-escrow-sweep in
+`docs/conventions/command-and-handler-surface.md` owns that rule and the reason for it.
 
 ## hatchegg-escrow-incubating-guard-unreachable
 

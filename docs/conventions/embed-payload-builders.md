@@ -98,8 +98,9 @@ an `attachments` key at all — `alertPayload` (`src/modules/park/alert-embeds.t
 same one-object-two-send-sites shape, but its two sites are `channelSend` and the
 `dmSend` fallback, and the in-place push means a pre-set key would carry a mutation from
 the first attempt into the second. That rule is stated in full as
-`notify-payload-omits-attachments` in `timers-and-alerts`; `src/modules/park/alert-embeds.ts`
-matches both docs, and only that one is right for it. The discriminator is which
+§notify-payload-omits-attachments in `docs/conventions/timers-and-alerts.md`;
+`src/modules/park/alert-embeds.ts` matches both docs, and only that one is right for
+it. The discriminator is which
 mechanism you need: an explicit `attachments: []` when the send must REPLACE the
 message's existing attachment set (an `i.update` or `editReply` on a message that
 already carries files), and no key at all when the payload is merely being handed to a
