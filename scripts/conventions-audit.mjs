@@ -14,8 +14,8 @@
 //   8. Summarized body — a doc's body is thinner than its rules' word budget warrants.
 //   9. Cross-doc anchor — a doc (or CLAUDE.md) cites §name alongside another
 //      docs/conventions/<slug>.md, and that slug's file has no "## name" heading.
-//  10. Bare LF        — CLAUDE.md or a docs/conventions/*.md carries a newline
-//      that is not CRLF, in a docs tree that is CRLF throughout.
+//  10. Mixed EOL      — CLAUDE.md or a docs/conventions/*.md carries BOTH CRLF
+//      and bare-LF newlines, the signature of a partial rewrite.
 //
 // Checks 4, 5, 7 and 8 are meaningless before a doc actually has a body: this
 // project ships the manifest (task 2) long before it ships the 28 doc files
@@ -366,47 +366,60 @@ export function checkOverCap(hasMarker, lines, manifest, ruleMapSourceLines, err
   }
 }
 
-// Check 10: bare LF. Every file in this repo's docs tree is CRLF and
-// `core.autocrlf` is true, so a tool that rewrites a doc with LF newlines
-// leaves a silently MIXED file: git normalizes the working-tree copy back to
-// LF before diffing, so `git diff` shows nothing at all, and no test, lint or
-// other check in this repo inspects a newline. It has already happened once —
-// docs/conventions/command-and-handler-surface.md took two bare LFs from a fix
-// round and was caught only because that implementer re-read all 29 docs by
-// hand rather than trusting his own edit. Throughout this project the hazard
-// travelled as a manual convention repeated in every task brief, checked by
-// eye for CLAUDE.md and inherited by none of the 29 files that replaced it.
-// `core.autocrlf` is a per-clone git setting with no .gitattributes behind it,
-// so it protects contributors who happen to have it configured rather than the
-// repo structurally. A convention system whose own file integrity depends on
-// someone remembering to look is the thing this project exists to argue
-// against, so this is the part that does not depend on anyone remembering.
+// Check 10: mixed line endings. The defect is a file that was PARTIALLY
+// rewritten — some newlines CRLF, some bare LF — which is exactly what
+// happened to docs/conventions/command-and-handler-surface.md during this
+// project: two bare LFs went in during a fix round and were caught only
+// because that implementer re-read all 29 docs by hand rather than trusting
+// his own edit. `git diff` cannot show it. Under `core.autocrlf=true` the
+// working-tree copy is normalized back to LF before diffing, so a mixed file
+// and a clean one commit to byte-identical blobs and the diff is empty; no
+// test, lint or other check in this repo inspects a newline either. That is
+// what this check is for, and it is the whole of what it is for.
+//
+// It deliberately does NOT assert CRLF-ness. An earlier version did, and that
+// was an assertion about one contributor's git config rather than about the
+// repository: every file it inspects is stored as a pure-LF blob (autocrlf
+// normalizes on commit), so a checkout on a machine where `core.autocrlf` is
+// false — git's compiled default, which is what `ubuntu-latest` gives
+// .github/workflows/ci.yml — writes LF and the CRLF assertion reported all 31
+// files and failed the suite. A uniformly-LF file is not a defect anywhere,
+// and neither is a uniformly-CRLF one; a file carrying both is a defect on
+// every platform. Narrowing to the mixed case catches the incident this check
+// exists for, passes on Linux and Windows alike, and states something true of
+// the repository instead of true of one clone.
+//
+// (A .gitattributes pinning `eol=crlf` for these paths would make the stronger
+// assertion honest, and is the right long-term answer — but it is a repo-wide
+// decision, so it is recorded as a follow-up rather than taken here.)
 //
 // The files are read as BYTES, never through a decoder: the entire defect is a
 // newline, which is exactly what a text-decoding read is entitled to
 // normalize, and a check that cannot see its own defect is the failure this
-// repo keeps finding. A bare LF is a 0x0A not immediately preceded by 0x0D,
-// which also catches a wholly-LF file — correctly, since in a CRLF tree that
-// is the same defect, merely uniform rather than mixed.
-export function bareLfCount(bytes) {
-  let count = 0;
+// repo keeps finding. A bare LF is a 0x0A not immediately preceded by 0x0D;
+// a CRLF is a 0x0A that is.
+export function lineEndingCounts(bytes) {
+  let crlf = 0;
+  let lf = 0;
   for (let i = 0; i < bytes.length; i++) {
-    if (bytes[i] === 0x0a && (i === 0 || bytes[i - 1] !== 0x0d)) count += 1;
+    if (bytes[i] !== 0x0a) continue;
+    if (i > 0 && bytes[i - 1] === 0x0d) crlf += 1;
+    else lf += 1;
   }
-  return count;
+  return { crlf, lf };
 }
 
 // `paths` is the list of files to inspect. An absent path is skipped rather
 // than reported: check 4 already owns "a doc that should exist does not", and
 // saying it twice would only add noise to that doc's own finding.
-export function checkLineEndings(paths, errors) {
+export function checkMixedLineEndings(paths, errors) {
   for (const path of paths) {
     if (!existsSync(path)) continue;
-    const count = bareLfCount(readFileSync(path));
-    if (count > 0) {
+    const { crlf, lf } = lineEndingCounts(readFileSync(path));
+    if (crlf > 0 && lf > 0) {
       errors.push(
-        `[bare-lf] ${path}: ${count} newline(s) are a bare LF rather than CRLF — this docs tree is ` +
-          `CRLF throughout and git diff cannot show the difference`
+        `[mixed-eol] ${path}: ${crlf} CRLF and ${lf} bare-LF newline(s) in one file — the signature of ` +
+          `a partial rewrite, which git diff cannot show`
       );
     }
   }
@@ -414,8 +427,8 @@ export function checkLineEndings(paths, errors) {
 
 // Every docs/conventions/*.md on disk, read from the DIRECTORY rather than
 // from manifest.docs (which is what check 9's docSources walks). A doc file
-// that exists without a manifest entry carries a bare LF exactly as well as a
-// filed one does, and there is no reason for this check to be blind to it.
+// that exists without a manifest entry can be half-rewritten exactly as well
+// as a filed one, and there is no reason for this check to be blind to it.
 function conventionDocPaths(docDir = DOC_DIR) {
   if (!existsSync(docDir)) return [];
   return readdirSync(docDir)
@@ -472,7 +485,7 @@ export function main() {
     // is what a doc task runs, so omitting it would mean the check only ever
     // fires for whoever next happens to run the full audit — which is the
     // "somebody will notice later" posture the check exists to replace.
-    checkLineEndings([docFilePath(doc.slug)], errors);
+    checkMixedLineEndings([docFilePath(doc.slug)], errors);
   } else {
     const files = trackedFiles();
     const globEntries = allGlobEntries(manifest);
@@ -491,7 +504,7 @@ export function main() {
       { migrationComplete, errors, info }
     );
     // Check 10, whole repo: CLAUDE.md plus every docs/conventions/*.md on disk.
-    checkLineEndings([CLAUDE_MD_PATH, ...conventionDocPaths()], errors);
+    checkMixedLineEndings([CLAUDE_MD_PATH, ...conventionDocPaths()], errors);
   }
 
   for (const line of info) console.log(line);

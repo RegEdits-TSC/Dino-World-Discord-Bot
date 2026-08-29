@@ -6,12 +6,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   auditDoc,
-  bareLfCount,
   checkCrossDocAnchors,
-  checkLineEndings,
+  checkMixedLineEndings,
   checkOverCap,
   crossDocRefs,
   lineCount,
+  lineEndingCounts,
 } from '../scripts/conventions-audit.mjs';
 import type { ManifestDoc } from '../scripts/conventions-audit.mjs';
 
@@ -431,15 +431,23 @@ describe('fixture-driven check coverage (check 9, exercised directly)', () => {
   });
 });
 
-// Check 10 exists because nothing else in this repo can see a newline. Every
-// file in the docs tree is CRLF and `core.autocrlf` is true, so a tool that
-// rewrites a doc with LF produces a MIXED file that `git diff` renders as no
-// change at all — git normalizes the working-tree copy back to LF before
-// diffing. It already bit once: docs/conventions/command-and-handler-surface.md
-// took two bare LFs from a fix round and was caught only by an implementer
-// re-reading all 29 docs by hand. These tests drive the real check against
-// throwaway fixture files (never a tracked path — vitest runs test files in
-// parallel forks) and then against the real tree.
+// Check 10 exists because nothing else in this repo can see a newline. The
+// defect is a PARTIAL rewrite — a file left carrying both CRLF and bare-LF
+// newlines. Under `core.autocrlf=true` a half-rewritten file and a clean one
+// commit to byte-identical blobs, so `git diff` shows nothing at all, and no
+// test, lint or other check here inspects a newline. It already bit once:
+// docs/conventions/command-and-handler-surface.md took two bare LFs from a fix
+// round and was caught only by an implementer re-reading all 29 docs by hand.
+//
+// The check deliberately does NOT assert CRLF-ness. Every file it inspects is
+// stored as a pure-LF blob, so a clone where `core.autocrlf` is false — git's
+// compiled default, which is what CI's `ubuntu-latest` runner gives — has a
+// uniformly-LF working tree and a CRLF assertion would report all 31 files
+// there. Uniform is fine in either direction on any platform; mixed is a
+// defect on all of them. These tests drive the real check against throwaway
+// fixture files (never a tracked path — vitest runs test files in parallel
+// forks), then against the real working tree, then against the committed
+// blobs, which is what a checkout without autocrlf writes.
 describe('fixture-driven check coverage (check 10, exercised directly)', () => {
   function withFixtureDir(run: (dir: string) => void): void {
     const dir = mkdtempSync(join(tmpdir(), 'conventions-lineending-fixture-'));
@@ -450,28 +458,28 @@ describe('fixture-driven check coverage (check 10, exercised directly)', () => {
     }
   }
 
-  it('counts bare LFs over raw BYTES, so no decoding layer can hide one', () => {
+  it('counts both newline kinds over raw BYTES, so no decoding layer can hide one', () => {
     // Hand-built bytes, never a string: this is the "verify by construction
     // that it can see its own defect" half. "a\r\nb\nc\r\n" — one CRLF, one
     // bare LF, one CRLF.
-    const mixed = Uint8Array.from([0x61, 0x0d, 0x0a, 0x62, 0x0a, 0x63, 0x0d, 0x0a]);
-    expect(bareLfCount(mixed)).toBe(1);
+    expect(lineEndingCounts(Uint8Array.from([0x61, 0x0d, 0x0a, 0x62, 0x0a, 0x63, 0x0d, 0x0a]))).toEqual({
+      crlf: 2,
+      lf: 1,
+    });
 
-    // Pure CRLF: nothing to report.
-    expect(bareLfCount(Uint8Array.from([0x61, 0x0d, 0x0a, 0x62, 0x0d, 0x0a]))).toBe(0);
-
-    // Wholly LF is the same defect in a CRLF tree, merely uniform.
-    expect(bareLfCount(Uint8Array.from([0x61, 0x0a, 0x62, 0x0a]))).toBe(2);
+    // Pure CRLF and pure LF are each uniform — neither is a defect.
+    expect(lineEndingCounts(Uint8Array.from([0x61, 0x0d, 0x0a, 0x62, 0x0d, 0x0a]))).toEqual({ crlf: 2, lf: 0 });
+    expect(lineEndingCounts(Uint8Array.from([0x61, 0x0a, 0x62, 0x0a]))).toEqual({ crlf: 0, lf: 2 });
 
     // A leading LF has no preceding byte to inspect — the i === 0 arm.
-    expect(bareLfCount(Uint8Array.from([0x0a, 0x61]))).toBe(1);
+    expect(lineEndingCounts(Uint8Array.from([0x0a, 0x61]))).toEqual({ crlf: 0, lf: 1 });
 
     // A lone CR that is not part of a CRLF is not a newline this check owns.
-    expect(bareLfCount(Uint8Array.from([0x61, 0x0d, 0x62]))).toBe(0);
-    expect(bareLfCount(Uint8Array.from([]))).toBe(0);
+    expect(lineEndingCounts(Uint8Array.from([0x61, 0x0d, 0x62]))).toEqual({ crlf: 0, lf: 0 });
+    expect(lineEndingCounts(Uint8Array.from([]))).toEqual({ crlf: 0, lf: 0 });
   });
 
-  it('fires on a mixed file with the offending count, and clears on a pure-CRLF one', () => {
+  it('fires on a mixed file with both counts, and clears on a uniform one either way', () => {
     withFixtureDir((dir) => {
       const path = join(dir, 'fixture-doc.md');
       const lines = ['## Headlines', '', '- fixture-rule headline. §fixture', '', '## fixture', '', 'Body prose.', ''];
@@ -483,38 +491,49 @@ describe('fixture-driven check coverage (check 10, exercised directly)', () => {
       writeFileSync(path, Buffer.from(mixed, 'utf8'));
 
       let errors: string[] = [];
-      checkLineEndings([path], errors);
+      checkMixedLineEndings([path], errors);
       expect(errors).toHaveLength(1);
-      expect(errors[0]).toContain('[bare-lf]');
+      expect(errors[0]).toContain('[mixed-eol]');
       expect(errors[0]).toContain('fixture-doc.md');
-      expect(errors[0]).toContain('2 newline(s)');
+      expect(errors[0]).toContain('5 CRLF and 2 bare-LF');
 
-      // The same content, pure CRLF: silent.
+      // The same content, uniformly CRLF: silent — a Windows clone with
+      // core.autocrlf on.
       writeFileSync(path, Buffer.from(lines.join('\r\n'), 'utf8'));
       errors = [];
-      checkLineEndings([path], errors);
+      checkMixedLineEndings([path], errors);
+      expect(errors).toEqual([]);
+
+      // The same content, uniformly LF: also silent — a Linux CI checkout of
+      // the very same commit. Asserting CRLF here is what failed on every
+      // non-Windows clone, and it is the assertion this check no longer makes.
+      writeFileSync(path, Buffer.from(lines.join('\n'), 'utf8'));
+      errors = [];
+      checkMixedLineEndings([path], errors);
       expect(errors).toEqual([]);
     });
   });
 
-  it('reports a wholly-LF file, and skips a path that does not exist', () => {
+  it('catches a single stray CRLF in an otherwise-LF file, and skips a path that does not exist', () => {
     withFixtureDir((dir) => {
-      const path = join(dir, 'all-lf.md');
-      writeFileSync(path, Buffer.from('## a\n\nBody.\n', 'utf8'));
+      const path = join(dir, 'mostly-lf.md');
+      // The mirror of the real incident: an LF file half-rewritten by a
+      // CRLF-emitting tool. Mixed is mixed whichever ending is in the minority.
+      writeFileSync(path, Buffer.from('## a\n\nBody.\r\n', 'utf8'));
 
       const errors: string[] = [];
       // The absent path is check 4's finding to make, not this one's — it must
       // not double-report, and it must not throw on a doc not written yet.
-      checkLineEndings([join(dir, 'not-written-yet.md'), path], errors);
+      checkMixedLineEndings([join(dir, 'not-written-yet.md'), path], errors);
       expect(errors).toHaveLength(1);
-      expect(errors[0]).toContain('all-lf.md');
-      expect(errors[0]).toContain('3 newline(s)');
+      expect(errors[0]).toContain('mostly-lf.md');
+      expect(errors[0]).toContain('1 CRLF and 2 bare-LF');
     });
   });
 
   it('finds no offender in the real CLAUDE.md or any docs/conventions/*.md', () => {
     // The regression pin: this is the assertion that fails the day a tool
-    // rewrites one of the 30 files with LF, which is the only signal there is.
+    // rewrites half of one of the 30 files, which is the only signal there is.
     const paths = [
       'CLAUDE.md',
       ...readdirSync('docs/conventions')
@@ -524,8 +543,40 @@ describe('fixture-driven check coverage (check 10, exercised directly)', () => {
     ];
     expect(paths.length).toBeGreaterThan(1);
     const errors: string[] = [];
-    checkLineEndings(paths, errors);
+    checkMixedLineEndings(paths, errors);
     expect(errors).toEqual([]);
+  });
+
+  it('finds no offender in the COMMITTED blobs, which is what CI checks out', () => {
+    // The working-tree test above passes on this machine because
+    // `core.autocrlf` is true here. CI runs `ubuntu-latest`, where git's
+    // compiled default is false, so the checkout writes the blob verbatim —
+    // pure LF. Extracting the index blobs into a temp dir reproduces exactly
+    // that tree, and the check must be silent over it. This is the assertion
+    // that would have caught the old CRLF-asserting version before it reached
+    // a Linux runner.
+    withFixtureDir((dir) => {
+      const paths = [
+        'CLAUDE.md',
+        ...readdirSync('docs/conventions')
+          .filter((name) => name.endsWith('.md'))
+          .sort()
+          .map((name) => `docs/conventions/${name}`),
+      ];
+      const extracted: string[] = [];
+      for (const path of paths) {
+        // `git show :<path>` reads the INDEX blob as stored, with no
+        // working-tree conversion applied — the bytes a fresh clone receives.
+        const blob = execFileSync('git', ['show', `:${path}`], { maxBuffer: 32 * 1024 * 1024 });
+        const out = join(dir, path.replace(/\//g, '__'));
+        writeFileSync(out, blob);
+        extracted.push(out);
+      }
+      expect(extracted.length).toBe(paths.length);
+      const errors: string[] = [];
+      checkMixedLineEndings(extracted, errors);
+      expect(errors).toEqual([]);
+    });
   });
 });
 

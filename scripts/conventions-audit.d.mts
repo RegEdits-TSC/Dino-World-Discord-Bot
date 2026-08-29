@@ -106,6 +106,10 @@ export function checkOverCap(
 // Typed as Uint8Array rather than Buffer so the declaration states the actual
 // requirement (raw bytes) and a test can hand it a literal byte array; a
 // Buffer from readFileSync satisfies it, since Buffer extends Uint8Array.
-export function bareLfCount(bytes: Uint8Array): number;
-export function checkLineEndings(paths: string[], errors: string[]): void;
+export interface LineEndingCounts {
+  crlf: number;
+  lf: number;
+}
+export function lineEndingCounts(bytes: Uint8Array): LineEndingCounts;
+export function checkMixedLineEndings(paths: string[], errors: string[]): void;
 export function main(): void;
