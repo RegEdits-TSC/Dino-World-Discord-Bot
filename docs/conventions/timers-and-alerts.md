@@ -63,9 +63,6 @@ conditions aren't monotone: `incomeCapAlertFor`'s `pending` can drop to 0 and ju
 up to a fresh capped payout the moment its owner feeds, so "has this exact instant
 already been warned about" has no answer without a row that says so.
 
-It is the one documented exception to that principle, and it is an exception because of
-the non-monotonicity, not because storing was convenient.
-
 ## already-sent-compares-instant-not-existence
 
 `alreadySent`
@@ -101,10 +98,6 @@ reversing the collapse *direction* breaks it a second way: heads-up firing would
 pre-mark last call as sent (same `firedForMs`, since the dino hasn't been fed), so the
 real last-call DM at the 1-hour mark would find `alreadySent` already true and silently
 never go out.
-
-Both failure directions are silent, and neither is recoverable by reading the code that
-fires: the ordering of the array and the direction of the collapse are the whole
-mechanism.
 
 ## sweep-never-settles-escapes
 

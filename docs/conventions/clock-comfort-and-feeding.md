@@ -48,8 +48,8 @@ the bare constant — including `startBreeding`'s hunger-≥50 gate
 two traits from one domain —
 `§trait-domains-never-doubled` in `docs/conventions/escrow-and-item-moves.md`.
 
-The shape generalises beyond this signature, and is stated once here rather than three
-times: a parameter that exists to force fresh state into a call site never gains a
+The shape generalises beyond this signature, and is stated once here: a parameter that
+exists to force fresh state into a call site never gains a
 default, because the default is the old bug wearing the new signature — the call
 compiles, every test passes, and the value used is exactly the one the parameter was
 added to stop it using. `feedCostFor` and `energyCostFor` take `now` under the same rule,
@@ -63,9 +63,9 @@ and `accruedIncome` must stay piecewise across the hunger-100 crossing — a pla
 two-point trapezoid over-/under-pays overfed dinos.
 
 This and the UTC-midnight split immediately below are two halves of one invariant on one
-function, stated apart only because their causes are unrelated, and a rewrite of
-`accruedIncome` has to satisfy both at once. Neither is sufficient on its own: an
-implementation that splits at midnight but samples the hunger term twice per day still
+function, and a rewrite of `accruedIncome` has to satisfy both at once. Neither is
+sufficient on its own: an implementation that splits at midnight but samples the hunger
+term twice per day still
 mis-pays an overfed dino, and one that integrates the hunger crossing correctly but
 samples `incomeMultAt` once still pays yesterday's income at today's rate. The hunger
 term this clamp bounds is `hungerAt`'s output, so the value being clamped already carries
