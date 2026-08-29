@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -544,5 +544,284 @@ describe('conventions hook: every manifest doc is reachable', () => {
 
     const unreachable = manifest.docs.filter((d) => !reachable.has(d.slug)).map((d) => d.slug);
     expect(unreachable).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 14: the session-close operator checklist (.claude/hooks/session-close.mjs)
+//
+// The PreToolUse hook above fires when a file is EDITED — hours or days
+// before the five operator steps in this repo actually matter, and never
+// again afterwards. This second hook runs at Stop instead, reads what the
+// session changed, and names what is owed once the change merges.
+// ---------------------------------------------------------------------------
+
+const CLOSE_HOOK_PATH = '.claude/hooks/session-close.mjs';
+
+const STOP_PAYLOAD = JSON.stringify({ hook_event_name: 'Stop', session_id: 's1' });
+
+// The env seam: CLAUDE_CONVENTIONS_TOUCHED stands in for the git reads, so
+// the mapping can be exercised without staging changes in a real tree.
+function close(files: string[], env: Record<string, string | undefined> = {}): string {
+  return execFileSync('node', [CLOSE_HOOK_PATH], {
+    input: STOP_PAYLOAD,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      CLAUDE_CONVENTIONS_ENABLED: '1',
+      CLAUDE_CONVENTIONS_TOUCHED: files.join('\n'),
+      ...env,
+    },
+  });
+}
+
+describe('session-close checklist: the mapping', () => {
+  it('names deploy-emojis when an emoji SVG changed', () => {
+    expect(close(['assets/emojis/svg/dw_cash.svg'])).toContain('deploy-emojis');
+  });
+
+  it('names build-emojis BEFORE deploy-emojis, because the deploy hashes the PNG bytes', () => {
+    const out = close(['assets/emojis/svg/dw_cash.svg']);
+    expect(out).toContain('build-emojis');
+    expect(out.indexOf('build-emojis')).toBeLessThan(out.indexOf('deploy-emojis'));
+  });
+
+  it('names test:live when art or an embed changed', () => {
+    expect(close(['assets/images/banners/lots.webp'])).toContain('test:live');
+    expect(close(['src/modules/park/embeds.ts'])).toContain('test:live');
+  });
+
+  it('names test:live for an alert-embeds builder too, not just the bare embeds.ts name', () => {
+    expect(close(['src/modules/park/alert-embeds.ts'])).toContain('test:live');
+  });
+
+  it('names deploy-branding and says why it is rate-limited', () => {
+    const out = close(['assets/branding/avatar.gif']);
+    expect(out).toContain('deploy-branding');
+    expect(out).toContain('--avatar-only');
+    expect(out).toMatch(/2 per hour/);
+  });
+
+  it('names the backfill as a separate manual step for a schema or migration change', () => {
+    for (const file of ['drizzle/0020_something.sql', 'src/core/db/schema.ts']) {
+      const out = close([file]);
+      expect(out).toContain('backfill-species-seen');
+      expect(out).toContain('never as migration SQL');
+      expect(out).toMatch(/next boot/);
+    }
+  });
+
+  it('names deploy-commands when a module command file changed', () => {
+    for (const file of [
+      'src/modules/park/index.ts',
+      'src/core/modules.ts',
+      'src/core/module-list.ts',
+      'src/deploy-commands.ts',
+      'modules.json',
+    ]) {
+      expect(close([file])).toContain('deploy-commands');
+    }
+  });
+
+  it('names deploy-commands for a data file too, since builders read their choice lists from src/data', () => {
+    // src/modules/dex/index.ts calls addChoices(...RARITIES.map(...)) and
+    // src/modules/park/index.ts builds its kind choices from PADDOCKS — so a
+    // data edit can move the deployed option set with no builder file in the
+    // diff at all. Over-report here; under-reporting leaves a live bot whose
+    // slash commands do not match its code.
+    expect(close(['src/data/paddocks.ts'])).toContain('deploy-commands');
+  });
+
+  it('says nothing when nothing relevant changed', () => {
+    expect(close(['README.md']).trim()).toBe('');
+  });
+
+  it('says each owed step once, however many files triggered it', () => {
+    const out = close([
+      'assets/emojis/svg/dw_cash.svg',
+      'assets/emojis/svg/dw_food.svg',
+      'assets/emojis/png/dw_cash.png',
+    ]);
+    expect(out.match(/deploy-emojis/g)?.length).toBe(1);
+  });
+
+  it('says deploy-commands once, and with the builder reason, when both a builder file and a data file changed', () => {
+    // The two deploy-commands entries share one step id precisely so this
+    // can only ever produce one line, and the more specific reason wins.
+    const out = close(['src/modules/park/index.ts', 'src/data/paddocks.ts']);
+    expect(out.match(/npm run deploy-commands/g)?.length).toBe(1);
+    expect(out).toContain('a command builder file changed');
+  });
+
+  it('emits a Stop hookSpecificOutput envelope, not bare text', () => {
+    const parsed = JSON.parse(close(['assets/emojis/svg/dw_cash.svg']));
+    expect(parsed.hookSpecificOutput.hookEventName).toBe('Stop');
+    expect(typeof parsed.hookSpecificOutput.additionalContext).toBe('string');
+  });
+});
+
+describe('session-close checklist: never breaks the session', () => {
+  it('is inert unless CLAUDE_CONVENTIONS_ENABLED is exactly "1"', () => {
+    expect(close(['assets/emojis/svg/dw_cash.svg'], { CLAUDE_CONVENTIONS_ENABLED: '' }).trim()).toBe('');
+    expect(close(['assets/emojis/svg/dw_cash.svg'], { CLAUDE_CONVENTIONS_ENABLED: 'true' }).trim()).toBe('');
+  });
+
+  it('exits 0 with empty stdout on malformed stdin, rather than any non-zero code', () => {
+    for (const input of ['', 'not json', '[]', JSON.stringify({ hook_event_name: 'Stop' })]) {
+      const res = spawnSync('node', [CLOSE_HOOK_PATH], {
+        input,
+        encoding: 'utf8',
+        env: { ...process.env, CLAUDE_CONVENTIONS_ENABLED: '1', CLAUDE_CONVENTIONS_TOUCHED: 'README.md' },
+      });
+      expect(res.status).toBe(0);
+      expect(res.stdout.trim()).toBe('');
+    }
+  });
+
+  // Exit code 2 is the one code that BLOCKS on a hook; nothing this hook can
+  // hit may reach it. Asserted explicitly rather than inferred from
+  // execFileSync not throwing, so a future `process.exit(2)` fails loudly.
+  it('never exits 2, even on the path that has something to say', () => {
+    const res = spawnSync('node', [CLOSE_HOOK_PATH], {
+      input: STOP_PAYLOAD,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CLAUDE_CONVENTIONS_ENABLED: '1',
+        CLAUDE_CONVENTIONS_TOUCHED: 'assets/emojis/svg/dw_cash.svg',
+      },
+    });
+    expect(res.status).toBe(0);
+  });
+});
+
+// ---- the real detection source ----
+//
+// CLAUDE_CONVENTIONS_TOUCHED is only the test seam. In production the hook
+// reads git, and what it reads is the union of three things, because each
+// alone misses a session this checklist exists for:
+//   * committed branch work vs the merge base — a session that COMMITTED has
+//     a clean tree and is the session most likely to be about to merge;
+//   * uncommitted working-tree changes vs HEAD — a session still in flight;
+//   * untracked non-ignored files — new art and new emoji SVGs arrive as
+//     brand-new files, which `git diff` never reports at all.
+function closeInRepo(repoDir: string): { status: number | null; stdout: string } {
+  const res = spawnSync('node', [CLOSE_HOOK_PATH], {
+    input: STOP_PAYLOAD,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      CLAUDE_CONVENTIONS_ENABLED: '1',
+      CLAUDE_PROJECT_DIR: repoDir,
+      CLAUDE_CONVENTIONS_TOUCHED: undefined,
+    },
+  });
+  return { status: res.status, stdout: res.stdout };
+}
+
+function git(repoDir: string, args: string[]): void {
+  execFileSync(
+    'git',
+    [
+      '-c',
+      'user.email=fixture@example.invalid',
+      '-c',
+      'user.name=fixture',
+      // A throwaway fixture repo must not inherit the machine's signing
+      // config: a commit that prompted or failed would hang or break the run.
+      '-c',
+      'commit.gpgsign=false',
+      ...args,
+    ],
+    { cwd: repoDir, stdio: 'ignore' }
+  );
+}
+
+function withRepo(build: (dir: string) => void): void {
+  const dir = mkdtempSync(join(tmpdir(), 'session-close-repo-'));
+  try {
+    build(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe('session-close checklist: reads the session from git', () => {
+  it('sees work the session already COMMITTED on a branch, not just the dirty tree', () => {
+    withRepo((dir) => {
+      mkdirSync(join(dir, 'assets', 'emojis', 'svg'), { recursive: true });
+      writeFileSync(join(dir, 'README.md'), 'base\n');
+      git(dir, ['init', '-b', 'main']);
+      git(dir, ['add', '.']);
+      git(dir, ['commit', '-m', 'base']);
+
+      git(dir, ['checkout', '-b', 'feature']);
+      writeFileSync(join(dir, 'assets', 'emojis', 'svg', 'dw_new.svg'), '<svg/>\n');
+      git(dir, ['add', '.']);
+      git(dir, ['commit', '-m', 'add an emoji']);
+
+      // The tree is clean now — `git diff --name-only HEAD` reports nothing.
+      const { status, stdout } = closeInRepo(dir);
+      expect(status).toBe(0);
+      expect(stdout).toContain('deploy-emojis');
+    });
+  });
+
+  it('sees uncommitted working-tree changes to a tracked file', () => {
+    withRepo((dir) => {
+      mkdirSync(join(dir, 'src', 'modules', 'park'), { recursive: true });
+      writeFileSync(join(dir, 'src', 'modules', 'park', 'embeds.ts'), 'export const a = 1;\n');
+      git(dir, ['init', '-b', 'main']);
+      git(dir, ['add', '.']);
+      git(dir, ['commit', '-m', 'base']);
+
+      writeFileSync(join(dir, 'src', 'modules', 'park', 'embeds.ts'), 'export const a = 2;\n');
+
+      const { status, stdout } = closeInRepo(dir);
+      expect(status).toBe(0);
+      expect(stdout).toContain('test:live');
+    });
+  });
+
+  it('sees a brand-new UNTRACKED file, which git diff never reports — the shape every art drop takes', () => {
+    withRepo((dir) => {
+      writeFileSync(join(dir, 'README.md'), 'base\n');
+      git(dir, ['init', '-b', 'main']);
+      git(dir, ['add', '.']);
+      git(dir, ['commit', '-m', 'base']);
+
+      mkdirSync(join(dir, 'assets', 'images', 'banners'), { recursive: true });
+      writeFileSync(join(dir, 'assets', 'images', 'banners', 'new.webp'), 'not really a webp');
+
+      const { status, stdout } = closeInRepo(dir);
+      expect(status).toBe(0);
+      expect(stdout).toContain('test:live');
+    });
+  });
+
+  it('ignores a file git itself ignores, so build output never triggers a deploy', () => {
+    withRepo((dir) => {
+      writeFileSync(join(dir, '.gitignore'), 'assets/images/\n');
+      git(dir, ['init', '-b', 'main']);
+      git(dir, ['add', '.']);
+      git(dir, ['commit', '-m', 'base']);
+
+      mkdirSync(join(dir, 'assets', 'images'), { recursive: true });
+      writeFileSync(join(dir, 'assets', 'images', 'generated.webp'), 'x');
+
+      const { status, stdout } = closeInRepo(dir);
+      expect(status).toBe(0);
+      expect(stdout.trim()).toBe('');
+    });
+  });
+
+  it('degrades to silence, not an error, when the directory is not a git repo at all', () => {
+    withRepo((dir) => {
+      mkdirSync(join(dir, 'assets', 'emojis'), { recursive: true });
+      writeFileSync(join(dir, 'assets', 'emojis', 'x.svg'), '<svg/>');
+      const { status, stdout } = closeInRepo(dir);
+      expect(status).toBe(0);
+      expect(stdout.trim()).toBe('');
+    });
   });
 });
