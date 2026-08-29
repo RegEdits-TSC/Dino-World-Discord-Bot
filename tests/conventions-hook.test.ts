@@ -483,20 +483,23 @@ describe('conventions hook: repo root resolution', () => {
   });
 });
 
-// Controller ruling 8(c): a doc whose file does not exist yet must be
-// silent in production, not just under a test accommodation — between now
-// and tasks 5-12 the hook runs against a manifest naming 29 docs, of which
-// almost none have a body file yet. This is the one test that exercises
-// that against the real repo, with no manifest/docsDir override: "LICENSE"
-// matches the real manifest's "prose-and-specs" doc (confirmed against the
-// real triggerGlobs), whose docs/conventions/prose-and-specs.md does not
-// exist at this commit.
+// Controller ruling 8(c): a doc whose file does not exist yet must be silent
+// in production, not just under a test accommodation. That was the state of
+// the real repo while the 29 doc files were being written, and it ends with
+// the last of them — every manifest doc now has a body — so the silence is
+// covered at fixture level instead, by "a doc whose body file does not exist
+// yet is silent" and its mixed-match sibling above. What only the real repo
+// can still prove is the whole path end to end with no manifest/docsDir
+// override: "LICENSE" matches the real manifest's "prose-and-specs" doc and
+// nothing else (confirmed against the real triggerGlobs), so the hook must
+// read that doc's real body and inject it.
 describe('conventions hook: real-repo integration', () => {
-  it('is silent for a real file whose matched doc has no body yet', () => {
+  it('injects the matched doc for a real file, against the real manifest and body', () => {
     const dir = mkdtempSync(join(tmpdir(), 'conv-hook-state-'));
     try {
       const out = run(payload('LICENSE'), { CLAUDE_CONVENTIONS_STATE_DIR: dir });
-      expect(out.trim()).toBe('');
+      expect(out).toContain('docs/conventions/prose-and-specs.md');
+      expect(out).toContain('specs-are-dated-records');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
