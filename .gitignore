@@ -21,3 +21,6 @@ logs/
 
 # Brainstorming session artifacts
 .superpowers/
+
+# Worktrees
+.claude/worktrees/
