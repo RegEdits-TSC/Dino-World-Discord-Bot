@@ -54,6 +54,33 @@ a database call.
 I/O, and environment variables. Past those boundaries, trust internal code rather
 than piling up defensive null checks.
 
+### The rest of them
+
+Those four apply everywhere, which is why they are here. There are several hundred
+more, each specific to one part of the codebase — how escrow is derived, what a
+component's customId has to carry, which line of a fight embed may attach a file.
+They live under [`docs/conventions/`](docs/conventions/), one doc per subject area
+(`ls docs/conventions/`). Each doc opens with a `## Headlines` block, one line per
+rule, and then states each rule in full under its own heading, so you can skim the
+headlines to see whether a rule concerns you and drop into the body when it does.
+
+[`CLAUDE.md`](CLAUDE.md) at the repo root is the index: its Topics list maps a
+subject to its doc in one line each, and names the files that doc covers.
+`docs/conventions/manifest.json` holds the exact globs behind those lines, if you
+would rather go the other way and ask "what governs the file I am editing?".
+
+They are plain Markdown. Read them directly — nothing needs to be installed,
+enabled or run to get at them.
+
+Before changing a convention doc, run its gate:
+
+```bash
+node scripts/conventions-audit.mjs
+```
+
+It checks that every rule is filed, every doc is reachable from a file glob, and
+every cross-reference resolves. `npm test` runs it too.
+
 ## Before you commit
 
 **`npm test` does not typecheck.** Neither does `npm run build`, which only
