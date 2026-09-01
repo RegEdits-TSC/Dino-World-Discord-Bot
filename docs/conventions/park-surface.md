@@ -245,9 +245,8 @@ change.
 The confirm CLICK is a second layer only, never the guard — another open message
 may still hold a stale button. What actually locks the upgrade is the REQUIRED
 `expectedLevel` on `upgradeLot`: the handler's own fresh read stays because it needs
-`lot.kind`/`lot.level` to quote the price in the `InsufficientFundsError` arm and to name
-the two levels in the stale rejection, NOT because it is the thing standing between a
-stale button and the money.
+`lot.level` to name the two levels in the stale rejection, NOT because it is the thing
+standing between a stale button and the money.
 
 ## buildyes-lotcount-anchor
 
