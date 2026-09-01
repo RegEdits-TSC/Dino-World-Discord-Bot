@@ -7,6 +7,7 @@ import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { startExpedition, claimExpedition } from '../src/modules/expeditions/service.js';
 import { incubateRow } from '../src/modules/hatchery/embeds.js';
+import { incubateEgg } from '../src/modules/hatchery/service.js';
 
 // Day 0 is `clear_skies` — every eventMods multiplier is 1 — so coastal_dig costs exactly
 // 200 cash and takes exactly its 15-minute durationMs. Re-derive with:
@@ -138,5 +139,93 @@ describe('unrecognised hatchery actions acknowledge instead of timing out', () =
     expect(b.replies).toHaveLength(0);
     expect(b.deferOpts).toHaveLength(1);
     expect(b.deferOpts[0]).toMatchObject({ kind: 'update' });
+  });
+});
+
+describe('hatch:inc guards', () => {
+  it('tells a bystander it is not their egg, and touches nothing', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'One');
+    getOrCreateUser(ctx, 'u2', 'Two');
+    const owned = seedEgg(ctx, 'u1');
+    // u2 owns an egg of their own. It is here as the BACKSTOP assertion: incubateEgg
+    // filters on (id, CALLER), so even with the owner check deleted u2's own egg is
+    // never started. That assertion stays green in Step 3 on purpose — it pins that
+    // the service filter really is the second layer this guard is allowed to lean on.
+    const bystanders = seedEgg(ctx, 'u2');
+
+    const customId = `hatch:inc:u1:${owned.id}`;
+    const b = fakeButton({ customId, user: 'u2', componentIds: [customId] });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+
+    expect(replyText(b.replies[0])).toBe('That is not your egg.');
+    expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, owned.id)).get()!.incubationStartedAt).toBeNull();
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, bystanders.id)).get()!.incubationStartedAt).toBeNull();
+    expect(ctx.db.select().from(schema.timers).all()).toEqual([]);
+  });
+
+  it('names a malformed link as malformed rather than as an ownership problem', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'One');
+    seedEgg(ctx, 'u1');
+    const customId = 'hatch:inc:u1:not-a-number';
+    const b = fakeButton({ customId, user: 'u1', componentIds: [customId] });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+
+    expect(replyText(b.replies[0])).toBe('That incubate link is invalid — use `/incubate`.');
+    expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect(ctx.db.select().from(schema.timers).all()).toEqual([]);
+  });
+
+  it('refuses an egg that is already incubating, and enqueues no second timer', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'One');
+    const egg = seedEgg(ctx, 'u1');
+    // A level-2 Hatchery Lab, so incubatorSlots is 2. It is NOT needed for this assertion:
+    // service.ts:36's already-incubating check runs BEFORE the slot cap at :38-39, so the
+    // cap cannot fire first here. It IS needed for Step 5 — with :36 commented out, a
+    // one-slot park refuses the click with 'All incubator slots are full. Upgrade the
+    // Hatchery Lab for more.', which is red for the wrong reason. Do not delete it.
+    ctx.db.insert(schema.lots)
+      .values({ userId: 'u1', type: 'facility', kind: 'hatchery_lab', name: 'Hatchery Lab', level: 2 }).run();
+    incubateEgg(ctx, 'u1', egg.id, 'g1');
+
+    const customId = `hatch:inc:u1:${egg.id}`;
+    const b = fakeButton({ customId, user: 'u1', componentIds: [customId] });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+
+    expect(replyText(b.replies[0])).toBe('That egg is already incubating.');
+    expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    // One timer, not two: a re-incubation would enqueue a second egg_hatch for the same egg.
+    expect(ctx.db.select().from(schema.timers).all()).toHaveLength(1);
+  });
+
+  it('refuses an egg locked in a pending trade', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'One');
+    getOrCreateUser(ctx, 'u2', 'Two');
+    const egg = seedEgg(ctx, 'u1');
+    // Escrow is DERIVED from the pending trade row at read time (src/core/locks.ts), so this
+    // row is the only way to put an egg in escrow without going through createTrade's own
+    // gates. createdAt must be > now - TRADE_EXPIRY_MS for locksFor to see it; at nowMs 0
+    // that cutoff is negative, so 0 qualifies.
+    ctx.db.insert(schema.trades).values({
+      fromUser: 'u1', toUser: 'u2',
+      offer: { dinoIds: [], eggIds: [egg.id], cash: 0, foods: {} },
+      request: { dinoIds: [], eggIds: [], cash: 0, foods: {} },
+      status: 'pending', createdAt: ctx.now(),
+    }).run();
+
+    const customId = `hatch:inc:u1:${egg.id}`;
+    const b = fakeButton({ customId, user: 'u1', componentIds: [customId] });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+
+    expect(replyText(b.replies[0])).toBe('That egg is locked in a pending trade.');
+    expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    // Hatching CONSUMES the egg, so incubating an escrowed one would leave the trade
+    // unfulfillable — the egg row must be untouched.
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.incubationStartedAt).toBeNull();
+    expect(ctx.db.select().from(schema.timers).all()).toEqual([]);
   });
 });
