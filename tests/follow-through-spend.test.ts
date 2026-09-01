@@ -7,7 +7,7 @@ import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { startExpedition, activeExpedition, expeditionFeeFor } from '../src/modules/expeditions/service.js';
 import { EXPEDITION_SITES } from '../src/data/sites.js';
-import { dailyEggOffers } from '../src/modules/shop/service.js';
+import { dailyEggOffers, eggPriceAt, todaysDeal } from '../src/modules/shop/service.js';
 import { eventMods, worldEventFor } from '../src/core/world.js';
 import { ALL_MODULES } from '../src/core/module-list.js';
 import type { Config } from '../src/core/config.js';
@@ -360,5 +360,116 @@ describe('Buy another — the button', () => {
     // array and Task 29 (G8-A)'s GRAPH is the one place the whole list is pinned.
     expect(mintedIds(i.replies[0])).toContain('shop:again:u1:common');
     expect(labelOf(i.replies[0], 'shop:again:u1:common')).toBe('🥚 Buy another');
+  });
+});
+
+describe('the sell prefix acknowledges an action it does not know', () => {
+  it('defers rather than painting "This interaction failed"', async () => {
+    // Spec §3.3, applied to the third switch this work edits: a bare return leaves the
+    // interaction unanswered, and a stale id from an older deploy lands exactly here.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'sell:whatever:1', user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(b.replies).toHaveLength(0);
+    expect(b.deferOpts[0]).toMatchObject({ kind: 'update' });
+  });
+});
+
+describe('Buy another — the confirm card', () => {
+  // Day 17 is Clear Skies (eggPrice x1) and day 18 is Bumper Harvest (eggPrice x1.25). The
+  // daily deal is `uncommon` on both, so `common` is undiscounted either side and the ONLY
+  // thing moving its price is the world event. These assertions keep every fixture below a
+  // statement about the real pipeline rather than about typed constants.
+  it('day 17 and day 18 really do price a common egg differently, through the real pipeline', () => {
+    expect(worldEventFor(17 * DAY).id).toBe('clear_skies');
+    expect(worldEventFor(18 * DAY).id).toBe('bumper_harvest');
+    expect(eventMods(17 * DAY).eggPrice).toBe(1);
+    expect(eventMods(18 * DAY).eggPrice).toBe(1.25);
+    expect(todaysDeal(17 * DAY).rarity).toBe('uncommon');
+    expect(todaysDeal(18 * DAY).rarity).toBe('uncommon');
+    expect(dailyEggOffers(0, 17 * DAY)).toContain('common');
+    expect(dailyEggOffers(0, 18 * DAY)).toContain('common');
+    expect(eggPriceAt('common', 17 * DAY)).toBe(500);
+    expect(eggPriceAt('common', 18 * DAY)).toBe(625);
+  });
+
+  it('opens an ephemeral card whose confirm button carries the price it was minted for', async () => {
+    const ctx = makeCtx({ nowMs: 17 * DAY });
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', ctx.now());
+    const buy = fakeCommand({ name: 'shop', sub: 'egg', user: 'u1', options: { rarity: 'common' } });
+    await routeInteraction(ctx, testRegistry, buy.asInteraction());
+    // The REAL minted id, read back out of the payload that mints it.
+    const openId = mintedIds(buy.replies[0]).find((id) => id.startsWith('shop:again:'))!;
+
+    const open = fakeButton({ customId: openId, user: 'u1' });
+    const before = cashOf(ctx, 'u1');
+    await routeInteraction(ctx, testRegistry, open.asInteraction());
+
+    expect(open.deferOpts).toHaveLength(0);
+    expect((open.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect(mintedIds(open.replies[0])).toContain('shop:againyes:u1:common:500');
+    expect(labelOf(open.replies[0], 'shop:againyes:u1:common:500')).toBe('Buy — 500 cash');
+    // The card's own sentence, whole — never a substring around the number.
+    expect(replyText(open.replies[0])).toBe('Buy another **common** egg for **500** cash?');
+    // Nothing is spent by OPENING the card — read before the click, compared after it.
+    expect(cashOf(ctx, 'u1')).toBe(before);
+    expect(eggsOf(ctx, 'u1')).toHaveLength(1);   // the one /shop egg bought, and no more
+  });
+
+  it('quotes the Bumper Harvest price when the card is opened on day 18', async () => {
+    const ctx = makeCtx({ nowMs: 18 * DAY });
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'shop:again:u1:common', user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(mintedIds(b.replies[0])).toContain('shop:againyes:u1:common:625');
+    expect(labelOf(b.replies[0], 'shop:againyes:u1:common:625')).toBe('Buy — 625 cash');
+    expect(replyText(b.replies[0])).toBe('Buy another **common** egg for **625** cash?');
+  });
+
+  it('refuses to open a card for a rarity that has left the rotation', async () => {
+    // At an epic ceiling, day 0 offers rare and day 1 does not.
+    const ctx = makeCtx({ nowMs: DAY });
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.db.update(schema.users).set({ ratingHighWater: 400 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    expect(dailyEggOffers(400, DAY)).not.toContain('rare');
+    const b = fakeButton({ customId: 'shop:again:u1:rare', user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(replyText(b.replies[0])).toBe("A rare egg isn't in today's rotation — see /shop view.");
+    expect(mintedIds(b.replies[0])).toHaveLength(0);
+  });
+
+  it('a bystander gets a refusal and no card', async () => {
+    const ctx = makeCtx({ nowMs: 17 * DAY });
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    getOrCreateUser(ctx, 'u2', 'Two');
+    const b = fakeButton({ customId: 'shop:again:u1:common', user: 'u2' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(replyText(b.replies[0])).toBe('That is not your purchase.');
+    expect(mintedIds(b.replies[0])).toHaveLength(0);
+  });
+
+  it('a forged rarity segment is acknowledged and dropped, never echoed and never priced', async () => {
+    const ctx = makeCtx({ nowMs: 17 * DAY });
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', ctx.now());
+    for (const forged of ['shop:again:u1:__proto__', 'shop:again:u1:constructor', 'shop:again:u1:mythic', 'shop:again:u1']) {
+      const b = fakeButton({ customId: forged, user: 'u1' });
+      await routeInteraction(ctx, testRegistry, b.asInteraction());
+      expect(b.replies, forged).toHaveLength(0);
+      expect(b.deferOpts[0], forged).toMatchObject({ kind: 'update' });
+    }
+    expect(eggsOf(ctx, 'u1')).toHaveLength(0);
+  });
+
+  it('an unrecognised shop action acknowledges rather than painting "This interaction failed"', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'shop:whatever:u1', user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(b.replies).toHaveLength(0);
+    expect(b.deferOpts[0]).toMatchObject({ kind: 'update' });
   });
 });

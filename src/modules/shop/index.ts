@@ -39,6 +39,14 @@ export function buyAnotherRow(userId: string, rarity: Rarity): ActionRowBuilder<
       .setLabel('🥚 Buy another').setStyle(ButtonStyle.Primary));
 }
 
+/**
+ * One sentence, two surfaces: /shop egg's own gate below and shop:againyes's recheck. Two
+ * literals would drift silently, because nothing ever renders both at once.
+ */
+function notInRotation(rarity: string): string {
+  return `A ${rarity} egg isn't in today's rotation — see /shop view.`;
+}
+
 // Single source of truth for /shop view's header key list: exported so
 // tests/world-module.test.ts's per-key anyModRelevant tests exercise this
 // exact array, not a duplicated literal that could silently drift from it.
@@ -110,7 +118,7 @@ export const shopModule: ModuleManifest = {
           } else if (sub === 'egg') {
             const rarity = i.options.getString('rarity', true) as Rarity;
             const offers = dailyEggOffers(user.ratingHighWater, ctx.now());
-            if (!offers.includes(rarity)) { await i.reply({ content: `A ${rarity} egg isn't in today's rotation — see /shop view.`, flags: MessageFlags.Ephemeral }); return; }
+            if (!offers.includes(rarity)) { await i.reply({ content: notInRotation(rarity), flags: MessageFlags.Ephemeral }); return; }
             const egg = buyEgg(ctx, i.user.id, rarity);
             const eggEmbed = new EmbedBuilder().setColor(RARITY_COLOR[egg.rarity] ?? 0x95a5a6)
               .setTitle(`🥚 Bought a ${rarityEmoji(egg.rarity)}${egg.rarity} egg (#${egg.id})`)
@@ -223,13 +231,58 @@ export const shopModule: ModuleManifest = {
   components: [
     { prefix: 'sell', async execute(ctx, i) {
         const [, action, idStr] = i.customId.split(':');
-        if (action !== 'confirm') return;
+        // deferUpdate, never a bare return: a bare return paints "This interaction failed"
+        // after three seconds, and a stale id from an older deploy lands exactly here.
+        if (action !== 'confirm') { await i.deferUpdate(); return; }
         try {
           const res = sellDino(ctx, i.user.id, Number(idStr));
           const cap = res.capped ? ' (shard cap reached)' : '';
           await i.update({ content: `${emojiTag('dw_cash')} Sold for **${res.cash.toLocaleString()}** cash and **${res.shards}** shards${cap}.`,
             embeds: [], components: [], attachments: [] });
         } catch (e) { if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
+      } },
+    { prefix: 'shop', async execute(ctx, i) {
+        const parts = i.customId.split(':');
+        const [, action, uid, rarityRaw] = parts;
+        // Unknown action first, and it must acknowledge: a bare return paints "This
+        // interaction failed" after three seconds, and a stale id from an older deploy lands
+        // here. Any future shop action needs its own arm below.
+        if (action !== 'again' && action !== 'againyes') { await i.deferUpdate(); return; }
+        // buyEgg resolves against the CALLER, so without this a bystander clicking the public
+        // /shop egg reply would buy THEMSELVES an egg rather than be refused.
+        if (i.user.id !== uid) {
+          await i.reply({ content: 'That is not your purchase.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        // Narrow the client-supplied segment against the rarities the builder itself offers,
+        // rather than casting it. This is what stops a forged segment being echoed back inside
+        // a rendered sentence, and what lets buyEgg below take a real Rarity with no cast.
+        const rarity = eggRarityChoices.map((c) => c.value).find((r) => r === rarityRaw);
+        if (!rarity) { await i.deferUpdate(); return; }
+        const user = getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        const now = ctx.now();
+        // Rotation BEFORE price. eggPriceAt happily prices a rarity that is no longer on
+        // offer, so a price-first order would sometimes report a moved price for an egg that
+        // cannot be bought at any price today.
+        if (!dailyEggOffers(user.ratingHighWater, now).includes(rarity)) {
+          await i.reply({ content: notInRotation(rarity), flags: MessageFlags.Ephemeral });
+          return;
+        }
+        // ONE expression, both arms: the price the card QUOTES and the price the confirm
+        // RECHECKS are the same call, so they cannot drift apart.
+        const price = eggPriceAt(rarity, now);
+        if (action === 'again') {
+          const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder().setCustomId(`shop:againyes:${i.user.id}:${rarity}:${price}`)
+              .setLabel(`Buy — ${price.toLocaleString('en-US')} cash`).setStyle(ButtonStyle.Success));
+          await i.reply({
+            content: `Buy another **${rarity}** egg for **${price.toLocaleString('en-US')}** cash?`,
+            components: [row],
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        await i.deferUpdate();
       } },
   ],
 };
