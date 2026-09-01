@@ -335,3 +335,41 @@ describe('park:assignpick and park:assignsel', () => {
     expect(lotOf(d.id)).toBeNull();
   });
 });
+
+describe('park:goto:lots — the Build a paddock landing', () => {
+  it('routes the button to an ephemeral Lots surface carrying the Build and Upgrade menus', async () => {
+    seedUser();
+    seedLot({ type: 'facility', kind: 'gene_lab', name: 'Gene Lab' });
+    const b = fakeButton({ customId: 'park:goto:lots:u1', user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(b.deferOpts).toHaveLength(0);
+    expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    const json = JSON.stringify(b.replies[0]);
+    expect(json).toContain('park:build:u1');
+    expect(json).toContain('park:upgrade:u1');
+    // lotsPayload appends tabRow on EVERY call, unlike landmarkPayload/guestsPayload/
+    // dinoListPayload. This reply is not the card the player is navigating — it is a routed
+    // ephemeral opened FROM one — so the row is stripped: leaving it would turn this
+    // ephemeral into a second, parallel park dashboard on the first tab click, which is
+    // exactly the duplication the goto family exists to avoid.
+    expect(json).not.toContain('park:tab:u1:');
+  });
+
+  it('refuses a bystander', async () => {
+    seedUser(); getOrCreateUser(ctx, 'u2', 'u2');
+    const b = fakeButton({ customId: 'park:goto:lots:u1', user: 'u2' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(replyText(b.replies[0])).toBe('Not your park.');
+  });
+
+  it('the Lots TAB still keeps its tab row after the extraction', async () => {
+    seedUser();
+    seedLot({ type: 'facility', kind: 'gene_lab', name: 'Gene Lab' });
+    const b = fakeButton({ customId: 'park:tab:u1:lots', user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    const json = JSON.stringify(b.replies[0]);
+    expect(json).toContain('park:build:u1');
+    expect(json).toContain('park:upgrade:u1');
+    expect(json).toContain('park:tab:u1:animals');
+  });
+});

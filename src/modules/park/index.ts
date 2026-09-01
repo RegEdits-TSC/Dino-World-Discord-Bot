@@ -2,7 +2,7 @@ import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, Butt
 import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
-import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, maxLevelFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, StaleLevelError, toClockDinos, needsAttentionCount } from './service.js';
+import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, maxLevelFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, StaleLevelError, toClockDinos, needsAttentionCount, type User, type Lot } from './service.js';
 import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, eligiblePaddocks, PADDOCK_FULL, DINO_ESCAPED, AssignError, DietMismatchError, renameDino } from './dinos.js';
@@ -896,6 +896,31 @@ export const parkModule: ModuleManifest = {
               await i.reply({ ...dinoListPayload(ctx, i.user.id, 1), flags: MessageFlags.Ephemeral });
               return;
             }
+            if (target === 'lots') {
+              // The landing for assignRow's third shape, "🏗️ Build a paddock", minted on
+              // the hatch reveal when nothing is eligible. Ephemeral exactly like the
+              // landmark/guests/roster targets beside it: that button can sit on a PUBLIC
+              // reveal card, and an i.update would rewrite somebody's card into a private
+              // build screen.
+              const ownLots = ctx.db.select().from(schema.lots)
+                .where(eq(schema.lots.userId, i.user.id)).all();
+              const built = lotsTab(fresh, ownLots, false);
+              // Unlike landmarkPayload/guestsPayload/dinoListPayload, lotsPayload appends a
+              // tab row on EVERY call, so this one has to be stripped rather than merely not
+              // added. A decision, not an oversight: a tab click on this ephemeral would
+              // advance THIS message, handing the player a second, parallel park card beside
+              // the one they opened it from. The Build menu it keeps mints park:build:<uid>,
+              // whose confirm re-renders this same ephemeral.
+              //
+              // `as unknown as` because the builder union's toJSON() types disagree about
+              // whether custom_id is optional; the walk only reads it.
+              built.components = built.components.filter((r) => {
+                const row = r.toJSON() as unknown as { components?: Array<{ custom_id?: string }> };
+                return !(row.components ?? []).some((c) => c.custom_id?.startsWith(`park:tab:${i.user.id}:`));
+              });
+              await i.reply({ ...built, flags: MessageFlags.Ephemeral });
+              return;
+            }
             await i.deferUpdate();
             return;
           }
@@ -1109,6 +1134,37 @@ export const parkModule: ModuleManifest = {
 };
 
 /**
+ * The Lots tab's view model, in one place. Both the tab click and park:goto:lots render
+ * through it, so the buildable and upgradable filters cannot drift between two call sites —
+ * the same reason upgradeCostFor is a single helper.
+ *
+ * The max-level filter goes through maxLevelFor (src/modules/park/service.ts), the same
+ * resolver upgradeLot charges through, and NEVER a local literal: a menu that offers a maxed
+ * lot is merely a wasted click, but a menu built off a different cap than the charge is how a
+ * label and a price come apart.
+ *
+ * Takes the rows the caller already read: a tab switch pays for this render's SELECTs as it
+ * is, and re-reading here would add two more to every click.
+ */
+function lotsTab(user: User, lots: Lot[], visit: boolean) {
+  const owned = new Set(lots.map((l) => l.kind));
+  const full = lots.length >= lotSlots(user.ratingHighWater);
+  // Facilities are one per park; paddocks are duplicable — building more of one kind IS
+  // the capacity progression. Filtering here keeps the menu honest, but it is NOT the
+  // guard: buildLot re-checks both, and a stale menu is rejected there.
+  const buildable = full ? [] : [
+    ...Object.entries(PADDOCKS).map(([kind, d]) => ({ kind, name: d.name, cost: d.buildCost })),
+    ...Object.entries(FACILITIES)
+      .filter(([kind]) => !owned.has(kind))
+      .map(([kind, d]) => ({ kind, name: d.name, cost: d.buildCost })),
+  ];
+  const upgradable = lots
+    .filter((l) => l.level < maxLevelFor(l.kind))
+    .map((l) => ({ lotId: l.id, name: l.name, level: l.level, cost: upgradeCostFor(l.kind, l.level) }));
+  return lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit, buildable, upgradable });
+}
+
+/**
  * Renders one tab onto the message that was clicked.
  *
  * settleEscapes runs ONCE here rather than in each builder: it is write-bearing, and
@@ -1195,24 +1251,7 @@ async function renderTab(
     return;
   }
   if (tab === 'lots') {
-    const owned = new Set(lots.map((l) => l.kind));
-    const full = lots.length >= lotSlots(user.ratingHighWater);
-    // Facilities are one per park; paddocks are duplicable — building more of one kind IS
-    // the capacity progression. Filtering here keeps the menu honest, but it is NOT the
-    // guard: buildLot re-checks both, and a stale menu is rejected there.
-    const buildable = full ? [] : [
-      ...Object.entries(PADDOCKS).map(([kind, d]) => ({ kind, name: d.name, cost: d.buildCost })),
-      ...Object.entries(FACILITIES)
-        .filter(([kind]) => !owned.has(kind))
-        .map(([kind, d]) => ({ kind, name: d.name, cost: d.buildCost })),
-    ];
-    // maxLevelFor is the one resolver upgradeLot itself charges through, so this menu cannot
-    // drift from it. Filtering here keeps the menu honest but is NOT the guard: a maxed lot
-    // offered anyway is rejected by LotLimitError, it is just a wasted click.
-    const upgradable = lots
-      .filter((l) => l.level < maxLevelFor(l.kind))
-      .map((l) => ({ lotId: l.id, name: l.name, level: l.level, cost: upgradeCostFor(l.kind, l.level) }));
-    const built = lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit, buildable, upgradable });
+    const built = lotsTab(user, lots, visit);
     if (tourRow) built.components.push(tourRow);
     await i.update({ content: content ?? '', ...built, attachments: [] });
     return;
