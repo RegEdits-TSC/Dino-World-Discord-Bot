@@ -13,6 +13,9 @@ import type { Config } from '../src/core/config.js';
 import { dailyEggOffers } from '../src/modules/shop/service.js';
 import { buildLot } from '../src/modules/park/service.js';
 import { BREED_MS } from '../src/data/breeding.js';
+import { mythicSpeciesChoices } from '../src/modules/shop/shards.js';
+import { MYTHIC_UNLOCK_RATING } from '../src/data/progression.js';
+import { getSpecies } from '../src/data/species/index.js';
 
 // Day 0 is `clear_skies` — every eventMods multiplier is 1 — so coastal_dig costs exactly
 // 200 cash and takes exactly its 15-minute durationMs. Re-derive with:
@@ -469,5 +472,36 @@ describe('/breed claim offers Incubate', () => {
     await routeInteraction(button, testRegistry, clicked.asInteraction());
     const buttonEgg = button.db.select().from(schema.eggs).all()[0];
     expect(mintedIds(clicked.replies[0])).not.toContain(`hatch:inc:u1:${buttonEgg.id}`);
+  });
+});
+
+describe('mythic:confirm offers Incubate', () => {
+  it('mints hatch:inc for the Mythic egg, and that id routes', async () => {
+    const ctx = makeCtx({ nowMs: 0 });
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { shards: 500 }, 'seed', 0);
+    ctx.db.update(schema.users).set({ ratingHighWater: MYTHIC_UNLOCK_RATING })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    const speciesId = mythicSpeciesChoices()[0].id;
+
+    const confirmId = `mythic:confirm:${speciesId}`;
+    const confirm = fakeButton({ customId: confirmId, user: 'u1', guild: 'g1', componentIds: [confirmId] });
+    await routeInteraction(ctx, testRegistry, confirm.asInteraction());
+
+    const eggRow = ctx.db.select().from(schema.eggs).all()[0];
+    expect(mintedIds(confirm.replies[0])).toContain(`hatch:inc:u1:${eggRow.id}`);
+    expect(replyText(confirm.replies[0])).toBe(
+      `🌟 A Mythic **${getSpecies(speciesId).name}** egg is yours (#${eggRow.id})! Incubate it with \`/incubate egg:${eggRow.id}\`.`);
+    // Plain makeCtx here, with config.modules left at {}: this mint needs NO module gate,
+    // because the hatchery module mints AND handles this id — if it were disabled this
+    // message would never have been sent. A ctx with modules off is therefore the sharpest
+    // fixture available, and the button must still appear.
+    expect(confirm.replyKinds).toEqual(['update']);
+
+    const customId = `hatch:inc:u1:${eggRow.id}`;
+    const clicked = fakeButton({ customId, user: 'u1', guild: 'g1', componentIds: [customId] });
+    await routeInteraction(ctx, testRegistry, clicked.asInteraction());
+    expect(clicked.deferOpts).toHaveLength(0);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, eggRow.id)).get()!.incubationStartedAt).toBe(0);
   });
 });

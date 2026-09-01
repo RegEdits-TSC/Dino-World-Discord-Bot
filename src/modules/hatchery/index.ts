@@ -7,7 +7,7 @@ import { incubateEgg, hatchEgg, HatcheryError } from './service.js';
 import { buyMythicEgg, mythicSpeciesChoices, ShardError } from '../shop/shards.js';
 import { locksFor } from '../../core/locks.js';
 import { getSpecies } from '../../data/species/index.js';
-import { preHatchPayload, revealPayload, eggListPayload, RARITY_COLOR } from './embeds.js';
+import { preHatchPayload, revealPayload, eggListPayload, RARITY_COLOR, incubateRow } from './embeds.js';
 import { assetImage, attach } from '../../core/images.js';
 import { rarityEmoji } from '../../core/emojis.js';
 import { traitLines } from '../../core/trait-display.js';
@@ -176,7 +176,16 @@ export const hatcheryModule: ModuleManifest = {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         try {
           const egg = buyMythicEgg(ctx, i.user.id, speciesId);
-          await i.update({ content: `🌟 A Mythic **${getSpecies(egg.speciesId!).name}** egg is yours! Incubate it with /incubate ${egg.id}.`, components: [] });
+          await i.update({
+            // `/incubate egg:<id>`, never `/incubate <id>`: the option is NAMED, so the old
+            // text was not valid Discord syntax.
+            content: `🌟 A Mythic **${getSpecies(egg.speciesId!).name}** egg is yours (#${egg.id})! Incubate it with \`/incubate egg:${egg.id}\`.`,
+            // No ctx.config.modules gate here, unlike the expedition, shop and gene lab
+            // mints: hatch:inc is handled by the `hatch` component in THIS module, so a
+            // disabled hatchery module means this handler never ran either. A gate would be
+            // a condition that cannot be false.
+            components: [incubateRow(i.user.id, egg.id)],
+          });
         } catch (e) {
           if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
           else if (e instanceof InsufficientFundsError) await i.reply({ content: `Not enough shards — a Mythic egg ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
