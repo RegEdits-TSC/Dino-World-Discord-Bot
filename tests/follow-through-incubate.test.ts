@@ -10,6 +10,7 @@ import { incubateRow } from '../src/modules/hatchery/embeds.js';
 import { incubateEgg } from '../src/modules/hatchery/service.js';
 import { ALL_MODULES } from '../src/core/module-list.js';
 import type { Config } from '../src/core/config.js';
+import { dailyEggOffers } from '../src/modules/shop/service.js';
 
 // Day 0 is `clear_skies` — every eventMods multiplier is 1 — so coastal_dig costs exactly
 // 200 cash and takes exactly its 15-minute durationMs. Re-derive with:
@@ -310,5 +311,49 @@ describe('/expedition claim offers Incubate', () => {
     expect(mintedIds(i.replies[0])).not.toContain(`hatch:inc:u1:${eggRow.id}`);
     // Dig again still ships: this gate is about the hatchery module, not about the reply.
     expect(mintedIds(i.replies[0])).toContain('exp:again:u1:coastal_dig');
+  });
+});
+
+describe('/shop egg offers Incubate', () => {
+  /** Buy the first rarity actually on offer today. The rotation gate runs before buyEgg, and
+   *  ratingHighWater is 0 for a fresh user — the same argument the handler itself passes.
+   *  Re-derive today's list with:
+   *    npx tsx -e "import {dailyEggOffers} from './src/modules/shop/service.ts'; console.log(dailyEggOffers(0,0))" */
+  function buyFirstOffered(ctx: ReturnType<typeof makeCtx>) {
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 200_000 }, 'seed', 0);
+    return fakeCommand({
+      name: 'shop', sub: 'egg', user: 'u1', guild: 'g1',
+      options: { rarity: dailyEggOffers(0, ctx.now())[0] },
+    });
+  }
+
+  it('mints hatch:inc for the bought egg, and that id routes', async () => {
+    const ctx = ctxOn();
+    const i = buyFirstOffered(ctx);
+    await routeInteraction(ctx, testRegistry, i.asInteraction());
+
+    const eggRow = ctx.db.select().from(schema.eggs).all()[0];
+    expect(mintedIds(i.replies[0])).toContain(`hatch:inc:u1:${eggRow.id}`);
+    // Clobber tripwire for Task 23 (G7-D)'s control, not a claim on it.
+    expect(mintedIds(i.replies[0])).toContain(`shop:again:u1:${eggRow.rarity}`);
+    // The typed path survives beside the button — the whole description, which is one line.
+    expect((i.replies[0] as { embeds: Array<{ toJSON(): { description: string } }> }).embeds[0].toJSON().description)
+      .toBe(`Incubate it with \`/incubate egg:${eggRow.id}\`.`);
+
+    const customId = `hatch:inc:u1:${eggRow.id}`;
+    const b = fakeButton({ customId, user: 'u1', guild: 'g1', componentIds: [customId] });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(b.deferOpts).toHaveLength(0);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, eggRow.id)).get()!.incubationStartedAt).toBe(0);
+  });
+
+  it('mints no Incubate row when the hatchery module is disabled', async () => {
+    const ctx = ctxNoHatchery();
+    const i = buyFirstOffered(ctx);
+    await routeInteraction(ctx, testRegistry, i.asInteraction());
+    const eggRow = ctx.db.select().from(schema.eggs).all()[0];
+    expect(mintedIds(i.replies[0])).not.toContain(`hatch:inc:u1:${eggRow.id}`);
+    expect(mintedIds(i.replies[0])).toContain(`shop:again:u1:${eggRow.rarity}`);
   });
 });

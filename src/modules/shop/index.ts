@@ -122,7 +122,11 @@ export const shopModule: ModuleManifest = {
             const egg = buyEgg(ctx, i.user.id, rarity);
             const eggEmbed = new EmbedBuilder().setColor(RARITY_COLOR[egg.rarity] ?? 0x95a5a6)
               .setTitle(`🥚 Bought a ${rarityEmoji(egg.rarity)}${egg.rarity} egg (#${egg.id})`)
-              .setDescription(`Incubate it with /incubate ${egg.id}.`);
+              // `/incubate egg:<id>`, never `/incubate <id>`: the option is NAMED
+              // (src/modules/hatchery/index.ts, o.setName('egg')), so the old text was not
+              // valid Discord syntax. Names only the typed path — the button beside it is
+              // gated on the hatchery module being enabled.
+              .setDescription(`Incubate it with \`/incubate egg:${egg.id}\`.`);
             // components starts EMPTY and is PUSHED into. Spec §3 gives this surface two
             // controls from two separate tasks; assigning the array wholesale would make
             // whichever lands second silently delete the other's button, with nothing failing.
@@ -132,6 +136,11 @@ export const shopModule: ModuleManifest = {
               files?: AttachmentBuilder[];
             } = { embeds: [eggEmbed], components: [] };
             eggPayload.components.push(buyAnotherRow(i.user.id, egg.rarity));
+            // Cross-module mint, and PUSHED, never assigned — same reasoning as the
+            // /expedition claim reply: ModuleRegistry routes only enabled modules, so with
+            // "hatchery": false this button would answer nothing, and Task 23 (G7-D) owns
+            // buyAnotherRow on this same array.
+            if (ctx.config.modules.hatchery) eggPayload.components.push(incubateRow(i.user.id, egg.id));
             attach(eggEmbed, eggPayload, 'thumbnail', assetImage('eggs', egg.rarity, String(egg.id)));
             await i.reply(eggPayload);
           } else {
