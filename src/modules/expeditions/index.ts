@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import type { AttachmentBuilder } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
@@ -60,6 +60,26 @@ function sitePayload(siteId: string, description: string) {
   return payload;
 }
 
+/**
+ * The Dig again control, minted onto both surfaces that END an expedition: the
+ * /expedition claim reply and the exp:claim button's own update. Both are PUBLIC messages,
+ * so the owner id rides in the customId and the handler rejects a mismatch before the
+ * service call — startExpedition resolves against the CALLER, so a bystander's click would
+ * silently dispatch their own crew rather than be refused.
+ *
+ * Unicode in the LABEL, never setEmoji: emojiTag returns '' when no emoji map is loaded and
+ * ButtonBuilder#setEmoji throws on that rather than degrading.
+ *
+ * No price in this id, deliberately. The fee moves with the world event at every UTC
+ * midnight and a public message is durable — the price is quoted, and baked into an id,
+ * only on the ephemeral confirm card this button opens (Task 20 (G7-B)).
+ */
+export function digAgainRow(userId: string, siteId: string): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(`exp:again:${userId}:${siteId}`)
+      .setLabel('🧭 Dig again').setStyle(ButtonStyle.Primary));
+}
+
 export const expeditionsModule: ModuleManifest = {
   name: 'expeditions',
   commands: [
@@ -117,7 +137,15 @@ export const expeditionsModule: ModuleManifest = {
               .addFields(
                 { name: `${emojiTag('dw_cash')} Cash`, value: `+${loot.cash}`, inline: true },
                 { name: `${emojiTag(FOODS[loot.food.foodId].emoji)} ${FOODS[loot.food.foodId].name}`, value: `+${loot.food.qty}`, inline: true });
-            const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+            // components starts EMPTY and is PUSHED into. Spec §3 gives this surface two
+            // controls from two separate tasks; assigning the array wholesale would make
+            // whichever lands second silently delete the other's button, with nothing failing.
+            const payload: {
+              embeds: EmbedBuilder[];
+              components: ActionRowBuilder<ButtonBuilder>[];
+              files?: AttachmentBuilder[];
+            } = { embeds: [embed], components: [] };
+            payload.components.push(digAgainRow(i.user.id, site.id));
             // i.user.id seeds the banner — the viewer, same rule as every other banner call.
             attach(embed, payload, 'image', assetImage('sites', `${site.id}-banner`, i.user.id));
             attach(embed, payload, 'thumbnail', assetImage('sites', `${site.id}-thumb`));
@@ -159,9 +187,12 @@ export const expeditionsModule: ModuleManifest = {
         }
         try {
           const { loot, site } = claimExpedition(ctx, i.user.id);
+          // Same push-never-assign contract as the /expedition claim reply above.
+          const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+          rows.push(digAgainRow(i.user.id, site.id));
           await i.update({
             content: `🧭 **${site.name}** claimed — a **${loot.eggRarity}** egg, **${loot.cash}** cash, and **${loot.food.qty}× ${FOODS[loot.food.foodId].name}**.`,
-            embeds: [], components: [], attachments: [],
+            embeds: [], components: rows, attachments: [],
           });
         } catch (e) {
           if (e instanceof ExpeditionError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
