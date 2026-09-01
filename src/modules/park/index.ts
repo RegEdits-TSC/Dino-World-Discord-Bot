@@ -5,8 +5,8 @@ import { schema } from '../../core/db/index.js';
 import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, maxLevelFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, StaleLevelError, toClockDinos, needsAttentionCount } from './service.js';
 import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
-import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
-import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, confirmPayload, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
+import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, eligiblePaddocks, PADDOCK_FULL, DINO_ESCAPED, AssignError, DietMismatchError, renameDino } from './dinos.js';
+import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, confirmPayload, assignRow, assignSelectRow, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
 import { guestsPayload } from '../guests/embeds.js';
 import { visitPayload, nextParkRow } from './visit.js';
 import { bumpLegacyBest, legacyRank } from './ranks.js';
@@ -34,7 +34,7 @@ import { attendanceOf } from './attendance.js';
 import { earnedTierCount } from '../daily/service.js';
 import { seasonBadges } from '../daily/season.js';
 import { lotSlots, nextLotSlot } from '../../data/progression.js';
-import type { AttachmentBuilder, ButtonInteraction } from 'discord.js';
+import type { AttachmentBuilder, ButtonInteraction, MessageComponentInteraction } from 'discord.js';
 
 const kindChoices = [...Object.keys(PADDOCKS), ...Object.keys(FACILITIES)]
   .map((k) => ({ name: k.replaceAll('_', ' '), value: k }));
@@ -136,6 +136,92 @@ function maxLevelLine(kind: string): string {
   const def = FACILITIES[kind];
   if (def) return `Already max level (${max}) — the ${def.name} is fully upgraded.`;
   return `Already max level (${max}) — that paddock holds ${paddockCapacity(max)}.`;
+}
+
+// The Upgrade menu's stale-anchor wording, minus its "for current prices" tail: an assign
+// moves no money, and pointing a player at prices they never asked about reads as a
+// different bug. The stem is identical on purpose — it is the same class of failure, an id
+// naming a lot that no longer answers for what its label promised.
+const STALE_ASSIGN = 'That lot changed — open `/park view` again.';
+
+// The AssignError texts a follow-through clicker reads VERBATIM. Everything else assignDino
+// can raise ('You do not own that dino.', 'You do not own that lot.', 'Dinos can only go in
+// paddocks.') describes an id that should never have been clickable, and those become
+// STALE_ASSIGN.
+//
+// This Set IS the room re-check. There is no second occupancy read before the call: one
+// would answer with the same sentence a layer earlier and could never be watched failing.
+// Emptying this Set is what makes the full-paddock and escaped-dino cases go red — see the
+// break step in this task.
+const PASS_THROUGH = new Set<string>([PADDOCK_FULL, DINO_ESCAPED]);
+
+/**
+ * The refusal a follow-through assign control owes for this dino, or null when it may
+ * proceed. ONE rule, and it is the one rule nothing else in this feature provides.
+ *
+ * assignDino relocates a dino perfectly happily, and `park:assign:<uid>:<dinoId>:<lotId>`
+ * sits on a PUBLIC hatch reveal that is never repainted. Without this: hatch, click
+ * "Assign to #1", later run `/dino assign dino:… lot:3`, scroll up, click the old button —
+ * and the dino is silently dragged back to lot 1, with a different decor set, a different
+ * level, and a different comfort, income and rating behind it. The router's
+ * clickedIdIsOnMessage closes CROSS-message anchoring only and says nothing about this.
+ * So the follow-through is a FIRST-HOME control: it gives a brand-new dino its first
+ * paddock and refuses thereafter. Moving a dino that already has one is `/dino assign`'s job.
+ *
+ * A dino this caller does not own, or a junk id, deliberately falls through as `null`:
+ * assignDino refuses both and the catch turns them into STALE_ASSIGN. An arm here would
+ * produce the identical sentence one layer earlier and could never be watched failing.
+ *
+ * Synchronous by design: the caller's read and its write must have no suspension point
+ * between them, and an async helper here would put an `await` inside that pair.
+ */
+function assignRefusal(ctx: Ctx, userId: string, dinoId: number): string | null {
+  const dino = ctx.db.select().from(schema.dinos)
+    .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
+  if (dino && dino.lotId !== null) return `Already assigned to lot #${dino.lotId}.`;
+  return null;
+}
+
+/**
+ * The one place a follow-through assign control turns a (dinoId, lotId) pair into an
+ * assignment, shared by the park:assign button and the park:assignsel menu so the two
+ * cannot validate differently.
+ *
+ * assignDino IS THE AUTHORITY, and the catch below is the whole of this handler's contract
+ * with it: PASS_THROUGH decides which of its refusals a player reads as written and which
+ * collapse to staleness. Nothing is re-checked ahead of the call except the first-home rule,
+ * which assignDino has no opinion about.
+ *
+ * No `await` sits between assignRefusal's read and assignDino's write, deliberately:
+ * better-sqlite3 is synchronous and the absence of a suspension point is what makes that
+ * pair atomic.
+ */
+async function assignFollowThrough(
+  ctx: Ctx, i: MessageComponentInteraction, dinoId: number, lotId: number,
+): Promise<void> {
+  settleEscapes(ctx, i.user.id);
+  const refusal = assignRefusal(ctx, i.user.id, dinoId);
+  if (refusal !== null) { await i.reply({ content: refusal, flags: MessageFlags.Ephemeral }); return; }
+  try {
+    assignDino(ctx, i.user.id, dinoId, lotId);
+  } catch (e) {
+    // DietMismatchError is a SEPARATE class, not an AssignError subclass, so it needs its
+    // own arm. It always means a forged id: the mint side never offers an off-diet paddock,
+    // and the "Assign anyway" confirm lives on /dino assign alone.
+    if (e instanceof DietMismatchError) {
+      await i.reply({ content: STALE_ASSIGN, flags: MessageFlags.Ephemeral });
+      return;
+    }
+    if (e instanceof AssignError) {
+      await i.reply({
+        content: PASS_THROUGH.has(e.message) ? e.message : STALE_ASSIGN,
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    throw e;
+  }
+  await i.reply({ content: `🦕 Assigned to lot #${lotId}.`, flags: MessageFlags.Ephemeral });
 }
 
 export const parkModule: ModuleManifest = {
@@ -599,6 +685,17 @@ export const parkModule: ModuleManifest = {
               if (e instanceof AssignError) await i.update({ content: e.message, components: [] });
               else throw e;
             }
+            return;
+          }
+          case 'assign': {
+            // park:assign:<uid>:<dinoId>:<lotId> — minted where exactly one paddock was
+            // eligible. This owner check is a MESSAGE-QUALITY layer, not the write barrier:
+            // assignRefusal and assignDino both resolve the dino against the CLICKER, so a
+            // bystander is already refused one level down. What it buys is that the
+            // bystander is told "not yours" instead of a staleness line that would
+            // misdescribe what happened.
+            if (i.user.id !== uid) { await i.reply({ content: 'Not your assignment.', flags: MessageFlags.Ephemeral }); return; }
+            await assignFollowThrough(ctx, i, Number(parts[3]), Number(parts[4]));
             return;
           }
           case 'dinos': {

@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { ActionRowBuilder, ButtonBuilder } from 'discord.js';
-import { makeCtx } from './harness.js';
+import { MessageFlags } from 'discord.js';
+import { eq } from 'drizzle-orm';
+import { makeCtx, fakeButton, replyText, testRegistry } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
-import { eligiblePaddocks } from '../src/modules/park/dinos.js';
+import { assignDino, eligiblePaddocks } from '../src/modules/park/dinos.js';
 import { assignRow, assignSelectRow } from '../src/modules/park/embeds.js';
 import { ALL_MODULES } from '../src/core/module-list.js';
 import type { Config } from '../src/core/config.js';
+import { routeInteraction } from '../src/core/router.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 
@@ -132,5 +135,112 @@ describe('assignRow — the shape is chosen at mint time', () => {
     expect(menu.custom_id).toBe(`park:assignsel:u1:${d.id}`);
     expect(menu.options.map((o) => o.value)).toEqual([String(a.id), String(b.id)]);
     expect(menu.options[1]!.label).toBe(`#${b.id} Herbivore Paddock (lvl 2)`);
+  });
+});
+
+// fakeButton defaults the message's component list to [customId] (tests/harness.ts), which
+// is exactly the well-formed shape: in a real client the only button you can click is one
+// the message carries. A fixture opts out with `componentIds: []` to model a forged id, and
+// none of these cases wants that — they model real clicks on real cards.
+const lotOf = (dinoId: number) =>
+  ctx.db.select().from(schema.dinos).where(eq(schema.dinos.id, dinoId)).get()!.lotId;
+
+describe('park:assign — the one-eligible follow-through button', () => {
+  it('routes the minted id through the registry and assigns the dino', async () => {
+    seedUser();
+    const lot = seedLot();
+    const d = seedDino();
+    const b = fakeButton({ customId: `park:assign:u1:${d.id}:${lot.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(b.deferOpts).toHaveLength(0);         // dispatched, not absorbed by the default arm
+    expect(replyText(b.replies[0])).toBe(`🦕 Assigned to lot #${lot.id}.`);
+    expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect(lotOf(d.id)).toBe(lot.id);
+  });
+
+  it('refuses a bystander and writes nothing', async () => {
+    seedUser(); getOrCreateUser(ctx, 'u2', 'u2');
+    const lot = seedLot();
+    const d = seedDino();
+    const b = fakeButton({ customId: `park:assign:u1:${d.id}:${lot.id}`, user: 'u2' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(replyText(b.replies[0])).toBe('Not your assignment.');
+    expect(lotOf(d.id)).toBeNull();
+  });
+
+  it('says the paddock is full when it filled up between mint and click', async () => {
+    seedUser();
+    const lot = seedLot();                 // level 1 → capacity 2
+    const d = seedDino();
+    seedDino({ lotId: lot.id }); seedDino({ lotId: lot.id });   // 2/2 after the mint
+    const b = fakeButton({ customId: `park:assign:u1:${d.id}:${lot.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    // NOT the staleness line: a full paddock is a state the player can do something about,
+    // and the /build follow-through's picker says exactly this sentence for the same cause.
+    expect(replyText(b.replies[0])).toBe('That paddock is full.');
+    expect(lotOf(d.id)).toBeNull();
+  });
+
+  it('says the dino has escaped rather than blaming the lot', async () => {
+    seedUser();
+    const lot = seedLot();
+    // Reachable in production by escaping (which needs a paddock) and then running
+    // /dino unassign, which clears lotId without clearing escapedAt.
+    const d = seedDino({ escapedAt: 1 });
+    const b = fakeButton({ customId: `park:assign:u1:${d.id}:${lot.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(replyText(b.replies[0])).toBe('That dino has escaped — rescue it first.');
+    expect(lotOf(d.id)).toBeNull();
+  });
+
+  it('refuses when the lot is gone', async () => {
+    seedUser();
+    const lot = seedLot();
+    const d = seedDino();
+    ctx.db.delete(schema.lots).where(eq(schema.lots.id, lot.id)).run();
+    const b = fakeButton({ customId: `park:assign:u1:${d.id}:${lot.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(replyText(b.replies[0])).toBe('That lot changed — open `/park view` again.');
+    expect(lotOf(d.id)).toBeNull();
+  });
+
+  it('refuses a forged id naming somebody else’s dino, and leaves that dino alone', async () => {
+    seedUser(); getOrCreateUser(ctx, 'u2', 'u2');
+    const lot = seedLot();
+    const theirs = ctx.db.insert(schema.dinos).values({
+      userId: 'u2', speciesId: 'triceratops', lastFedAt: 0, hatchedAt: 0,
+    }).returning().get();
+    const b = fakeButton({ customId: `park:assign:u1:${theirs.id}:${lot.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(replyText(b.replies[0])).toBe('That lot changed — open `/park view` again.');
+    expect(lotOf(theirs.id)).toBeNull();
+  });
+
+  it('refuses a forged id naming an off-diet paddock, and never halves comfort', async () => {
+    seedUser();
+    const carn = seedLot({ kind: 'carnivore_paddock', name: 'Carnivore Paddock' });
+    const d = seedDino();                                  // triceratops, herbivore
+    const b = fakeButton({ customId: `park:assign:u1:${d.id}:${carn.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(replyText(b.replies[0])).toBe('That lot changed — open `/park view` again.');
+    expect(lotOf(d.id)).toBeNull();
+  });
+
+  it('is a first-home control: a later click never drags the dino back', async () => {
+    seedUser();
+    const a = seedLot(); const b2 = seedLot();
+    const d = seedDino();
+    const customId = `park:assign:u1:${d.id}:${a.id}`;
+    const first = fakeButton({ customId, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, first.asInteraction());
+    expect(replyText(first.replies[0])).toBe(`🦕 Assigned to lot #${a.id}.`);
+    // The player then moves the dino with /dino assign. The reveal card is durable and is
+    // never repainted, so it still holds the old button — this is stale SAME-MESSAGE
+    // replay, which the router guard does not and cannot see.
+    assignDino(ctx, 'u1', d.id, b2.id);
+    const again = fakeButton({ customId, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, again.asInteraction());
+    expect(replyText(again.replies[0])).toBe(`Already assigned to lot #${b2.id}.`);
+    expect(lotOf(d.id)).toBe(b2.id);
   });
 });
