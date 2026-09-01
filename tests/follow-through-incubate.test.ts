@@ -8,6 +8,8 @@ import { getOrCreateUser } from '../src/modules/park/service.js';
 import { startExpedition, claimExpedition } from '../src/modules/expeditions/service.js';
 import { incubateRow } from '../src/modules/hatchery/embeds.js';
 import { incubateEgg } from '../src/modules/hatchery/service.js';
+import { ALL_MODULES } from '../src/core/module-list.js';
+import type { Config } from '../src/core/config.js';
 
 // Day 0 is `clear_skies` — every eventMods multiplier is 1 — so coastal_dig costs exactly
 // 200 cash and takes exactly its 15-minute durationMs. Re-derive with:
@@ -227,5 +229,86 @@ describe('hatch:inc guards', () => {
     // unfulfillable — the egg row must be untouched.
     expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.incubationStartedAt).toBeNull();
     expect(ctx.db.select().from(schema.timers).all()).toEqual([]);
+  });
+});
+
+/**
+ * makeCtx leaves `config.modules` as `{}` (tests/harness.ts:21), and every Incubate mint from
+ * here on is CROSS-MODULE: expeditions, the shop and the gene lab all mint an id the HATCHERY
+ * module handles, so each is gated on `ctx.config.modules.hatchery`. ModuleRegistry filters to
+ * ENABLED modules (src/core/modules.ts), so a button whose handler's module is off is a control
+ * nothing answers at all. Left at the default, every one of those gates would suppress its own
+ * button and every case asserting the button exists would go green while proving nothing.
+ * `testRegistry` is a separate object and stays fully enabled on purpose: the gate reads
+ * ctx.config, not the registry, so a fixture has to move exactly that.
+ */
+function modulesConfig(over: Record<string, boolean> = {}): Config {
+  return {
+    token: 't', clientId: 'c', databasePath: ':memory:', ownerId: 'owner',
+    // Derived from ALL_MODULES, never a hand-written list of names: a gate added later on a
+    // module this literal happened not to name would read `undefined`, suppress its own
+    // control, and leave the test green with nothing to show for it. tests/harness.ts already
+    // compiles this exact expression for testRegistry, so it is proven under `npm run typecheck`.
+    modules: { ...Object.fromEntries(ALL_MODULES.map((m) => [m.name, true])), ...over },
+  };
+}
+const ctxOn = (nowMs = 0) => makeCtx({ nowMs, config: modulesConfig() });
+const ctxNoHatchery = (nowMs = 0) => makeCtx({ nowMs, config: modulesConfig({ hatchery: false }) });
+
+describe('/expedition claim offers Incubate', () => {
+  function digReady(ctx: ReturnType<typeof makeCtx>) {
+    getOrCreateUser(ctx, 'u1', 'One');
+    ctx.economy.apply('u1', { cash: 100_000 }, 'seed', 0);
+    startExpedition(ctx, 'u1', 'coastal_dig', 'g1');
+    ctx.setNow(16 * 60_000);
+  }
+
+  it('the slash reply mints hatch:inc for the egg it just found, and that id routes', async () => {
+    const ctx = ctxOn();
+    digReady(ctx);
+    const i = fakeCommand({ name: 'expedition', sub: 'claim', user: 'u1', guild: 'g1' });
+    await routeInteraction(ctx, testRegistry, i.asInteraction());
+
+    const eggRow = ctx.db.select().from(schema.eggs).all()[0];
+    // toContain, never a whole-list toEqual: Task 19 (G7-A) owns another control on this same
+    // array and Task 29 (G8-A)'s GRAPH row is the ONE place the whole list is pinned. The second
+    // assertion is a clobber tripwire, not a claim on that button.
+    expect(mintedIds(i.replies[0])).toContain(`hatch:inc:u1:${eggRow.id}`);
+    expect(mintedIds(i.replies[0])).toContain('exp:again:u1:coastal_dig');
+
+    // Mint it, then ROUTE it: asserting the id alone would not catch a prefix that
+    // resolves to no handler at all.
+    const customId = `hatch:inc:u1:${eggRow.id}`;
+    const b = fakeButton({ customId, user: 'u1', guild: 'g1', componentIds: [customId] });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(b.deferOpts).toHaveLength(0);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, eggRow.id)).get()!.incubationStartedAt).toBe(16 * 60_000);
+  });
+
+  it('the slash reply keeps the typed fallback beside the button', async () => {
+    const ctx = ctxOn();
+    digReady(ctx);
+    const i = fakeCommand({ name: 'expedition', sub: 'claim', user: 'u1', guild: 'g1' });
+    await routeInteraction(ctx, testRegistry, i.asInteraction());
+    const eggRow = ctx.db.select().from(schema.eggs).all()[0];
+    const description = (i.replies[0] as { embeds: Array<{ toJSON(): { description: string } }> })
+      .embeds[0].toJSON().description;
+    // The LAST rendered line, whole. The lines above it are the world-event header and the
+    // loot line, neither of which this task changes. The sentence names only the TYPED path
+    // because the button is gated on the hatchery module being enabled — "the button below"
+    // would be a lie in exactly the configuration the next case covers.
+    const lines = description.split('\n');
+    expect(lines[lines.length - 1]).toBe(`Incubate it with \`/incubate egg:${eggRow.id}\`.`);
+  });
+
+  it('mints no Incubate row when the hatchery module is disabled', async () => {
+    const ctx = ctxNoHatchery();
+    digReady(ctx);
+    const i = fakeCommand({ name: 'expedition', sub: 'claim', user: 'u1', guild: 'g1' });
+    await routeInteraction(ctx, testRegistry, i.asInteraction());
+    const eggRow = ctx.db.select().from(schema.eggs).all()[0];
+    expect(mintedIds(i.replies[0])).not.toContain(`hatch:inc:u1:${eggRow.id}`);
+    // Dig again still ships: this gate is about the hatchery module, not about the reply.
+    expect(mintedIds(i.replies[0])).toContain('exp:again:u1:coastal_dig');
   });
 });

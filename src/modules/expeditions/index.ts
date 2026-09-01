@@ -129,12 +129,12 @@ export const expeditionsModule: ModuleManifest = {
               ? '✅ Back! Use /expedition claim.'
               : `⏳ Digging — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.`));
           } else {
-            const { loot, site } = claimExpedition(ctx, i.user.id);
+            const { loot, site, egg } = claimExpedition(ctx, i.user.id);
             // See EXPEDITION_CLAIM_HEADER_KEYS above for why this header is
             // safe here and must never move to /expedition status.
             const header = eventHeaderLine(ctx.now(), EXPEDITION_CLAIM_HEADER_KEYS);
             const embed = new EmbedBuilder().setColor(0xe8590c).setTitle(`🧭 ${siteMarker(site.id)}${site.name} — returned!`)
-              .setDescription(`${header}\n\nFound a **${rarityEmoji(loot.eggRarity)}${loot.eggRarity}** egg!`)
+              .setDescription(`${header}\n\nFound a **${rarityEmoji(loot.eggRarity)}${loot.eggRarity}** egg (#${egg.id})!\nIncubate it with \`/incubate egg:${egg.id}\`.`)
               .addFields(
                 { name: `${emojiTag('dw_cash')} Cash`, value: `+${loot.cash}`, inline: true },
                 { name: `${emojiTag(FOODS[loot.food.foodId].emoji)} ${FOODS[loot.food.foodId].name}`, value: `+${loot.food.qty}`, inline: true });
@@ -147,6 +147,12 @@ export const expeditionsModule: ModuleManifest = {
               files?: AttachmentBuilder[];
             } = { embeds: [embed], components: [] };
             payload.components.push(digAgainRow(i.user.id, site.id));
+            // Cross-module mint, and PUSHED, never assigned. hatch:inc is handled in the
+            // HATCHERY module, and ModuleRegistry.findComponent searches only enabled modules
+            // (src/core/modules.ts), so with "hatchery": false in modules.json this button
+            // would be a dead control on a public message — a click nothing answers at all.
+            // Task 19 (G7-A) owns digAgainRow on this same array; assigning it would delete that.
+            if (ctx.config.modules.hatchery) payload.components.push(incubateRow(i.user.id, egg.id));
             // i.user.id seeds the banner — the viewer, same rule as every other banner call.
             attach(embed, payload, 'image', assetImage('sites', `${site.id}-banner`, i.user.id));
             attach(embed, payload, 'thumbnail', assetImage('sites', `${site.id}-thumb`));
