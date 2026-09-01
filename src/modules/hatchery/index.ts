@@ -91,7 +91,47 @@ export const hatcheryModule: ModuleManifest = {
           await i.update({ ...eggListPayload(eggs, ctx.now(), i.user.id, Number(a3), locksFor(ctx, i.user.id).eggs), attachments: [] });
           return;
         }
-        if (action !== 'crack') return;
+        if (action === 'inc') {
+          // These buttons sit on PUBLIC messages (the /expedition claim, /shop egg and
+          // /breed claim replies are not ephemeral), so the owner is checked here,
+          // explicitly, before any read. incubateEgg's own (id, userId) filter would
+          // refuse a bystander too — it resolves the egg against the CALLER, so a
+          // bystander's click finds no row — but it refuses with "You do not own that
+          // egg.", which is true and the wrong sentence for a click on somebody else's
+          // card. This check buys the right MESSAGE, not the write protection.
+          if (i.user.id !== a2) {
+            await i.reply({ content: 'That is not your egg.', flags: MessageFlags.Ephemeral });
+            return;
+          }
+          // Client-supplied and not even trusted to parse: a malformed segment must not
+          // reach the DB lookup as NaN. (It binds fine and misses, so the cost is again
+          // the wrong sentence — "You do not own that egg." for a mangled link.)
+          const eggId = Number(a3);
+          if (!Number.isInteger(eggId)) {
+            await i.reply({ content: 'That incubate link is invalid — use `/incubate`.', flags: MessageFlags.Ephemeral });
+            return;
+          }
+          try {
+            const egg = incubateEgg(ctx, i.user.id, eggId, i.guildId);
+            // i.update, and neither `embeds` nor `attachments` is sent. The message this
+            // button sits on carries an egg embed whose image is an attachment:// URL into
+            // its own upload: `attachments: []` would drop that upload and leave the embed
+            // pointing at nothing, and `embeds: []` would throw the reveal away. Only
+            // content and components are replaced — components: [] REMOVES the spent
+            // button, which is how a one-shot flow is closed here, because neither router
+            // guard reads `disabled`. i.reply would leave the button standing.
+            await i.update({
+              content: `🥚 Egg #${egg.id} is incubating — ready <t:${Math.floor(egg.hatchesAt! / 1000)}:R>, then \`/hatch egg:${egg.id}\`.`,
+              components: [],
+            });
+          } catch (e) {
+            if (e instanceof HatcheryError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e;
+          }
+          return;
+        }
+        // deferUpdate, never a bare return: a bare return paints "This interaction failed"
+        // after 3 seconds, and a stale id from an older deploy lands right here.
+        if (action !== 'crack') { await i.deferUpdate(); return; }
         const idStr = a2;
         try {
           const { species, traits } = hatchEgg(ctx, i.user.id, Number(idStr));
@@ -107,7 +147,8 @@ export const hatcheryModule: ModuleManifest = {
       } },
     { prefix: 'mythic', async execute(ctx, i) {
         const [, action, speciesId] = i.customId.split(':');
-        if (action !== 'confirm') return;
+        // Same reason as the hatch handler above: an unrecognised action must acknowledge.
+        if (action !== 'confirm') { await i.deferUpdate(); return; }
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         try {
           const egg = buyMythicEgg(ctx, i.user.id, speciesId);

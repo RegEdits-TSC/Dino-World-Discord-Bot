@@ -16,6 +16,24 @@ export function crackButton(eggId: number) {
     new ButtonBuilder().setCustomId(`hatch:crack:${eggId}`).setLabel('🔨 Crack it open!').setStyle(ButtonStyle.Success),
   );
 }
+
+// The ONE Incubate button. Four surfaces mint it — /expedition claim and the exp:claim
+// update, /shop egg, /breed claim and the breed:claim update, and mythic:confirm — so the id
+// grammar and the label live here rather than being retyped at each one. Enumerate the call
+// sites with `grep -rn "incubateRow(" src/`.
+//
+// Handled by the `hatch` component in src/modules/hatchery/index.ts. A minter needs no import
+// into that module, because routeInteraction resolves a handler from the customId PREFIX
+// alone — that is a reason not to import the HANDLER, never a reason to copy this BUILDER.
+//
+// The owner uid rides in the id because most of those replies are PUBLIC; see the handler's
+// own owner check. Unicode 🥚 in the label, never emojiTag/setEmoji: the app-emoji map
+// returns '' when unloaded and setEmoji throws on that rather than degrading.
+export function incubateRow(userId: string, eggId: number): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(`hatch:inc:${userId}:${eggId}`)
+      .setLabel(`🥚 Incubate #${eggId}`).setStyle(ButtonStyle.Primary));
+}
 export function preHatchEmbed(rarity: string) {
   return new EmbedBuilder().setColor(RARITY_COLOR[rarity] ?? 0x95a5a6)
     .setTitle(`🥚 A ${rarityEmoji(rarity)}${rarity} egg trembles…`).setDescription('Something stirs inside. Crack it open!');

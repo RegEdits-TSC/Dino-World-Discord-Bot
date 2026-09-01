@@ -100,8 +100,13 @@ export function replyText(r: unknown): string {
   return (r as { content?: string })?.content ?? '';
 }
 
+export type ReplyKind = 'reply' | 'update' | 'editReply' | 'followUp';
+
 export interface FakeInteraction {
   replies: unknown[];
+  // Optional because fakeCommand and fakeAutocomplete do not populate it: a slash command
+  // has no message to update, so the distinction does not exist there.
+  replyKinds?: ReplyKind[];
   deferOpts: unknown[];
   asChatInput(): ChatInputCommandInteraction;
   asInteraction(): Interaction;
@@ -210,6 +215,12 @@ export function fakeButton(opts: {
   customId: string; user: string; guild?: string; posterId?: string; componentIds?: string[];
 }): FakeInteraction {
   const replies: unknown[] = [];
+  // Parallel to `replies`, one entry per recorded payload. `replies` cannot tell reply from
+  // update — all four methods push into it and all four set `replied` — and the two are not
+  // interchangeable: i.update REPLACES the message the control sits on (which is how a
+  // one-shot button is closed here, since neither router guard reads `disabled`), while
+  // i.reply leaves the spent button standing and posts beside it.
+  const replyKinds: ReplyKind[] = [];
   const deferOpts: unknown[] = [];
   const label = `button ${opts.customId}`;
   const raw = {
@@ -243,22 +254,22 @@ export function fakeButton(opts: {
     reply: async (payload: unknown) => {
       if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
       validateMessagePayload(payload, `${label} reply`);
-      raw.replied = true; replies.push(payload);
+      raw.replied = true; replies.push(payload); replyKinds.push('reply');
     },
     editReply: async (payload: unknown) => {
       if (!raw.deferred && !raw.replied) throw djsError('InteractionNotReplied');
       validateMessagePayload(payload, `${label} editReply`);
-      raw.replied = true; replies.push(payload);
+      raw.replied = true; replies.push(payload); replyKinds.push('editReply');
     },
     followUp: async (payload: unknown) => {
       if (!raw.deferred && !raw.replied) throw djsError('InteractionNotReplied');
       validateMessagePayload(payload, `${label} followUp`);
-      replies.push(payload);
+      replies.push(payload); replyKinds.push('followUp');
     },
     update: async (payload: unknown) => {
       if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
       validateMessagePayload(payload, `${label} update`);
-      raw.replied = true; replies.push(payload);
+      raw.replied = true; replies.push(payload); replyKinds.push('update');
     },
     // Both push into the same deferOpts array (existing `.toHaveLength(n)` assertions
     // don't care which), but each entry now carries `kind` — 'update' vs 'reply' —
@@ -276,7 +287,7 @@ export function fakeButton(opts: {
     },
   };
   return {
-    replies, deferOpts,
+    replies, replyKinds, deferOpts,
     asChatInput: () => raw as unknown as ChatInputCommandInteraction,
     asInteraction: () => raw as unknown as Interaction,
   };
@@ -287,6 +298,12 @@ export function fakeSelect(opts: {
   componentIds?: string[]; options?: string[];
 }): FakeInteraction {
   const replies: unknown[] = [];
+  // Parallel to `replies`, one entry per recorded payload. `replies` cannot tell reply from
+  // update — all four methods push into it and all four set `replied` — and the two are not
+  // interchangeable: i.update REPLACES the message the control sits on (which is how a
+  // one-shot button is closed here, since neither router guard reads `disabled`), while
+  // i.reply leaves the spent button standing and posts beside it.
+  const replyKinds: ReplyKind[] = [];
   const deferOpts: unknown[] = [];
   const label = `select ${opts.customId}`;
   // options defaults to values, so a fixture models a well-formed submission unless it
@@ -317,22 +334,22 @@ export function fakeSelect(opts: {
     reply: async (payload: unknown) => {
       if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
       validateMessagePayload(payload, `${label} reply`);
-      raw.replied = true; replies.push(payload);
+      raw.replied = true; replies.push(payload); replyKinds.push('reply');
     },
     editReply: async (payload: unknown) => {
       if (!raw.deferred && !raw.replied) throw djsError('InteractionNotReplied');
       validateMessagePayload(payload, `${label} editReply`);
-      raw.replied = true; replies.push(payload);
+      raw.replied = true; replies.push(payload); replyKinds.push('editReply');
     },
     followUp: async (payload: unknown) => {
       if (!raw.deferred && !raw.replied) throw djsError('InteractionNotReplied');
       validateMessagePayload(payload, `${label} followUp`);
-      replies.push(payload);
+      replies.push(payload); replyKinds.push('followUp');
     },
     update: async (payload: unknown) => {
       if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
       validateMessagePayload(payload, `${label} update`);
-      raw.replied = true; replies.push(payload);
+      raw.replied = true; replies.push(payload); replyKinds.push('update');
     },
     deferUpdate: async (o?: unknown) => {
       if (raw.deferred || raw.replied) throw djsError('InteractionAlreadyReplied');
@@ -344,7 +361,7 @@ export function fakeSelect(opts: {
     },
   };
   return {
-    replies, deferOpts,
+    replies, replyKinds, deferOpts,
     asChatInput: () => raw as unknown as ChatInputCommandInteraction,
     asInteraction: () => raw as unknown as Interaction,
   };
