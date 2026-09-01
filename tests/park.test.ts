@@ -749,7 +749,26 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     ctx.db.update(schema.lots).set({ level: 4 }).run();
     const maxI = fakeCommand({ name: 'upgrade', user: 'u1', options: { lot: lot.id } });
     await cmd.execute(ctx, maxI.asChatInput());
-    expect(replyText(maxI.replies[0])).toContain('max level');
+    // The WHOLE line. Both numbers are read off maxLevelFor (the single resolver upgradeLot
+    // itself charges through) and paddockCapacity, and the facility case below is what fails
+    // if either is written into the string as a literal — a paddock and a facility do not
+    // share a cap.
+    expect(replyText(maxI.replies[0])).toBe('Already max level (4) — that paddock holds 8.');
+  });
+  it('/upgrade names the FACILITY cap at max level, not the paddock literal', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 10_000_000 }).run();
+    // gene_lab caps at 3 (src/data/facilities.ts). Seeded and asserted as literals on both
+    // sides so a data change fails loudly here rather than passing against a stale message —
+    // and so a hardcoded "(4)" fails this case while still passing the paddock case above,
+    // which is the only reason this case exists.
+    const lot = buildLot(ctx, 'u1', 'gene_lab');
+    ctx.db.update(schema.lots).set({ level: 3 }).where(eq(schema.lots.id, lot.id)).run();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'upgrade')!;
+    const i = fakeCommand({ name: 'upgrade', user: 'u1', options: { lot: lot.id } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toBe('Already max level (3) — the Gene Lab is fully upgraded.');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
   it('/upgrade execute quotes the price on the insufficient-funds reply', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');

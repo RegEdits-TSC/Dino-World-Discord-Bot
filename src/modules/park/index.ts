@@ -2,7 +2,7 @@ import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, Butt
 import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
-import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, StaleLevelError, toClockDinos, needsAttentionCount } from './service.js';
+import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, maxLevelFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, StaleLevelError, toClockDinos, needsAttentionCount } from './service.js';
 import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
@@ -119,6 +119,23 @@ function lotSlotCapLine(ctx: Ctx, userId: string): string {
   if (!next) return `${head} — every slot is unlocked.`;
   return `${head}. Slot ${next.slot} unlocks at ★${(next.threshold / 100).toFixed(1)}`
     + ` — you're at ★${(user.parkRating / 100).toFixed(1)} (best ★${(user.ratingHighWater / 100).toFixed(1)}).`;
+}
+
+/**
+ * The already-at-max-level sentence for a LotLimitError thrown by `upgradeLot`. The build
+ * handler reads the same class as "slot cap" — see `lotSlotCapLine`.
+ *
+ * The cap comes from maxLevelFor, the same resolver upgradeLot uses to decide whether to
+ * throw, and never from a literal: a paddock caps at 4, gene_lab and food_court at 3,
+ * visitor_center and hatchery_lab at 5, so any one number written here would be wrong for
+ * most lots. The capacity then follows FROM that number through paddockCapacity rather than
+ * being written down beside it, so a change to the paddock cap moves both halves together.
+ */
+function maxLevelLine(kind: string): string {
+  const max = maxLevelFor(kind);
+  const def = FACILITIES[kind];
+  if (def) return `Already max level (${max}) — the ${def.name} is fully upgraded.`;
+  return `Already max level (${max}) — that paddock holds ${paddockCapacity(max)}.`;
 }
 
 export const parkModule: ModuleManifest = {
@@ -309,7 +326,7 @@ export const parkModule: ModuleManifest = {
           const lot = upgradeLot(ctx, i.user.id, lotId, lotRow?.level ?? -1);
           await i.reply({ content: `⬆️ **${lot.name}** is now level ${lot.level}.` });
         } catch (e) {
-          if (e instanceof LotLimitError) await i.reply({ content: 'Already max level.', flags: MessageFlags.Ephemeral });
+          if (e instanceof LotLimitError) await i.reply({ content: maxLevelLine(lotRow!.kind), flags: MessageFlags.Ephemeral });
           else if (e instanceof UnknownKindError) await i.reply({ content: 'No such lot.', flags: MessageFlags.Ephemeral });
           else if (e instanceof InsufficientFundsError) await i.reply({
             content: `Not enough cash — that upgrade ${shortfallLine(e)}.`,
@@ -332,7 +349,7 @@ export const parkModule: ModuleManifest = {
         await respondRanked(i, lots
           .filter((l) => matches(q, l.id, l.name))
           .map((l) => {
-            const maxLevel = FACILITIES[l.kind]?.maxLevel ?? 4;
+            const maxLevel = maxLevelFor(l.kind);
             const valid = l.level < maxLevel;
             const price = valid ? ` — ${upgradeCostFor(l.kind, l.level).toLocaleString('en-US')} cash` : '';
             return { value: l.id, valid, label: `🏗️ #${l.id} ${l.name} (lvl ${l.level})${valid ? price : ' — MAX LEVEL'}` };
@@ -876,7 +893,7 @@ export const parkModule: ModuleManifest = {
               // Mapped for the UPGRADE menu: LotLimitError means "already max level" here,
               // where the build handler reads the same class as "slot cap".
               if (e instanceof LotLimitError) {
-                await i.reply({ content: 'Already max level.', flags: MessageFlags.Ephemeral });
+                await i.reply({ content: maxLevelLine(lot.kind), flags: MessageFlags.Ephemeral });
               } else if (e instanceof UnknownKindError) {
                 await i.reply({ content: 'No such lot.', flags: MessageFlags.Ephemeral });
               } else if (e instanceof StaleLevelError) {
@@ -1057,11 +1074,11 @@ async function renderTab(
         .filter(([kind]) => !owned.has(kind))
         .map(([kind, d]) => ({ kind, name: d.name, cost: d.buildCost })),
     ];
-    // `?? 4` matches upgradeLot's own `const maxLevel = def ? def.maxLevel : 4` — a
-    // paddock has no FACILITIES entry and caps at level 4. Keep the two in step; a menu
-    // that offers a maxed lot is rejected by LotLimitError, but it is a wasted click.
+    // maxLevelFor is the one resolver upgradeLot itself charges through, so this menu cannot
+    // drift from it. Filtering here keeps the menu honest but is NOT the guard: a maxed lot
+    // offered anyway is rejected by LotLimitError, it is just a wasted click.
     const upgradable = lots
-      .filter((l) => l.level < (FACILITIES[l.kind]?.maxLevel ?? 4))
+      .filter((l) => l.level < maxLevelFor(l.kind))
       .map((l) => ({ lotId: l.id, name: l.name, level: l.level, cost: upgradeCostFor(l.kind, l.level) }));
     const built = lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit, buildable, upgradable });
     if (tourRow) built.components.push(tourRow);

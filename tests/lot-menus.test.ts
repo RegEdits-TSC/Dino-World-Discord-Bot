@@ -414,6 +414,19 @@ describe('upgrade menu', () => {
     expect(JSON.stringify(b.replies[0])).toContain('no longer valid');
     expect(b.deferOpts).toEqual([]);
   });
+
+  it('names the cap and the capacity when the lot is already at max level', async () => {
+    const lot = seedLot(4);   // paddock max level; seedLot also gives u1 100,000,000 cash
+    const before = cashOf('u1');
+    // The anchor matches the fresh read, so the handler's own staleness pre-check passes and
+    // the click reaches upgradeLot — which is what throws LotLimitError. Anchoring anything
+    // else would test the pre-check instead and never exercise this message.
+    const b = fakeButton({ customId: `park:upgyes:u1:${lot.id}:4`, user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(replyText(b.replies[0])).toBe('Already max level (4) — that paddock holds 8.');
+    expect(cashOf('u1')).toBe(before);
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.id, lot.id)).get()!.level).toBe(4);
+  });
 });
 
 // Same gap as the build menu's own mint block above, for the same reason: every case in

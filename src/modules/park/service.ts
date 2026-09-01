@@ -11,6 +11,15 @@ import { recomputeRating } from './rating.js';
 import { track } from '../../core/stats.js';
 
 export const BASE_LOT_SLOTS = 3;
+// A paddock has no FACILITIES entry and PaddockDef (src/data/types.ts) carries no maxLevel
+// field, so this is the paddock cap's ONLY definition. maxLevelFor is the single resolver:
+// the charge (upgradeLot), the /upgrade autocomplete label, the Lots-tab upgradable filter
+// and the failure message all read it, which is what stops them disagreeing — the same rule
+// upgradeCostFor states for the price a few lines below.
+export const PADDOCK_MAX_LEVEL = 4;
+export function maxLevelFor(kind: string): number {
+  return FACILITIES[kind]?.maxLevel ?? PADDOCK_MAX_LEVEL;
+}
 export class LotLimitError extends Error {}
 export class UnknownKindError extends Error {}
 // Carries the facility's display name as its message so /build can name it in the reply.
@@ -160,8 +169,7 @@ export function upgradeLot(ctx: Ctx, userId: string, lotId: number, expectedLeve
     .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, userId))).get();
   if (!lot) throw new UnknownKindError(String(lotId));
   if (lot.level !== expectedLevel) throw new StaleLevelError(expectedLevel, lot.level);
-  const def = FACILITIES[lot.kind];
-  const maxLevel = def ? def.maxLevel : 4;                       // paddock max level 4 (capacity 8)
+  const maxLevel = maxLevelFor(lot.kind);
   if (lot.level >= maxLevel) throw new LotLimitError();
   const cost = upgradeCostFor(lot.kind, lot.level);
   // See buildLot: charge + level bump must be atomic against a failed update.
