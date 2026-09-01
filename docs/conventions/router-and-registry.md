@@ -113,6 +113,7 @@ open message still holds a stale control.
 | `dex:page:<uid>:<page>:<rarity\|->:<diet\|->:<archetype\|->` | the active filters | the unfiltered page: wrong rows, wrong title suffix, wrong page count, no error |
 | `admin:ledger:<targetId>:<page>:<all\|->` | the show-all flag | the same silent unfiltered page, on a financial history |
 | `hatch:crack:<eggId>` | the egg | the wrong egg |
+| `exp:againyes:<uid>:<siteId>:<price>` | the expedition fee the card quoted | a card left open across a UTC midnight charging an Amber Storm's doubled fee under yesterday's label |
 
 `pageRow` (`src/core/paginate.ts`) carries `<prefix>:<action>:<userId>:<page>` and
 nothing else, which is why the two filtered lists above mint their own row instead —

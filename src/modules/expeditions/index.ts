@@ -239,7 +239,40 @@ export const expeditionsModule: ModuleManifest = {
           });
           return;
         }
-        await i.deferUpdate();
+        const quoted = Number(parts[4]);
+        if (!Number.isInteger(quoted)) { await i.deferUpdate(); return; }
+        // The whole point of the segment. An expedition fee moves with the world event at
+        // every UTC midnight, so a confirm card left open across one would charge today's
+        // price under yesterday's label. Refusing is the PURPOSE of the segment, not a
+        // nicety — the repaint below is a second layer only, because any OTHER open card
+        // still holds a button minted at the old price.
+        if (price !== quoted) {
+          await i.reply({
+            content: `${site.name} costs ${price.toLocaleString('en-US')} cash now, not ${quoted.toLocaleString('en-US')} — open the Dig again card for the current price.`,
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        try {
+          // startExpedition is what makes a second click of this same confirm harmless: it
+          // refuses while a dig is out. There is no idempotency key here and none is needed.
+          const exp = startExpedition(ctx, i.user.id, siteId, i.guildId);
+          await i.update({
+            content: `🧭 Crew dispatched to **${site.name}** — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.`,
+            embeds: [], components: [], attachments: [],
+          });
+        } catch (e) {
+          if (e instanceof ExpeditionError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) {
+            // A site is a proper place name, so no article — the same clause /expedition
+            // start renders (Task 3 (G1-C)), and the numbers come off the error rather than
+            // being re-derived here.
+            await i.reply({
+              content: `Not enough cash — ${site.name} ${shortfallLine(e)}.`,
+              flags: MessageFlags.Ephemeral,
+            });
+          } else throw e;
+        }
       },
     },
   ],

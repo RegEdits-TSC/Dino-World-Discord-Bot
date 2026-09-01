@@ -242,3 +242,104 @@ describe('Dig again — the confirm card', () => {
     }
   });
 });
+
+describe('Dig again — the confirm click', () => {
+  /** Open the card on whatever day ctx is at and hand back the confirm id it really minted. */
+  async function openCard(ctx: ReturnType<typeof makeCtx>): Promise<string> {
+    const b = fakeButton({ customId: 'exp:again:u1:coastal_dig', user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    return mintedIds(b.replies[0])[0]!;
+  }
+  const digRows = (c: ReturnType<typeof makeCtx>) =>
+    c.db.select().from(schema.txLog).all().filter((r) => r.reason === 'expedition:coastal_dig');
+
+  it('REFUSES the confirm when one UTC rollover has moved the fee under it', async () => {
+    // Minted on day 9 (Heat Wave, fee x1 -> 200). Clicked on day 10 (Amber Storm, fee x2 ->
+    // 400). The clock crossing one midnight is what moves the price — nothing here writes a
+    // wrong number into the id, which would prove only that `!==` works.
+    const ctx = makeCtx({ nowMs: 9 * DAY });
+    seedDigger(ctx);
+    const confirmId = await openCard(ctx);
+    expect(confirmId).toBe('exp:againyes:u1:coastal_dig:200');
+
+    ctx.setNow(10 * DAY);
+    const before = cashOf(ctx, 'u1');
+    const beforeRows = digRows(ctx).length;
+    const click = fakeButton({ customId: confirmId, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, click.asInteraction());
+
+    expect(replyText(click.replies[0])).toBe(
+      'Coastal Dig costs 400 cash now, not 200 — open the Dig again card for the current price.');
+    expect((click.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect(cashOf(ctx, 'u1')).toBe(before);
+    expect(digRows(ctx)).toHaveLength(beforeRows);
+    expect(activeExpedition(ctx, 'u1')).toBeUndefined();
+  });
+
+  it('charges exactly once on the happy path, and refuses a second click of the same confirm', async () => {
+    const ctx = makeCtx({ nowMs: 9 * DAY });
+    seedDigger(ctx);
+    const confirmId = await openCard(ctx);
+    const before = cashOf(ctx, 'u1');
+    const beforeRows = digRows(ctx).length;
+
+    const first = fakeButton({ customId: confirmId, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, first.asInteraction());
+    expect(first.deferOpts).toHaveLength(0);
+    expect(cashOf(ctx, 'u1')).toBe(before - 200);
+    expect(digRows(ctx)).toHaveLength(beforeRows + 1);
+    expect(activeExpedition(ctx, 'u1')!.siteId).toBe('coastal_dig');
+    // The card blanks itself. Second layer only — any OTHER open message still holds a stale
+    // button, which is why the price segment above is the actual guard.
+    expect(mintedIds(first.replies[0])).toHaveLength(0);
+
+    const afterFirst = cashOf(ctx, 'u1');
+    const second = fakeButton({ customId: confirmId, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, second.asInteraction());
+    expect(replyText(second.replies[0])).toBe('You already have an expedition out — claim it first.');
+    expect(cashOf(ctx, 'u1')).toBe(afterFirst);
+    expect(digRows(ctx)).toHaveLength(beforeRows + 1);
+  });
+
+  it('a bystander clicking the confirm dispatches nothing and pays nothing', async () => {
+    const ctx = makeCtx({ nowMs: 9 * DAY });
+    seedDigger(ctx);
+    seedDigger(ctx, 'u2');
+    const confirmId = await openCard(ctx);
+    const before = cashOf(ctx, 'u2');
+    const b = fakeButton({ customId: confirmId, user: 'u2' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(replyText(b.replies[0])).toBe('That is not your expedition.');
+    expect(cashOf(ctx, 'u2')).toBe(before);
+    expect(activeExpedition(ctx, 'u2')).toBeUndefined();
+    expect(activeExpedition(ctx, 'u1')).toBeUndefined();
+  });
+
+  it('quotes the shortfall when the player cannot afford the dig it just confirmed', async () => {
+    const ctx = makeCtx({ nowMs: 9 * DAY });
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    // Three different numbers — needed 200, held 45, short 155 — so a swapped-argument bug
+    // in shortfallLine cannot render identically. An expedition SITE is a proper place name
+    // and takes no article, matching /expedition start's own wording (Task 3 (G1-C)).
+    ctx.db.update(schema.users).set({ cash: 45 }).where(eq(schema.users.discordId, 'u1')).run();
+    const confirmId = await openCard(ctx);
+    const click = fakeButton({ customId: confirmId, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, click.asInteraction());
+    expect(replyText(click.replies[0]))
+      .toBe('Not enough cash — Coastal Dig costs 200, you have 45 (155 short).');
+    expect(cashOf(ctx, 'u1')).toBe(45);
+    expect(activeExpedition(ctx, 'u1')).toBeUndefined();
+  });
+
+  it('a non-integer price segment is acknowledged and dropped', async () => {
+    const ctx = makeCtx({ nowMs: 9 * DAY });
+    seedDigger(ctx);
+    for (const forged of ['exp:againyes:u1:coastal_dig:abc', 'exp:againyes:u1:coastal_dig']) {
+      const b = fakeButton({ customId: forged, user: 'u1' });
+      await routeInteraction(ctx, testRegistry, b.asInteraction());
+      expect(b.replies, forged).toHaveLength(0);
+      expect(b.deferOpts[0], forged).toMatchObject({ kind: 'update' });
+    }
+    expect(activeExpedition(ctx, 'u1')).toBeUndefined();
+  });
+});
