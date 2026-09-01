@@ -175,12 +175,17 @@ describe('park module commands', () => {
     // Collect (row 1) plus the tab row Task 1 added (row 2) — was 1 before the tabs split.
     expect(payload.components).toHaveLength(2);
   });
-  it('/build paddock reply hints at assigning a dino', async () => {
+  it('/build paddock reply offers the assign control instead of naming /dino assign', async () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
     ctx.economy.apply('u1', { cash: 100_000 }, 'seed', 0);
     const i = fakeCommand({ name: 'build', user: 'u1', options: { kind: 'herbivore_paddock' } });
     await parkModule.commands.find((c) => c.data.name === 'build')!.execute(ctx, i.asChatInput());
-    expect((i.replies[0] as { content: string }).content).toContain('/dino assign');
+    // Retargeted, not deleted: this case guarded "a paddock build points at assigning a
+    // dino", which is still true — it is a button now rather than an instruction to type.
+    // The WHOLE content string, so the old hint's absence is proven by what the reply is.
+    expect((i.replies[0] as { content: string }).content)
+      .toBe('🏗️ Built **Herbivore Paddock** (lot #1).');
+    expect(JSON.stringify(i.replies[0])).toContain('park:builddino:u1:1');
   });
 });
 

@@ -461,3 +461,49 @@ export function assignSelectRow(
         .setLabel(`#${l.id} ${l.name} (lvl ${l.level})`))),
   );
 }
+
+/**
+ * The follow-through on a freshly built paddock: one button that opens a private menu of the
+ * dinos that could move in. Minted by BOTH build paths — the /build slash reply and the
+ * park:buildyes confirm behind the Lots tab's Build… dropdown — which is why the id and the
+ * label live here and are written nowhere else.
+ *
+ * A button rather than the menu itself, because the /build reply is a PUBLIC message: a
+ * select sitting on it would be visible to the channel, and the roster it lists is the
+ * owner's business. The button carries the owner uid so a bystander's click is refused, and
+ * the lot id so the handler re-reads that exact lot instead of trusting the label.
+ *
+ * Unicode glyph in the label, never emojiTag/setEmoji — the same reason tabRow gives.
+ */
+export function buildDinoRow(userId: string, lotId: number): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(`park:builddino:${userId}:${lotId}`)
+      .setLabel('🦕 Assign a dino').setStyle(ButtonStyle.Primary),
+  );
+}
+
+/**
+ * The menu park:builddino opens. This is assignSelectRow's MIRROR and the two are easy to
+ * confuse, so state it plainly: there the lot varies and a value is a LOT id; here the lot is
+ * fixed in the customId and a value is a DINO id. Wiring one where the other belongs compiles
+ * cleanly and silently assigns the wrong pair.
+ *
+ * A value is the dino id and nothing else — an identity, never a diet and never a capacity —
+ * so a stale option cannot describe a dino it no longer names. The handler re-derives
+ * everything; the router only proves the value was one this menu offered.
+ *
+ * Labels are passed in already rendered: this file has no species lookup and should not grow
+ * one. Sliced at 25 for Discord's option cap, which a roster genuinely reaches.
+ */
+export function buildDinoSelectRow(
+  userId: string, lotId: number, dinos: Array<{ id: number; label: string }>,
+): ActionRowBuilder<StringSelectMenuBuilder> {
+  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`park:builddinosel:${userId}:${lotId}`)
+      .setPlaceholder('Pick a dino…')
+      .addOptions(dinos.slice(0, 25).map((d) => new StringSelectMenuOptionBuilder()
+        .setValue(String(d.id))
+        .setLabel(d.label))),
+  );
+}

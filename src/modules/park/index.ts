@@ -1,12 +1,12 @@
-import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } from 'discord.js';
 import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
 import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, maxLevelFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, StaleLevelError, toClockDinos, needsAttentionCount, type User, type Lot } from './service.js';
 import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
-import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, eligiblePaddocks, PADDOCK_FULL, DINO_ESCAPED, AssignError, DietMismatchError, renameDino } from './dinos.js';
-import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, confirmPayload, assignRow, assignSelectRow, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
+import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, eligiblePaddocks, assignableDinosFor, PADDOCK_FULL, DINO_ESCAPED, AssignError, DietMismatchError, renameDino } from './dinos.js';
+import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, confirmPayload, assignRow, assignSelectRow, buildDinoRow, buildDinoSelectRow, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
 import { guestsPayload } from '../guests/embeds.js';
 import { visitPayload, nextParkRow } from './visit.js';
 import { bumpLegacyBest, legacyRank } from './ranks.js';
@@ -379,8 +379,15 @@ export const parkModule: ModuleManifest = {
         const kind = i.options.getString('kind', true);
         try {
           const lot = buildLot(ctx, i.user.id, kind);
-          const hint = lot.type === 'paddock' ? ' Assign a dino with /dino assign to start earning.' : '';
-          await i.reply({ content: `🏗️ Built **${lot.name}** (lot #${lot.id}).${hint}` });
+          // A paddock earns nothing until a dino lives in it, so the next step ships as a
+          // control instead of a sentence naming a command to type.
+          //
+          // A named local that is PUSHED onto, never an array assigned wholesale: this reply
+          // carries no other row today, and the next task to add one must be able to join it
+          // rather than having to rewrite this expression.
+          const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+          if (lot.type === 'paddock') rows.push(buildDinoRow(i.user.id, lot.id));
+          await i.reply({ content: `🏗️ Built **${lot.name}** (lot #${lot.id}).`, components: rows });
         } catch (e) {
           if (e instanceof DuplicateFacilityError) await i.reply({ content: `You already have a ${e.message} — upgrade it instead.`, flags: MessageFlags.Ephemeral });
           else if (e instanceof LotLimitError) await i.reply({ content: lotSlotCapLine(ctx, i.user.id), flags: MessageFlags.Ephemeral });
@@ -638,6 +645,25 @@ export const parkModule: ModuleManifest = {
             `park:upgyes:${i.user.id}:${lotId}:${expected}`, `park:upgno:${i.user.id}`,
             `Upgrade to lvl ${lot.level + 1}`,
           ));
+          return;
+        }
+        if (action === 'builddinosel') {
+          // The MIRROR of assignsel directly above: there the dino is fixed in the id and a
+          // value is a lot; here the LOT is fixed in the id and a value is a DINO. Swapping
+          // the two arguments below compiles cleanly and silently assigns the wrong pair, so
+          // read them once more before you move on.
+          //
+          // Re-split rather than widening the shared destructure at the top of this handler:
+          // the lot id sits at index 3, where the build and upgrade menus carry nothing, and
+          // every other branch here is untouched by this addition.
+          //
+          // No integer guard, and no second copy of the validation: assignFollowThrough owns
+          // the first-home rule, the lot-identity check and the write, exactly as it does for
+          // park:assign and park:assignsel — one write path, so the button and both menus
+          // cannot validate differently. It replies ephemerally rather than updating: this
+          // chooser is already an ephemeral of its own, and the shared path must stay safe for
+          // the button, which can sit on a public message.
+          await assignFollowThrough(ctx, i, Number(value), Number(i.customId.split(':')[3]));
           return;
         }
         if (action === 'assignsel') {
@@ -941,6 +967,54 @@ export const parkModule: ModuleManifest = {
             await renderTab(ctx, i, uid, tab, true);
             return;
           }
+          case 'builddino': {
+            // park:builddino:<uid>:<lotId> — minted on the PUBLIC /build reply and on the
+            // ephemeral follow-up park:buildyes sends. routeInteraction dispatches on the
+            // PREFIX alone, so both segments have to be here and both are re-read: the lot id
+            // rides in the id rather than only in the label because a Discord message is
+            // durable and its label is never re-derived.
+            //
+            // This owner check is a MESSAGE-QUALITY layer, not the write barrier, and must
+            // not be described as one: assignableDinosFor scopes every read to the CALLER, so
+            // a bystander is already refused one line down. What it buys is that they are
+            // told whose park it is instead of being told a lot they can see has changed.
+            if (i.user.id !== uid) { await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral }); return; }
+            settleEscapes(ctx, i.user.id);
+            // NO integer guard on the lot segment, for the reason assignRefusal states above:
+            // Number('nonsense') is NaN, better-sqlite3 binds NaN as a legal no-match, so the
+            // read below lands on its not-found arm and answers STALE_ASSIGN already. A parse
+            // branch would be a guard no test could tell apart from that one.
+            const pick = assignableDinosFor(ctx, i.user.id, Number(parts[3]));
+            if (!pick) { await i.reply({ content: STALE_ASSIGN, flags: MessageFlags.Ephemeral }); return; }
+            // Three refusals, three sentences, and none of them may fall through to the menu:
+            // Discord REJECTS a select carrying zero options, so an empty candidate list is an
+            // error payload, not an empty dropdown.
+            if (!pick.hasRoom) { await i.reply({ content: PADDOCK_FULL, flags: MessageFlags.Ephemeral }); return; }
+            if (pick.dinos.length === 0) {
+              const diet = PADDOCKS[pick.lot.kind].diet;
+              // Two causes, two messages — the split feedDino already makes in
+              // src/modules/care/service.ts. "Every one you own is housed or escaped" is FALSE
+              // for a player who owns none of this diet, and /dino unassign cannot help them;
+              // that is the case a brand-new player's first paddock produces.
+              await i.reply({
+                content: pick.ofDiet.length === 0
+                  ? `You own no ${diet} dinos yet — hatch one from \`/eggs\`.`
+                  : `No free ${diet} dinos — every ${diet} you own is housed or escaped.`
+                    + ' Free one with `/dino unassign`, or hatch another from `/eggs`.',
+                flags: MessageFlags.Ephemeral,
+              });
+              return;
+            }
+            const pickNow = ctx.now();
+            await i.reply({
+              content: `Which dino moves into **${pick.lot.name}** (lot #${pick.lot.id})?`,
+              components: [buildDinoSelectRow(i.user.id, pick.lot.id, pick.dinos.map((d) => ({
+                id: d.id, label: dinoLabel(d, getSpecies(d.speciesId), pickNow),
+              })))],
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
           case 'buildno':
           case 'upgno': {
             if (i.user.id !== uid) {
@@ -995,6 +1069,22 @@ export const parkModule: ModuleManifest = {
             try {
               const lot = buildLot(ctx, i.user.id, kind);
               await renderTab(ctx, i, i.user.id, 'lots', false, `🏗️ Built **${lot.name}** (lot #${lot.id}).`);
+              // The Lots tab's Build… dropdown is the path /park view actively pushes players
+              // toward, so this confirm owes the same follow-through the /build slash reply
+              // mints. It cannot ride on the tab: renderTab builds AND sends that whole
+              // payload, so the control arrives as an ephemeral follow-up beside it —
+              // legal here precisely because renderTab's 'lots' branch has already replied.
+              //
+              // No module gate: park mints this and park handles it. Only a CROSS-module mint
+              // has to check ctx.config.modules, because ModuleRegistry searches enabled
+              // modules only.
+              if (lot.type === 'paddock') {
+                await i.followUp({
+                  content: `**${lot.name}** (lot #${lot.id}) is empty — put a dino in it.`,
+                  components: [buildDinoRow(i.user.id, lot.id)],
+                  flags: MessageFlags.Ephemeral,
+                });
+              }
             } catch (e) {
               // Mapped for the BUILD menu specifically: LotLimitError means "slot cap" here
               // and "already max level" in upgradeLot, and UnknownKindError is likewise

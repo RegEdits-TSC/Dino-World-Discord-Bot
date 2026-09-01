@@ -163,3 +163,54 @@ export function listDinos(ctx: Ctx, userId: string) {
     mismatch: clockDinos[i].paddock !== null && clockDinos[i].paddock!.diet !== clockDinos[i].species.diet,
   }));
 }
+
+/**
+ * The dinos that could move into `lotId` right now: owned, unassigned, not escaped, and eating
+ * what this paddock serves. Returns null when `lotId` is not an owned paddock — a read helper,
+ * so a lot that is gone is an answer, not an exception.
+ *
+ * This is the LOT-FIXED direction. `eligiblePaddocks` above is the dino-fixed one (one dino,
+ * which paddocks accept it). Neither is THE definition of eligibility: `paddockAccepts` is, and
+ * both call it, so a change to the capacity rule or the diet rule cannot move only one of them.
+ *
+ * The occupancy count passed to `paddockAccepts` here excludes NOTHING, and that asymmetry is
+ * deliberate. The dino-fixed direction mirrors assignDino's `ne(schema.dinos.id, dinoId)` and
+ * drops the dino being MOVED from the count, or a paddock a dino already lives in would hide
+ * itself the moment it filled. Here the dino has not been chosen yet and is by construction
+ * unassigned, so every occupant counts against the room this menu is about to offer.
+ *
+ * Off-diet dinos are deliberately absent. The wrong-habitat "Assign anyway" confirm stays
+ * reachable only from /dino assign, so a one-click follow-through can never halve a dino's
+ * comfort in a single press.
+ *
+ * Three facts ride back, not one, because they send the player to three different screens and
+ * quoting the wrong one is a false statement rather than a vague one — the same split feedDino
+ * makes in src/modules/care/service.ts:
+ *   - `hasRoom` answers the paddock question, so a caller never carries a capacity of its own;
+ *   - `ofDiet` is the WHOLE cohort of that diet, housed and escaped included, so a caller can
+ *     say "you own no herbivores yet" instead of telling a brand-new player that every
+ *     herbivore they own is housed;
+ *   - `dinos` is the offerable subset.
+ * One roster read serves all three; do not add a second query to recover `ofDiet`.
+ *
+ * PADDOCKS is null-prototype and holds no facility kinds, so `PADDOCKS[lot.kind].diet` would
+ * throw a TypeError on a facility row: the `type !== 'paddock'` return above it is load-bearing
+ * ordering, not a tidy-up.
+ */
+export function assignableDinosFor(ctx: Ctx, userId: string, lotId: number):
+    { lot: Lot; hasRoom: boolean; ofDiet: Array<typeof schema.dinos.$inferSelect>;
+      dinos: Array<typeof schema.dinos.$inferSelect> } | null {
+  const lot = ctx.db.select().from(schema.lots)
+    .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, userId))).get();
+  if (!lot || lot.type !== 'paddock') return null;
+  const diet = PADDOCKS[lot.kind].diet;
+  const owned = ctx.db.select().from(schema.dinos)
+    .where(eq(schema.dinos.userId, userId)).all();
+  const ofDiet = owned.filter((d) => getSpecies(d.speciesId).diet === diet);
+  return {
+    lot,
+    hasRoom: paddockAccepts(lot, diet, owned.filter((d) => d.lotId === lot.id).length),
+    ofDiet,
+    dinos: ofDiet.filter((d) => d.lotId === null && d.escapedAt === null),
+  };
+}
