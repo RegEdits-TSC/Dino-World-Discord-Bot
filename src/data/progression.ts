@@ -25,6 +25,23 @@ export function siteUnlocked(unlockRating: number, highWater: number): boolean {
 export function lotSlots(highWater: number): number {
   return BASE_LOT_SLOTS_FALLBACK + LOT_SLOT_THRESHOLDS.filter((t) => highWater >= t).length;
 }
+/**
+ * The next lot slot the player has NOT unlocked, and the high-water rating that unlocks it —
+ * or null once every rung of LOT_SLOT_THRESHOLDS is passed.
+ *
+ * `BASE_LOT_SLOTS_FALLBACK + idx + 1` and not `idx + 1`: LOT_SLOT_THRESHOLDS[0] gates slot 4,
+ * not slot 1, which is the same offset lotSlots applies by adding the base to a count of
+ * passed rungs. The invariant the caller renders against is
+ * `nextLotSlot(hw)!.slot === lotSlots(hw) + 1`.
+ *
+ * Unlike lotSlots' filter, findIndex relies on LOT_SLOT_THRESHOLDS being ASCENDING; it is,
+ * and a rung inserted out of order would silently advertise the wrong slot.
+ */
+export function nextLotSlot(highWater: number): { slot: number; threshold: number } | null {
+  const idx = LOT_SLOT_THRESHOLDS.findIndex((t) => highWater < t);
+  if (idx === -1) return null;
+  return { slot: BASE_LOT_SLOTS_FALLBACK + idx + 1, threshold: LOT_SLOT_THRESHOLDS[idx] };
+}
 export function shopCeiling(highWater: number): Rarity {
   return (SHOP_CEILING.find((s) => highWater >= s.atLeast) ?? SHOP_CEILING[SHOP_CEILING.length - 1]).ceiling;
 }

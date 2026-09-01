@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { makeCtx } from './harness.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { recomputeRating, lotSlots, siteUnlocked, shopCeiling, mythicUnlocked } from '../src/modules/park/rating.js';
-import { LOT_SLOT_THRESHOLDS } from '../src/data/progression.js';
+import { LOT_SLOT_THRESHOLDS, BASE_LOT_SLOTS_FALLBACK, nextLotSlot } from '../src/data/progression.js';
 import { EXPEDITION_SITES } from '../src/data/sites.js';
 import { schema } from '../src/core/db/index.js';
 
@@ -184,5 +184,47 @@ describe('recomputeRating', () => {
     // (0.40×1 + 0.35×1 + 0.25×1.10) = 1025 on comfortAt, over it — the margin this
     // assertion actually has to catch a regression.
     expect(rating).toBeLessThanOrEqual(1000);
+  });
+});
+
+describe('nextLotSlot', () => {
+  it('names the next slot and its threshold on BOTH sides of every boundary, and null once exhausted', () => {
+    // Written out as a literal table rather than derived from LOT_SLOT_THRESHOLDS on
+    // purpose: a loop that recomputes the slot number the same way the implementation does
+    // would pass against an off-by-one living in both. Every pair straddles one rung, so a
+    // `<=` written for `<` fails the second row of each pair.
+    const cases: Array<[number, { slot: number; threshold: number } | null]> = [
+      [0, { slot: 4, threshold: 100 }],
+      [99, { slot: 4, threshold: 100 }],
+      [100, { slot: 5, threshold: 200 }],
+      [199, { slot: 5, threshold: 200 }],
+      [200, { slot: 6, threshold: 400 }],
+      [399, { slot: 6, threshold: 400 }],
+      [400, { slot: 7, threshold: 600 }],
+      [599, { slot: 7, threshold: 600 }],
+      [600, { slot: 8, threshold: 800 }],
+      [799, { slot: 8, threshold: 800 }],
+      [800, { slot: 9, threshold: 880 }],
+      [879, { slot: 9, threshold: 880 }],
+      [880, { slot: 10, threshold: 950 }],
+      [949, { slot: 10, threshold: 950 }],
+      [950, null],
+      [9999, null],
+    ];
+    for (const [hw, expected] of cases) expect(nextLotSlot(hw), `high-water ${hw}`).toEqual(expected);
+  });
+
+  it('advertises exactly one slot past the slots lotSlots already grants', () => {
+    // The invariant that makes the rendered sentence true — "All lots full (7/7). Slot 8
+    // unlocks at…" is only honest while the advertised slot is lotSlots(hw) + 1. The two
+    // functions read the same array from the same file and nothing else couples them.
+    for (const hw of [0, 99, 100, 399, 400, 799, 800, 879, 880, 949, 950, 9999]) {
+      const next = nextLotSlot(hw);
+      if (next === null) {
+        expect(lotSlots(hw), `high-water ${hw}`).toBe(BASE_LOT_SLOTS_FALLBACK + LOT_SLOT_THRESHOLDS.length);
+      } else {
+        expect(next.slot, `high-water ${hw}`).toBe(lotSlots(hw) + 1);
+      }
+    }
   });
 });
