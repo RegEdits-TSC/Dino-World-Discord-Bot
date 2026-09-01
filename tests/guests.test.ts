@@ -421,3 +421,17 @@ describe('/guests', () => {
     expect('attachments' in update).toBe(false);
   });
 });
+
+describe('/guests build insufficiency', () => {
+  it('names the attraction and quotes the shortfall', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.db.update(schema.users).set({ cash: 1_500 }).where(eq(schema.users.discordId, 'u1')).run();
+    const cmd = guestsModule.commands[0];
+    const i = fakeCommand({ name: 'guests', sub: 'build', user: 'u1', options: { attraction: 'picnic_lawn' } });
+    await cmd.execute(ctx, i.asChatInput());
+    // Class 1: a frozen constant. ATTRACTIONS.picnic_lawn has unlockAt 0 and buildCost 250,000
+    // — no multiplier of any kind touches attraction costs.
+    expect(replyText(i.replies[0]))
+      .toBe('Not enough cash — the Picnic Lawn costs 250,000, you have 1,500 (248,500 short).');
+  });
+});

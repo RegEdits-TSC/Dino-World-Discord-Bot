@@ -2,7 +2,7 @@ import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
 import { recomputeRating } from '../park/rating.js';
-import { InsufficientFundsError } from '../../core/economy.js';
+import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { ATTRACTIONS } from '../../data/attractions.js';
 import { guestsPayload, builtPayload, milestonePayload } from './embeds.js';
 import {
@@ -65,7 +65,13 @@ export const guestsModule: ModuleManifest = {
                 : e instanceof DuplicateAttractionError ? `You already have a ${e.message}.`
                 : e instanceof AttractionMaxedError ? `Your ${e.message} is already at its top level.`
                 : e instanceof UnknownAttractionError ? 'No such attraction.'
-                : e instanceof InsufficientFundsError ? 'Not enough cash.'
+                : e instanceof InsufficientFundsError
+                  // `kind` was validated by attractionFor inside the service and the
+                  // UnknownAttractionError arm above is evaluated first, so ATTRACTIONS[kind]
+                  // is a real def here. The cost comes off the error, which is what lets ONE
+                  // clause serve both halves — build and upgrade have different prices and the
+                  // upgrade price needs levelValue, which this module does not import.
+                  ? `Not enough cash — the ${ATTRACTIONS[kind].name} ${shortfallLine(e)}.`
                 : null;
               if (msg === null) throw e;
               await i.reply({ content: msg, flags: MessageFlags.Ephemeral });

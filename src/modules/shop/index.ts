@@ -12,14 +12,14 @@ import { schema } from '../../core/db/index.js';
 import { getSpecies } from '../../data/species/index.js';
 import { FOOD_BUNDLES, SHOP_EGG_PRICES } from '../../data/shop.js';
 import { DECOR } from '../../data/decor.js';
-import { InsufficientFundsError } from '../../core/economy.js';
+import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, capitalize } from '../../core/autocomplete.js';
 import { assetImage, attach } from '../../core/images.js';
 import { RARITY_COLOR } from '../hatchery/embeds.js';
 import { RARITY } from '../../data/rarity.js';
 import type { AttachmentBuilder } from 'discord.js';
 import { emojiTag, rarityEmoji, foodEmoji } from '../../core/emojis.js';
-import { FOODS, foodsForDiet } from '../../data/foods.js';
+import { FOODS, foodsForDiet, getFood } from '../../data/foods.js';
 
 const eggRarityChoices = (['common', 'uncommon', 'rare', 'epic', 'legendary'] as const).map((r) => ({ name: r, value: r }));
 
@@ -114,7 +114,15 @@ export const shopModule: ModuleManifest = {
           }
         } catch (e) {
           if (e instanceof ShopError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) {
+            // `sub` is 'egg' or 'food' here — 'view' performs no charge and cannot reach this
+            // branch. getFood throws on an unknown id, which buyFood's own ShopError has
+            // already caught above by the time this runs.
+            const what = sub === 'egg'
+              ? `a ${i.options.getString('rarity', true)} egg`
+              : `${i.options.getInteger('units', true)}× ${getFood(i.options.getString('item', true)).name}`;
+            await i.reply({ content: `Not enough cash — ${what} ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
+          }
           else throw e;
         }
       },

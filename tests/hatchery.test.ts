@@ -593,16 +593,20 @@ describe('/hatch execute', () => {
 });
 
 describe('mythic:confirm and hatch:crack error branches', () => {
-  it('mythic:confirm blocks below 4-star rating and on empty wallet', async () => {
+  it('mythic:confirm blocks below the rating gate and on a wallet that is short', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
     const comp = hatcheryModule.components.find((c) => c.prefix === 'mythic')!;
     const gated = fakeButton({ customId: 'mythic:confirm:indominus', user: 'u1' });
     await comp.execute(ctx, gated.asInteraction() as unknown as ButtonInteraction);
     expect(replyText(gated.replies[0])).toContain('8★');
-    ctx.db.update(schema.users).set({ ratingHighWater: MYTHIC_UNLOCK_RATING, shards: 0 }).run();
+    ctx.db.update(schema.users).set({ ratingHighWater: MYTHIC_UNLOCK_RATING, shards: 340 }).run();
     const broke = fakeButton({ customId: 'mythic:confirm:indominus', user: 'u1' });
     await comp.execute(ctx, broke.asInteraction() as unknown as ButtonInteraction);
-    expect(replyText(broke.replies[0])).toContain('Not enough shards');
+    // Class 1: MYTHIC_SHARD_COST is the flat literal 500 in src/data/sell.ts. It is read off
+    // the error now, not the literal '500' this reply used to hardcode while the constant
+    // lived in a file src/modules/hatchery/index.ts does not import.
+    expect(replyText(broke.replies[0]))
+      .toBe('Not enough shards — a Mythic egg costs 500, you have 340 (160 short).');
   });
   it('hatch:crack on a non-incubating egg is an ephemeral error', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');

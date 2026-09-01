@@ -11,7 +11,7 @@ import { preHatchPayload, revealPayload, eggListPayload, RARITY_COLOR } from './
 import { assetImage, attach } from '../../core/images.js';
 import { rarityEmoji } from '../../core/emojis.js';
 import { traitLines } from '../../core/trait-display.js';
-import { InsufficientFundsError } from '../../core/economy.js';
+import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, eggLabel } from '../../core/autocomplete.js';
 
 const mythicChoices = mythicSpeciesChoices().map((s) => ({ name: s.name, value: s.id }));
@@ -114,7 +114,7 @@ export const hatcheryModule: ModuleManifest = {
           await i.update({ content: `🌟 A Mythic **${getSpecies(egg.speciesId!).name}** egg is yours! Incubate it with /incubate ${egg.id}.`, components: [] });
         } catch (e) {
           if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough shards (need 500).', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: `Not enough shards — a Mythic egg ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
           else throw e;
         }
       } },

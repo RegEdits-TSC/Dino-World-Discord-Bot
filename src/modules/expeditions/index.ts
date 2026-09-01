@@ -5,7 +5,7 @@ import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
 import { startExpedition, claimExpedition, activeExpedition, expeditionFeeFor, ExpeditionError } from './service.js';
 import { EXPEDITION_SITES } from '../../data/sites.js';
-import { InsufficientFundsError } from '../../core/economy.js';
+import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { schema } from '../../core/db/index.js';
 import { siteUnlocked } from '../park/rating.js';
 import { FOODS } from '../../data/foods.js';
@@ -125,7 +125,15 @@ export const expeditionsModule: ModuleManifest = {
           }
         } catch (e) {
           if (e instanceof ExpeditionError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash for that expedition.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) {
+            // Only `start` charges — claimExpedition credits and nothing else — but the site
+            // option is read behind the `sub` check rather than unconditionally, because
+            // getString('site', true) THROWS on a subcommand that does not declare it.
+            const what = sub === 'start'
+              ? EXPEDITION_SITES[i.options.getString('site', true)].name
+              : 'that expedition';
+            await i.reply({ content: `Not enough cash — ${what} ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
+          }
           else throw e;
         }
       } },

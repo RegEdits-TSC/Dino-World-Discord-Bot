@@ -5,7 +5,7 @@ import { schema } from '../../core/db/index.js';
 import { getOrCreateUser } from '../park/service.js';
 import { getSpecies } from '../../data/species/index.js';
 import { locksFor } from '../../core/locks.js';
-import { InsufficientFundsError } from '../../core/economy.js';
+import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { matches, respondRanked } from '../../core/autocomplete.js';
 import { settleEscapes } from '../park/escapes.js';
 import { traitDefs } from '../../data/traits.js';
@@ -131,7 +131,11 @@ export const geneLabModule: ModuleManifest = {
           }
         } catch (e) {
           if (e instanceof BreedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash for that pairing.', flags: MessageFlags.Ephemeral });
+          // Backstop only: startBreeding pre-checks affordability OUTSIDE its transaction and
+          // throws a BreedError already carrying both numbers, so nothing the current code
+          // accepts reaches this arm. Rendered the same way as the reachable sites so it
+          // cannot rot into a different shape if that pre-check is ever relaxed.
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: `Not enough cash — this pairing ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
           else throw e;
         }
       },
@@ -241,7 +245,8 @@ export const geneLabModule: ModuleManifest = {
           await i.update({ content: '🧬 Pairing started — check `/breed status`.', embeds: [], components: [], attachments: [] });
         } catch (e) {
           if (e instanceof BreedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash for that pairing.', flags: MessageFlags.Ephemeral });
+          // Backstop only, same reason as /breed's arm above.
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: `Not enough cash — this pairing ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
           else throw e;
         }
       },
@@ -271,7 +276,7 @@ export const geneLabModule: ModuleManifest = {
           });
         } catch (e) {
           if (e instanceof BreedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough shards for that splice.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: `Not enough shards — this splice ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
           else throw e;
         }
       },
