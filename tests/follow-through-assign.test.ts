@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import type { ActionRowBuilder, ButtonBuilder } from 'discord.js';
 import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { eligiblePaddocks } from '../src/modules/park/dinos.js';
+import { assignRow, assignSelectRow } from '../src/modules/park/embeds.js';
 import { ALL_MODULES } from '../src/core/module-list.js';
 import type { Config } from '../src/core/config.js';
 
@@ -81,5 +83,54 @@ describe('eligiblePaddocks', () => {
     // Number('nope') is NaN, which better-sqlite3 binds as a legal no-match rather than
     // throwing — measured, not assumed. So a forged segment falls out as "offer nothing".
     expect(eligiblePaddocks(ctx, 'u1', Number('nope'))).toEqual([]);
+  });
+});
+
+describe('assignRow — the shape is chosen at mint time', () => {
+  const buttonsOf = (row: ActionRowBuilder<ButtonBuilder>) =>
+    (row.toJSON() as { components: Array<{ custom_id: string; label: string }> }).components;
+
+  it('mints a direct Assign button carrying the one eligible lot', () => {
+    seedUser();
+    const lot = seedLot();
+    const d = seedDino();
+    const [btn] = buttonsOf(assignRow('u1', d.id, eligiblePaddocks(ctx, 'u1', d.id)));
+    expect(btn!.custom_id).toBe(`park:assign:u1:${d.id}:${lot.id}`);
+    expect(btn!.label).toBe(`🦕 Assign to #${lot.id}`);
+  });
+
+  it('mints the picker when several paddocks are eligible', () => {
+    seedUser();
+    seedLot(); seedLot();
+    const d = seedDino();
+    const [btn] = buttonsOf(assignRow('u1', d.id, eligiblePaddocks(ctx, 'u1', d.id)));
+    expect(btn!.custom_id).toBe(`park:assignpick:u1:${d.id}`);
+    expect(btn!.label).toBe('🦕 Assign… ▼');
+  });
+
+  it('mints Build a paddock, and no assign control at all, when none is eligible', () => {
+    seedUser();
+    seedLot({ kind: 'carnivore_paddock', name: 'Carnivore Paddock' });   // off diet only
+    const d = seedDino();
+    const btns = buttonsOf(assignRow('u1', d.id, eligiblePaddocks(ctx, 'u1', d.id)));
+    // One button, always: this builder's whole contract is that exactly one of the three
+    // shapes is on the card, so the length IS the assertion here. (The payloads this row
+    // gets PUSHED onto are a different matter — those are asserted with toContain, because
+    // sibling work mints onto the same arrays.)
+    expect(btns).toHaveLength(1);
+    expect(btns[0]!.custom_id).toBe('park:goto:lots:u1');
+    expect(btns[0]!.label).toBe('🏗️ Build a paddock');
+  });
+
+  it('assignSelectRow offers lot ids as values and nothing else', () => {
+    seedUser();
+    const a = seedLot(); const b = seedLot({ level: 2 });
+    const d = seedDino();
+    const menu = (assignSelectRow('u1', d.id, eligiblePaddocks(ctx, 'u1', d.id)).toJSON() as {
+      components: Array<{ custom_id: string; options: Array<{ value: string; label: string }> }>;
+    }).components[0]!;
+    expect(menu.custom_id).toBe(`park:assignsel:u1:${d.id}`);
+    expect(menu.options.map((o) => o.value)).toEqual([String(a.id), String(b.id)]);
+    expect(menu.options[1]!.label).toBe(`#${b.id} Herbivore Paddock (lvl 2)`);
   });
 });

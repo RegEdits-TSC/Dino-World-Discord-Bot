@@ -399,3 +399,61 @@ export function tabRow(id: string, active: ParkTab, visit = false): ActionRowBui
       .setDisabled(t === active)),
   );
 }
+
+/**
+ * The follow-through assign control, in whichever of its three shapes the eligibility list
+ * dictates. Always exactly one button, chosen AT MINT TIME:
+ *
+ *   one eligible → park:assign:<uid>:<dinoId>:<lotId>   the lot rides in the id
+ *   several      → park:assignpick:<uid>:<dinoId>       opens assignSelectRow below
+ *   none         → park:goto:lots:<uid>                 go build one instead
+ *
+ * The lot id is in the id and not merely in the label because a Discord message is durable
+ * and its label is never re-derived; the handler re-checks that exact lot against current
+ * state before it writes.
+ *
+ * The owner uid is in every one of the three because these rows land on PUBLIC messages —
+ * the hatch reveal above all — where anyone in the channel can click.
+ *
+ * Unicode glyphs in the label, never emojiTag/setEmoji — the same reason tabRow gives: the
+ * app-emoji map returns '' when unloaded and setEmoji throws on that rather than degrading.
+ */
+export function assignRow(
+  userId: string, dinoId: number, eligible: Lot[],
+): ActionRowBuilder<ButtonBuilder> {
+  const button = eligible.length === 1
+    ? new ButtonBuilder().setCustomId(`park:assign:${userId}:${dinoId}:${eligible[0]!.id}`)
+      .setLabel(`🦕 Assign to #${eligible[0]!.id}`).setStyle(ButtonStyle.Success)
+    : eligible.length > 1
+      ? new ButtonBuilder().setCustomId(`park:assignpick:${userId}:${dinoId}`)
+        .setLabel('🦕 Assign… ▼').setStyle(ButtonStyle.Success)
+      : new ButtonBuilder().setCustomId(`park:goto:lots:${userId}`)
+        .setLabel('🏗️ Build a paddock').setStyle(ButtonStyle.Secondary);
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(button);
+}
+
+/**
+ * The menu park:assignpick opens. A value is the lot id and nothing else — an identity,
+ * never a price and never a capacity — so a stale option cannot describe a lot it no longer
+ * names. The handler re-derives eligibility itself; the router only proves the value was
+ * one this menu offered.
+ *
+ * Sliced at 25 for Discord's option cap. Ten lot slots is the live ceiling, so the slice is
+ * insurance rather than a live constraint — the same shape lotsPayload's two menus use.
+ *
+ * NEVER call this with an empty list: a zero-option select is rejected by the payload
+ * validator, and in production Discord rejects the message. The handler checks for that
+ * before it reaches this builder.
+ */
+export function assignSelectRow(
+  userId: string, dinoId: number, eligible: Lot[],
+): ActionRowBuilder<StringSelectMenuBuilder> {
+  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`park:assignsel:${userId}:${dinoId}`)
+      .setPlaceholder('Pick a paddock…')
+      .addOptions(eligible.slice(0, 25).map((l) => new StringSelectMenuOptionBuilder()
+        .setValue(String(l.id))
+        .setLabel(`#${l.id} ${l.name} (lvl ${l.level})`))),
+  );
+}
