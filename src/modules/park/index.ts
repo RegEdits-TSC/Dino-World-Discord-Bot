@@ -12,7 +12,7 @@ import { visitPayload, nextParkRow } from './visit.js';
 import { bumpLegacyBest, legacyRank } from './ranks.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
-import { InsufficientFundsError } from '../../core/economy.js';
+import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { buyLandmark, nextLandmark, landmarkTierOf, LandmarkMaxedError } from './landmarks.js';
 import { landmarkFor, MAX_LANDMARK_TIER } from '../../data/landmarks.js';
 import { setMotto, setFeaturedDino, featuredFor, ShowcaseError } from './showcase.js';
@@ -241,14 +241,23 @@ export const parkModule: ModuleManifest = {
           .addChoices(...kindChoices)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        // Hoisted out of the call below because the InsufficientFundsError arm in the catch
+        // dereferences it to name the building. Do NOT re-inline this read: the catch stops
+        // compiling (TS2304) and the reply loses the name the message is supposed to carry.
+        // buildLot's own Object.hasOwn check runs first, so by the time that arm is reached
+        // `kind` is a real key of PADDOCKS or FACILITIES.
+        const kind = i.options.getString('kind', true);
         try {
-          const lot = buildLot(ctx, i.user.id, i.options.getString('kind', true));
+          const lot = buildLot(ctx, i.user.id, kind);
           const hint = lot.type === 'paddock' ? ' Assign a dino with /dino assign to start earning.' : '';
           await i.reply({ content: `🏗️ Built **${lot.name}** (lot #${lot.id}).${hint}` });
         } catch (e) {
           if (e instanceof DuplicateFacilityError) await i.reply({ content: `You already have a ${e.message} — upgrade it instead.`, flags: MessageFlags.Ephemeral });
           else if (e instanceof LotLimitError) await i.reply({ content: 'All lots full. More slots unlock with park rating.', flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) {
+            const def = PADDOCKS[kind] ?? FACILITIES[kind]!;
+            await i.reply({ content: `Not enough cash — the ${def.name} ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
+          }
           else throw e;
         }
       },
@@ -259,9 +268,10 @@ export const parkModule: ModuleManifest = {
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         const lotId = i.options.getInteger('lot', true);
-        // Hoisted so the InsufficientFundsError branch below can quote the price: upgradeLot
-        // does the same lookup internally, so this is one cheap extra read, not a second
-        // source of truth for the cost (upgradeCostFor stays the only place that computes it).
+        // Hoisted for upgradeLot's expectedLevel argument below, NOT for the price: the price
+        // now comes off the error the guard threw, so upgradeCostFor is no longer called on
+        // this path at all. It is still used by this command's autocomplete, by the Lots-tab
+        // upgrade select and by its confirm label — `grep -n "upgradeCostFor" src/modules/park/index.ts`.
         const lotRow = ctx.db.select().from(schema.lots)
           .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, i.user.id))).get();
         try {
@@ -275,7 +285,7 @@ export const parkModule: ModuleManifest = {
           if (e instanceof LotLimitError) await i.reply({ content: 'Already max level.', flags: MessageFlags.Ephemeral });
           else if (e instanceof UnknownKindError) await i.reply({ content: 'No such lot.', flags: MessageFlags.Ephemeral });
           else if (e instanceof InsufficientFundsError) await i.reply({
-            content: `Not enough cash — that upgrade costs ${upgradeCostFor(lotRow!.kind, lotRow!.level).toLocaleString('en-US')}.`,
+            content: `Not enough cash — that upgrade ${shortfallLine(e)}.`,
             flags: MessageFlags.Ephemeral,
           });
           else if (e instanceof StaleLevelError) await i.reply({
@@ -389,12 +399,19 @@ export const parkModule: ModuleManifest = {
         .addStringOption((o) => o.setName('item').setDescription('Decoration — type to search').setRequired(true).setAutocomplete(true)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        // Hoisted so the InsufficientFundsError arm can name the decoration, same rule as
+        // /build's `kind`. decorateLot throws AssignError('Unknown decoration.') for a kind
+        // absent from DECOR and that arm is checked first, so `item` is a real key here.
+        const item = i.options.getString('item', true);
         try {
-          decorateLot(ctx, i.user.id, i.options.getInteger('lot', true), i.options.getString('item', true));
+          decorateLot(ctx, i.user.id, i.options.getInteger('lot', true), item);
           await i.reply({ content: '🌴 Decoration added.' });
         } catch (e) {
           if (e instanceof AssignError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({
+            content: `Not enough cash — the ${DECOR[item].name} ${shortfallLine(e)}.`,
+            flags: MessageFlags.Ephemeral,
+          });
           else throw e;
         }
       },
@@ -630,7 +647,7 @@ export const parkModule: ModuleManifest = {
               if (e instanceof LandmarkMaxedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
               else if (e instanceof InsufficientFundsError) {
                 await i.reply({
-                  content: `Not enough cash — the ${rung.name} costs ${rung.cost.toLocaleString('en-US')}.`,
+                  content: `Not enough cash — the ${rung.name} ${shortfallLine(e)}.`,
                   flags: MessageFlags.Ephemeral,
                 });
               } else throw e;
@@ -789,7 +806,7 @@ export const parkModule: ModuleManifest = {
               } else if (e instanceof InsufficientFundsError) {
                 const def = PADDOCKS[kind] ?? FACILITIES[kind]!;
                 await i.reply({
-                  content: `Not enough cash — ${def.name} costs ${def.buildCost.toLocaleString('en-US')}.`,
+                  content: `Not enough cash — the ${def.name} ${shortfallLine(e)}.`,
                   flags: MessageFlags.Ephemeral,
                 });
               } else throw e;
@@ -845,7 +862,7 @@ export const parkModule: ModuleManifest = {
                 });
               } else if (e instanceof InsufficientFundsError) {
                 await i.reply({
-                  content: `Not enough cash — that upgrade costs ${upgradeCostFor(lot.kind, lot.level).toLocaleString('en-US')}.`,
+                  content: `Not enough cash — that upgrade ${shortfallLine(e)}.`,
                   flags: MessageFlags.Ephemeral,
                 });
               } else throw e;

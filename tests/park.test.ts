@@ -762,8 +762,36 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     // Exact, not toContain('5,000'): that substring is satisfied by '15,000' and by
     // '5,000,000' just as happily. herbivore_paddock L1 -> L2 is round(2,000 x 2.5) = 5,000
     // (upgradeCostFor), and the whole point of the quote is that the FIGURE is right.
-    expect(replyText(brokeI.replies[0])).toBe('Not enough cash — that upgrade costs 5,000.');
+    expect(replyText(brokeI.replies[0]))
+      .toBe('Not enough cash — that upgrade costs 5,000, you have 0 (5,000 short).');
   });
+  it('/build names the building and quotes the shortfall', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 0 }).run();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'build')!;
+    const i = fakeCommand({ name: 'build', user: 'u1', options: { kind: 'herbivore_paddock' } });
+    await cmd.execute(ctx, i.asChatInput());
+    // Whole string, never toContain('2,000'): that substring is satisfied by '12,000' and by
+    // '2,000,000' just as happily, and the figures are the entire point of the change.
+    expect(replyText(i.replies[0]))
+      .toBe('Not enough cash — the Herbivore Paddock costs 2,000, you have 0 (2,000 short).');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+
+  it('/decorate names the decoration and quotes the shortfall', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    ctx.db.update(schema.users).set({ cash: 0 }).run();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'decorate')!;
+    const i = fakeCommand({ name: 'decorate', user: 'u1', options: { lot: lot.id, item: 'palm_tree' } });
+    await cmd.execute(ctx, i.asChatInput());
+    // DECOR.palm_tree is a frozen literal cost of 500 — no world-event or deal multiplier
+    // touches decor, and decorateLot applies no biome filter, so this is safe to pin.
+    expect(replyText(i.replies[0]))
+      .toBe('Not enough cash — the Palm Tree costs 500, you have 0 (500 short).');
+  });
+
   it('/decorate execute adds decor', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
     ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
@@ -817,7 +845,8 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     ctx.db.update(schema.users).set({ cash: 0 }).run();
     const broke = fakeCommand({ name: 'build', user: 'u1', options: { kind } });
     await cmd.execute(ctx, broke.asChatInput());
-    expect(replyText(broke.replies[0])).toContain('Not enough cash');
+    expect(replyText(broke.replies[0]))
+      .toBe('Not enough cash — the Herbivore Paddock costs 2,000, you have 0 (2,000 short).');
   });
   it('/build maps DuplicateFacilityError to an ephemeral reply naming the facility', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');

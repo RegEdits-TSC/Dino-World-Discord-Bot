@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MessageFlags } from 'discord.js';
-import { makeCtx, fakeButton, fakeSelect } from './harness.js';
-import { getOrCreateUser } from '../src/modules/park/service.js';
+import { makeCtx, fakeButton, fakeSelect, replyText } from './harness.js';
+import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { parkModule } from '../src/modules/park/index.js';
 import { lotsPayload } from '../src/modules/park/embeds.js';
 import { schema } from '../src/core/db/index.js';
@@ -398,5 +398,34 @@ describe('upgrade menu mint', () => {
     const values = select!.options.map((o) => o.value);
     expect(values).toContain(`${below.id}:1`);
     expect(values.some((v) => v.startsWith(`${geneLab.id}:`))).toBe(false);
+  });
+});
+
+describe('confirm-button insufficiency messages', () => {
+  it('park:buildyes names the building and quotes the shortfall', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.db.update(schema.users).set({ cash: 0 }).where(eq(schema.users.discordId, 'u1')).run();
+    // The trailing :0 is the lot-count anchor the handler validates against a fresh read
+    // before entering the try — the player owns no lots, so the id is not stale and the
+    // handler reaches buildLot rather than the count-mismatch refusal above it.
+    const b = fakeButton({ customId: 'park:buildyes:u1:herbivore_paddock:0', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(replyText(b.replies[0]))
+      .toBe('Not enough cash — the Herbivore Paddock costs 2,000, you have 0 (2,000 short).');
+    expect(cashOf('u1')).toBe(0);
+  });
+
+  it('park:upgyes quotes the shortfall for the level the button was minted at', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).where(eq(schema.users.discordId, 'u1')).run();
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');   // level 1
+    ctx.db.update(schema.users).set({ cash: 0 }).where(eq(schema.users.discordId, 'u1')).run();
+    // herbivore_paddock L1 -> L2 is round(2,000 x 2.5) = 5,000 (upgradeCostFor). The trailing
+    // :1 is the expected-level anchor the handler checks against a fresh read before the try.
+    const b = fakeButton({ customId: `park:upgyes:u1:${lot.id}:1`, user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(replyText(b.replies[0]))
+      .toBe('Not enough cash — that upgrade costs 5,000, you have 0 (5,000 short).');
+    expect(cashOf('u1')).toBe(0);
   });
 });

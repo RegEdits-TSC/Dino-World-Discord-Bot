@@ -279,7 +279,7 @@ describe('/park landmark', () => {
   it('reports insufficient cash with the exact price of the rung the button offered', async () => {
     const i = await click('park:landmark:buy:u1:1');
     expect(replyText(i.replies[0]))
-      .toBe('Not enough cash — the Stone Marker costs 5,000,000.');
+      .toBe('Not enough cash — the Stone Marker costs 5,000,000, you have 500 (4,999,500 short).');
   });
 
   // The LandmarkMaxedError branch, which nothing reached before: at tier 6 there is no next
