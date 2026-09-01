@@ -170,9 +170,11 @@ describe('park:assign — the one-eligible follow-through button', () => {
 
   it('says the paddock is full when it filled up between mint and click', async () => {
     seedUser();
-    const lot = seedLot();                 // level 1 → capacity 2
+    // seedLot() defaults to level 1; the two seedDino calls below fill it to
+    // paddockCapacity(1) exactly, so it is full by the time the button is clicked.
+    const lot = seedLot();
     const d = seedDino();
-    seedDino({ lotId: lot.id }); seedDino({ lotId: lot.id });   // 2/2 after the mint
+    seedDino({ lotId: lot.id }); seedDino({ lotId: lot.id });
     const b = fakeButton({ customId: `park:assign:u1:${d.id}:${lot.id}`, user: 'u1' });
     await routeInteraction(ctx, testRegistry, b.asInteraction());
     // NOT the staleness line: a full paddock is a state the player can do something about,
