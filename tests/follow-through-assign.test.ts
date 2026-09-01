@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { ActionRowBuilder, ButtonBuilder } from 'discord.js';
 import { MessageFlags } from 'discord.js';
 import { eq } from 'drizzle-orm';
-import { makeCtx, fakeButton, replyText, testRegistry } from './harness.js';
+import { makeCtx, fakeButton, fakeSelect, replyText, testRegistry } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { assignDino, eligiblePaddocks } from '../src/modules/park/dinos.js';
@@ -244,5 +244,94 @@ describe('park:assign — the one-eligible follow-through button', () => {
     await routeInteraction(ctx, testRegistry, again.asInteraction());
     expect(replyText(again.replies[0])).toBe(`Already assigned to lot #${b2.id}.`);
     expect(lotOf(d.id)).toBe(b2.id);
+  });
+});
+
+const menuOf = (reply: unknown) => (JSON.parse(JSON.stringify(reply)) as {
+  components: Array<{ components: Array<{ custom_id: string; options: Array<{ value: string }> }> }>;
+}).components[0]!.components[0]!;
+
+describe('park:assignpick and park:assignsel', () => {
+  it('the picker opens an ephemeral menu of exactly the currently eligible paddocks', async () => {
+    seedUser();
+    const a = seedLot(); const b2 = seedLot();
+    seedLot({ kind: 'carnivore_paddock', name: 'Carnivore Paddock' });   // never offered
+    const d = seedDino();
+    const btn = fakeButton({ customId: `park:assignpick:u1:${d.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, btn.asInteraction());
+    expect(btn.deferOpts).toHaveLength(0);
+    expect((btn.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    const menu = menuOf(btn.replies[0]);
+    expect(menu.custom_id).toBe(`park:assignsel:u1:${d.id}`);
+    expect(menu.options.map((o) => o.value)).toEqual([String(a.id), String(b2.id)]);
+  });
+
+  it('the picker refuses a bystander', async () => {
+    seedUser(); getOrCreateUser(ctx, 'u2', 'u2');
+    seedLot(); seedLot();
+    const d = seedDino();
+    const btn = fakeButton({ customId: `park:assignpick:u1:${d.id}`, user: 'u2' });
+    await routeInteraction(ctx, testRegistry, btn.asInteraction());
+    expect(replyText(btn.replies[0])).toBe('Not your assignment.');
+  });
+
+  it('the picker refuses a dino that already has a home', async () => {
+    seedUser();
+    const a = seedLot(); seedLot();
+    const d = seedDino({ lotId: a.id });
+    const btn = fakeButton({ customId: `park:assignpick:u1:${d.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, btn.asInteraction());
+    expect(replyText(btn.replies[0])).toBe(`Already assigned to lot #${a.id}.`);
+  });
+
+  it('the picker refuses rather than opening an empty menu', async () => {
+    seedUser();
+    seedLot({ kind: 'carnivore_paddock', name: 'Carnivore Paddock' });   // off diet only
+    const d = seedDino();
+    const btn = fakeButton({ customId: `park:assignpick:u1:${d.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, btn.asInteraction());
+    expect(replyText(btn.replies[0])).toBe('That lot changed — open `/park view` again.');
+  });
+
+  it('routes the select through the registry and assigns to the picked lot', async () => {
+    seedUser();
+    const a = seedLot(); const b2 = seedLot();
+    const d = seedDino();
+    const s = fakeSelect({
+      customId: `park:assignsel:u1:${d.id}`, user: 'u1',
+      values: [String(b2.id)], options: [String(a.id), String(b2.id)],
+    });
+    await routeInteraction(ctx, testRegistry, s.asInteraction());
+    expect(replyText(s.replies[0])).toBe(`🦕 Assigned to lot #${b2.id}.`);
+    expect(lotOf(d.id)).toBe(b2.id);
+  });
+
+  it('says the paddock is full when an offered lot filled up before the pick', async () => {
+    seedUser();
+    const a = seedLot(); const b2 = seedLot();
+    const d = seedDino();
+    seedDino({ lotId: b2.id }); seedDino({ lotId: b2.id });   // b2 (level 1) is now at paddockCapacity(1)
+    const s = fakeSelect({
+      customId: `park:assignsel:u1:${d.id}`, user: 'u1',
+      values: [String(b2.id)], options: [String(a.id), String(b2.id)],
+    });
+    await routeInteraction(ctx, testRegistry, s.asInteraction());
+    // Same sentence the button path gives for the same cause — the two share
+    // assignFollowThrough precisely so they cannot disagree.
+    expect(replyText(s.replies[0])).toBe('That paddock is full.');
+    expect(lotOf(d.id)).toBeNull();
+  });
+
+  it('refuses a bystander submitting the menu', async () => {
+    seedUser(); getOrCreateUser(ctx, 'u2', 'u2');
+    const a = seedLot();
+    const d = seedDino();
+    const s = fakeSelect({
+      customId: `park:assignsel:u1:${d.id}`, user: 'u2',
+      values: [String(a.id)], options: [String(a.id)],
+    });
+    await routeInteraction(ctx, testRegistry, s.asInteraction());
+    expect(replyText(s.replies[0])).toBe('Not your park.');
+    expect(lotOf(d.id)).toBeNull();
   });
 });

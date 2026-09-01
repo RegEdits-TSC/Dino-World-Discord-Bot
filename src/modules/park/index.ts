@@ -640,6 +640,16 @@ export const parkModule: ModuleManifest = {
           ));
           return;
         }
+        if (action === 'assignsel') {
+          // The router proved both halves centrally (clickedIdIsOnMessage, then
+          // submittedValuesAreOnMessage), and the owner check at the top of this handler
+          // proved the clicker. What is left is DOMAIN validity, which no guard can give
+          // us: the first-home rule, and whether that lot is still a diet-matching paddock
+          // with room. Both live in assignFollowThrough, which park:assign shares — the
+          // two paths cannot answer the same question differently.
+          await assignFollowThrough(ctx, i, Number(i.customId.split(':')[3]), Number(value));
+          return;
+        }
         await i.deferUpdate();
       },
     },
@@ -696,6 +706,31 @@ export const parkModule: ModuleManifest = {
             // misdescribe what happened.
             if (i.user.id !== uid) { await i.reply({ content: 'Not your assignment.', flags: MessageFlags.Ephemeral }); return; }
             await assignFollowThrough(ctx, i, Number(parts[3]), Number(parts[4]));
+            return;
+          }
+          case 'assignpick': {
+            // park:assignpick:<uid>:<dinoId> — the menu's options are derived HERE, at click
+            // time, and never carried in the id: this button may have been minted an hour ago.
+            if (i.user.id !== uid) { await i.reply({ content: 'Not your assignment.', flags: MessageFlags.Ephemeral }); return; }
+            const pickDinoId = Number(parts[3]);
+            settleEscapes(ctx, i.user.id);
+            // Same first-home rule the write path applies, checked before the menu opens so
+            // an already-housed dino is told so once rather than after a pointless pick.
+            const pickRefusal = assignRefusal(ctx, i.user.id, pickDinoId);
+            if (pickRefusal !== null) { await i.reply({ content: pickRefusal, flags: MessageFlags.Ephemeral }); return; }
+            const eligible = eligiblePaddocks(ctx, i.user.id, pickDinoId);
+            // NEVER fall through to assignSelectRow with an empty list: a zero-option select
+            // is rejected outright, which would turn a legible refusal into the router's
+            // generic failure line. This also covers a forged or junk dinoId, which
+            // eligiblePaddocks answers with [].
+            if (eligible.length === 0) { await i.reply({ content: STALE_ASSIGN, flags: MessageFlags.Ephemeral }); return; }
+            // Ephemeral, never i.update: this button can sit on a PUBLIC hatch reveal, and
+            // rewriting somebody's reveal card into a private chooser is the wrong trade.
+            await i.reply({
+              content: 'Which paddock?',
+              components: [assignSelectRow(i.user.id, pickDinoId, eligible)],
+              flags: MessageFlags.Ephemeral,
+            });
             return;
           }
           case 'dinos': {
