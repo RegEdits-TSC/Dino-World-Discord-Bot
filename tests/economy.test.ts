@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createDb, migrateDb, schema, type Db } from '../src/core/db/index.js';
-import { EconomyService, InsufficientFundsError, ReversalError } from '../src/core/economy.js';
+import { EconomyService, InsufficientFundsError, ReversalError, shortfallLine } from '../src/core/economy.js';
 import { eq } from 'drizzle-orm';
 
 let db: Db; let eco: EconomyService;
@@ -164,5 +164,68 @@ describe('EconomyService.reverse', () => {
 
     expect(() => eco.reverse(charge.id, 500)).toThrow();
     expect(bal().cash).toBe(400);                     // wallet update rolled back, not left at 500
+  });
+});
+
+describe('InsufficientFundsError carries the numbers it used to withhold', () => {
+  // Never `expect(fn).toThrow(InsufficientFundsError)` here: that proves a CLASS, and what is
+  // under test is the three fields on the instance. The trailing throw is what stops the whole
+  // block passing vacuously if the guard stops firing and nothing is thrown at all.
+  function overdraft(fn: () => void): InsufficientFundsError {
+    try {
+      fn();
+    } catch (e) {
+      if (e instanceof InsufficientFundsError) return e;
+      throw e;
+    }
+    throw new Error('expected an InsufficientFundsError; nothing was thrown');
+  }
+
+  it('a cash overdraft carries the amount asked for, the balance held, and no foodId', () => {
+    eco.apply('u1', { cash: 7_910 }, 'seed', 0);            // 500 -> 8,410
+    const e = overdraft(() => eco.apply('u1', { cash: -12_000 }, 'build:gene_lab', 0));
+    expect(e.wallet).toBe('cash');
+    expect(e.needed).toBe(12_000);
+    expect(e.held).toBe(8_410);
+    expect(e.foodId).toBeUndefined();
+    // The WHOLE line. Step 6 swaps the two constructor arguments and shows that
+    // toContain('8,410') and toContain('3,590') BOTH still pass against the broken output;
+    // only .toBe catches it.
+    expect(shortfallLine(e)).toBe('costs 12,000, you have 8,410 (3,590 short)');
+    // message is deliberately untouched: src/modules/admin/service.ts and the
+    // "Insufficient Fish" assertion earlier in this file both still read it.
+    expect(e.message).toBe('Insufficient cash');
+    expect(bal().cash).toBe(8_410);                          // and nothing was written
+  });
+
+  it('a shards overdraft carries its own wallet and numbers', () => {
+    eco.apply('u1', { shards: 340 }, 'seed', 0);
+    const e = overdraft(() => eco.apply('u1', { shards: -500 }, 'mythic:indominus', 0));
+    expect(e.wallet).toBe('shards');
+    expect(e.needed).toBe(500);
+    expect(e.held).toBe(340);
+    expect(shortfallLine(e)).toBe('costs 500, you have 340 (160 short)');
+    expect(e.message).toBe('Insufficient shards');
+  });
+
+  it('a food overdraft counts units, names the food, and says "need" rather than "costs"', () => {
+    eco.apply('u1', { foods: { ferns: 1 } }, 'seed', 0);
+    const e = overdraft(() => eco.apply('u1', { foods: { ferns: -3 } }, 'feed:triceratops', 0));
+    expect(e.wallet).toBe('food');
+    expect(e.foodId).toBe('ferns');
+    expect(e.needed).toBe(3);
+    expect(e.held).toBe(1);
+    expect(shortfallLine(e)).toBe('need 3, you have 1 (2 short)');
+    expect(e.message).toBe('Insufficient Ferns');
+  });
+
+  it('a food the player holds none of reports held 0, not a missing row', () => {
+    // food_inventory has no row at all for a food never bought, and getFoodInventory drops
+    // zero rows besides. `held` must still be the number 0 — not undefined, not NaN.
+    const e = overdraft(() => eco.apply('u1', { foods: { goat: -2 } }, 'feed:trex', 0));
+    expect(e.wallet).toBe('food');
+    expect(e.held).toBe(0);
+    expect(e.needed).toBe(2);
+    expect(shortfallLine(e)).toBe('need 2, you have 0 (2 short)');
   });
 });

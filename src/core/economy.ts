@@ -5,9 +5,35 @@ import { FOODS, type FoodId } from '../data/foods.js';
 export interface WalletDelta { cash?: number; shards?: number; foods?: Partial<Record<FoodId, number>> }
 
 export class InsufficientFundsError extends Error {
-  constructor(public wallet: 'cash' | 'food' | 'shards', public foodId?: FoodId) {
+  /**
+   * `needed` is the amount the caller asked for and `held` is the balance at the moment the
+   * guard fired, both required. Optional would have been the bug this class exists to fix,
+   * re-added by its own default: a throw site that omitted them would compile, and the error
+   * would go on withholding exactly the number every catch site wants.
+   */
+  constructor(
+    public wallet: 'cash' | 'food' | 'shards',
+    public needed: number,
+    public held: number,
+    public foodId?: FoodId,
+  ) {
     super(foodId ? `Insufficient ${FOODS[foodId].name}` : `Insufficient ${wallet}`);
   }
+}
+
+/**
+ * The tail every insufficiency message shares. The caller supplies the leading clause naming
+ * WHAT was being bought, because only the caller knows it; the numbers live here because they
+ * have exactly one definition — the guard that threw. Splitting it this way is what stops a
+ * catch site re-deriving a price and disagreeing with the charge that actually failed.
+ *
+ * 'en-US' is passed explicitly, not left to the host locale: these strings are asserted whole.
+ */
+export function shortfallLine(e: InsufficientFundsError): string {
+  const n = (v: number) => v.toLocaleString('en-US');
+  const tail = `you have ${n(e.held)} (${n(e.needed - e.held)} short)`;
+  // Food is a count of units, not a currency, so it reads "need 3" where cash reads "costs 3".
+  return e.wallet === 'food' ? `need ${n(e.needed)}, ${tail}` : `costs ${n(e.needed)}, ${tail}`;
 }
 
 export class ReversalError extends Error {}
@@ -38,8 +64,12 @@ export class EconomyService {
     const u = tx.select().from(schema.users)
       .where(eq(schema.users.discordId, userId)).get();
     if (!u) throw new Error(`Unknown user ${userId}`);
-    if (u.cash + cash < 0) throw new InsufficientFundsError('cash');
-    if (u.shards + shards < 0) throw new InsufficientFundsError('shards');
+    // `cash` and `shards` are SIGNED deltas, negative for a spend, so the amount asked for is
+    // the negation. A positive delta cannot push a non-negative balance below zero (both
+    // columns carry a CHECK >= 0), so these are only reachable with a negative delta and
+    // `needed` is always positive here.
+    if (u.cash + cash < 0) throw new InsufficientFundsError('cash', -cash, u.cash);
+    if (u.shards + shards < 0) throw new InsufficientFundsError('shards', -shards, u.shards);
     tx.update(schema.users).set({
       cash: sql`${schema.users.cash} + ${cash}`,
       shards: sql`${schema.users.shards} + ${shards}`,
@@ -47,8 +77,9 @@ export class EconomyService {
     for (const [foodId, qty] of foodEntries) {
       const row = tx.select().from(schema.foodInventory)
         .where(and(eq(schema.foodInventory.userId, userId), eq(schema.foodInventory.foodId, foodId))).get();
-      const next = (row?.qty ?? 0) + qty;
-      if (next < 0) throw new InsufficientFundsError('food', foodId);
+      const held = row?.qty ?? 0;
+      const next = held + qty;
+      if (next < 0) throw new InsufficientFundsError('food', -qty, held, foodId);
       if (row) {
         tx.update(schema.foodInventory).set({ qty: next })
           .where(and(eq(schema.foodInventory.userId, userId), eq(schema.foodInventory.foodId, foodId))).run();
