@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest';
+import { MessageFlags } from 'discord.js';
 import { eq } from 'drizzle-orm';
-import { makeCtx, fakeButton, fakeCommand, testRegistry } from './harness.js';
+import { makeCtx, fakeButton, fakeCommand, replyText, testRegistry } from './harness.js';
 import { routeInteraction } from '../src/core/router.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
-import { startExpedition, activeExpedition } from '../src/modules/expeditions/service.js';
+import { startExpedition, activeExpedition, expeditionFeeFor } from '../src/modules/expeditions/service.js';
+import { EXPEDITION_SITES } from '../src/data/sites.js';
+import { eventMods, worldEventFor } from '../src/core/world.js';
+import { ALL_MODULES } from '../src/core/module-list.js';
+import type { Config } from '../src/core/config.js';
 
 const DAY = 86_400_000;
 
@@ -88,5 +93,152 @@ describe('Dig again — the button', () => {
     expect(b.deferOpts).toHaveLength(1);
     expect(b.deferOpts[0]).toMatchObject({ kind: 'update' });
     expect(activeExpedition(ctx, 'u1')).toBeUndefined();
+  });
+});
+
+/**
+ * makeCtx leaves `config.modules` as `{}` (tests/harness.ts:21) and Task 9 (G4-B) deliberately
+ * keeps it that way, so every CROSS-MODULE mint below — expeditions and the shop both minting
+ * an id the HATCHERY module handles — is gated on `ctx.config.modules.hatchery` and would
+ * suppress its own button under a plain ctx. Every case that asserts such a button EXISTS
+ * builds its ctx here too, not only the module-disabled ones, or it would go green having
+ * watched the gate close rather than the button ship. `testRegistry` is a separate object and
+ * stays fully enabled on purpose: the gate reads ctx.config, not the registry, so a fixture
+ * has to move exactly that. Same shape as Task 22 (G4-D)'s fixture, declared again rather than
+ * imported — no test file imports another test file's helpers.
+ */
+function modulesConfig(over: Record<string, boolean> = {}): Config {
+  return {
+    token: 't', clientId: 'c', databasePath: ':memory:', ownerId: 'owner',
+    // Derived from ALL_MODULES, never a hand-written list of names: a gate added later on a
+    // module this literal happened not to name would read `undefined`, suppress its own
+    // control, and leave the test green with nothing to show for it. tests/harness.ts already
+    // compiles this exact expression for testRegistry, so it is proven under `npm run typecheck`.
+    modules: { ...Object.fromEntries(ALL_MODULES.map((m) => [m.name, true])), ...over },
+  };
+}
+const ctxWithModules = (over: Record<string, boolean> = {}, nowMs = 0) =>
+  makeCtx({ nowMs, config: modulesConfig(over) });
+
+const eggsOf = (c: ReturnType<typeof makeCtx>, id: string) =>
+  c.db.select().from(schema.eggs).where(eq(schema.eggs.userId, id)).all();
+
+describe('the exp:claim update carries both follow-through controls', () => {
+  it('mints Dig again AND Incubate for the egg it just found, and the Incubate id routes', async () => {
+    // ctxWithModules, not a plain makeCtx: the Incubate mint is gated on
+    // ctx.config.modules.hatchery and the harness default is `{}`, so a plain ctx would make
+    // the gate suppress the very button this case is here to see.
+    const ctx = ctxWithModules({}, 9 * DAY);
+    seedDigger(ctx);
+    digAndReturn(ctx);
+    const claimedAt = ctx.now();
+
+    const b = fakeButton({ customId: 'exp:claim:u1', user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    const egg = eggsOf(ctx, 'u1')[0]!;
+    expect(mintedIds(b.replies[0])).toContain('exp:again:u1:coastal_dig');
+    expect(mintedIds(b.replies[0])).toContain(`hatch:inc:u1:${egg.id}`);
+
+    // Mint it, then ROUTE it. Asserting the id alone would not catch a prefix that resolves
+    // to no handler: routeInteraction has no else-branch for an unresolved prefix, so a dead
+    // id is a fully silent no-op.
+    const inc = `hatch:inc:u1:${egg.id}`;
+    const click = fakeButton({ customId: inc, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, click.asInteraction());
+    expect(click.deferOpts).toHaveLength(0);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.incubationStartedAt)
+      .toBe(claimedAt);
+  });
+
+  it('mints no Incubate row when the hatchery module is disabled', async () => {
+    const ctx = ctxWithModules({ hatchery: false }, 9 * DAY);
+    seedDigger(ctx);
+    digAndReturn(ctx);
+    const b = fakeButton({ customId: 'exp:claim:u1', user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    const egg = eggsOf(ctx, 'u1')[0]!;
+    expect(mintedIds(b.replies[0])).not.toContain(`hatch:inc:u1:${egg.id}`);
+    // Dig again still ships: this gate is about the hatchery module, not about the reply.
+    expect(mintedIds(b.replies[0])).toContain('exp:again:u1:coastal_dig');
+  });
+});
+
+describe('Dig again — the confirm card', () => {
+  // Day 9 is Heat Wave (expeditionFee x1) and day 10 is Amber Storm (expeditionFee x2).
+  // These assertions are not decoration: they are what makes every fixture below a statement
+  // about the real world-event pipeline rather than about two constants someone typed.
+  // WORLD_SALT or a reorder of WORLD_EVENTS moves which day is which, and this fails loudly
+  // instead of the fee tests going quietly vacuous.
+  it('day 9 and day 10 really do price coastal_dig differently, through the real pipeline', () => {
+    expect(worldEventFor(9 * DAY).id).toBe('heat_wave');
+    expect(worldEventFor(10 * DAY).id).toBe('amber_storm');
+    expect(eventMods(9 * DAY).expeditionFee).toBe(1);
+    expect(eventMods(10 * DAY).expeditionFee).toBe(2);
+    expect(expeditionFeeFor(EXPEDITION_SITES.coastal_dig.cost, eventMods(9 * DAY).expeditionFee)).toBe(200);
+    expect(expeditionFeeFor(EXPEDITION_SITES.coastal_dig.cost, eventMods(10 * DAY).expeditionFee)).toBe(400);
+  });
+
+  it('opens an ephemeral card whose confirm button carries the fee it was minted for', async () => {
+    const ctx = makeCtx({ nowMs: 9 * DAY });
+    seedDigger(ctx);
+    digAndReturn(ctx);
+    const claim = fakeCommand({ name: 'expedition', sub: 'claim', user: 'u1' });
+    await routeInteraction(ctx, testRegistry, claim.asInteraction());
+    // The REAL minted id, read back out of the payload that mints it — never hand-typed.
+    const openId = mintedIds(claim.replies[0]).find((id) => id.startsWith('exp:again:'))!;
+
+    const open = fakeButton({ customId: openId, user: 'u1' });
+    const before = cashOf(ctx, 'u1');
+    await routeInteraction(ctx, testRegistry, open.asInteraction());
+
+    expect(open.deferOpts).toHaveLength(0);
+    expect(open.replies).toHaveLength(1);
+    expect((open.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect(mintedIds(open.replies[0])).toContain('exp:againyes:u1:coastal_dig:200');
+    expect(labelOf(open.replies[0], 'exp:againyes:u1:coastal_dig:200')).toBe('Dig — 200 cash');
+    // Nothing is spent by OPENING the card — read before the click, compared after it.
+    expect(cashOf(ctx, 'u1')).toBe(before);
+    expect(activeExpedition(ctx, 'u1')).toBeUndefined();
+  });
+
+  it('quotes the DOUBLED fee, in the card text as well as the id, on an Amber Storm day', async () => {
+    const ctx = makeCtx({ nowMs: 10 * DAY });
+    seedDigger(ctx);
+    const b = fakeButton({ customId: 'exp:again:u1:coastal_dig', user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(mintedIds(b.replies[0])).toContain('exp:againyes:u1:coastal_dig:400');
+    expect(labelOf(b.replies[0], 'exp:againyes:u1:coastal_dig:400')).toBe('Dig — 400 cash');
+    // The LAST rendered line, whole — never a substring around the number. The line above it
+    // is the world-event header, whose emoji resolves through EMOJI_FALLBACK and is not what
+    // this case is about.
+    const lines = replyText(b.replies[0]).split('\n');
+    expect(lines[lines.length - 1]).toBe('Send a crew back to **Coastal Dig** for **400** cash?');
+  });
+
+  it('a bystander gets nothing back but a refusal', async () => {
+    const ctx = makeCtx({ nowMs: 9 * DAY });
+    seedDigger(ctx);
+    seedDigger(ctx, 'u2');
+    const b = fakeButton({ customId: 'exp:again:u1:coastal_dig', user: 'u2' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(replyText(b.replies[0])).toBe('That is not your expedition.');
+    // A refusal is content-only, so mintedIds takes its `?? []` branch — no card, no button.
+    expect(mintedIds(b.replies[0])).toHaveLength(0);
+  });
+
+  it('a forged site segment is acknowledged and dropped, never priced', async () => {
+    // EXPEDITION_SITES is a PLAIN object literal (src/data/sites.ts), so
+    // EXPEDITION_SITES['constructor'] reads back truthy off Object.prototype and its .cost is
+    // undefined. A truthiness guard would quote "undefined for NaN cash" and mint
+    // exp:againyes:u1:constructor:NaN.
+    const ctx = makeCtx({ nowMs: 9 * DAY });
+    seedDigger(ctx);
+    for (const forged of ['exp:again:u1:constructor', 'exp:again:u1:__proto__', 'exp:again:u1']) {
+      const b = fakeButton({ customId: forged, user: 'u1' });
+      await routeInteraction(ctx, testRegistry, b.asInteraction());
+      expect(b.replies, forged).toHaveLength(0);
+      expect(b.deferOpts, forged).toHaveLength(1);
+      expect(b.deferOpts[0], forged).toMatchObject({ kind: 'update' });
+    }
   });
 });

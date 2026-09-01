@@ -14,6 +14,7 @@ import { assetImage, attach } from '../../core/images.js';
 import { emojiTag, rarityEmoji } from '../../core/emojis.js';
 import { eventMods } from '../../core/world.js';
 import { eventHeaderLine } from '../world/embeds.js';
+import { incubateRow } from '../hatchery/embeds.js';
 
 // '🌋 ' when the site marker resolves, '' when it doesn't — keeps titles clean either way.
 function siteMarker(siteId: string): string {
@@ -170,34 +171,75 @@ export const expeditionsModule: ModuleManifest = {
     {
       prefix: 'exp',
       async execute(ctx, i) {
-        const [, action, uid] = i.customId.split(':');
-        if (action !== 'claim') { await i.deferUpdate(); return; }
-        // The notification is a DM today, but a customId is client-supplied and this
-        // handler is reachable from anywhere — check the owner explicitly. Unlike
-        // breed:claim, which lets claimBreeding's own (id, userId) filter reject a
-        // bystander for free (the breeding id in the customId belongs to someone
-        // else, so the lookup just fails), claimExpedition takes no id at all — it
-        // always resolves the CALLER's own active dig. Without this check, a
-        // bystander clicking someone else's notification would silently claim
-        // their OWN unrelated expedition rather than being rejected, so the
-        // ownership check has to happen here, explicitly, before the service call.
+        const parts = i.customId.split(':');
+        const [, action, uid] = parts;
+        // Unknown action FIRST, and it must acknowledge: a bare return paints "This
+        // interaction failed" after three seconds, and a stale id from an older deploy lands
+        // exactly here. The ordering is pinned by tests/alert-buttons.test.ts's 'exp defers
+        // before the owner check on an unknown action, even with a mismatched uid'. Any
+        // future exp action needs its own arm below or it lands here silently.
+        if (action !== 'claim' && action !== 'again' && action !== 'againyes') {
+          await i.deferUpdate();
+          return;
+        }
+        // Shared by all three arms. A customId is client-supplied and this handler is
+        // reachable from anywhere; both services behind it resolve against the CALLER —
+        // claimExpedition takes no id at all, and startExpedition dispatches the clicker's
+        // own crew — so without this check a bystander clicking someone else's public card
+        // would silently act on their OWN park rather than being refused.
         if (i.user.id !== uid) {
           await i.reply({ content: 'That is not your expedition.', flags: MessageFlags.Ephemeral });
           return;
         }
-        try {
-          const { loot, site } = claimExpedition(ctx, i.user.id);
-          // Same push-never-assign contract as the /expedition claim reply above.
-          const rows: ActionRowBuilder<ButtonBuilder>[] = [];
-          rows.push(digAgainRow(i.user.id, site.id));
-          await i.update({
-            content: `🧭 **${site.name}** claimed — a **${loot.eggRarity}** egg, **${loot.cash}** cash, and **${loot.food.qty}× ${FOODS[loot.food.foodId].name}**.`,
-            embeds: [], components: rows, attachments: [],
-          });
-        } catch (e) {
-          if (e instanceof ExpeditionError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else throw e;
+        if (action === 'claim') {
+          try {
+            const { loot, site, egg } = claimExpedition(ctx, i.user.id);
+            // ONE named local, PUSHED into, never assigned: spec §3 puts two controls on this
+            // message and an assignment would silently delete whichever one it did not name.
+            const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+            rows.push(digAgainRow(i.user.id, site.id));
+            // Cross-module mint. hatch:inc is handled in the HATCHERY module and
+            // ModuleRegistry.findComponent searches only ENABLED modules (src/core/modules.ts),
+            // so with "hatchery": false in modules.json this button would be a dead control on
+            // a durable public message — a click nothing answers at all.
+            if (ctx.config.modules.hatchery) rows.push(incubateRow(i.user.id, egg.id));
+            await i.update({
+              content: `🧭 **${site.name}** claimed — a **${loot.eggRarity}** egg, **${loot.cash}** cash, and **${loot.food.qty}× ${FOODS[loot.food.foodId].name}**.`,
+              embeds: [], components: rows, attachments: [],
+            });
+          } catch (e) {
+            if (e instanceof ExpeditionError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+            else throw e;
+          }
+          return;
         }
+        const siteId = parts[3];
+        // Object.hasOwn, never a truthiness test: EXPEDITION_SITES is a plain object literal
+        // (src/data/sites.ts), so EXPEDITION_SITES['constructor'] reads back truthy through
+        // Object.prototype with an undefined .cost, and the card would quote "undefined for
+        // NaN cash" off a segment the client chose. A truncated id has no fourth segment at
+        // all; hasOwn coerces that undefined to the string 'undefined', which is not a site.
+        if (!Object.hasOwn(EXPEDITION_SITES, siteId)) { await i.deferUpdate(); return; }
+        const site = EXPEDITION_SITES[siteId];
+        const now = ctx.now();
+        // ONE expression, both arms: the price the card QUOTES and the price the confirm
+        // RECHECKS are the same call, so they cannot drift apart.
+        const price = expeditionFeeFor(site.cost, eventMods(now).expeditionFee);
+        if (action === 'again') {
+          const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder().setCustomId(`exp:againyes:${i.user.id}:${siteId}:${price}`)
+              .setLabel(`Dig — ${price.toLocaleString('en-US')} cash`).setStyle(ButtonStyle.Success));
+          await i.reply({
+            // EXPEDITION_START_HEADER_KEYS, not the claim keys: this card is about to LOCK IN
+            // a duration and a fee, which is exactly what those two keys cover, and it is what
+            // tells a player why an Amber Storm doubled the number in front of them.
+            content: `${eventHeaderLine(now, EXPEDITION_START_HEADER_KEYS)}\n\nSend a crew back to **${site.name}** for **${price.toLocaleString('en-US')}** cash?`,
+            components: [row],
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        await i.deferUpdate();
       },
     },
   ],
