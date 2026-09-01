@@ -33,7 +33,7 @@ import { submittedValuesAreOnMessage } from '../../core/components.js';
 import { attendanceOf } from './attendance.js';
 import { earnedTierCount } from '../daily/service.js';
 import { seasonBadges } from '../daily/season.js';
-import { lotSlots } from '../../data/progression.js';
+import { lotSlots, nextLotSlot } from '../../data/progression.js';
 import type { AttachmentBuilder, ButtonInteraction } from 'discord.js';
 
 const kindChoices = [...Object.keys(PADDOCKS), ...Object.keys(FACILITIES)]
@@ -92,6 +92,33 @@ function dinoListPayload(ctx: Ctx, userId: string, page: number) {
     { embeds: [embed], components: pages > 1 ? [pageRow('park', 'dinos', userId, p, pages)] : [] };
   attach(embed, payload, 'image', assetImage('banners', 'dino_roster', userId));
   return payload;
+}
+
+/**
+ * The slot-cap sentence for a LotLimitError thrown by `buildLot`. `upgradeLot` throws the SAME
+ * class to mean "already at max level" — see `maxLevelLine` and §per-menu-error-mapping — so a
+ * shared mapping here would tell a player "All lots full" when they meant the other thing.
+ *
+ * Both ratings are named on purpose. The gate reads `ratingHighWater`, which is monotone,
+ * while `parkRating` is live and falls as comfort decays; a player whose live rating has
+ * dipped below their best would otherwise read this as the gate having moved under them.
+ *
+ * Reads the row and the count itself rather than taking them as parameters: it runs on an
+ * error path only, after the transaction has already rolled back, and the two call sites hold
+ * different subsets of what it needs. The `!` is sound because buildLot reads that row and
+ * dereferences `user.ratingHighWater` on the line immediately above its throw — an absent row
+ * would have crashed there with a TypeError, so reaching this line proves it exists.
+ */
+function lotSlotCapLine(ctx: Ctx, userId: string): string {
+  const user = ctx.db.select().from(schema.users)
+    .where(eq(schema.users.discordId, userId)).get()!;
+  const lots = ctx.db.select().from(schema.lots)
+    .where(eq(schema.lots.userId, userId)).all().length;
+  const head = `All lots full (${lots}/${lotSlots(user.ratingHighWater)})`;
+  const next = nextLotSlot(user.ratingHighWater);
+  if (!next) return `${head} — every slot is unlocked.`;
+  return `${head}. Slot ${next.slot} unlocks at ★${(next.threshold / 100).toFixed(1)}`
+    + ` — you're at ★${(user.parkRating / 100).toFixed(1)} (best ★${(user.ratingHighWater / 100).toFixed(1)}).`;
 }
 
 export const parkModule: ModuleManifest = {
@@ -253,7 +280,7 @@ export const parkModule: ModuleManifest = {
           await i.reply({ content: `🏗️ Built **${lot.name}** (lot #${lot.id}).${hint}` });
         } catch (e) {
           if (e instanceof DuplicateFacilityError) await i.reply({ content: `You already have a ${e.message} — upgrade it instead.`, flags: MessageFlags.Ephemeral });
-          else if (e instanceof LotLimitError) await i.reply({ content: 'All lots full. More slots unlock with park rating.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof LotLimitError) await i.reply({ content: lotSlotCapLine(ctx, i.user.id), flags: MessageFlags.Ephemeral });
           else if (e instanceof InsufficientFundsError) {
             const def = PADDOCKS[kind] ?? FACILITIES[kind]!;
             await i.reply({ content: `Not enough cash — the ${def.name} ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
@@ -802,7 +829,7 @@ export const parkModule: ModuleManifest = {
               if (e instanceof DuplicateFacilityError) {
                 await i.reply({ content: `You already have a ${e.message} — upgrade it instead.`, flags: MessageFlags.Ephemeral });
               } else if (e instanceof LotLimitError) {
-                await i.reply({ content: 'All lots full. More slots unlock with park rating.', flags: MessageFlags.Ephemeral });
+                await i.reply({ content: lotSlotCapLine(ctx, i.user.id), flags: MessageFlags.Ephemeral });
               } else if (e instanceof InsufficientFundsError) {
                 const def = PADDOCKS[kind] ?? FACILITIES[kind]!;
                 await i.reply({

@@ -837,10 +837,15 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     for (let n = 0; n < 3; n++) buildLot(ctx, 'u1', kind);   // base slots = 3
     // Guard: recomputeRating after 3 builds must not have raised the slot cap.
     expect(lotSlots(ctx.db.select().from(schema.users).all()[0].ratingHighWater)).toBe(3);
+    // Pinned so the whole sentence can be asserted literally. lotSlots(90) is still 3, so the
+    // cap still trips, and the live rating is set BELOW the best — the case the message
+    // exists to disambiguate.
+    ctx.db.update(schema.users).set({ parkRating: 40, ratingHighWater: 90 }).run();
     const cmd = parkModule.commands.find((c) => c.data.name === 'build')!;
     const full = fakeCommand({ name: 'build', user: 'u1', options: { kind } });
     await cmd.execute(ctx, full.asChatInput());
-    expect(replyText(full.replies[0])).toContain('All lots full');
+    expect(replyText(full.replies[0]))
+      .toBe("All lots full (3/3). Slot 4 unlocks at ★1.0 — you're at ★0.4 (best ★0.9).");
     ctx.db.delete(schema.lots).run();
     ctx.db.update(schema.users).set({ cash: 0 }).run();
     const broke = fakeCommand({ name: 'build', user: 'u1', options: { kind } });

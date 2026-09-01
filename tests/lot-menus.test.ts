@@ -248,6 +248,76 @@ describe('build menu mint', () => {
   });
 });
 
+// The BUILD CONFIRM button, not the menu: park:buildyes is what reaches buildLot, and
+// buildLot's slot-cap throw is the only way to observe the LotLimitError message at all.
+// §5.2. LotLimitError carries no message and means two different things (slot cap in
+// buildLot, already-max-level in upgradeLot), so this block pins the BUILD half only.
+describe('build confirm', () => {
+  it('names the slot, its threshold and BOTH ratings when slots remain locked', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    for (let n = 0; n < 7; n++) {
+      ctx.db.insert(schema.lots).values({
+        userId: 'u1', type: 'paddock', kind: 'carnivore_paddock', name: 'Carnivore Paddock', level: 1,
+      }).run();
+    }
+    // lotSlots(640) is 7, so seven lots fill the cap and nextLotSlot(640) is slot 8 at 800.
+    // parkRating sits BELOW ratingHighWater deliberately: the gate reads the high-water, and
+    // rendering one figure twice is the mistake this case exists to catch.
+    ctx.db.update(schema.users)
+      .set({ cash: 10_000_000, parkRating: 620, ratingHighWater: 640 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    const b = fakeButton({ customId: 'park:buildyes:u1:carnivore_paddock:7', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    // The WHOLE line, never a substring holding one of the four numbers: three of them are
+    // one decimal place apart, so a substring assertion on any one of them passes a sentence
+    // that quotes another wrongly.
+    expect(replyText(b.replies[0]))
+      .toBe("All lots full (7/7). Slot 8 unlocks at ★8.0 — you're at ★6.2 (best ★6.4).");
+    expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all()).toHaveLength(7);
+  });
+
+  it('says every slot is unlocked once the threshold ladder is exhausted', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    for (let n = 0; n < 10; n++) {
+      ctx.db.insert(schema.lots).values({
+        userId: 'u1', type: 'paddock', kind: 'carnivore_paddock', name: 'Carnivore Paddock', level: 1,
+      }).run();
+    }
+    // 950 is the last rung, so nextLotSlot returns null and the sentence must not promise a
+    // slot 11 that LOT_SLOT_THRESHOLDS has no rung for.
+    ctx.db.update(schema.users)
+      .set({ cash: 10_000_000, parkRating: 950, ratingHighWater: 950 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    const b = fakeButton({ customId: 'park:buildyes:u1:carnivore_paddock:10', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(replyText(b.replies[0])).toBe('All lots full (10/10) — every slot is unlocked.');
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all()).toHaveLength(10);
+  });
+
+  it('reads the lot COUNT and the CAP from different sources', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    // Eight rows against a cap of seven. This state is NOT reachable through buildLot —
+    // ratingHighWater is monotone so the cap never falls, and lot rows only ever grow — and
+    // that is exactly why the row is here. At every reachable state the two halves of the
+    // slash are EQUAL (buildLot throws at `lots.length >= lotSlots(hw)`), so without one
+    // row where they differ, `${lots}/${cap}` could be written `${lots}/${lots}` or
+    // `${cap}/${cap}` and every other case in this block would still pass.
+    for (let n = 0; n < 8; n++) {
+      ctx.db.insert(schema.lots).values({
+        userId: 'u1', type: 'paddock', kind: 'carnivore_paddock', name: 'Carnivore Paddock', level: 1,
+      }).run();
+    }
+    ctx.db.update(schema.users)
+      .set({ cash: 10_000_000, parkRating: 620, ratingHighWater: 640 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    const b = fakeButton({ customId: 'park:buildyes:u1:carnivore_paddock:8', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(replyText(b.replies[0]))
+      .toBe("All lots full (8/7). Slot 8 unlocks at ★8.0 — you're at ★6.2 (best ★6.4).");
+  });
+});
+
 describe('upgrade menu', () => {
   const seedLot = (level: number) => {
     getOrCreateUser(ctx, 'u1', 'Reg');
