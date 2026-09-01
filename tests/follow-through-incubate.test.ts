@@ -11,6 +11,8 @@ import { incubateEgg } from '../src/modules/hatchery/service.js';
 import { ALL_MODULES } from '../src/core/module-list.js';
 import type { Config } from '../src/core/config.js';
 import { dailyEggOffers } from '../src/modules/shop/service.js';
+import { buildLot } from '../src/modules/park/service.js';
+import { BREED_MS } from '../src/data/breeding.js';
 
 // Day 0 is `clear_skies` — every eventMods multiplier is 1 — so coastal_dig costs exactly
 // 200 cash and takes exactly its 15-minute durationMs. Re-derive with:
@@ -355,5 +357,117 @@ describe('/shop egg offers Incubate', () => {
     const eggRow = ctx.db.select().from(schema.eggs).all()[0];
     expect(mintedIds(i.replies[0])).not.toContain(`hatch:inc:u1:${eggRow.id}`);
     expect(mintedIds(i.replies[0])).toContain(`shop:again:u1:${eggRow.rarity}`);
+  });
+});
+
+/**
+ * A gene lab, a herbivore paddock, and two common herbivores standing in it — the minimum
+ * startBreeding accepts (same rarity, same diet, both in a paddock, fed, affordable).
+ * triceratops and gallimimus are both common/herbivore; hunger defaults to 100 and lastFedAt
+ * 0 at nowMs 0, comfortably over BREED_MIN_HUNGER. Returns the two dino ids.
+ */
+function pairedDinos(ctx: ReturnType<typeof makeCtx>): { a: number; b: number } {
+  getOrCreateUser(ctx, 'u1', 'One');
+  ctx.economy.apply('u1', { cash: 500_000 }, 'seed', 0);
+  buildLot(ctx, 'u1', 'gene_lab');
+  buildLot(ctx, 'u1', 'herbivore_paddock');
+  const lot = ctx.db.select().from(schema.lots).all().find((l) => l.kind === 'herbivore_paddock')!;
+  const a = ctx.db.insert(schema.dinos)
+    .values({ userId: 'u1', speciesId: 'triceratops', lotId: lot.id, lastFedAt: 0, hatchedAt: 0 })
+    .returning().get();
+  const b = ctx.db.insert(schema.dinos)
+    .values({ userId: 'u1', speciesId: 'gallimimus', lotId: lot.id, lastFedAt: 0, hatchedAt: 0 })
+    .returning().get();
+  return { a: a.id, b: b.id };
+}
+
+describe('/breed claim offers Incubate', () => {
+  /** Start a pairing through the routed confirm button, advance to its ready time, and
+   *  return the breeding row's id. */
+  async function startAndAdvance(ctx: ReturnType<typeof makeCtx>): Promise<number> {
+    const { a, b } = pairedDinos(ctx);
+    const confirmId = `breed:confirm:${a}:${b}`;
+    const confirm = fakeButton({ customId: confirmId, user: 'u1', guild: 'g1', componentIds: [confirmId] });
+    await routeInteraction(ctx, testRegistry, confirm.asInteraction());
+    const breeding = ctx.db.select().from(schema.breedings).all()[0];
+    // BREED_MS.common is 30 minutes and day 0's clear_skies breedMs multiplier is 1, so the
+    // pairing is ready at exactly this stamp. claimBreeding refuses only on readyAt > now.
+    ctx.setNow(BREED_MS.common);
+    return breeding.id;
+  }
+
+  it('the slash reply mints hatch:inc, and that id routes', async () => {
+    const ctx = ctxOn();
+    await startAndAdvance(ctx);
+
+    const claim = fakeCommand({ name: 'breed', sub: 'claim', user: 'u1', guild: 'g1' });
+    await routeInteraction(ctx, testRegistry, claim.asInteraction());
+
+    const eggRow = ctx.db.select().from(schema.eggs).all()[0];
+    expect(mintedIds(claim.replies[0])).toContain(`hatch:inc:u1:${eggRow.id}`);
+
+    const customId = `hatch:inc:u1:${eggRow.id}`;
+    const clicked = fakeButton({ customId, user: 'u1', guild: 'g1', componentIds: [customId] });
+    await routeInteraction(ctx, testRegistry, clicked.asInteraction());
+    expect(clicked.deferOpts).toHaveLength(0);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, eggRow.id)).get()!.incubationStartedAt)
+      .toBe(BREED_MS.common);
+  });
+
+  // Its own case, not a second assertion inside the one above: behind that case's first
+  // assertion it would never be OBSERVED failing, and an assertion nobody has watched fail
+  // is not yet an assertion.
+  it('the slash reply names the typed fallback under the pairing result', async () => {
+    const ctx = ctxOn();
+    await startAndAdvance(ctx);
+    const claim = fakeCommand({ name: 'breed', sub: 'claim', user: 'u1', guild: 'g1' });
+    await routeInteraction(ctx, testRegistry, claim.asInteraction());
+
+    const eggRow = ctx.db.select().from(schema.eggs).all()[0];
+    // The whole LAST line of the description. The line above it is the pairing result,
+    // whose wording depends on the upgrade roll and which this task does not change.
+    const description = (claim.replies[0] as { embeds: Array<{ toJSON(): { description: string } }> })
+      .embeds[0].toJSON().description;
+    const lines = description.split('\n');
+    expect(lines[lines.length - 1]).toBe(`Incubate it with \`/incubate egg:${eggRow.id}\`.`);
+  });
+
+  it('the breed:claim button mints hatch:inc, and that id routes', async () => {
+    const ctx = ctxOn();
+    const breedingId = await startAndAdvance(ctx);
+
+    const claimId = `breed:claim:${breedingId}`;
+    const claim = fakeButton({ customId: claimId, user: 'u1', guild: 'g1', componentIds: [claimId] });
+    await routeInteraction(ctx, testRegistry, claim.asInteraction());
+
+    const eggRow = ctx.db.select().from(schema.eggs).all()[0];
+    expect(mintedIds(claim.replies[0])).toContain(`hatch:inc:u1:${eggRow.id}`);
+    // Whole rendered line. The rarity is read back off the row because claimBreeding can
+    // upgrade it (BREED_UPGRADE_CHANCE), so the sentence must track what was actually stored.
+    expect(replyText(claim.replies[0])).toBe(
+      `🧬 Claimed — a **${eggRow.rarity}** egg is yours. Incubate it with \`/incubate egg:${eggRow.id}\`.`);
+
+    const customId = `hatch:inc:u1:${eggRow.id}`;
+    const clicked = fakeButton({ customId, user: 'u1', guild: 'g1', componentIds: [customId] });
+    await routeInteraction(ctx, testRegistry, clicked.asInteraction());
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, eggRow.id)).get()!.incubationStartedAt)
+      .toBe(BREED_MS.common);
+  });
+
+  it('mints no Incubate row on either surface when the hatchery module is disabled', async () => {
+    const slash = ctxNoHatchery();
+    await startAndAdvance(slash);
+    const claimCmd = fakeCommand({ name: 'breed', sub: 'claim', user: 'u1', guild: 'g1' });
+    await routeInteraction(slash, testRegistry, claimCmd.asInteraction());
+    const slashEgg = slash.db.select().from(schema.eggs).all()[0];
+    expect(mintedIds(claimCmd.replies[0])).not.toContain(`hatch:inc:u1:${slashEgg.id}`);
+
+    const button = ctxNoHatchery();
+    const breedingId = await startAndAdvance(button);
+    const claimId = `breed:claim:${breedingId}`;
+    const clicked = fakeButton({ customId: claimId, user: 'u1', guild: 'g1', componentIds: [claimId] });
+    await routeInteraction(button, testRegistry, clicked.asInteraction());
+    const buttonEgg = button.db.select().from(schema.eggs).all()[0];
+    expect(mintedIds(clicked.replies[0])).not.toContain(`hatch:inc:u1:${buttonEgg.id}`);
   });
 });
