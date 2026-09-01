@@ -473,3 +473,177 @@ describe('Buy another — the confirm card', () => {
     expect(b.deferOpts[0]).toMatchObject({ kind: 'update' });
   });
 });
+
+describe('Buy another — the confirm click', () => {
+  async function openCard(ctx: ReturnType<typeof makeCtx>, rarity: string): Promise<string> {
+    const b = fakeButton({ customId: `shop:again:u1:${rarity}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    return mintedIds(b.replies[0])[0]!;
+  }
+
+  it('REFUSES the confirm when one UTC rollover has moved the price under it', async () => {
+    // Minted on day 17 (Clear Skies -> 500), clicked on day 18 (Bumper Harvest -> 625). The
+    // clock crossing one midnight is what moves the price — nothing here writes a wrong number
+    // into the id, which would prove only that `!==` works. `common` is on offer on BOTH days,
+    // so the rotation recheck passes and this case isolates the price guard.
+    const ctx = makeCtx({ nowMs: 17 * DAY });
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', ctx.now());
+    const confirmId = await openCard(ctx, 'common');
+    expect(confirmId).toBe('shop:againyes:u1:common:500');
+
+    ctx.setNow(18 * DAY);
+    const before = cashOf(ctx, 'u1');
+    const click = fakeButton({ customId: confirmId, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, click.asInteraction());
+
+    expect(replyText(click.replies[0])).toBe(
+      'A common egg costs 625 cash now, not 500 — open the Buy another card for the current price.');
+    expect((click.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect(cashOf(ctx, 'u1')).toBe(before);
+    expect(eggsOf(ctx, 'u1')).toHaveLength(0);
+  });
+
+  it('REFUSES the confirm when the rarity has left the rotation, at an unchanged price', async () => {
+    // At an epic ceiling, day 0 offers rare and day 1 does not — and rare costs 8,000 on BOTH
+    // days, so the price guard passes and this case isolates the rotation recheck.
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', ctx.now());
+    ctx.db.update(schema.users).set({ ratingHighWater: 400 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    expect(dailyEggOffers(400, 0)).toContain('rare');
+    expect(dailyEggOffers(400, DAY)).not.toContain('rare');
+    expect(eggPriceAt('rare', 0)).toBe(8000);
+    expect(eggPriceAt('rare', DAY)).toBe(8000);
+
+    const confirmId = await openCard(ctx, 'rare');
+    expect(confirmId).toBe('shop:againyes:u1:rare:8000');
+
+    ctx.setNow(DAY);
+    const before = cashOf(ctx, 'u1');
+    const click = fakeButton({ customId: confirmId, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, click.asInteraction());
+
+    expect(replyText(click.replies[0])).toBe("A rare egg isn't in today's rotation — see /shop view.");
+    expect(cashOf(ctx, 'u1')).toBe(before);
+    expect(eggsOf(ctx, 'u1')).toHaveLength(0);
+  });
+
+  it('charges exactly once, hands the egg over with an Incubate button, and blanks the confirm', async () => {
+    // ctxWithModules, not a plain makeCtx: the Incubate mint below is gated on
+    // ctx.config.modules.hatchery, which the harness leaves `{}`.
+    const ctx = ctxWithModules({}, 17 * DAY);
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', ctx.now());
+    const confirmId = await openCard(ctx, 'common');
+    const before = cashOf(ctx, 'u1');
+
+    const click = fakeButton({ customId: confirmId, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, click.asInteraction());
+
+    expect(click.deferOpts).toHaveLength(0);
+    expect(cashOf(ctx, 'u1')).toBe(before - 500);
+    const egg = eggsOf(ctx, 'u1')[0]!;
+    expect(eggsOf(ctx, 'u1')).toHaveLength(1);
+    expect(ctx.db.select().from(schema.txLog).all()
+      .filter((r) => r.reason === 'shop-egg:common')).toHaveLength(1);
+    // The WHOLE sentence, numbers included. `/incubate egg:<id>`, never `/incubate <id>` —
+    // the option is named — and it never says "below", because the button beside it is gated
+    // on the hatchery module being enabled.
+    expect(replyText(click.replies[0])).toBe(
+      `🥚 Bought another **common** egg (#${egg.id}) for **500** cash. Incubate it with \`/incubate egg:${egg.id}\`.`);
+    // The spent confirm is gone and the Incubate control has taken its place.
+    expect(mintedIds(click.replies[0])).not.toContain(confirmId);
+    expect(mintedIds(click.replies[0])).toContain(`hatch:inc:u1:${egg.id}`);
+
+    // Mint it, then ROUTE it: an unresolved prefix is a fully silent no-op, so asserting the
+    // id alone would not catch a dead control.
+    const inc = fakeButton({ customId: `hatch:inc:u1:${egg.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, inc.asInteraction());
+    expect(inc.deferOpts).toHaveLength(0);
+    expect(ctx.db.select().from(schema.eggs).where(eq(schema.eggs.id, egg.id)).get()!.incubationStartedAt)
+      .toBe(17 * DAY);
+  });
+
+  it('mints no Incubate row on the confirm when the hatchery module is disabled', async () => {
+    const ctx = ctxWithModules({ hatchery: false }, 17 * DAY);
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', ctx.now());
+    const confirmId = await openCard(ctx, 'common');
+    const click = fakeButton({ customId: confirmId, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, click.asInteraction());
+    const egg = eggsOf(ctx, 'u1')[0]!;
+    // The purchase still lands; only the dead control is withheld.
+    expect(eggsOf(ctx, 'u1')).toHaveLength(1);
+    expect(mintedIds(click.replies[0])).not.toContain(`hatch:inc:u1:${egg.id}`);
+  });
+
+  it('a second click of a card the confirm already replaced is refused by the router', async () => {
+    // ctxWithModules again, so the componentIds fixture below models what this ctx really
+    // mints: with the harness default `{}` the confirm would leave NO Incubate row behind.
+    const ctx = ctxWithModules({}, 17 * DAY);
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', ctx.now());
+    const confirmId = await openCard(ctx, 'common');
+    const first = fakeButton({ customId: confirmId, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, first.asInteraction());
+    const afterFirst = cashOf(ctx, 'u1');
+    const egg = eggsOf(ctx, 'u1')[0]!;
+
+    // componentIds models the message AFTER the confirm replaced its own controls: the
+    // Incubate row is what it carries now, and the confirm id is simply gone.
+    const second = fakeButton({
+      customId: confirmId, user: 'u1', componentIds: [`hatch:inc:u1:${egg.id}`],
+    });
+    await routeInteraction(ctx, testRegistry, second.asInteraction());
+    expect(second.replies).toHaveLength(0);
+    expect(second.deferOpts[0]).toMatchObject({ kind: 'update' });
+    expect(cashOf(ctx, 'u1')).toBe(afterFirst);
+    expect(eggsOf(ctx, 'u1')).toHaveLength(1);
+  });
+
+  it('a bystander clicking the confirm buys nothing and pays nothing', async () => {
+    const ctx = makeCtx({ nowMs: 17 * DAY });
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    getOrCreateUser(ctx, 'u2', 'Two');
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', ctx.now());
+    ctx.economy.apply('u2', { cash: 50_000 }, 'seed', ctx.now());
+    const confirmId = await openCard(ctx, 'common');
+    const before = cashOf(ctx, 'u2');
+    const b = fakeButton({ customId: confirmId, user: 'u2' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(replyText(b.replies[0])).toBe('That is not your purchase.');
+    expect(cashOf(ctx, 'u2')).toBe(before);
+    expect(eggsOf(ctx, 'u2')).toHaveLength(0);
+  });
+
+  it('quotes the shortfall when the player cannot afford the egg it just confirmed', async () => {
+    const ctx = makeCtx({ nowMs: 17 * DAY });
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    // Three different numbers — needed 500, held 120, short 380 — so a swapped-argument bug
+    // in shortfallLine cannot render identically. An egg takes the indefinite article, the
+    // same clause /shop egg renders (Task 3 (G1-C)).
+    ctx.db.update(schema.users).set({ cash: 120 }).where(eq(schema.users.discordId, 'u1')).run();
+    const confirmId = await openCard(ctx, 'common');
+    const click = fakeButton({ customId: confirmId, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, click.asInteraction());
+    expect(replyText(click.replies[0]))
+      .toBe('Not enough cash — a common egg costs 500, you have 120 (380 short).');
+    expect(cashOf(ctx, 'u1')).toBe(120);
+    expect(eggsOf(ctx, 'u1')).toHaveLength(0);
+  });
+
+  it('a non-integer price segment is acknowledged and dropped', async () => {
+    const ctx = makeCtx({ nowMs: 17 * DAY });
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', ctx.now());
+    for (const forged of ['shop:againyes:u1:common:abc', 'shop:againyes:u1:common']) {
+      const b = fakeButton({ customId: forged, user: 'u1' });
+      await routeInteraction(ctx, testRegistry, b.asInteraction());
+      expect(b.replies, forged).toHaveLength(0);
+      expect(b.deferOpts[0], forged).toMatchObject({ kind: 'update' });
+    }
+    expect(eggsOf(ctx, 'u1')).toHaveLength(0);
+  });
+});

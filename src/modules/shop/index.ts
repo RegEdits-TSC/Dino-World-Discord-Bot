@@ -15,7 +15,7 @@ import { DECOR } from '../../data/decor.js';
 import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, capitalize } from '../../core/autocomplete.js';
 import { assetImage, attach } from '../../core/images.js';
-import { RARITY_COLOR } from '../hatchery/embeds.js';
+import { RARITY_COLOR, incubateRow } from '../hatchery/embeds.js';
 import { RARITY } from '../../data/rarity.js';
 import type { AttachmentBuilder } from 'discord.js';
 import { emojiTag, rarityEmoji, foodEmoji } from '../../core/emojis.js';
@@ -282,7 +282,45 @@ export const shopModule: ModuleManifest = {
           });
           return;
         }
-        await i.deferUpdate();
+        const quoted = Number(parts[4]);
+        if (!Number.isInteger(quoted)) { await i.deferUpdate(); return; }
+        // The whole point of the segment. An egg price rolls at every UTC midnight — the world
+        // event moves eggPrice and the daily deal moves which rarity is discounted — so a
+        // confirm card left open across one would charge today's price under yesterday's
+        // label. Refusing is the PURPOSE of the segment, not a nicety; the repaint below is a
+        // second layer only, because any OTHER open card still holds a button minted at the
+        // old price.
+        if (price !== quoted) {
+          await i.reply({
+            content: `A ${rarity} egg costs ${price.toLocaleString('en-US')} cash now, not ${quoted.toLocaleString('en-US')} — open the Buy another card for the current price.`,
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        try {
+          const egg = buyEgg(ctx, i.user.id, rarity);
+          // One named local, pushed into. Cross-module mint: hatch:inc is handled in the
+          // HATCHERY module and ModuleRegistry.findComponent searches only ENABLED modules
+          // (src/core/modules.ts), so with "hatchery": false this button would answer nothing.
+          const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+          if (ctx.config.modules.hatchery) rows.push(incubateRow(i.user.id, egg.id));
+          await i.update({
+            // `/incubate egg:<id>`, never `/incubate <id>`: the option is NAMED
+            // (o.setName('egg') in src/modules/hatchery/index.ts). The sentence names only the
+            // TYPED path — "below" would be a lie in exactly the configuration the gate above
+            // exists for, and nothing would catch it.
+            content: `🥚 Bought another **${egg.rarity}** egg (#${egg.id}) for **${price.toLocaleString('en-US')}** cash. Incubate it with \`/incubate egg:${egg.id}\`.`,
+            embeds: [], components: rows, attachments: [],
+          });
+        } catch (e) {
+          if (e instanceof ShopError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) {
+            await i.reply({
+              content: `Not enough cash — a ${rarity} egg ${shortfallLine(e)}.`,
+              flags: MessageFlags.Ephemeral,
+            });
+          } else throw e;
+        }
       } },
   ],
 };

@@ -114,6 +114,7 @@ open message still holds a stale control.
 | `admin:ledger:<targetId>:<page>:<all\|->` | the show-all flag | the same silent unfiltered page, on a financial history |
 | `hatch:crack:<eggId>` | the egg | the wrong egg |
 | `exp:againyes:<uid>:<siteId>:<price>` | the expedition fee the card quoted | a card left open across a UTC midnight charging an Amber Storm's doubled fee under yesterday's label |
+| `shop:againyes:<uid>:<rarity>:<price>` | the egg price the card quoted | the same, plus buying a rarity that has since left the day's rotation |
 
 `pageRow` (`src/core/paginate.ts`) carries `<prefix>:<action>:<userId>:<page>` and
 nothing else, which is why the two filtered lists above mint their own row instead —
