@@ -6,7 +6,7 @@ import type { Ctx } from '../../core/context.js';
 import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
 import { feedDino, feedAll, feedSkipReport, rescueDino, feedCostFor, CareError } from './service.js';
-import { InsufficientFundsError } from '../../core/economy.js';
+import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { hungerAt, drainMsFor } from '../../core/clock.js';
 import { getSpecies } from '../../data/species/index.js';
 import { FOODS, foodsForDiet, type FoodId } from '../../data/foods.js';
@@ -81,7 +81,16 @@ export const careModule: ModuleManifest = {
           }
         } catch (e) {
           if (e instanceof CareError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: `${e.message} — buy more with /shop food.`, flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) {
+            // /feed spends only food, so this is always the food wallet — but the noun is
+            // derived from the error rather than assumed, because `wallet` is what decides
+            // whether shortfallLine says "need" or "costs" and the two must not disagree.
+            const what = e.foodId ? FOODS[e.foodId].name : e.wallet;
+            await i.reply({
+              content: `Not enough ${what} — ${shortfallLine(e)}. Buy more with /shop food.`,
+              flags: MessageFlags.Ephemeral,
+            });
+          }
           else throw e;
         }
       },
@@ -137,7 +146,7 @@ export const careModule: ModuleManifest = {
           await i.reply(rescuePayload(species.name, fee));
         } catch (e) {
           if (e instanceof CareError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash for the recapture fee.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: `Not enough cash — that recapture ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
           else throw e;
         }
       },
