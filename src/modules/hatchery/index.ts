@@ -13,6 +13,8 @@ import { rarityEmoji } from '../../core/emojis.js';
 import { traitLines } from '../../core/trait-display.js';
 import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, eggLabel } from '../../core/autocomplete.js';
+import { eligiblePaddocks } from '../park/dinos.js';
+import { assignRow } from '../park/embeds.js';
 
 const mythicChoices = mythicSpeciesChoices().map((s) => ({ name: s.name, value: s.id }));
 
@@ -134,12 +136,34 @@ export const hatcheryModule: ModuleManifest = {
         if (action !== 'crack') { await i.deferUpdate(); return; }
         const idStr = a2;
         try {
-          const { species, traits } = hatchEgg(ctx, i.user.id, Number(idStr));
+          const { species, dinoId, traits } = hatchEgg(ctx, i.user.id, Number(idStr));
           const payload = revealPayload(species, Number(idStr));
           // Traits field appended after revealPayload's Diet/Biome/Income/hr fields —
           // added here rather than inside revealPayload so the two attach() calls
           // there (crack image, archetype thumbnail) stay untouched.
           payload.embeds[0].addFields({ name: '🧬 Traits', value: traitLines(traits), inline: false });
+          // CROSS-MODULE mint, so it is gated on park being enabled: ModuleRegistry resolves
+          // a component's handler only among ENABLED modules (src/core/modules.ts), and a
+          // park: id minted while park is off is a button that silently answers nothing. The
+          // gate belongs at the MINT — the handler lives in the module that may be absent, so
+          // it cannot possibly refuse on its own behalf.
+          if (ctx.config.modules.park) {
+            const eligible = eligiblePaddocks(ctx, i.user.id, dinoId);
+            // PUSHED, never assigned: revealPayload's empty components array is what this
+            // i.update uses to strip the crack button, and an assignment would work by
+            // accident today and break the moment revealPayload mints a row of its own.
+            payload.components.push(assignRow(i.user.id, dinoId, eligible));
+            // The footer is decided HERE, beside the control, because it is a function of
+            // which of assignRow's three shapes was just minted — something revealPayload
+            // cannot see. With an Assign control on the card, "Next: /dino assign" was the
+            // exact instruction this change exists to replace, so it goes. With only "Build a
+            // paddock", the pointer is still the step AFTER building, so it stays.
+            if (eligible.length === 0) {
+              payload.embeds[0].setFooter({
+                text: 'Build a paddock, then /dino assign — unassigned dinos earn nothing.',
+              });
+            }
+          }
           await i.update(payload);
         } catch (e) {
           if (e instanceof HatcheryError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e;

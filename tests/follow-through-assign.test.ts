@@ -10,6 +10,7 @@ import { assignRow, assignSelectRow } from '../src/modules/park/embeds.js';
 import { ALL_MODULES } from '../src/core/module-list.js';
 import type { Config } from '../src/core/config.js';
 import { routeInteraction } from '../src/core/router.js';
+import { incubateEgg } from '../src/modules/hatchery/service.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 
@@ -371,5 +372,74 @@ describe('park:goto:lots — the Build a paddock landing', () => {
     expect(json).toContain('park:build:u1');
     expect(json).toContain('park:upgrade:u1');
     expect(json).toContain('park:tab:u1:animals');
+  });
+});
+
+describe('the hatch reveal mints the assign follow-through', () => {
+  // speciesId is pinned so the hatch is deterministic: `triceratops` is a common herbivore,
+  // which is what makes the default herbivore paddock the matching one. common's
+  // incubationMs is 15 minutes (src/data/rarity.ts), so an hour is comfortably past it.
+  const readyEgg = () => {
+    const egg = ctx.db.insert(schema.eggs).values({
+      userId: 'u1', rarity: 'common', speciesId: 'triceratops', source: 'shop', obtainedAt: 0,
+    }).returning().get();
+    incubateEgg(ctx, 'u1', egg.id, null);
+    ctx.setNow(ctx.now() + 3_600_000);
+    return egg;
+  };
+  const hatchedDinoId = () =>
+    ctx.db.select().from(schema.dinos).where(eq(schema.dinos.userId, 'u1')).all().at(-1)!.id;
+  const footerOf = (reply: unknown) =>
+    (reply as { embeds: Array<{ toJSON(): { footer?: { text: string } } }> }).embeds[0].toJSON().footer;
+
+  it('offers Assign to the single eligible paddock, and drops the typed-command footer', async () => {
+    seedUser();
+    const lot = seedLot();
+    const egg = readyEgg();
+    const b = fakeButton({ customId: `hatch:crack:${egg.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(JSON.stringify(b.replies[0])).toContain(`park:assign:u1:${hatchedDinoId()}:${lot.id}`);
+    // A button that does the thing, next to a sentence telling the player to type the
+    // command that does the thing, is the exact failure this whole change removes.
+    expect(footerOf(b.replies[0])).toBeUndefined();
+  });
+
+  it('offers the picker when several paddocks are eligible', async () => {
+    seedUser();
+    seedLot(); seedLot();
+    const egg = readyEgg();
+    const b = fakeButton({ customId: `hatch:crack:${egg.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(JSON.stringify(b.replies[0])).toContain(`park:assignpick:u1:${hatchedDinoId()}`);
+    expect(footerOf(b.replies[0])).toBeUndefined();
+  });
+
+  it('offers Build a paddock, and keeps the pointer, when there is nowhere to put it', async () => {
+    seedUser();
+    seedLot({ kind: 'carnivore_paddock', name: 'Carnivore Paddock' });
+    const egg = readyEgg();
+    const b = fakeButton({ customId: `hatch:crack:${egg.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    const json = JSON.stringify(b.replies[0]);
+    expect(json).toContain('park:goto:lots:u1');
+    expect(json).not.toContain('park:assign');
+    // The one shape where /dino assign is still the next step the player takes, because the
+    // control on the card only gets them as far as owning a paddock.
+    expect(footerOf(b.replies[0])!.text)
+      .toBe('Build a paddock, then /dino assign — unassigned dinos earn nothing.');
+  });
+
+  it('mints no park control at all when the park module is disabled', async () => {
+    // A DEFAULT ctx — makeCtx leaves `modules` empty, which is what a park-less deployment
+    // looks like to this handler. ModuleRegistry resolves a component only among enabled
+    // modules, so an ungated mint here would put a dead button on a public card.
+    ctx = makeCtx();
+    seedUser();
+    seedLot();
+    const egg = readyEgg();
+    const b = fakeButton({ customId: `hatch:crack:${egg.id}`, user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect((b.replies[0] as { components: unknown[] }).components).toHaveLength(0);
+    expect(footerOf(b.replies[0])).toBeUndefined();
   });
 });

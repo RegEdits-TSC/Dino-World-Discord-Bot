@@ -309,9 +309,13 @@ describe('hatchery visuals', () => {
     expect(embed.thumbnail).toBeUndefined();
     expect(p.files.map((f) => f.name)).toEqual(['rare-crack.webp']);
   });
-  it('reveal embed points at /dino assign', () => {
+  it('revealPayload leaves the footer to its caller', () => {
+    // This used to assert the footer read 'Next: /dino assign — unassigned dinos earn
+    // nothing.' That decision moved to the hatch:crack handler, which is the only place that
+    // knows whether an Assign control was minted onto the same card. The surviving pointer —
+    // the no-eligible-paddock shape — is asserted whole in tests/follow-through-assign.test.ts.
     const p = revealPayload(getSpecies('velociraptor'), 7);
-    expect(p.embeds[0].toJSON().footer?.text).toContain('/dino assign');
+    expect(p.embeds[0].toJSON().footer).toBeUndefined();
   });
   it('eggListPayload thumbnails the ready egg over incubating and newest, under the incubator banner', () => {
     const ready = { ...addEgg('epic'), hatchesAt: 5, incubationStartedAt: 1 };

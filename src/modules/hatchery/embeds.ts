@@ -58,7 +58,9 @@ export function revealPayload(species: Species, eggId: number) {
       { name: 'Biome', value: species.biomeTags.join(', '), inline: true },
       { name: 'Income/hr', value: String(stats.incomePerHr), inline: true },
     );
-  embed.setFooter({ text: 'Next: /dino assign — unassigned dinos earn nothing.' });
+  // No footer here, deliberately. What the reveal should say next depends on which of the
+  // three assign shapes was minted onto the same card, and this builder is pure — it never
+  // sees ctx, the dino, or the player's paddocks. The hatch:crack handler sets it.
   // attachments is always empty: discord.js's InteractionUpdateOptions#attachments takes
   // existing-attachment descriptors to keep (Attachment | MessageEditAttachmentData), not
   // AttachmentBuilder — an empty tuple both satisfies that type and, passed to i.update(),
