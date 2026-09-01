@@ -12,6 +12,11 @@ import { eventMods } from '../../core/world.js';
 
 export class ExpeditionError extends Error {}
 export type Expedition = typeof schema.expeditions.$inferSelect;
+// The same one-line `$inferSelect` alias several other services declare for themselves.
+// Enumerate them with `grep -rn "type Egg = typeof schema.eggs" src/`. Declared locally
+// rather than imported from ../hatchery/service.js so this service keeps no import edge
+// into another gameplay module for a type it can spell in one line.
+export type Egg = typeof schema.eggs.$inferSelect;
 export interface Loot { eggRarity: Rarity; cash: number; food: { foodId: FoodId; qty: number } }
 
 function highWater(ctx: Ctx, userId: string): number {
@@ -96,7 +101,7 @@ export function startExpedition(ctx: Ctx, userId: string, siteId: string, guildI
     return exp;
   });
 }
-export function claimExpedition(ctx: Ctx, userId: string): { loot: Loot; site: SiteDef } {
+export function claimExpedition(ctx: Ctx, userId: string): { loot: Loot; site: SiteDef; egg: Egg } {
   const exp = activeExpedition(ctx, userId);
   if (!exp) throw new ExpeditionError('You have no expedition to claim.');
   if (exp.returnsAt > ctx.now()) throw new ExpeditionError('Your expedition has not returned yet.');
@@ -116,12 +121,15 @@ export function claimExpedition(ctx: Ctx, userId: string): { loot: Loot; site: S
   };
   return ctx.db.transaction(() => {
     ctx.economy.apply(userId, { cash: loot.cash, foods: { [loot.food.foodId]: loot.food.qty } }, `expedition-loot:${exp.siteId}`, ctx.now());
-    ctx.db.insert(schema.eggs).values({
+    // .returning().get(), not .run(): the claim reply mints an Incubate button that carries
+    // this egg's id, and "re-read the newest egg" would pick the wrong row for a player who
+    // already owned eggs.
+    const egg = ctx.db.insert(schema.eggs).values({
       userId, rarity: eggRarity, speciesId: null, source: 'expedition', obtainedAt: ctx.now(),
-    }).run();
+    }).returning().get();
     ctx.db.update(schema.expeditions).set({ claimedAt: ctx.now(), loot })
       .where(eq(schema.expeditions.id, exp.id)).run();
     track(ctx, userId, 'expeditions_claimed', 1);
-    return { loot, site };
+    return { loot, site, egg };
   });
 }
