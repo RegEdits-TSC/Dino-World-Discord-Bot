@@ -7,6 +7,7 @@ import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { startExpedition, activeExpedition, expeditionFeeFor } from '../src/modules/expeditions/service.js';
 import { EXPEDITION_SITES } from '../src/data/sites.js';
+import { dailyEggOffers } from '../src/modules/shop/service.js';
 import { eventMods, worldEventFor } from '../src/core/world.js';
 import { ALL_MODULES } from '../src/core/module-list.js';
 import type { Config } from '../src/core/config.js';
@@ -341,5 +342,23 @@ describe('Dig again — the confirm click', () => {
       expect(b.deferOpts[0], forged).toMatchObject({ kind: 'update' });
     }
     expect(activeExpedition(ctx, 'u1')).toBeUndefined();
+  });
+});
+
+describe('Buy another — the button', () => {
+  it('/shop egg mints the Buy another button carrying the owner and the rarity', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.economy.apply('u1', { cash: 50_000 }, 'seed', ctx.now());
+    // Day 0 really does offer it. `common` is structurally always in the rotation at the
+    // uncommon ceiling — the pool there is exactly ['common','uncommon'] and slice(0,3)
+    // cannot truncate it — so the pre-buy rotation gate cannot swallow this case.
+    expect(dailyEggOffers(0, 0)).toContain('common');
+    const i = fakeCommand({ name: 'shop', sub: 'egg', user: 'u1', options: { rarity: 'common' } });
+    await routeInteraction(ctx, testRegistry, i.asInteraction());
+    // toContain for the id this task owns; Task 26 (G4-E) adds a second control to this same
+    // array and Task 29 (G8-A)'s GRAPH is the one place the whole list is pinned.
+    expect(mintedIds(i.replies[0])).toContain('shop:again:u1:common');
+    expect(labelOf(i.replies[0], 'shop:again:u1:common')).toBe('🥚 Buy another');
   });
 });

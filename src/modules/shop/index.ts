@@ -23,6 +23,22 @@ import { FOODS, foodsForDiet, getFood } from '../../data/foods.js';
 
 const eggRarityChoices = (['common', 'uncommon', 'rare', 'epic', 'legendary'] as const).map((r) => ({ name: r, value: r }));
 
+/**
+ * The Buy another control, minted on /shop egg's PUBLIC reply. The owner id rides in the
+ * customId because buyEgg resolves against the CALLER — a bystander's click would buy
+ * themselves an egg rather than be refused.
+ *
+ * Unicode in the label, never setEmoji: emojiTag returns '' when no emoji map is loaded and
+ * ButtonBuilder#setEmoji throws on that rather than degrading. No price here either — an egg
+ * price rolls at every UTC midnight, and only the ephemeral confirm card this opens quotes a
+ * number and bakes it into an id.
+ */
+export function buyAnotherRow(userId: string, rarity: Rarity): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(`shop:again:${userId}:${rarity}`)
+      .setLabel('🥚 Buy another').setStyle(ButtonStyle.Primary));
+}
+
 // Single source of truth for /shop view's header key list: exported so
 // tests/world-module.test.ts's per-key anyModRelevant tests exercise this
 // exact array, not a duplicated literal that could silently drift from it.
@@ -99,7 +115,15 @@ export const shopModule: ModuleManifest = {
             const eggEmbed = new EmbedBuilder().setColor(RARITY_COLOR[egg.rarity] ?? 0x95a5a6)
               .setTitle(`🥚 Bought a ${rarityEmoji(egg.rarity)}${egg.rarity} egg (#${egg.id})`)
               .setDescription(`Incubate it with /incubate ${egg.id}.`);
-            const eggPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [eggEmbed] };
+            // components starts EMPTY and is PUSHED into. Spec §3 gives this surface two
+            // controls from two separate tasks; assigning the array wholesale would make
+            // whichever lands second silently delete the other's button, with nothing failing.
+            const eggPayload: {
+              embeds: EmbedBuilder[];
+              components: ActionRowBuilder<ButtonBuilder>[];
+              files?: AttachmentBuilder[];
+            } = { embeds: [eggEmbed], components: [] };
+            eggPayload.components.push(buyAnotherRow(i.user.id, egg.rarity));
             attach(eggEmbed, eggPayload, 'thumbnail', assetImage('eggs', egg.rarity, String(egg.id)));
             await i.reply(eggPayload);
           } else {
