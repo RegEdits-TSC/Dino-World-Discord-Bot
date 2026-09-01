@@ -438,12 +438,16 @@ export function assignRow(
  * names. The handler re-derives eligibility itself; the router only proves the value was
  * one this menu offered.
  *
- * Sliced at 25 for Discord's option cap. Ten lot slots is the live ceiling, so the slice is
- * insurance rather than a live constraint — the same shape lotsPayload's two menus use.
+ * Sliced at 25 for Discord's option cap. The live lot-slot ceiling is
+ * `BASE_LOT_SLOTS_FALLBACK + LOT_SLOT_THRESHOLDS.length` (src/data/progression.ts), well
+ * under 25, so the slice is insurance rather than a live constraint — the same shape
+ * lotsPayload's two menus use.
  *
- * NEVER call this with an empty list: a zero-option select is rejected by the payload
- * validator, and in production Discord rejects the message. The handler checks for that
- * before it reaches this builder.
+ * NEVER call this with an empty list: checked against the installed @discordjs/builders
+ * (1.14.1), `addOptions([])` does NOT throw here — it silently builds `{"options":[]}` — so
+ * an empty list reaches Discord's REST layer intact and is rejected there, live, as a broken
+ * message, not caught locally. The handler checks for an empty eligible list before it
+ * reaches this builder.
  */
 export function assignSelectRow(
   userId: string, dinoId: number, eligible: Lot[],
