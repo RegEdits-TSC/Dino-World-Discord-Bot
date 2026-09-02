@@ -25,5 +25,30 @@ export const hubModule: ModuleManifest = {
       },
     },
   ],
-  components: [],
+  components: [
+    {
+      prefix: 'hub',
+      async execute(ctx, i) {
+        const [, action, uid] = i.customId.split(':');
+        // Unknown actions are acknowledged before anything else touches the DB.
+        if (action !== 'open' && action !== 'refresh') { await i.deferUpdate(); return; }
+        if (i.user.id !== uid) {
+          await i.reply({ content: 'Not your hub.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        settleEscapes(ctx, i.user.id);
+        const payload = hubCardPayload(hubView(ctx, i.user.id), i.user.id);
+        if (action === 'open') {
+          // A REPLY, never an update: this id is minted on the park card and on the alert
+          // DM, and updating would replace the surface the player clicked from.
+          await i.reply({ ...payload, flags: MessageFlags.Ephemeral });
+          return;
+        }
+        // content: '' clears a result line an earlier hub:feedall wrote; attachments: []
+        // sheds the previous render's uploads.
+        await i.update({ content: '', ...payload, attachments: [] });
+      },
+    },
+  ],
 };
