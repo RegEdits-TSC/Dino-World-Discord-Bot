@@ -4,6 +4,7 @@ import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, toClockDinos, needsAttentionCount, capHours, facilityBonusPct } from '../src/modules/park/service.js';
 import { escapeAt, ESCAPE_WARN_MS, accruedIncome, HUNGER_DRAIN_MS, hungerAt, drainMsFor } from '../src/core/clock.js';
 import { hubView } from '../src/modules/hub/service.js';
+import { TRADE_EXPIRY_MS } from '../src/data/trade.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx({ nowMs: 1_000_000 }); getOrCreateUser(ctx, 'u1', 'U1'); });
@@ -229,5 +230,60 @@ describe('hubView — the NEEDS YOU section', () => {
     const { clockDinos } = toClockDinos(ctx, 'u1');
     const row = hubView(ctx, 'u1').find((s) => s.id === 'needs-attention')!;
     expect(row.text).toContain(String(needsAttentionCount(clockDinos, ctx.now())));
+  });
+});
+
+describe('hubView — the incoming trade offer', () => {
+  // TradeSide requires `foods` (src/core/db/schema.ts:165, not src/data/trade.ts as the task
+  // brief first claimed), and fromUser/toUser are FKs to users.discordId — mirrors the
+  // corrected fixture already used above (the "suppresses both egg rows" trade insert).
+  beforeEach(() => { getOrCreateUser(ctx, 'u2', 'U2'); });
+
+  const offerTo = (toUser: string, createdAt: number) => {
+    getOrCreateUser(ctx, toUser, toUser);
+    ctx.db.insert(schema.trades).values({
+      fromUser: 'u2', toUser,
+      offer: { dinoIds: [], eggIds: [], cash: 100, foods: {} },
+      request: { dinoIds: [], eggIds: [], cash: 0, foods: {} },
+      status: 'pending', createdAt,
+    } as typeof schema.trades.$inferInsert).run();
+  };
+
+  it('reports an offer addressed to you, with its expiry as the deadline', () => {
+    offerTo('u1', 1_000_000);
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'trade-incoming')!;
+    expect(row.section).toBe('attention');
+    expect(row.lossAtMs).toBe(1_000_000 + TRADE_EXPIRY_MS);
+    expect(row.control, 'the trade row ships without a control by design').toBeUndefined();
+    expect(row.text).toContain('/trade');
+  });
+
+  it('ignores an offer YOU sent — escrow already covers that side', () => {
+    ctx.db.insert(schema.trades).values({
+      fromUser: 'u1', toUser: 'u2',
+      offer: { dinoIds: [], eggIds: [], cash: 1, foods: {} },
+      request: { dinoIds: [], eggIds: [], cash: 0, foods: {} },
+      status: 'pending', createdAt: 1_000_000,
+    } as typeof schema.trades.$inferInsert).run();
+    expect(hubView(ctx, 'u1').map((s) => s.id)).not.toContain('trade-incoming');
+  });
+
+  it('ignores an offer past its deadline WITHOUT expiring it', () => {
+    // Still status 'pending' in the table: nothing has run expireStale. The hub must read
+    // past it, not close it — closing is a write, and a read screen that mutates trades is
+    // how a hub render would resolve someone else's offer.
+    offerTo('u1', 1_000_000 - TRADE_EXPIRY_MS);   // exactly on the cutoff
+    expect(hubView(ctx, 'u1').map((s) => s.id)).not.toContain('trade-incoming');
+    const rows = ctx.db.select().from(schema.trades).all();
+    expect(rows[0].status, 'the hub expired a trade — it must never write here').toBe('pending');
+    expect(rows[0].resolvedAt).toBeNull();
+  });
+
+  it('uses the recipient index rather than scanning every pending trade', () => {
+    // A behavioural proxy for "the query is scoped": seed offers between other players and
+    // assert none of them reaches this player's hub. It does not prove the index is USED —
+    // tests/db.test.ts (Task 1) proves the index exists; this proves the predicate is right.
+    for (let n = 0; n < 20; n++) offerTo(`other${n}`, 1_000_000);
+    expect(hubView(ctx, 'u1').map((s) => s.id)).not.toContain('trade-incoming');
   });
 });

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, and, gt } from 'drizzle-orm';
 import { ButtonStyle } from 'discord.js';
 import { schema } from '../../core/db/index.js';
 import type { Ctx } from '../../core/context.js';
@@ -7,6 +7,7 @@ import { activeExpedition } from '../expeditions/service.js';
 import { activeBreedings } from '../genelab/service.js';
 import { escapeAt, ESCAPE_WARN_MS, accruedIncome } from '../../core/clock.js';
 import { toClockDinos, needsAttentionCount, capHours, facilityBonusPct } from '../park/service.js';
+import { TRADE_EXPIRY_MS } from '../../data/trade.js';
 import type { HubSignal } from './types.js';
 
 /**
@@ -197,6 +198,33 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
       // Deliberately in the PAST: the park stopped earning at this instant and has been
       // losing ever since, which is what ranks it above a row that merely expires later.
       lossAtMs: user.lastCollectAt + capMs,
+    });
+  }
+
+  // Incoming offers only. locksFor deliberately reads from_user — escrow holds the OFFERER's
+  // items — so this is the one read in the repo scoped by recipient, and migration 0020's
+  // trades_status_to is what keeps it a search instead of a scan of every pending trade in
+  // the database.
+  //
+  // The createdAt predicate IS the expiry check. expireStale would also do it and is a
+  // write; a render must never close another player's offer as a side effect of being
+  // looked at.
+  const tradeCutoff = now - TRADE_EXPIRY_MS;
+  const offers = ctx.db.select().from(schema.trades)
+    .where(and(
+      eq(schema.trades.status, 'pending'),
+      eq(schema.trades.toUser, userId),
+      gt(schema.trades.createdAt, tradeCutoff),
+    )).all();
+  if (offers.length > 0) {
+    const soonest = offers.reduce((a, b) => (a.createdAt <= b.createdAt ? a : b));
+    const expiresAt = soonest.createdAt + TRADE_EXPIRY_MS;
+    out.push({
+      id: 'trade-incoming',
+      section: 'attention',
+      text: `🤝 ${offers.length === 1 ? 'A trade offer is' : `${offers.length} trade offers are`} waiting on you`
+        + ` — the first expires <t:${Math.floor(expiresAt / 1000)}:R> · \`/trade list\``,
+      lossAtMs: expiresAt,
     });
   }
 
