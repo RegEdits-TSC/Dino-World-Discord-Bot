@@ -33,7 +33,7 @@ export const PARK_HEADER_KEYS = ['income'] as const;
 export function dashboardPayload(
   user: User, pending: number,
   opts: { attention?: number; capped?: boolean; now?: number; motto?: string;
-          dinoCount?: number; visit?: boolean } = {},
+          dinoCount?: number; visit?: boolean; hub?: boolean } = {},
 ) {
   const attention = opts.attention ?? 0;
   const dinoValue = attention > 0
@@ -62,6 +62,20 @@ export function dashboardPayload(
       new ButtonBuilder().setCustomId('park:collect').setEmoji(emojiTag('dw_cash'))
         .setLabel(`Collect ${pending.toLocaleString()}`).setStyle(ButtonStyle.Success),
     ));
+    if (opts.hub) {
+      // A RAW STRING, deliberately: park must not import the hub module. The hub imports
+      // park, and one import back would make the pair a cycle and end the leaf property the
+      // whole design rests on. Gated on the module flag because ModuleRegistry filters to
+      // enabled modules — an ungated mint is a button that silently does nothing.
+      //
+      // Second, never first: Collect is pinned to components[0].components[0] positionally
+      // by tests/park.test.ts. Inside the !visit block, because a visited card must not
+      // offer the owner's hub any more than it offers their Collect.
+      components[0]!.addComponents(
+        new ButtonBuilder().setCustomId(`hub:open:${user.discordId}`)
+          .setLabel('🧭 What now?').setStyle(ButtonStyle.Secondary),
+      );
+    }
   }
   components.push(tabRow(user.discordId, 'park', opts.visit));
   const payload: {

@@ -345,6 +345,7 @@ export const parkModule: ModuleManifest = {
         const attention = escapedCount + needsAttentionCount(clockDinos, nowMs);
         const base = dashboardPayload(user, pending, {
           attention, capped, now: nowMs, motto: user.motto, dinoCount: dinos.length,
+          hub: ctx.config.modules.hub,
         });
         let png: Buffer | undefined;
         try { png = await renderPark(buildParkSnapshot(ctx, i.user.id)); } catch { png = undefined; }
@@ -1311,7 +1312,7 @@ async function renderTab(
       // comment in service.ts) — the one-pass-over-DISTINCT-dinos rule, not a sum of the
       // two predicates — so this number can never drift from a visited card's Park tab.
       attention: escaped + needsAttentionCount(clockDinos, nowMs), capped, now: nowMs,
-      motto: user.motto, dinoCount: dinos.length, visit,
+      motto: user.motto, dinoCount: dinos.length, visit, hub: ctx.config.modules.hub,
     });
     if (tourRow) base.components.push(tourRow);
     let png: Buffer | undefined;
