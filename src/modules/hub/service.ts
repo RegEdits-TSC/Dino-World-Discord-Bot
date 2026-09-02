@@ -5,9 +5,12 @@ import type { Ctx } from '../../core/context.js';
 import { locksFor } from '../../core/locks.js';
 import { activeExpedition } from '../expeditions/service.js';
 import { activeBreedings } from '../genelab/service.js';
-import { escapeAt, ESCAPE_WARN_MS, accruedIncome } from '../../core/clock.js';
+import { escapeAt, ESCAPE_WARN_MS, accruedIncome, DAY_MS } from '../../core/clock.js';
 import { toClockDinos, needsAttentionCount, capHours, facilityBonusPct } from '../park/service.js';
 import { TRADE_EXPIRY_MS } from '../../data/trade.js';
+import { questProgress, achievementsView } from '../daily/service.js';
+import { seasonView } from '../daily/season.js';
+import { claimableMilestones } from '../guests/service.js';
 import type { HubSignal } from './types.js';
 
 /**
@@ -225,6 +228,89 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
       text: `🤝 ${offers.length === 1 ? 'A trade offer is' : `${offers.length} trade offers are`} waiting on you`
         + ` — the first expires <t:${Math.floor(expiresAt / 1000)}:R> · \`/trade list\``,
       lossAtMs: expiresAt,
+    });
+  }
+
+  // CLAIM. All five controls below are reused verbatim from their owning commands and are
+  // all hub-safe: daily:claim, ach:claimall and season:claim all reply ephemerally, and so
+  // does park:collect, so clicking any of them leaves the hub card standing.
+  const claimableQuests = questProgress(ctx, userId)
+    // `complete` alone re-offers a quest that was already claimed, forever.
+    .filter((v) => v.complete && v.row.claimedAt === null);
+  if (claimableQuests.length > 0) {
+    out.push({
+      id: 'daily-claimable',
+      section: 'claim',
+      text: `🎯 ${claimableQuests.length} daily quest${claimableQuests.length === 1 ? '' : 's'} ready to claim`,
+      lossAtMs: null,
+      control: { customId: `daily:claim:${userId}`, label: '🎯 Claim dailies', style: ButtonStyle.Success },
+    });
+  }
+
+  // Count TIERS, not tracks: one track can hold several claimable tiers at once.
+  const claimableTiers = achievementsView(ctx, userId).flatMap((t) => t.claimable);
+  if (claimableTiers.length > 0) {
+    out.push({
+      id: 'achievements-claimable',
+      section: 'claim',
+      text: `🏆 ${claimableTiers.length} achievement tier${claimableTiers.length === 1 ? '' : 's'} ready`,
+      lossAtMs: null,
+      control: { customId: `ach:claimall:${userId}`, label: '🏆 Claim all', style: ButtonStyle.Success },
+    });
+  }
+
+  const season = seasonView(ctx, userId);
+  if (season !== null) {
+    const rungs = season.rungs.filter((r) => r.unlocked && !r.claimed);
+    if (rungs.length > 0) {
+      out.push({
+        id: 'season-claimable',
+        section: 'claim',
+        text: `🎖️ ${rungs.length} season reward${rungs.length === 1 ? '' : 's'} unclaimed`
+          + ` — the season ends in ${season.daysLeft} day${season.daysLeft === 1 ? '' : 's'}`,
+        // DAY-GRANULAR, and the only approximate deadline on the card: SeasonView exposes
+        // daysLeft rather than an end instant. It is precise enough to RANK — nothing else
+        // on the hub forfeits at all — but it must never be presented as an exact time. If
+        // you find an exact season-end instant on the view, use it and say that you did.
+        lossAtMs: now + season.daysLeft * DAY_MS,
+        // The season index rides in the id because the handler rejects a stale one. It comes
+        // from the view, never from a literal.
+        control: {
+          customId: `season:claim:${userId}:${season.index}`,
+          label: '🎖️ Claim season',
+          style: ButtonStyle.Success,
+        },
+      });
+    }
+  }
+
+  const milestones = claimableMilestones(ctx, userId);
+  if (milestones.length > 0) {
+    const first = milestones[0];
+    out.push({
+      id: 'guests-claimable',
+      section: 'claim',
+      text: `🎁 ${first.name} milestone ready to claim`,
+      lossAtMs: null,
+      control: {
+        customId: `guests:claim:${userId}:${first.at}`,
+        label: '🎁 Claim milestone',
+        style: ButtonStyle.Success,
+      },
+    });
+  }
+
+  if (pending > 0) {
+    out.push({
+      id: 'income-pending',
+      section: 'claim',
+      text: `💰 ${pending.toLocaleString()} idle earnings waiting`,
+      lossAtMs: null,
+      // park:collect carries NO owner segment by design — a clicker collects their OWN
+      // income. On an owner-only ephemeral that is exactly right, which is why this row
+      // needs no hub proxy. Its label goes stale after the click; Refresh is the answer,
+      // not a proxy handler.
+      control: { customId: 'park:collect', label: '💰 Collect', style: ButtonStyle.Success },
     });
   }
 

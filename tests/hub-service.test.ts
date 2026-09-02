@@ -2,9 +2,16 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, toClockDinos, needsAttentionCount, capHours, facilityBonusPct } from '../src/modules/park/service.js';
-import { escapeAt, ESCAPE_WARN_MS, accruedIncome, HUNGER_DRAIN_MS, hungerAt, drainMsFor } from '../src/core/clock.js';
+import { escapeAt, ESCAPE_WARN_MS, accruedIncome, HUNGER_DRAIN_MS, hungerAt, drainMsFor, dayKeyUTC, DAY_MS } from '../src/core/clock.js';
 import { hubView } from '../src/modules/hub/service.js';
 import { TRADE_EXPIRY_MS } from '../src/data/trade.js';
+import { track, readStat } from '../src/core/stats.js';
+import { QUESTS } from '../src/data/quests.js';
+import { claimQuests } from '../src/modules/daily/service.js';
+import { rollSeason, seasonView } from '../src/modules/daily/season.js';
+import { SEASON_DAYS } from '../src/core/world.js';
+import { recomputeRating } from '../src/modules/park/rating.js';
+import { claimableMilestones } from '../src/modules/guests/service.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx({ nowMs: 1_000_000 }); getOrCreateUser(ctx, 'u1', 'U1'); });
@@ -285,5 +292,104 @@ describe('hubView — the incoming trade offer', () => {
     // tests/db.test.ts (Task 1) proves the index exists; this proves the predicate is right.
     for (let n = 0; n < 20; n++) offerTo(`other${n}`, 1_000_000);
     expect(hubView(ctx, 'u1').map((s) => s.id)).not.toContain('trade-incoming');
+  });
+});
+
+describe('hubView — the CLAIM section', () => {
+  // Mirrors tests/daily-claim.test.ts's seedQuest idiom: baseline snapshotted from the
+  // user's current stat total so a `track` call of exactly `target` completes it, rather
+  // than hand-inserting a row whose progress invariant questProgress alone maintains.
+  const seedQuest = (dayKey: string, slot: number, questId: string, target: number) => {
+    const def = QUESTS.find((q) => q.id === questId)!;
+    const baseline = readStat(ctx, 'u1', def.stat);
+    ctx.db.insert(schema.dailyQuests).values({ userId: 'u1', dayKey, slot, questId, baseline, target }).run();
+    return def;
+  };
+
+  it('a completed, unclaimed quest yields daily-claimable with a null lossAtMs', () => {
+    const dayKey = dayKeyUTC(ctx.now());
+    const def = seedQuest(dayKey, 0, 'feed_3', 3);
+    track(ctx, 'u1', def.stat, 3);
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'daily-claimable');
+    expect(row, 'no daily-claimable row').toBeTruthy();
+    expect(row!.control!.customId).toBe('daily:claim:u1');
+    expect(row!.lossAtMs, 'a claimable quest waits forever, like a ready egg').toBeNull();
+  });
+
+  it('does NOT re-offer a completed quest that was already claimed — filtering on complete alone would', () => {
+    const dayKey = dayKeyUTC(ctx.now());
+    const def = seedQuest(dayKey, 0, 'feed_3', 3);
+    track(ctx, 'u1', def.stat, 3);
+    claimQuests(ctx, 'u1');   // the real claim path — stamps claimedAt for real, not faked
+    expect(ids()).not.toContain('daily-claimable');
+  });
+
+  it('an achievement track with a non-empty claimable array yields achievements-claimable', () => {
+    track(ctx, 'u1', 'eggs_hatched', 60);   // crosses tiers 0 and 1 on one track
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'achievements-claimable');
+    expect(row, 'no achievements-claimable row').toBeTruthy();
+    expect(row!.control!.customId).toBe('ach:claimall:u1');
+  });
+
+  it("an unlocked, unclaimed season rung yields season-claimable, keyed by the VIEW's own index", () => {
+    // The suite's default clock (nowMs: 1_000_000, set in the top-level beforeEach) sits at
+    // season index 0 — vacuous for the "id carries the real index" assertion below, since a
+    // hardcoded literal 0 would also pass. Move the clock to season 1 (matches tests/season.test.ts's
+    // own S1 anchor) before seeding, so this test can actually distinguish the view's index
+    // from a literal.
+    const S1 = 690 * SEASON_DAYS * DAY_MS;
+    ctx.setNow(S1);
+    rollSeason(ctx, 'u1');
+    track(ctx, 'u1', 'expeditions_claimed', 10);   // expeditions: 5 pts each, per 1 -> 50 pts, rung 0 at 50
+    const view = seasonView(ctx, 'u1')!;
+    expect(view.index, 'fixture sanity: must not sit on the vacuous season 0').not.toBe(0);
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'season-claimable');
+    expect(row, 'no season-claimable row').toBeTruthy();
+    expect(row!.control!.customId).toBe(`season:claim:u1:${view.index}`);
+    expect(row!.lossAtMs, 'the season row is the one deadline in this section').not.toBeNull();
+  });
+
+  it('a crossed, unclaimed attendance milestone yields guests-claimable', () => {
+    const lot = paddockLot('herbivore_paddock', 'Herbivore Paddock');
+    // 9 distinct species -> attendance 225 (1000 * 9/40, rounded), clearing the 200
+    // "Opening Day" threshold without also crossing the 400 "Word of Mouth" one.
+    const species = [
+      'triceratops', 'stegosaurus', 'parasaurolophus', 'iguanodon',
+      'ankylosaurus', 'brachiosaurus', 'gallimimus', 'maiasaura', 'massospondylus',
+    ];
+    ctx.db.insert(schema.dinos).values(species.map((speciesId) => ({
+      userId: 'u1', lotId: lot.id, speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }))).run();
+    recomputeRating(ctx, 'u1');   // the real writer of attendanceHighWater
+    const first = claimableMilestones(ctx, 'u1')[0];
+    expect(first, 'fixture crossed no milestone').toBeTruthy();
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'guests-claimable');
+    expect(row, 'no guests-claimable row').toBeTruthy();
+    expect(row!.control!.customId).toBe(`guests:claim:u1:${first.at}`);
+  });
+
+  it('uncollected income yields income-pending, with park:collect carrying no uid', () => {
+    const lot = paddockLot('herbivore_paddock', 'Herbivore Paddock');
+    const before = toClockDinos(ctx, 'u1');
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lotId: lot.id,
+      hunger: 100, lastFedAt: before.user.lastCollectAt, hatchedAt: 0,
+    }).run();
+    ctx.setNow(before.user.lastCollectAt + 3_600_000);   // 1h — well under the 8h fallback cap
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'income-pending');
+    expect(row, 'no income-pending row').toBeTruthy();
+    // Exactly 'park:collect' — no uid segment appended. A clicker collects their OWN
+    // income, which is correct on an owner-only ephemeral and is why this needs no proxy.
+    expect(row!.control!.customId).toBe('park:collect');
+  });
+
+  it('writes nothing to daily_quests, season_progress or achievement_claims — a local rehearsal of the no-write gate', () => {
+    const beforeQuests = ctx.db.select().from(schema.dailyQuests).all();
+    const beforeSeason = ctx.db.select().from(schema.seasonProgress).all();
+    const beforeClaims = ctx.db.select().from(schema.achievementClaims).all();
+    hubView(ctx, 'u1');
+    expect(ctx.db.select().from(schema.dailyQuests).all()).toEqual(beforeQuests);
+    expect(ctx.db.select().from(schema.seasonProgress).all()).toEqual(beforeSeason);
+    expect(ctx.db.select().from(schema.achievementClaims).all()).toEqual(beforeClaims);
   });
 });
