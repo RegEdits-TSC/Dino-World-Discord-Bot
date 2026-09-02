@@ -179,7 +179,16 @@ export const trades = sqliteTable('trades', {
   // The deliberate cost: createTrade's daily-cap read filters from_user + created_at_ms with
   // NO status predicate, so it cannot use this index at all. Judged worth it — that is one
   // rate-limit check against three hotter readers.
-}, (t) => [index('trades_status_from').on(t.status, t.fromUser, t.createdAt)]);
+}, (t) => [
+  index('trades_status_from').on(t.status, t.fromUser, t.createdAt),
+  // The mirror of trades_status_from, for the one read that scopes by RECIPIENT: the hub's
+  // "an offer is waiting on you" row. Nothing else in src/ reads by to_user — locksFor is
+  // deliberately from_user only, because escrow holds the OFFERER's items — so without this
+  // index that read is a full scan of every pending trade in the database with the user
+  // filter applied in JavaScript, which is the one hub cost that grows with the player base
+  // rather than with the park. `status` leads for the same reason it leads on the twin.
+  index('trades_status_to').on(t.status, t.toUser, t.createdAt),
+]);
 
 export const txLog = sqliteTable('tx_log', {
   id: integer('id').primaryKey({ autoIncrement: true }),

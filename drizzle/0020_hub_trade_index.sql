@@ -1,0 +1,1 @@
+CREATE INDEX `trades_status_to` ON `trades` (`status`,`to_user`,`created_at_ms`);
