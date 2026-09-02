@@ -88,7 +88,7 @@ export function alertSweepHandler(sender: Sender, ctx: Ctx) {
         // A FRESH payload per user. deliverNotification forwards ONE object to two send
         // sites (channel then DM), so a shared object is the finalPayload() hazard from
         // fightFrames. Building inside the loop also keeps `attachments` absent.
-        const payload = alertPayload(u.discordId, escapes, income, season, now);
+        const payload = alertPayload(u.discordId, escapes, income, season, now, ctx.config.modules.hub);
         // alertPayload returns null only when escapes.length === 0 && !income && !season —
         // the `continue` above already excludes that case, so this is unreachable in
         // practice. Handled explicitly rather than with a non-null assertion so a future

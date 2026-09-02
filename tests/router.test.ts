@@ -576,6 +576,10 @@ describe('router component guard — every live component surface still routes',
         { capAt: ctx.now(), pending: 1240, capHours: 8 },
         { endsAt: ctx.now() + 3 * 86_400_000, unclaimed: 2 },
         ctx.now(),
+        // false: this sweep's registry only wires up PREFIXES above, which has no 'hub'
+        // entry — the hub button's own routing is covered end-to-end in
+        // tests/park-tabs.test.ts and tests/alert-buttons.test.ts.
+        false,
       )!.components)],
       ['/top board', componentsOf(topRows)],
     ];
