@@ -7,7 +7,7 @@ import { schema } from '../../core/db/index.js';
 import { getOrCreateUser } from '../park/service.js';
 import { createTrade, acceptTrade, declineTrade, cancelTrade, expireStale, listTrades, TradeError } from './service.js';
 import { parseIdList } from './validate.js';
-import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
+import { InsufficientFundsError } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, listCompleter, type ListCandidate } from '../../core/autocomplete.js';
 import { locksFor } from '../../core/locks.js';
 import { getSpecies } from '../../data/species/index.js';

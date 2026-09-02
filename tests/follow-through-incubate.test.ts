@@ -156,10 +156,14 @@ describe('hatch:inc guards', () => {
     getOrCreateUser(ctx, 'u1', 'One');
     getOrCreateUser(ctx, 'u2', 'Two');
     const owned = seedEgg(ctx, 'u1');
-    // u2 owns an egg of their own. It is here as the BACKSTOP assertion: incubateEgg
-    // filters on (id, CALLER), so even with the owner check deleted u2's own egg is
-    // never started. That assertion stays green in Step 3 on purpose — it pins that
-    // the service filter really is the second layer this guard is allowed to lean on.
+    // u2 owns an egg of their own. It is here for the BACKSTOP assertion below (the second
+    // incubationStartedAt check, on `bystanders.id`): incubateEgg filters on (id, CALLER), so
+    // even with the owner check deleted, u2's click would resolve against u2's OWN id and
+    // never touch this egg. Under that break, though, vitest's fail-fast aborts at the
+    // `replyText` assertion just below — incubateEgg would throw 'You do not own that egg.'
+    // instead of 'That is not your egg.' — so the backstop assertion is never REACHED in that
+    // scenario, not observed passing. Its truth rests entirely on incubateEgg's own
+    // (id, userId) filter, not on a green run of this test.
     const bystanders = seedEgg(ctx, 'u2');
 
     const customId = `hatch:inc:u1:${owned.id}`;

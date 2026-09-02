@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
@@ -6,7 +6,7 @@ import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, maxLevelFor, col
 import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
 import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, eligiblePaddocks, assignableDinosFor, PADDOCK_FULL, DINO_ESCAPED, AssignError, DietMismatchError, renameDino } from './dinos.js';
-import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, confirmPayload, assignRow, assignSelectRow, buildDinoRow, buildDinoSelectRow, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
+import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, confirmPayload, assignSelectRow, buildDinoRow, buildDinoSelectRow, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
 import { guestsPayload } from '../guests/embeds.js';
 import { visitPayload, nextParkRow } from './visit.js';
 import { bumpLegacyBest, legacyRank } from './ranks.js';

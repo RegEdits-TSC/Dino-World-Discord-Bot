@@ -409,8 +409,8 @@ export function tabRow(id: string, active: ParkTab, visit = false): ActionRowBui
  *   none         → park:goto:lots:<uid>                 go build one instead
  *
  * The lot id is in the id and not merely in the label because a Discord message is durable
- * and its label is never re-derived; the handler re-checks that exact lot against current
- * state before it writes.
+ * and its label is never re-derived; assignDino (src/modules/park/dinos.ts) is the sole
+ * authority on that lot at write time — the handler itself does not re-check it.
  *
  * The owner uid is in every one of the three because these rows land on PUBLIC messages —
  * the hatch reveal above all — where anyone in the channel can click.
