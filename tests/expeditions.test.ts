@@ -178,3 +178,19 @@ describe('expedition visuals', () => {
     expect(JSON.stringify(embeds.map((e) => (e.toJSON ? e.toJSON() : e)))).toContain('Digging');
   });
 });
+
+describe('/expedition start insufficiency', () => {
+  it('names the site and quotes the shortfall', async () => {
+    ctx.db.update(schema.users).set({ cash: 45 }).where(eq(schema.users.discordId, 'u1')).run();
+    const cmd = expeditionsModule.commands[0];
+    const i = fakeCommand({ name: 'expedition', sub: 'start', user: 'u1', options: { site: 'coastal_dig' } });
+    await cmd.execute(ctx, i.asChatInput());
+    // Class 2: ONE multiplier. Coastal Dig unlocks at rating 0, its cost is the frozen literal
+    // 200 in src/data/sites.ts, and eventMods(0).expeditionFee is 1 on clear_skies — no daily
+    // deal exists on this path — so the literal is safe. The probe prints both halves.
+    // An expedition site is a proper place name, so no article: 'Coastal Dig costs 200'.
+    expect(replyText(i.replies[0]))
+      .toBe('Not enough cash — Coastal Dig costs 200, you have 45 (155 short).');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+});

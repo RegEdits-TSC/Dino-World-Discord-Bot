@@ -157,7 +157,25 @@ export const tradingModule: ModuleManifest = {
           }
         } catch (e) {
           if (e instanceof TradeError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash/food for that trade.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) {
+            // Backstop only: acceptTrade runs verifySide over BOTH sides before its
+            // transaction, and verifySide already refuses a side that cannot cover its own
+            // cash and food with a TradeError. Each side's net is bounded below by what it
+            // gives, which verifySide proved it holds, so neither apply can overdraw.
+            //
+            // shortfallLine is deliberately NOT used here — the one place in this sweep that
+            // skips it. acceptTrade applies to trade.fromUser first, so if this ever did fire
+            // the numbers could describe the SENDER's wallet while the reply is shown to the
+            // recipient, and shortfallLine says "you have", which would then be a false
+            // statement about the reader's own balance. The gap is quoted without claiming
+            // whose it is.
+            const what = e.foodId ? FOODS[e.foodId].name : e.wallet;
+            const short = (e.needed - e.held).toLocaleString('en-US');
+            await i.reply({
+              content: `Not enough ${what} for that trade — one side is ${short} short.`,
+              flags: MessageFlags.Ephemeral,
+            });
+          }
           else throw e;
         }
       },

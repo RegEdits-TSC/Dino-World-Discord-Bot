@@ -18,6 +18,51 @@ export class DietMismatchError extends Error {
 }
 export function paddockCapacity(level: number): number { return 2 * level; }
 
+/**
+ * The two AssignError texts a caller may hand a player VERBATIM.
+ *
+ * Both name a condition the player can act on right now — free a slot, rescue the dino —
+ * so a follow-through button that swallowed them into a generic staleness line would be
+ * telling the player the wrong thing. Every other AssignError text describes an id that
+ * should never have been clickable, and those DO belong behind a staleness line.
+ *
+ * Constants rather than literals at the throw sites because the handler that decides which
+ * ones pass through compares against them: two copies of a sentence, one in a throw and one
+ * in a Set, drift the first time somebody edits the wording, and nothing fails.
+ */
+export const PADDOCK_FULL = 'That paddock is full.';
+export const DINO_ESCAPED = 'That dino has escaped — rescue it first.';
+
+/**
+ * Would `lot` take one more dino of `diet`, given `occupants` already in it?
+ *
+ * The ONE place the assign rule — paddock, diet match, room — is written down, because it
+ * gets asked in two opposite directions and a change to either half has to move both:
+ *
+ *   dino fixed, lots vary  → eligiblePaddocks below, which picks the shape of the hatch
+ *                            reveal's Assign control
+ *   lot fixed, dinos vary  → the /build follow-through's picker, which asks this once per
+ *                            candidate dino, with that dino's own diet
+ *
+ * Neither direction is the authority and neither may claim to be: assignDino re-reads and
+ * re-checks all three conditions itself and is the only thing standing between a forged id
+ * and the database.
+ *
+ * `lot.type === 'paddock'` MUST stay the first term. PADDOCKS is a null-prototype map, so
+ * PADDOCKS[<a facility kind>] is undefined and reading .diet off it throws a TypeError
+ * rather than degrading to false. Reordering these two is a crash, not a miss.
+ *
+ * `occupants` is the CALLER's count and is never re-read here, because the two directions
+ * count differently: a dino being MOVED must be excluded from the paddock it already sits
+ * in — assignDino does exactly that with ne(schema.dinos.id, dinoId) — while a picker
+ * choosing among unassigned dinos has nobody to exclude.
+ */
+export function paddockAccepts(lot: Lot, diet: Diet, occupants: number): boolean {
+  return lot.type === 'paddock'
+    && PADDOCKS[lot.kind].diet === diet
+    && occupants < paddockCapacity(lot.level);
+}
+
 function ownedPaddock(ctx: Ctx, userId: string, lotId: number): Lot {
   const lot = ctx.db.select().from(schema.lots)
     .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, userId))).get();
@@ -30,17 +75,45 @@ export function assignDino(ctx: Ctx, userId: string, dinoId: number, lotId: numb
   const dino = ctx.db.select().from(schema.dinos)
     .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
   if (!dino) throw new AssignError('You do not own that dino.');
-  if (dino.escapedAt !== null) throw new AssignError('That dino has escaped — rescue it first.');
+  if (dino.escapedAt !== null) throw new AssignError(DINO_ESCAPED);
   const lot = ownedPaddock(ctx, userId, lotId);
   const occupants = ctx.db.select().from(schema.dinos)
     .where(and(eq(schema.dinos.userId, userId), eq(schema.dinos.lotId, lotId), ne(schema.dinos.id, dinoId))).all().length;
-  if (occupants >= paddockCapacity(lot.level)) throw new AssignError('That paddock is full.');
+  if (occupants >= paddockCapacity(lot.level)) throw new AssignError(PADDOCK_FULL);
   const species = getSpecies(dino.speciesId);
   const paddock = PADDOCKS[lot.kind];
   if (!opts.allowMismatch && paddock.diet !== species.diet)
     throw new DietMismatchError(species.name, species.diet, paddock.name);
   ctx.db.update(schema.dinos).set({ lotId }).where(eq(schema.dinos.id, dinoId)).run();
   recomputeRating(ctx, userId);
+}
+
+/**
+ * The paddocks this dino could be assigned to right now, decided through paddockAccepts.
+ *
+ * A MINT-SIDE chooser, not a barrier: it picks which of assignRow's three shapes to mint,
+ * and assignDino independently refuses everything it filters out. What it buys is that the
+ * control a player is OFFERED and the rule that executes come from one definition — in
+ * particular the diet term, which is what keeps an off-diet paddock off a one-press
+ * follow-through at all. The wrong-habitat "Assign anyway" confirm stays reachable from
+ * /dino assign only.
+ *
+ * Returns [] rather than throwing for a dino that is unowned, escaped, or named by a junk
+ * segment: every caller is a mint site deciding which control to offer, and "offer nothing"
+ * is the right answer to all three. Number('x') is NaN, which better-sqlite3 binds as a
+ * legal no-match, so a forged id lands in the `!dino` arm rather than crashing.
+ */
+export function eligiblePaddocks(ctx: Ctx, userId: string, dinoId: number): Lot[] {
+  const dino = ctx.db.select().from(schema.dinos)
+    .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
+  if (!dino || dino.escapedAt !== null) return [];
+  const diet = getSpecies(dino.speciesId).diet;
+  const lots = ctx.db.select().from(schema.lots)
+    .where(eq(schema.lots.userId, userId)).all();
+  const owned = ctx.db.select().from(schema.dinos)
+    .where(eq(schema.dinos.userId, userId)).all();
+  return lots.filter((l) => paddockAccepts(
+    l, diet, owned.filter((d) => d.lotId === l.id && d.id !== dinoId).length));
 }
 
 export function unassignDino(ctx: Ctx, userId: string, dinoId: number): void {
@@ -89,4 +162,55 @@ export function listDinos(ctx: Ctx, userId: string) {
     escapeAt: escapeAt(clockDinos[i]),
     mismatch: clockDinos[i].paddock !== null && clockDinos[i].paddock!.diet !== clockDinos[i].species.diet,
   }));
+}
+
+/**
+ * The dinos that could move into `lotId` right now: owned, unassigned, not escaped, and eating
+ * what this paddock serves. Returns null when `lotId` is not an owned paddock — a read helper,
+ * so a lot that is gone is an answer, not an exception.
+ *
+ * This is the LOT-FIXED direction. `eligiblePaddocks` above is the dino-fixed one (one dino,
+ * which paddocks accept it). Neither is THE definition of eligibility: `paddockAccepts` is, and
+ * both call it, so a change to the capacity rule or the diet rule cannot move only one of them.
+ *
+ * The occupancy count passed to `paddockAccepts` here excludes NOTHING, and that asymmetry is
+ * deliberate. The dino-fixed direction mirrors assignDino's `ne(schema.dinos.id, dinoId)` and
+ * drops the dino being MOVED from the count, or a paddock a dino already lives in would hide
+ * itself the moment it filled. Here the dino has not been chosen yet and is by construction
+ * unassigned, so every occupant counts against the room this menu is about to offer.
+ *
+ * Off-diet dinos are deliberately absent. The wrong-habitat "Assign anyway" confirm stays
+ * reachable only from /dino assign, so a one-click follow-through can never halve a dino's
+ * comfort in a single press.
+ *
+ * Three facts ride back, not one, because they send the player to three different screens and
+ * quoting the wrong one is a false statement rather than a vague one — the same split feedDino
+ * makes in src/modules/care/service.ts:
+ *   - `hasRoom` answers the paddock question, so a caller never carries a capacity of its own;
+ *   - `ofDiet` is the WHOLE cohort of that diet, housed and escaped included, so a caller can
+ *     say "you own no herbivores yet" instead of telling a brand-new player that every
+ *     herbivore they own is housed;
+ *   - `dinos` is the offerable subset.
+ * One roster read serves all three; do not add a second query to recover `ofDiet`.
+ *
+ * PADDOCKS is null-prototype and holds no facility kinds, so `PADDOCKS[lot.kind].diet` would
+ * throw a TypeError on a facility row: the `type !== 'paddock'` return above it is load-bearing
+ * ordering, not a tidy-up.
+ */
+export function assignableDinosFor(ctx: Ctx, userId: string, lotId: number):
+    { lot: Lot; hasRoom: boolean; ofDiet: Array<typeof schema.dinos.$inferSelect>;
+      dinos: Array<typeof schema.dinos.$inferSelect> } | null {
+  const lot = ctx.db.select().from(schema.lots)
+    .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, userId))).get();
+  if (!lot || lot.type !== 'paddock') return null;
+  const diet = PADDOCKS[lot.kind].diet;
+  const owned = ctx.db.select().from(schema.dinos)
+    .where(eq(schema.dinos.userId, userId)).all();
+  const ofDiet = owned.filter((d) => getSpecies(d.speciesId).diet === diet);
+  return {
+    lot,
+    hasRoom: paddockAccepts(lot, diet, owned.filter((d) => d.lotId === lot.id).length),
+    ofDiet,
+    dinos: ofDiet.filter((d) => d.lotId === null && d.escapedAt === null),
+  };
 }

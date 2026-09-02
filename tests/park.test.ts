@@ -175,12 +175,17 @@ describe('park module commands', () => {
     // Collect (row 1) plus the tab row Task 1 added (row 2) — was 1 before the tabs split.
     expect(payload.components).toHaveLength(2);
   });
-  it('/build paddock reply hints at assigning a dino', async () => {
+  it('/build paddock reply offers the assign control instead of naming /dino assign', async () => {
     getOrCreateUser(ctx, 'u1', 'Reg');
     ctx.economy.apply('u1', { cash: 100_000 }, 'seed', 0);
     const i = fakeCommand({ name: 'build', user: 'u1', options: { kind: 'herbivore_paddock' } });
     await parkModule.commands.find((c) => c.data.name === 'build')!.execute(ctx, i.asChatInput());
-    expect((i.replies[0] as { content: string }).content).toContain('/dino assign');
+    // Retargeted, not deleted: this case guarded "a paddock build points at assigning a
+    // dino", which is still true — it is a button now rather than an instruction to type.
+    // The WHOLE content string, so the old hint's absence is proven by what the reply is.
+    expect((i.replies[0] as { content: string }).content)
+      .toBe('🏗️ Built **Herbivore Paddock** (lot #1).');
+    expect(JSON.stringify(i.replies[0])).toContain('park:builddino:u1:1');
   });
 });
 
@@ -749,7 +754,26 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     ctx.db.update(schema.lots).set({ level: 4 }).run();
     const maxI = fakeCommand({ name: 'upgrade', user: 'u1', options: { lot: lot.id } });
     await cmd.execute(ctx, maxI.asChatInput());
-    expect(replyText(maxI.replies[0])).toContain('max level');
+    // The WHOLE line. Both numbers are read off maxLevelFor (the single resolver upgradeLot
+    // itself charges through) and paddockCapacity, and the facility case below is what fails
+    // if either is written into the string as a literal — a paddock and a facility do not
+    // share a cap.
+    expect(replyText(maxI.replies[0])).toBe('Already max level (4) — that paddock holds 8.');
+  });
+  it('/upgrade names the FACILITY cap at max level, not the paddock literal', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 10_000_000 }).run();
+    // gene_lab caps at 3 (src/data/facilities.ts). Seeded and asserted as literals on both
+    // sides so a data change fails loudly here rather than passing against a stale message —
+    // and so a hardcoded "(4)" fails this case while still passing the paddock case above,
+    // which is the only reason this case exists.
+    const lot = buildLot(ctx, 'u1', 'gene_lab');
+    ctx.db.update(schema.lots).set({ level: 3 }).where(eq(schema.lots.id, lot.id)).run();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'upgrade')!;
+    const i = fakeCommand({ name: 'upgrade', user: 'u1', options: { lot: lot.id } });
+    await cmd.execute(ctx, i.asChatInput());
+    expect(replyText(i.replies[0])).toBe('Already max level (3) — the Gene Lab is fully upgraded.');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
   it('/upgrade execute quotes the price on the insufficient-funds reply', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
@@ -762,8 +786,36 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     // Exact, not toContain('5,000'): that substring is satisfied by '15,000' and by
     // '5,000,000' just as happily. herbivore_paddock L1 -> L2 is round(2,000 x 2.5) = 5,000
     // (upgradeCostFor), and the whole point of the quote is that the FIGURE is right.
-    expect(replyText(brokeI.replies[0])).toBe('Not enough cash — that upgrade costs 5,000.');
+    expect(replyText(brokeI.replies[0]))
+      .toBe('Not enough cash — that upgrade costs 5,000, you have 0 (5,000 short).');
   });
+  it('/build names the building and quotes the shortfall', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 0 }).run();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'build')!;
+    const i = fakeCommand({ name: 'build', user: 'u1', options: { kind: 'herbivore_paddock' } });
+    await cmd.execute(ctx, i.asChatInput());
+    // Whole string, never toContain('2,000'): that substring is satisfied by '12,000' and by
+    // '2,000,000' just as happily, and the figures are the entire point of the change.
+    expect(replyText(i.replies[0]))
+      .toBe('Not enough cash — the Herbivore Paddock costs 2,000, you have 0 (2,000 short).');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+
+  it('/decorate names the decoration and quotes the shortfall', async () => {
+    const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');
+    ctx.db.update(schema.users).set({ cash: 0 }).run();
+    const cmd = parkModule.commands.find((c) => c.data.name === 'decorate')!;
+    const i = fakeCommand({ name: 'decorate', user: 'u1', options: { lot: lot.id, item: 'palm_tree' } });
+    await cmd.execute(ctx, i.asChatInput());
+    // DECOR.palm_tree is a frozen literal cost of 500 — no world-event or deal multiplier
+    // touches decor, and decorateLot applies no biome filter, so this is safe to pin.
+    expect(replyText(i.replies[0]))
+      .toBe('Not enough cash — the Palm Tree costs 500, you have 0 (500 short).');
+  });
+
   it('/decorate execute adds decor', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
     ctx.db.update(schema.users).set({ cash: 1_000_000 }).run();
@@ -809,15 +861,21 @@ describe('/upgrade, /decorate, /park rename, /dino unassign, park:collect', () =
     for (let n = 0; n < 3; n++) buildLot(ctx, 'u1', kind);   // base slots = 3
     // Guard: recomputeRating after 3 builds must not have raised the slot cap.
     expect(lotSlots(ctx.db.select().from(schema.users).all()[0].ratingHighWater)).toBe(3);
+    // Pinned so the whole sentence can be asserted literally. lotSlots(90) is still 3, so the
+    // cap still trips, and the live rating is set BELOW the best — the case the message
+    // exists to disambiguate.
+    ctx.db.update(schema.users).set({ parkRating: 40, ratingHighWater: 90 }).run();
     const cmd = parkModule.commands.find((c) => c.data.name === 'build')!;
     const full = fakeCommand({ name: 'build', user: 'u1', options: { kind } });
     await cmd.execute(ctx, full.asChatInput());
-    expect(replyText(full.replies[0])).toContain('All lots full');
+    expect(replyText(full.replies[0]))
+      .toBe("All lots full (3/3). Slot 4 unlocks at ★1.0 — you're at ★0.4 (best ★0.9).");
     ctx.db.delete(schema.lots).run();
     ctx.db.update(schema.users).set({ cash: 0 }).run();
     const broke = fakeCommand({ name: 'build', user: 'u1', options: { kind } });
     await cmd.execute(ctx, broke.asChatInput());
-    expect(replyText(broke.replies[0])).toContain('Not enough cash');
+    expect(replyText(broke.replies[0]))
+      .toBe('Not enough cash — the Herbivore Paddock costs 2,000, you have 0 (2,000 short).');
   });
   it('/build maps DuplicateFacilityError to an ephemeral reply naming the facility', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');

@@ -7,7 +7,7 @@ import { decorateLot } from '../src/modules/park/dinos.js';
 import { feedDino, feedAll, rescueDino, feedCostFor, CareError } from '../src/modules/care/service.js';
 import { careModule } from '../src/modules/care/index.js';
 import { schema } from '../src/core/db/index.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { VERY_HUNGRY_MS } from '../src/core/autocomplete.js';
 
 const H = 3_600_000;
@@ -252,6 +252,24 @@ describe('care module', () => {
     expect(reply.content).toBe("Triceratops is a herbivore — it won't eat Fish.");
     expect(reply.flags).toBeDefined();
   });
+
+  it('/feed one names the food and quotes the shortfall in units, not cash', async () => {
+    const d = addDino();
+    ctx.db.update(schema.foodInventory).set({ qty: 1 })
+      .where(and(eq(schema.foodInventory.userId, 'u1'), eq(schema.foodInventory.foodId, 'ferns'))).run();
+    const cmd = careModule.commands.find((c) => c.data.name === 'feed')!;
+    // The food is named explicitly: feedDino only pre-checks stock when it AUTO-picks
+    // (pickFood), so naming it is what routes the failure through economy.apply and this
+    // catch rather than through pickFood's own CareError.
+    const i = fakeCommand({ name: 'feed', sub: 'one', user: 'u1', options: { dino: d.id, food: 'ferns' } });
+    await cmd.execute(ctx, i.asChatInput());
+    // feedCostFor('common', [], 0) is 5 — one world-event multiplier (eventMods(0).feedCost),
+    // neutral at 1 on clear_skies. "need", never "costs": food is a count of units. feedDino
+    // has no "not hungry" guard, so a default addDino() at now=0 still charges.
+    expect(replyText(i.replies[0]))
+      .toBe('Not enough Ferns — need 5, you have 1 (4 short). Buy more with /shop food.');
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
 });
 
 describe('/rescue execute', () => {
@@ -281,16 +299,21 @@ describe('/rescue execute', () => {
     expect(replyText(i.replies[0])).toContain('not escaped');
     expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
-  it('maps InsufficientFundsError to the recapture-fee message', async () => {
+  it('maps InsufficientFundsError to a priced recapture message', async () => {
     const ctx = makeCtx(); getOrCreateUser(ctx, 'u1', 'u1');
-    ctx.db.update(schema.users).set({ cash: 0 }).run();
+    ctx.db.update(schema.users).set({ cash: 90 }).run();
     ctx.db.insert(schema.dinos).values({
       userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0, escapedAt: 100,
     }).run();
     const dino = ctx.db.select().from(schema.dinos).all()[0];
     const i = fakeCommand({ name: 'rescue', user: 'u1', options: { dino: dino.id } });
     await rescueCmd.execute(ctx, i.asChatInput());
-    expect(replyText(i.replies[0])).toContain('recapture fee');
+    // RECAPTURE_FEE_HOURS (4) x RARITY.common.incomePerHr (60) = 240 for a Triceratops. The
+    // fee is deliberately NOT event-modified — eventMods is imported in care/service.ts only
+    // for feedCostFor — so this literal holds on every day, unlike the shop's two-multiplier
+    // prices in Task 3 (G1-C).
+    expect(replyText(i.replies[0]))
+      .toBe('Not enough cash — that recapture costs 240, you have 90 (150 short).');
   });
 });
 

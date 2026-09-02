@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, type AttachmentBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, ActionRow, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, type AttachmentBuilder, type MessageActionRowComponent, type APIActionRowComponent, type APIButtonComponent } from 'discord.js';
 import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
@@ -7,12 +7,14 @@ import { incubateEgg, hatchEgg, HatcheryError } from './service.js';
 import { buyMythicEgg, mythicSpeciesChoices, ShardError } from '../shop/shards.js';
 import { locksFor } from '../../core/locks.js';
 import { getSpecies } from '../../data/species/index.js';
-import { preHatchPayload, revealPayload, eggListPayload, RARITY_COLOR } from './embeds.js';
+import { preHatchPayload, revealPayload, eggListPayload, RARITY_COLOR, incubateRow } from './embeds.js';
 import { assetImage, attach } from '../../core/images.js';
 import { rarityEmoji } from '../../core/emojis.js';
 import { traitLines } from '../../core/trait-display.js';
-import { InsufficientFundsError } from '../../core/economy.js';
+import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, eggLabel } from '../../core/autocomplete.js';
+import { eligiblePaddocks } from '../park/dinos.js';
+import { assignRow } from '../park/embeds.js';
 
 const mythicChoices = mythicSpeciesChoices().map((s) => ({ name: s.name, value: s.id }));
 
@@ -91,15 +93,105 @@ export const hatcheryModule: ModuleManifest = {
           await i.update({ ...eggListPayload(eggs, ctx.now(), i.user.id, Number(a3), locksFor(ctx, i.user.id).eggs), attachments: [] });
           return;
         }
-        if (action !== 'crack') return;
+        if (action === 'inc') {
+          // These buttons sit on PUBLIC messages (the /expedition claim, /shop egg and
+          // /breed claim replies are not ephemeral), so the owner is checked here,
+          // explicitly, before any read. incubateEgg's own (id, userId) filter would
+          // refuse a bystander too — it resolves the egg against the CALLER, so a
+          // bystander's click finds no row — but it refuses with "You do not own that
+          // egg.", which is true and the wrong sentence for a click on somebody else's
+          // card. This check buys the right MESSAGE, not the write protection.
+          if (i.user.id !== a2) {
+            await i.reply({ content: 'That is not your egg.', flags: MessageFlags.Ephemeral });
+            return;
+          }
+          // Client-supplied and not even trusted to parse: a malformed segment must not
+          // reach the DB lookup as NaN. (It binds fine and misses, so the cost is again
+          // the wrong sentence — "You do not own that egg." for a mangled link.)
+          const eggId = Number(a3);
+          if (!Number.isInteger(eggId)) {
+            await i.reply({ content: 'That incubate link is invalid — use `/incubate`.', flags: MessageFlags.Ephemeral });
+            return;
+          }
+          try {
+            const egg = incubateEgg(ctx, i.user.id, eggId, i.guildId);
+            // i.update, and neither `embeds` nor `attachments` is sent. The message this
+            // button sits on carries an egg embed whose image is an attachment:// URL into
+            // its own upload: `attachments: []` would drop that upload and leave the embed
+            // pointing at nothing, and `embeds: []` would throw the reveal away. Only
+            // content and components are replaced. i.reply would leave the button standing.
+            //
+            // components is REBUILT from i.message.components — Discord's own record of what
+            // is on the card — not cleared outright. Incubate is no longer the only control
+            // here: /expedition claim's reply, the exp:claim update and /shop egg's reply each
+            // push a sibling (Dig again / Buy another) onto this same array, and `components:
+            // []` deleted it along with the spent button. Only the SPENT button (this
+            // customId) is dropped; a row left with no surviving children is dropped too,
+            // rather than sent as an empty row. Closing the flow by REMOVING the button, not
+            // disabling it, still stands — neither router guard reads `disabled`.
+            //
+            // ActionRowBuilder.from() round-trips a real row cleanly (verified directly
+            // against the installed @discordjs/builders: a row built from real API JSON comes
+            // back byte-for-byte via .from().toJSON()) — the installed version does not have
+            // the addOptions([])-style surprise an earlier task in this plan found elsewhere.
+            const components = (i.message?.components ?? [])
+              // Only ActionRows of buttons are ever minted onto these cards (see
+              // src/core/components.ts's own note on Components V2 containers/sections);
+              // filtering to ActionRow narrows i.message.components' broader TopLevelComponent
+              // type to the one shape this rebuild handles.
+              .filter((row): row is ActionRow<MessageActionRowComponent> => row instanceof ActionRow)
+              .map((row) => row.toJSON())
+              .map((row) => ({ ...row, components: row.components.filter((c) => (c as { custom_id?: string }).custom_id !== i.customId) }))
+              .filter((row) => row.components.length > 0)
+              // Cast, not a generic on .from(): row.toJSON()'s declared return type is the
+              // whole message-action-row union (button OR select), because ActionRow itself
+              // has no opinion on what its message actually carries. Every row this handler
+              // ever sees is a single-button row (digAgainRow/buyAnotherRow/incubateRow, the
+              // only builders that mint onto these cards) — the assertion documents that fact
+              // rather than inventing it.
+              .map((row) => ActionRowBuilder.from<ButtonBuilder>(row as APIActionRowComponent<APIButtonComponent>));
+            await i.update({
+              content: `🥚 Egg #${egg.id} is incubating — ready <t:${Math.floor(egg.hatchesAt! / 1000)}:R>, then \`/hatch egg:${egg.id}\`.`,
+              components,
+            });
+          } catch (e) {
+            if (e instanceof HatcheryError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e;
+          }
+          return;
+        }
+        // deferUpdate, never a bare return: a bare return paints "This interaction failed"
+        // after 3 seconds, and a stale id from an older deploy lands right here.
+        if (action !== 'crack') { await i.deferUpdate(); return; }
         const idStr = a2;
         try {
-          const { species, traits } = hatchEgg(ctx, i.user.id, Number(idStr));
+          const { species, dinoId, traits } = hatchEgg(ctx, i.user.id, Number(idStr));
           const payload = revealPayload(species, Number(idStr));
           // Traits field appended after revealPayload's Diet/Biome/Income/hr fields —
           // added here rather than inside revealPayload so the two attach() calls
           // there (crack image, archetype thumbnail) stay untouched.
           payload.embeds[0].addFields({ name: '🧬 Traits', value: traitLines(traits), inline: false });
+          // CROSS-MODULE mint, so it is gated on park being enabled: ModuleRegistry resolves
+          // a component's handler only among ENABLED modules (src/core/modules.ts), and a
+          // park: id minted while park is off is a button that silently answers nothing. The
+          // gate belongs at the MINT — the handler lives in the module that may be absent, so
+          // it cannot possibly refuse on its own behalf.
+          if (ctx.config.modules.park) {
+            const eligible = eligiblePaddocks(ctx, i.user.id, dinoId);
+            // PUSHED, never assigned: revealPayload's empty components array is what this
+            // i.update uses to strip the crack button, and an assignment would work by
+            // accident today and break the moment revealPayload mints a row of its own.
+            payload.components.push(assignRow(i.user.id, dinoId, eligible));
+            // The footer is decided HERE, beside the control, because it is a function of
+            // which of assignRow's three shapes was just minted — something revealPayload
+            // cannot see. With an Assign control on the card, "Next: /dino assign" was the
+            // exact instruction this change exists to replace, so it goes. With only "Build a
+            // paddock", the pointer is still the step AFTER building, so it stays.
+            if (eligible.length === 0) {
+              payload.embeds[0].setFooter({
+                text: 'Build a paddock, then /dino assign — unassigned dinos earn nothing.',
+              });
+            }
+          }
           await i.update(payload);
         } catch (e) {
           if (e instanceof HatcheryError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e;
@@ -107,14 +199,24 @@ export const hatcheryModule: ModuleManifest = {
       } },
     { prefix: 'mythic', async execute(ctx, i) {
         const [, action, speciesId] = i.customId.split(':');
-        if (action !== 'confirm') return;
+        // Same reason as the hatch handler above: an unrecognised action must acknowledge.
+        if (action !== 'confirm') { await i.deferUpdate(); return; }
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         try {
           const egg = buyMythicEgg(ctx, i.user.id, speciesId);
-          await i.update({ content: `🌟 A Mythic **${getSpecies(egg.speciesId!).name}** egg is yours! Incubate it with /incubate ${egg.id}.`, components: [] });
+          await i.update({
+            // `/incubate egg:<id>`, never `/incubate <id>`: the option is NAMED, so the old
+            // text was not valid Discord syntax.
+            content: `🌟 A Mythic **${getSpecies(egg.speciesId!).name}** egg is yours (#${egg.id})! Incubate it with \`/incubate egg:${egg.id}\`.`,
+            // No ctx.config.modules gate here, unlike the expedition, shop and gene lab
+            // mints: hatch:inc is handled by the `hatch` component in THIS module, so a
+            // disabled hatchery module means this handler never ran either. A gate would be
+            // a condition that cannot be false.
+            components: [incubateRow(i.user.id, egg.id)],
+          });
         } catch (e) {
           if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough shards (need 500).', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: `Not enough shards — a Mythic egg ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
           else throw e;
         }
       } },

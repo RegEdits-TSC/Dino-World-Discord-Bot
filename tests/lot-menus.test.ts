@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MessageFlags } from 'discord.js';
-import { makeCtx, fakeButton, fakeSelect } from './harness.js';
-import { getOrCreateUser } from '../src/modules/park/service.js';
+import { makeCtx, fakeButton, fakeSelect, replyText } from './harness.js';
+import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
 import { parkModule } from '../src/modules/park/index.js';
 import { lotsPayload } from '../src/modules/park/embeds.js';
 import { schema } from '../src/core/db/index.js';
@@ -248,6 +248,76 @@ describe('build menu mint', () => {
   });
 });
 
+// The BUILD CONFIRM button, not the menu: park:buildyes is what reaches buildLot, and
+// buildLot's slot-cap throw is the only way to observe the LotLimitError message at all.
+// §5.2. LotLimitError carries no message and means two different things (slot cap in
+// buildLot, already-max-level in upgradeLot), so this block pins the BUILD half only.
+describe('build confirm', () => {
+  it('names the slot, its threshold and BOTH ratings when slots remain locked', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    for (let n = 0; n < 7; n++) {
+      ctx.db.insert(schema.lots).values({
+        userId: 'u1', type: 'paddock', kind: 'carnivore_paddock', name: 'Carnivore Paddock', level: 1,
+      }).run();
+    }
+    // lotSlots(640) is 7, so seven lots fill the cap and nextLotSlot(640) is slot 8 at 800.
+    // parkRating sits BELOW ratingHighWater deliberately: the gate reads the high-water, and
+    // rendering one figure twice is the mistake this case exists to catch.
+    ctx.db.update(schema.users)
+      .set({ cash: 10_000_000, parkRating: 620, ratingHighWater: 640 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    const b = fakeButton({ customId: 'park:buildyes:u1:carnivore_paddock:7', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    // The WHOLE line, never a substring holding one of the four numbers: three of them are
+    // one decimal place apart, so a substring assertion on any one of them passes a sentence
+    // that quotes another wrongly.
+    expect(replyText(b.replies[0]))
+      .toBe("All lots full (7/7). Slot 8 unlocks at ★8.0 — you're at ★6.2 (best ★6.4).");
+    expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all()).toHaveLength(7);
+  });
+
+  it('says every slot is unlocked once the threshold ladder is exhausted', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    for (let n = 0; n < 10; n++) {
+      ctx.db.insert(schema.lots).values({
+        userId: 'u1', type: 'paddock', kind: 'carnivore_paddock', name: 'Carnivore Paddock', level: 1,
+      }).run();
+    }
+    // 950 is the last rung, so nextLotSlot returns null and the sentence must not promise a
+    // slot 11 that LOT_SLOT_THRESHOLDS has no rung for.
+    ctx.db.update(schema.users)
+      .set({ cash: 10_000_000, parkRating: 950, ratingHighWater: 950 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    const b = fakeButton({ customId: 'park:buildyes:u1:carnivore_paddock:10', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(replyText(b.replies[0])).toBe('All lots full (10/10) — every slot is unlocked.');
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.userId, 'u1')).all()).toHaveLength(10);
+  });
+
+  it('reads the lot COUNT and the CAP from different sources', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    // Eight rows against a cap of seven. This state is NOT reachable through buildLot —
+    // ratingHighWater is monotone so the cap never falls, and lot rows only ever grow — and
+    // that is exactly why the row is here. At every reachable state the two halves of the
+    // slash are EQUAL (buildLot throws at `lots.length >= lotSlots(hw)`), so without one
+    // row where they differ, `${lots}/${cap}` could be written `${lots}/${lots}` or
+    // `${cap}/${cap}` and every other case in this block would still pass.
+    for (let n = 0; n < 8; n++) {
+      ctx.db.insert(schema.lots).values({
+        userId: 'u1', type: 'paddock', kind: 'carnivore_paddock', name: 'Carnivore Paddock', level: 1,
+      }).run();
+    }
+    ctx.db.update(schema.users)
+      .set({ cash: 10_000_000, parkRating: 620, ratingHighWater: 640 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    const b = fakeButton({ customId: 'park:buildyes:u1:carnivore_paddock:8', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(replyText(b.replies[0]))
+      .toBe("All lots full (8/7). Slot 8 unlocks at ★8.0 — you're at ★6.2 (best ★6.4).");
+  });
+});
+
 describe('upgrade menu', () => {
   const seedLot = (level: number) => {
     getOrCreateUser(ctx, 'u1', 'Reg');
@@ -344,6 +414,19 @@ describe('upgrade menu', () => {
     expect(JSON.stringify(b.replies[0])).toContain('no longer valid');
     expect(b.deferOpts).toEqual([]);
   });
+
+  it('names the cap and the capacity when the lot is already at max level', async () => {
+    const lot = seedLot(4);   // paddock max level; seedLot also gives u1 100,000,000 cash
+    const before = cashOf('u1');
+    // The anchor matches the fresh read, so the handler's own staleness pre-check passes and
+    // the click reaches upgradeLot — which is what throws LotLimitError. Anchoring anything
+    // else would test the pre-check instead and never exercise this message.
+    const b = fakeButton({ customId: `park:upgyes:u1:${lot.id}:4`, user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(replyText(b.replies[0])).toBe('Already max level (4) — that paddock holds 8.');
+    expect(cashOf('u1')).toBe(before);
+    expect(ctx.db.select().from(schema.lots).where(eq(schema.lots.id, lot.id)).get()!.level).toBe(4);
+  });
 });
 
 // Same gap as the build menu's own mint block above, for the same reason: every case in
@@ -398,5 +481,34 @@ describe('upgrade menu mint', () => {
     const values = select!.options.map((o) => o.value);
     expect(values).toContain(`${below.id}:1`);
     expect(values.some((v) => v.startsWith(`${geneLab.id}:`))).toBe(false);
+  });
+});
+
+describe('confirm-button insufficiency messages', () => {
+  it('park:buildyes names the building and quotes the shortfall', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.db.update(schema.users).set({ cash: 0 }).where(eq(schema.users.discordId, 'u1')).run();
+    // The trailing :0 is the lot-count anchor the handler validates against a fresh read
+    // before entering the try — the player owns no lots, so the id is not stale and the
+    // handler reaches buildLot rather than the count-mismatch refusal above it.
+    const b = fakeButton({ customId: 'park:buildyes:u1:herbivore_paddock:0', user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(replyText(b.replies[0]))
+      .toBe('Not enough cash — the Herbivore Paddock costs 2,000, you have 0 (2,000 short).');
+    expect(cashOf('u1')).toBe(0);
+  });
+
+  it('park:upgyes quotes the shortfall for the level the button was minted at', async () => {
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    ctx.db.update(schema.users).set({ cash: 1_000_000 }).where(eq(schema.users.discordId, 'u1')).run();
+    const lot = buildLot(ctx, 'u1', 'herbivore_paddock');   // level 1
+    ctx.db.update(schema.users).set({ cash: 0 }).where(eq(schema.users.discordId, 'u1')).run();
+    // herbivore_paddock L1 -> L2 is round(2,000 x 2.5) = 5,000 (upgradeCostFor). The trailing
+    // :1 is the expected-level anchor the handler checks against a fresh read before the try.
+    const b = fakeButton({ customId: `park:upgyes:u1:${lot.id}:1`, user: 'u1' });
+    await parkComp().execute(ctx, b.asInteraction() as never);
+    expect(replyText(b.replies[0]))
+      .toBe('Not enough cash — that upgrade costs 5,000, you have 0 (5,000 short).');
+    expect(cashOf('u1')).toBe(0);
   });
 });

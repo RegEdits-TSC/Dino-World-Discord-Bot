@@ -26,6 +26,8 @@ contract, autocomplete and settings test files that gate them.
 - `park:tour:<targetUserId>` and `top:visit:<targetUserId>` carry a TARGET rather than an owner and must never grow an ownership check — that would make Visit work only for the player already on screen. §target-segment-customids-no-owner-check
 - Acknowledge before rendering a park: `renderPark`'s own timeout is Discord's ENTIRE initial-response window and renders serialize process-wide, so rendering first cost the interaction to 10062 and showed "This interaction failed" with no park. §acknowledge-before-slow-render
 - Keep the existence check AHEAD of the acknowledgement at all three visiting surfaces — "That player has no park yet" is an EPHEMERAL answer and either defer would have committed it to a public message. §existence-check-before-acknowledgement
+- Every surface that hands a player a new object offers the next step as a control on that same message, and every such control is a row in the table in `tests/follow-through.test.ts` — the graph is convention, nothing structural, so that table is the only thing that catches a new surface minting an egg and forgetting to offer Incubate. §follow-through-graph-has-a-row-per-surface
+- A follow-through control on a PUBLIC reply carries the owner's id and its handler rejects a mismatch BEFORE the service call — but only for `claimExpedition` and `startExpedition` is that check the write barrier, because both resolve the CALLER's own dig and take no id. For `incubateEgg`, `assignDino` and `feedDino` the service already filters on the caller, so the check buys the right SENTENCE on a public card and nothing more; never describe it as the protection. §follow-through-control-carries-the-owner-uid
 
 ## commands-live-in-manifests
 
@@ -201,3 +203,82 @@ The
 existence check stays AHEAD of the acknowledgement at all three surfaces (`park:tour`,
 `top:visit`, `/park view user:`), because "That player has no park yet" is an EPHEMERAL
 answer and either defer would have committed it to a public message.
+
+## follow-through-graph-has-a-row-per-surface
+
+Every surface that hands the player a new object offers the next step on it as a control on the
+same message: an egg gets Incubate, a newly hatched dino gets Assign, a claimed expedition gets
+Dig again. Those controls are minted per module, on each module's own existing prefix, rather
+than through a central registry. A central one was considered and rejected twice over: a single
+`next:` prefix means one handler switching over every module's actions, which is the shape
+§one-entry-per-prefix-branch-internally exists to prevent, and such a registry would have to
+import from every module, inverting the dependency direction the repo has today.
+
+The price of that choice is that NOTHING structural holds the graph together. Nothing stops a
+future surface minting an egg and never offering Incubate; the code compiles, `npm run typecheck`
+is clean, and every other test passes. The only symptom is a player typing a command they should
+not have had to. `tests/follow-through.test.ts` is the whole defence: one table of (surface,
+expected customId) pairs, each row driving the real surface, asserting the minted payload actually
+carries the id, then dispatching that id back through `routeInteraction` and asserting the
+database effect. A new surface that hands out an object adds its row there in the same change —
+and the table only catches the omission if whoever adds the surface also adds the row.
+
+That table also owns the ONE whole-list assertion. Two of those payloads are built by two
+different modules pushing onto the same array (`/expedition claim` carries Dig again and Incubate;
+`/shop egg` carries Buy another and Incubate), so a components array is always built as a named
+local and PUSHED onto, never assigned wholesale — an assignment deletes the other module's control
+with no error anywhere. Per-surface tests therefore assert only the id they own, with `toContain`,
+and the full ordered list is pinned in the contract table alone, so a deleted control and an
+undeclared new one are each a single findable failure rather than several contradictory ones.
+
+A CROSS-MODULE mint is gated on the handler's module being enabled — `ctx.config.modules.<name>`,
+read off `Ctx.config` (`src/core/context.ts`, `src/core/config.ts`). `ModuleRegistry` filters to
+enabled modules before it resolves anything (`src/core/modules.ts`), so a `hatch:inc` button minted
+by the shop while the hatchery module is off is a control nothing answers at all, sitting on a
+durable message that outlives the deploy that disabled it. A mint by the module that also handles
+the id needs no gate: it is a condition that cannot be false.
+
+A follow-through control REPLIES or UPDATES; it never defers. Every action behind one is
+synchronous DB work with nothing to wait on, so the contract test treats a `deferUpdate` as a
+router rejection rather than a dispatch — which is also what makes it able to tell "the handler
+answered" apart from "no handler resolved for this prefix at all", the silent shape
+`routeInteraction` takes when `findComponent` misses.
+
+Two shapes are settled and should not be re-litigated per surface. A control that spends CASH goes
+behind a two-step confirm whose second button carries the price it quoted, and the handler refuses
+when the price has moved: §money-button-carries-its-rung applied to a number that genuinely moves,
+since expedition fees shift with the day's world event and egg prices roll at UTC midnight. A
+control that spends FOOD does not: `park:feedall:<uid>` has consumed food on one click since it
+shipped, and putting a confirm on one food button but not the other would make the two disagree
+for no reason a player could infer.
+
+A follow-through control that NAVIGATES rather than acts replies EPHEMERALLY under the
+`park:goto:<target>:<uid>` shape — `park:goto:lots:<uid>` is the hatch reveal's "Build a paddock" —
+and never reuses `park:tab:<uid>:<tab>`. `park:tab` ends in `renderTab`, which `i.update`s the
+message it was clicked from; the hatch reveal is public, so that would destroy the reveal and leave
+the owner's private Lots card sitting in the channel. Note the owner id sits at index 3 in a `goto`
+id, not index 2, which is why that arm re-destructures its parts. That ephemeral also strips the
+tab row `lotsPayload` appends unconditionally, unlike its landmark/guests/roster neighbours: left
+in, one tab click would advance THIS message and hand the player a second, parallel park card
+beside the one they opened it from.
+
+## follow-through-control-carries-the-owner-uid
+
+`/expedition claim`, `/shop egg`, `/build` and the hatch reveal are PUBLIC messages, so anyone in
+the channel can click a button sitting on one. Every follow-through customId therefore carries the
+owner's id, and its handler rejects a mismatch before the service call — the same explicit check
+`exp:claim` already performed before this work.
+
+What that check actually buys differs by service, and the difference is worth stating precisely
+because getting it backwards produces a comment that lies. `claimExpedition` takes no id at all and
+`startExpedition` dispatches the clicker's own crew: both always resolve the CALLER, so without the
+owner check a bystander's click on somebody else's card does not fail — it silently succeeds
+against their OWN expedition. There the check IS the barrier. `incubateEgg`, `assignDino` and
+`feedDino` each filter their own read on `userId` already, so a bystander is refused with or
+without it; there the check buys a legible sentence ("That is not your egg.") on a public card
+instead of a confusing one about something the clicker never named. Do not write a comment calling
+either kind "the protection" without checking which one you are holding.
+
+This is also the mirror image of §target-segment-customids-no-owner-check, where the id segment
+names a TARGET and an ownership check would break the feature outright. Check which kind of segment
+you are holding before copying either pattern.

@@ -5,7 +5,7 @@ import { schema } from '../../core/db/index.js';
 import { getOrCreateUser } from '../park/service.js';
 import { getSpecies } from '../../data/species/index.js';
 import { locksFor } from '../../core/locks.js';
-import { InsufficientFundsError } from '../../core/economy.js';
+import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { matches, respondRanked } from '../../core/autocomplete.js';
 import { settleEscapes } from '../park/escapes.js';
 import { traitDefs } from '../../data/traits.js';
@@ -14,6 +14,7 @@ import {
   startBreeding, claimBreeding, activeBreedings, breedCooldowns, BreedError, spliceDino,
 } from './service.js';
 import { confirmPayload, statusPayload, claimPayload, splicePreviewPayload, splicedPayload } from './embeds.js';
+import { incubateRow } from '../hatchery/embeds.js';
 
 // Autocomplete labels use TraitDef.fallback, never emojiTag — Discord renders a
 // custom tag as literal text in a suggestion list.
@@ -123,15 +124,26 @@ export const geneLabModule: ModuleManifest = {
               return;
             }
             const { egg, upgraded } = claimBreeding(ctx, i.user.id, readyRows[0].id);
-            await i.reply(claimPayload({
+            const payload = claimPayload({
               rarity: egg.rarity, traits: egg.traits, upgraded,
               speciesName: egg.speciesId ? getSpecies(egg.speciesId).name : null,
               remaining: readyRows.length - 1, eggId: egg.id, userId: i.user.id,
-            }));
+            });
+            // Cross-module mint: hatch:inc is handled in the HATCHERY module and
+            // ModuleRegistry.findComponent searches only enabled modules, so with
+            // "hatchery": false this row would be a control nothing answers. Pushed onto
+            // whatever the builder returned rather than assigned, so a future control added
+            // inside claimPayload survives this line.
+            if (ctx.config.modules.hatchery) (payload.components ??= []).push(incubateRow(i.user.id, egg.id));
+            await i.reply(payload);
           }
         } catch (e) {
           if (e instanceof BreedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash for that pairing.', flags: MessageFlags.Ephemeral });
+          // Backstop only: startBreeding pre-checks affordability OUTSIDE its transaction and
+          // throws a BreedError already carrying both numbers, so nothing the current code
+          // accepts reaches this arm. Rendered the same way as the reachable sites so it
+          // cannot rot into a different shape if that pre-check is ever relaxed.
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: `Not enough cash — this pairing ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
           else throw e;
         }
       },
@@ -217,9 +229,13 @@ export const geneLabModule: ModuleManifest = {
             // claimBreeding filters on (id, userId), so ownership is enforced server-side
             // exactly as it is for the slash command — the customId is never trusted.
             const { egg } = claimBreeding(ctx, i.user.id, id);
+            // Same cross-module gate as the slash reply above. A named local rather than an
+            // inline array so the mint decision is visible in a diff; no other task in this
+            // plan pushes onto this one, which is why the ternary is safe here.
+            const rows = ctx.config.modules.hatchery ? [incubateRow(i.user.id, egg.id)] : [];
             await i.update({
               content: `🧬 Claimed — a **${egg.rarity}** egg is yours. Incubate it with \`/incubate egg:${egg.id}\`.`,
-              embeds: [], components: [], attachments: [],
+              embeds: [], components: rows, attachments: [],
             });
           } catch (e) {
             if (e instanceof BreedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
@@ -241,7 +257,8 @@ export const geneLabModule: ModuleManifest = {
           await i.update({ content: '🧬 Pairing started — check `/breed status`.', embeds: [], components: [], attachments: [] });
         } catch (e) {
           if (e instanceof BreedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash for that pairing.', flags: MessageFlags.Ephemeral });
+          // Backstop only, same reason as /breed's arm above.
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: `Not enough cash — this pairing ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
           else throw e;
         }
       },
@@ -271,7 +288,7 @@ export const geneLabModule: ModuleManifest = {
           });
         } catch (e) {
           if (e instanceof BreedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough shards for that splice.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: `Not enough shards — this splice ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
           else throw e;
         }
       },

@@ -58,11 +58,16 @@ export function claimPayload(opts: {
   rarity: string; traits: string[]; upgraded: boolean;
   speciesName: string | null; remaining: number; eggId: number; userId: string;
 }): Payload {
+  const lead = opts.upgraded
+    ? `The pairing produced a **${rarityEmoji(opts.rarity)}${opts.rarity}** egg — an upgrade!`
+    : `The pairing produced a **${rarityEmoji(opts.rarity)}${opts.rarity}** egg.`;
   const embed = new EmbedBuilder().setColor(0x9b59b6)
     .setTitle('🧬 A new egg!')
-    .setDescription(opts.upgraded
-      ? `The pairing produced a **${rarityEmoji(opts.rarity)}${opts.rarity}** egg — an upgrade!`
-      : `The pairing produced a **${rarityEmoji(opts.rarity)}${opts.rarity}** egg.`)
+    // Names only the TYPED path. The Incubate button is minted by the CALLER, gated on the
+    // hatchery module being enabled, so a builder-side "the button below" would be false in
+    // exactly the configuration that gate exists for. This builder takes no Ctx and must not
+    // grow one just to read a flag.
+    .setDescription(`${lead}\nIncubate it with \`/incubate egg:${opts.eggId}\`.`)
     .addFields({ name: '🧬 Inherited traits', value: traitLines(opts.traits) });
   if (opts.speciesName) embed.addFields({ name: 'Species', value: `Pinned: ${opts.speciesName}`, inline: true });
   if (opts.remaining > 0) {

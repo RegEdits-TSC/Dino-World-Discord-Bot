@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags, EmbedBuilder, type AttachmentBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type AttachmentBuilder } from 'discord.js';
 import { and, eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
@@ -6,7 +6,7 @@ import type { Ctx } from '../../core/context.js';
 import { getOrCreateUser } from '../park/service.js';
 import { settleEscapes } from '../park/escapes.js';
 import { feedDino, feedAll, feedSkipReport, rescueDino, feedCostFor, CareError } from './service.js';
-import { InsufficientFundsError } from '../../core/economy.js';
+import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { hungerAt, drainMsFor } from '../../core/clock.js';
 import { getSpecies } from '../../data/species/index.js';
 import { FOODS, foodsForDiet, type FoodId } from '../../data/foods.js';
@@ -38,10 +38,29 @@ function carePayload(ctx: Ctx, userId: string, description: string) {
 
 // /rescue success carries the rescue banner; the two failure branches stay
 // content-only ephemerals (care.test.ts pins them via replyText).
-function rescuePayload(speciesName: string, fee: number) {
+//
+// A rescued dino comes back at roughly half comfort and drains from there, so feeding is the
+// next move and it ships as a control. ONE CLICK, NO CONFIRM: the park:feedall button on
+// /park view (src/modules/park/embeds.ts) has consumed food on a single click since it
+// shipped, and it is safe there because feedAll skips a dino already at 100. The handler on
+// the care component below reproduces that skip before it spends anything, which is what
+// makes the two genuinely equivalent — the confirm rule in this feature is scoped to CASH.
+//
+// This reply is PUBLIC, so the owner uid rides in the customId beside the dino id.
+function rescuePayload(speciesName: string, fee: number, userId: string, dinoId: number) {
   const embed = new EmbedBuilder().setTitle('🪝 Rescue').setColor(0x3ba55c)
     .setDescription(`Recaptured your ${speciesName} for ${fee.toLocaleString()} cash.`);
-  const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+  // A named local that is PUSHED onto, never an array assigned wholesale: the next task to
+  // add a row to this reply must be able to join it rather than rewrite this expression.
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(`care:feed:${userId}:${dinoId}`)
+      .setLabel('🍖 Feed it').setStyle(ButtonStyle.Success)));
+  const payload: {
+    embeds: EmbedBuilder[];
+    components: ActionRowBuilder<ButtonBuilder>[];
+    files?: AttachmentBuilder[];
+  } = { embeds: [embed], components: rows };
   attach(embed, payload, 'image', assetImage('banners', 'rescue'));
   return payload;
 }
@@ -81,7 +100,16 @@ export const careModule: ModuleManifest = {
           }
         } catch (e) {
           if (e instanceof CareError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: `${e.message} — buy more with /shop food.`, flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) {
+            // /feed spends only food, so this is always the food wallet — but the noun is
+            // derived from the error rather than assumed, because `wallet` is what decides
+            // whether shortfallLine says "need" or "costs" and the two must not disagree.
+            const what = e.foodId ? FOODS[e.foodId].name : e.wallet;
+            await i.reply({
+              content: `Not enough ${what} — ${shortfallLine(e)}. Buy more with /shop food.`,
+              flags: MessageFlags.Ephemeral,
+            });
+          }
           else throw e;
         }
       },
@@ -133,11 +161,12 @@ export const careModule: ModuleManifest = {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         settleEscapes(ctx, i.user.id);
         try {
-          const { species, fee } = rescueDino(ctx, i.user.id, i.options.getInteger('dino', true));
-          await i.reply(rescuePayload(species.name, fee));
+          const dinoId = i.options.getInteger('dino', true);
+          const { species, fee } = rescueDino(ctx, i.user.id, dinoId);
+          await i.reply(rescuePayload(species.name, fee, i.user.id, dinoId));
         } catch (e) {
           if (e instanceof CareError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash for the recapture fee.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({ content: `Not enough cash — that recapture ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
           else throw e;
         }
       },
@@ -152,5 +181,78 @@ export const careModule: ModuleManifest = {
           .map(({ d, species }) => ({ value: d.id, label: dinoLabel(d, species, now), valid: d.escapedAt !== null })));
       } },
   ],
-  components: [],
+  components: [
+    {
+      // The care module's first component prefix. It must be the FIRST customId segment and
+      // nothing more: findComponent resolves on customId.split(':')[0] (src/core/modules.ts),
+      // so 'care:feed' here would match nothing and this button would be dead in production
+      // while every direct-execute test still passed.
+      prefix: 'care',
+      async execute(ctx, i) {
+        const [, action, uid, dinoIdRaw] = i.customId.split(':');
+        // deferUpdate, never a bare return — a bare return paints "This interaction failed"
+        // after three seconds, and a stale id from an older deploy lands right here.
+        if (action !== 'feed') { await i.deferUpdate(); return; }
+        // The /rescue reply is a PUBLIC message. feedDino resolves against the CALLER, so a
+        // bystander spends nothing either way; without this they would simply be told they do
+        // not own a dino they never named. A message-quality layer, not the spend barrier.
+        if (i.user.id !== uid) { await i.reply({ content: 'Not your dino.', flags: MessageFlags.Ephemeral }); return; }
+        // No integer guard on the dino segment: Number('nonsense') is NaN, better-sqlite3
+        // binds NaN as a legal no-match, and both reads below therefore land on the same
+        // not-found arm that answers every other unowned id.
+        const dinoId = Number(dinoIdRaw);
+        // No getOrCreateUser: the uid was checked against the clicker and the id came off that
+        // player's own /rescue reply, so the row exists. settleEscapes matches what /feed one
+        // does, and it only ever stamps an escape — it never clears one.
+        settleEscapes(ctx, i.user.id);
+        // feedAll skips a dino already at 100 (its `.filter((c) => !c.escaped && c.hunger < 100)`
+        // in src/modules/care/service.ts); feedDino does NOT — its `wasHungry` gates only the
+        // dinos_fed stat, never the spend — so without this the second of two clicks landing
+        // before the repaint buys a second full meal for a dino that is already full. THIS is
+        // what makes "the same as Feed all" a true statement, and it is the reason this button
+        // ships with no confirm. Do not remove it, and do not "fix" a double charge later by
+        // adding a confirm to this button alone.
+        const dino = ctx.db.select().from(schema.dinos)
+          .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, i.user.id))).get();
+        if (dino && dino.escapedAt === null
+            && hungerAt(dino.hunger, dino.lastFedAt, ctx.now(), drainMsFor(dino.traits)) >= 100) {
+          await i.update({
+            ...carePayload(ctx, i.user.id, `Your ${getSpecies(dino.speciesId).name} is already full.`),
+            content: '', components: [], attachments: [],
+          });
+          return;
+        }
+        try {
+          // No food id, so feedDino auto-picks the cheapest affordable stack and, when there is
+          // none, throws a CareError that already names the cost and what is held.
+          const { species, food, cost } = feedDino(ctx, i.user.id, dinoId);
+          await i.update({
+            ...carePayload(ctx, i.user.id, `Fed your ${species.name} (−${cost} ${food.name}).`),
+            // content: '' because discord.js drops an OMITTED content key and Discord then
+            // leaves the message's existing content in place. components: [] strips the spent
+            // one-shot button — neither router guard reads `disabled`, so a disabled button is
+            // not a lock. attachments: [] because this update replaces a message already
+            // carrying rescue.webp, which would otherwise strand as an orphan attachment card
+            // beside the care banner.
+            content: '', components: [], attachments: [],
+          });
+        } catch (e) {
+          if (e instanceof CareError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) {
+            // Backstop only, and deliberately uncovered: this call passes no food id, so
+            // feedDino routes through pickFood, which refuses an unaffordable stack with a
+            // CareError BEFORE economy.apply is reached — apply cannot overdraw a stack
+            // pickFood already proved sufficient. It still renders through shortfallLine, in
+            // the same shape the /feed one arm uses, so the §5.1 sweep holds if that changes.
+            const what = e.foodId ? FOODS[e.foodId].name : e.wallet;
+            await i.reply({
+              content: `Not enough ${what} — ${shortfallLine(e)}. Buy more with /shop food.`,
+              flags: MessageFlags.Ephemeral,
+            });
+          }
+          else throw e;
+        }
+      },
+    },
+  ],
 };

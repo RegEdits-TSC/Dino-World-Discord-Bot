@@ -1,11 +1,11 @@
-import { SlashCommandBuilder, MessageFlags, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import type { AttachmentBuilder } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { getOrCreateUser } from '../park/service.js';
 import { startExpedition, claimExpedition, activeExpedition, expeditionFeeFor, ExpeditionError } from './service.js';
 import { EXPEDITION_SITES } from '../../data/sites.js';
-import { InsufficientFundsError } from '../../core/economy.js';
+import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { schema } from '../../core/db/index.js';
 import { siteUnlocked } from '../park/rating.js';
 import { FOODS } from '../../data/foods.js';
@@ -14,6 +14,7 @@ import { assetImage, attach } from '../../core/images.js';
 import { emojiTag, rarityEmoji } from '../../core/emojis.js';
 import { eventMods } from '../../core/world.js';
 import { eventHeaderLine } from '../world/embeds.js';
+import { incubateRow } from '../hatchery/embeds.js';
 
 // '🌋 ' when the site marker resolves, '' when it doesn't — keeps titles clean either way.
 function siteMarker(siteId: string): string {
@@ -58,6 +59,26 @@ function sitePayload(siteId: string, description: string) {
   const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
   attach(embed, payload, 'thumbnail', assetImage('sites', `${siteId}-thumb`));
   return payload;
+}
+
+/**
+ * The Dig again control, minted onto both surfaces that END an expedition: the
+ * /expedition claim reply and the exp:claim button's own update. Both are PUBLIC messages,
+ * so the owner id rides in the customId and the handler rejects a mismatch before the
+ * service call — startExpedition resolves against the CALLER, so a bystander's click would
+ * silently dispatch their own crew rather than be refused.
+ *
+ * Unicode in the LABEL, never setEmoji: emojiTag returns '' when no emoji map is loaded and
+ * ButtonBuilder#setEmoji throws on that rather than degrading.
+ *
+ * No price in this id, deliberately. The fee moves with the world event at every UTC
+ * midnight and a public message is durable — the price is quoted, and baked into an id,
+ * only on the ephemeral confirm card this button opens (Task 20 (G7-B)).
+ */
+export function digAgainRow(userId: string, siteId: string): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(`exp:again:${userId}:${siteId}`)
+      .setLabel('🧭 Dig again').setStyle(ButtonStyle.Primary));
 }
 
 export const expeditionsModule: ModuleManifest = {
@@ -108,16 +129,30 @@ export const expeditionsModule: ModuleManifest = {
               ? '✅ Back! Use /expedition claim.'
               : `⏳ Digging — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.`));
           } else {
-            const { loot, site } = claimExpedition(ctx, i.user.id);
+            const { loot, site, egg } = claimExpedition(ctx, i.user.id);
             // See EXPEDITION_CLAIM_HEADER_KEYS above for why this header is
             // safe here and must never move to /expedition status.
             const header = eventHeaderLine(ctx.now(), EXPEDITION_CLAIM_HEADER_KEYS);
             const embed = new EmbedBuilder().setColor(0xe8590c).setTitle(`🧭 ${siteMarker(site.id)}${site.name} — returned!`)
-              .setDescription(`${header}\n\nFound a **${rarityEmoji(loot.eggRarity)}${loot.eggRarity}** egg!`)
+              .setDescription(`${header}\n\nFound a **${rarityEmoji(loot.eggRarity)}${loot.eggRarity}** egg (#${egg.id})!\nIncubate it with \`/incubate egg:${egg.id}\`.`)
               .addFields(
                 { name: `${emojiTag('dw_cash')} Cash`, value: `+${loot.cash}`, inline: true },
                 { name: `${emojiTag(FOODS[loot.food.foodId].emoji)} ${FOODS[loot.food.foodId].name}`, value: `+${loot.food.qty}`, inline: true });
-            const payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+            // components starts EMPTY and is PUSHED into. Spec §3 gives this surface two
+            // controls from two separate tasks; assigning the array wholesale would make
+            // whichever lands second silently delete the other's button, with nothing failing.
+            const payload: {
+              embeds: EmbedBuilder[];
+              components: ActionRowBuilder<ButtonBuilder>[];
+              files?: AttachmentBuilder[];
+            } = { embeds: [embed], components: [] };
+            payload.components.push(digAgainRow(i.user.id, site.id));
+            // Cross-module mint, and PUSHED, never assigned. hatch:inc is handled in the
+            // HATCHERY module, and ModuleRegistry.findComponent searches only enabled modules
+            // (src/core/modules.ts), so with "hatchery": false in modules.json this button
+            // would be a dead control on a public message — a click nothing answers at all.
+            // Task 19 (G7-A) owns digAgainRow on this same array; assigning it would delete that.
+            if (ctx.config.modules.hatchery) payload.components.push(incubateRow(i.user.id, egg.id));
             // i.user.id seeds the banner — the viewer, same rule as every other banner call.
             attach(embed, payload, 'image', assetImage('sites', `${site.id}-banner`, i.user.id));
             attach(embed, payload, 'thumbnail', assetImage('sites', `${site.id}-thumb`));
@@ -125,7 +160,15 @@ export const expeditionsModule: ModuleManifest = {
           }
         } catch (e) {
           if (e instanceof ExpeditionError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash for that expedition.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) {
+            // Only `start` charges — claimExpedition credits and nothing else — but the site
+            // option is read behind the `sub` check rather than unconditionally, because
+            // getString('site', true) THROWS on a subcommand that does not declare it.
+            const what = sub === 'start'
+              ? EXPEDITION_SITES[i.options.getString('site', true)].name
+              : 'that expedition';
+            await i.reply({ content: `Not enough cash — ${what} ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
+          }
           else throw e;
         }
       } },
@@ -134,30 +177,107 @@ export const expeditionsModule: ModuleManifest = {
     {
       prefix: 'exp',
       async execute(ctx, i) {
-        const [, action, uid] = i.customId.split(':');
-        if (action !== 'claim') { await i.deferUpdate(); return; }
-        // The notification is a DM today, but a customId is client-supplied and this
-        // handler is reachable from anywhere — check the owner explicitly. Unlike
-        // breed:claim, which lets claimBreeding's own (id, userId) filter reject a
-        // bystander for free (the breeding id in the customId belongs to someone
-        // else, so the lookup just fails), claimExpedition takes no id at all — it
-        // always resolves the CALLER's own active dig. Without this check, a
-        // bystander clicking someone else's notification would silently claim
-        // their OWN unrelated expedition rather than being rejected, so the
-        // ownership check has to happen here, explicitly, before the service call.
+        const parts = i.customId.split(':');
+        const [, action, uid] = parts;
+        // Unknown action FIRST, and it must acknowledge: a bare return paints "This
+        // interaction failed" after three seconds, and a stale id from an older deploy lands
+        // exactly here. The ordering is pinned by tests/alert-buttons.test.ts's 'exp defers
+        // before the owner check on an unknown action, even with a mismatched uid'. Any
+        // future exp action needs its own arm below or it lands here silently.
+        if (action !== 'claim' && action !== 'again' && action !== 'againyes') {
+          await i.deferUpdate();
+          return;
+        }
+        // Shared by all three arms. A customId is client-supplied and this handler is
+        // reachable from anywhere; both services behind it resolve against the CALLER —
+        // claimExpedition takes no id at all, and startExpedition dispatches the clicker's
+        // own crew — so without this check a bystander clicking someone else's public card
+        // would silently act on their OWN park rather than being refused.
         if (i.user.id !== uid) {
           await i.reply({ content: 'That is not your expedition.', flags: MessageFlags.Ephemeral });
           return;
         }
+        if (action === 'claim') {
+          try {
+            const { loot, site, egg } = claimExpedition(ctx, i.user.id);
+            // ONE named local, PUSHED into, never assigned: spec §3 puts two controls on this
+            // message and an assignment would silently delete whichever one it did not name.
+            const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+            rows.push(digAgainRow(i.user.id, site.id));
+            // Cross-module mint. hatch:inc is handled in the HATCHERY module and
+            // ModuleRegistry.findComponent searches only ENABLED modules (src/core/modules.ts),
+            // so with "hatchery": false in modules.json this button would be a dead control on
+            // a durable public message — a click nothing answers at all.
+            if (ctx.config.modules.hatchery) rows.push(incubateRow(i.user.id, egg.id));
+            await i.update({
+              content: `🧭 **${site.name}** claimed — a **${loot.eggRarity}** egg, **${loot.cash}** cash, and **${loot.food.qty}× ${FOODS[loot.food.foodId].name}**.`,
+              embeds: [], components: rows, attachments: [],
+            });
+          } catch (e) {
+            if (e instanceof ExpeditionError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+            else throw e;
+          }
+          return;
+        }
+        const siteId = parts[3];
+        // Object.hasOwn, never a truthiness test: EXPEDITION_SITES is a plain object literal
+        // (src/data/sites.ts), so EXPEDITION_SITES['constructor'] reads back truthy through
+        // Object.prototype with an undefined .cost, and the card would quote "undefined for
+        // NaN cash" off a segment the client chose. A truncated id has no fourth segment at
+        // all; hasOwn coerces that undefined to the string 'undefined', which is not a site.
+        if (!Object.hasOwn(EXPEDITION_SITES, siteId)) { await i.deferUpdate(); return; }
+        const site = EXPEDITION_SITES[siteId];
+        const now = ctx.now();
+        // ONE expression, both arms: the price the card QUOTES and the price the confirm
+        // RECHECKS are the same call, so they cannot drift apart.
+        const price = expeditionFeeFor(site.cost, eventMods(now).expeditionFee);
+        if (action === 'again') {
+          const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder().setCustomId(`exp:againyes:${i.user.id}:${siteId}:${price}`)
+              .setLabel(`Dig — ${price.toLocaleString('en-US')} cash`).setStyle(ButtonStyle.Success));
+          await i.reply({
+            // EXPEDITION_START_HEADER_KEYS, not the claim keys: this card is about to LOCK IN
+            // a duration and a fee, which is exactly what those two keys cover, and it is what
+            // tells a player why an Amber Storm doubled the number in front of them.
+            content: `${eventHeaderLine(now, EXPEDITION_START_HEADER_KEYS)}\n\nSend a crew back to **${site.name}** for **${price.toLocaleString('en-US')}** cash?`,
+            components: [row],
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        const quoted = Number(parts[4]);
+        if (!Number.isInteger(quoted)) { await i.deferUpdate(); return; }
+        // The whole point of the segment. An expedition fee moves with the world event at
+        // every UTC midnight, so a confirm card left open across one would charge today's
+        // price under yesterday's label. Refusing is the PURPOSE of the segment, not a
+        // nicety — the repaint below is a second layer only, because any OTHER open card
+        // still holds a button minted at the old price.
+        if (price !== quoted) {
+          await i.reply({
+            content: `${site.name} costs ${price.toLocaleString('en-US')} cash now, not ${quoted.toLocaleString('en-US')} — open the Dig again card for the current price.`,
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
         try {
-          const { loot, site } = claimExpedition(ctx, i.user.id);
+          // startExpedition is what makes a second click of this same confirm harmless: it
+          // refuses while a dig is out. There is no idempotency key here and none is needed.
+          const exp = startExpedition(ctx, i.user.id, siteId, i.guildId);
           await i.update({
-            content: `🧭 **${site.name}** claimed — a **${loot.eggRarity}** egg, **${loot.cash}** cash, and **${loot.food.qty}× ${FOODS[loot.food.foodId].name}**.`,
+            content: `🧭 Crew dispatched to **${site.name}** — back <t:${Math.floor(exp.returnsAt / 1000)}:R>.`,
             embeds: [], components: [], attachments: [],
           });
         } catch (e) {
           if (e instanceof ExpeditionError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else throw e;
+          else if (e instanceof InsufficientFundsError) {
+            // A site is a proper place name, so no article — the same clause /expedition
+            // start renders (Task 3 (G1-C)), and the numbers come off the error rather than
+            // being re-derived here.
+            await i.reply({
+              content: `Not enough cash — ${site.name} ${shortfallLine(e)}.`,
+              flags: MessageFlags.Ephemeral,
+            });
+          } else throw e;
         }
       },
     },

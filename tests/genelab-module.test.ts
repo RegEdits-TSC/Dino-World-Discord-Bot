@@ -459,3 +459,22 @@ describe('/splice', () => {
     expect(replyText(i.replies[0])).toMatch(/shards/i);
   });
 });
+
+describe('splice:confirm insufficiency', () => {
+  it('quotes the splice cost and the shard balance', async () => {
+    const ctx = makeCtx();
+    getOrCreateUser(ctx, 'u1', 'u1');
+    const dino = ctx.db.insert(schema.dinos)
+      .values({ userId: 'u1', speciesId: 'triceratops', hunger: 100, lastFedAt: 0, hatchedAt: 0, traits: [] })
+      .returning().get();
+    ctx.db.update(schema.users).set({ shards: 3 }).where(eq(schema.users.discordId, 'u1')).run();
+    const b = fakeButton({ customId: `splice:confirm:${dino.id}:0`, user: 'u1' });
+    await spliceBtn.execute(ctx, b.asChatInput() as never);
+    // Class 1: SPLICE_SHARD_COST is the flat literal 15 in src/data/breeding.ts. Pinned as a
+    // literal on purpose — SPLICE_SHARD_COST is imported by this file but deliberately not
+    // interpolated, so a silent change to the constant fails here instead of passing.
+    expect(replyText(b.replies[0]))
+      .toBe('Not enough shards — this splice costs 15, you have 3 (12 short).');
+    expect(ctx.db.select().from(schema.users).where(eq(schema.users.discordId, 'u1')).get()!.shards).toBe(3);
+  });
+});

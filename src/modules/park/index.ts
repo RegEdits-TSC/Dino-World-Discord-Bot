@@ -2,17 +2,17 @@ import { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, Butt
 import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
-import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, StaleLevelError, toClockDinos, needsAttentionCount } from './service.js';
+import { getOrCreateUser, buildLot, upgradeLot, upgradeCostFor, maxLevelFor, collectIncome, pendingIncome, capHours, LotLimitError, UnknownKindError, DuplicateFacilityError, StaleLevelError, toClockDinos, needsAttentionCount, type User, type Lot } from './service.js';
 import { feedAll, feedSkipReport } from '../care/service.js';
 import { settleEscapes } from './escapes.js';
-import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, AssignError, DietMismatchError, renameDino } from './dinos.js';
-import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, confirmPayload, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
+import { assignDino, unassignDino, decorateLot, listDinos, paddockCapacity, eligiblePaddocks, assignableDinosFor, PADDOCK_FULL, DINO_ESCAPED, AssignError, DietMismatchError, renameDino } from './dinos.js';
+import { dashboardPayload, animalsPayload, lotsPayload, prestigePayload, confirmPayload, assignSelectRow, buildDinoRow, buildDinoSelectRow, withParkImage, landmarkPayload, isParkTab, type ParkTab } from './embeds.js';
 import { guestsPayload } from '../guests/embeds.js';
 import { visitPayload, nextParkRow } from './visit.js';
 import { bumpLegacyBest, legacyRank } from './ranks.js';
 import { buildParkSnapshot } from './snapshot.js';
 import { renderPark } from '../../core/render/client.js';
-import { InsufficientFundsError } from '../../core/economy.js';
+import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { buyLandmark, nextLandmark, landmarkTierOf, LandmarkMaxedError } from './landmarks.js';
 import { landmarkFor, MAX_LANDMARK_TIER } from '../../data/landmarks.js';
 import { setMotto, setFeaturedDino, featuredFor, ShowcaseError } from './showcase.js';
@@ -33,8 +33,8 @@ import { submittedValuesAreOnMessage } from '../../core/components.js';
 import { attendanceOf } from './attendance.js';
 import { earnedTierCount } from '../daily/service.js';
 import { seasonBadges } from '../daily/season.js';
-import { lotSlots } from '../../data/progression.js';
-import type { AttachmentBuilder, ButtonInteraction } from 'discord.js';
+import { lotSlots, nextLotSlot } from '../../data/progression.js';
+import type { AttachmentBuilder, ButtonInteraction, MessageComponentInteraction } from 'discord.js';
 
 const kindChoices = [...Object.keys(PADDOCKS), ...Object.keys(FACILITIES)]
   .map((k) => ({ name: k.replaceAll('_', ' '), value: k }));
@@ -92,6 +92,136 @@ function dinoListPayload(ctx: Ctx, userId: string, page: number) {
     { embeds: [embed], components: pages > 1 ? [pageRow('park', 'dinos', userId, p, pages)] : [] };
   attach(embed, payload, 'image', assetImage('banners', 'dino_roster', userId));
   return payload;
+}
+
+/**
+ * The slot-cap sentence for a LotLimitError thrown by `buildLot`. `upgradeLot` throws the SAME
+ * class to mean "already at max level" — see `maxLevelLine` and §per-menu-error-mapping — so a
+ * shared mapping here would tell a player "All lots full" when they meant the other thing.
+ *
+ * Both ratings are named on purpose. The gate reads `ratingHighWater`, which is monotone,
+ * while `parkRating` is live and falls as comfort decays; a player whose live rating has
+ * dipped below their best would otherwise read this as the gate having moved under them.
+ *
+ * Reads the row and the count itself rather than taking them as parameters: it runs on an
+ * error path only, after the transaction has already rolled back, and the two call sites hold
+ * different subsets of what it needs. The `!` is sound because buildLot reads that row and
+ * dereferences `user.ratingHighWater` on the line immediately above its throw — an absent row
+ * would have crashed there with a TypeError, so reaching this line proves it exists.
+ */
+function lotSlotCapLine(ctx: Ctx, userId: string): string {
+  const user = ctx.db.select().from(schema.users)
+    .where(eq(schema.users.discordId, userId)).get()!;
+  const lots = ctx.db.select().from(schema.lots)
+    .where(eq(schema.lots.userId, userId)).all().length;
+  const head = `All lots full (${lots}/${lotSlots(user.ratingHighWater)})`;
+  const next = nextLotSlot(user.ratingHighWater);
+  if (!next) return `${head} — every slot is unlocked.`;
+  return `${head}. Slot ${next.slot} unlocks at ★${(next.threshold / 100).toFixed(1)}`
+    + ` — you're at ★${(user.parkRating / 100).toFixed(1)} (best ★${(user.ratingHighWater / 100).toFixed(1)}).`;
+}
+
+/**
+ * The already-at-max-level sentence for a LotLimitError thrown by `upgradeLot`. The build
+ * handler reads the same class as "slot cap" — see `lotSlotCapLine`.
+ *
+ * The cap comes from maxLevelFor, the same resolver upgradeLot uses to decide whether to
+ * throw, and never from a literal: a paddock caps at 4, gene_lab and food_court at 3,
+ * visitor_center and hatchery_lab at 5, so any one number written here would be wrong for
+ * most lots. The capacity then follows FROM that number through paddockCapacity rather than
+ * being written down beside it, so a change to the paddock cap moves both halves together.
+ */
+function maxLevelLine(kind: string): string {
+  const max = maxLevelFor(kind);
+  const def = FACILITIES[kind];
+  if (def) return `Already max level (${max}) — the ${def.name} is fully upgraded.`;
+  return `Already max level (${max}) — that paddock holds ${paddockCapacity(max)}.`;
+}
+
+// The Upgrade menu's stale-anchor wording, minus its "for current prices" tail: an assign
+// moves no money, and pointing a player at prices they never asked about reads as a
+// different bug. The stem is identical on purpose — it is the same class of failure, an id
+// naming a lot that no longer answers for what its label promised.
+const STALE_ASSIGN = 'That lot changed — open `/park view` again.';
+
+// The AssignError texts a follow-through clicker reads VERBATIM. Everything else assignDino
+// can raise ('You do not own that dino.', 'You do not own that lot.', 'Dinos can only go in
+// paddocks.') describes an id that should never have been clickable, and those become
+// STALE_ASSIGN.
+//
+// This Set IS the room re-check. There is no second occupancy read before the call: one
+// would answer with the same sentence a layer earlier and could never be watched failing.
+// Emptying this Set is what makes the full-paddock and escaped-dino cases go red — see the
+// break step in this task.
+const PASS_THROUGH = new Set<string>([PADDOCK_FULL, DINO_ESCAPED]);
+
+/**
+ * The refusal a follow-through assign control owes for this dino, or null when it may
+ * proceed. ONE rule, and it is the one rule nothing else in this feature provides.
+ *
+ * assignDino relocates a dino perfectly happily, and `park:assign:<uid>:<dinoId>:<lotId>`
+ * sits on a PUBLIC hatch reveal that is never repainted. Without this: hatch, click
+ * "Assign to #1", later run `/dino assign dino:… lot:3`, scroll up, click the old button —
+ * and the dino is silently dragged back to lot 1, with a different decor set, a different
+ * level, and a different comfort, income and rating behind it. The router's
+ * clickedIdIsOnMessage closes CROSS-message anchoring only and says nothing about this.
+ * So the follow-through is a FIRST-HOME control: it gives a brand-new dino its first
+ * paddock and refuses thereafter. Moving a dino that already has one is `/dino assign`'s job.
+ *
+ * A dino this caller does not own, or a junk id, deliberately falls through as `null`:
+ * assignDino refuses both and the catch turns them into STALE_ASSIGN. An arm here would
+ * produce the identical sentence one layer earlier and could never be watched failing.
+ *
+ * Synchronous by design: the caller's read and its write must have no suspension point
+ * between them, and an async helper here would put an `await` inside that pair.
+ */
+function assignRefusal(ctx: Ctx, userId: string, dinoId: number): string | null {
+  const dino = ctx.db.select().from(schema.dinos)
+    .where(and(eq(schema.dinos.id, dinoId), eq(schema.dinos.userId, userId))).get();
+  if (dino && dino.lotId !== null) return `Already assigned to lot #${dino.lotId}.`;
+  return null;
+}
+
+/**
+ * The one place a follow-through assign control turns a (dinoId, lotId) pair into an
+ * assignment, shared by the park:assign button and the park:assignsel menu so the two
+ * cannot validate differently.
+ *
+ * assignDino IS THE AUTHORITY, and the catch below is the whole of this handler's contract
+ * with it: PASS_THROUGH decides which of its refusals a player reads as written and which
+ * collapse to staleness. Nothing is re-checked ahead of the call except the first-home rule,
+ * which assignDino has no opinion about.
+ *
+ * No `await` sits between assignRefusal's read and assignDino's write, deliberately:
+ * better-sqlite3 is synchronous and the absence of a suspension point is what makes that
+ * pair atomic.
+ */
+async function assignFollowThrough(
+  ctx: Ctx, i: MessageComponentInteraction, dinoId: number, lotId: number,
+): Promise<void> {
+  settleEscapes(ctx, i.user.id);
+  const refusal = assignRefusal(ctx, i.user.id, dinoId);
+  if (refusal !== null) { await i.reply({ content: refusal, flags: MessageFlags.Ephemeral }); return; }
+  try {
+    assignDino(ctx, i.user.id, dinoId, lotId);
+  } catch (e) {
+    // DietMismatchError is a SEPARATE class, not an AssignError subclass, so it needs its
+    // own arm. It always means a forged id: the mint side never offers an off-diet paddock,
+    // and the "Assign anyway" confirm lives on /dino assign alone.
+    if (e instanceof DietMismatchError) {
+      await i.reply({ content: STALE_ASSIGN, flags: MessageFlags.Ephemeral });
+      return;
+    }
+    if (e instanceof AssignError) {
+      await i.reply({
+        content: PASS_THROUGH.has(e.message) ? e.message : STALE_ASSIGN,
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    throw e;
+  }
+  await i.reply({ content: `🦕 Assigned to lot #${lotId}.`, flags: MessageFlags.Ephemeral });
 }
 
 export const parkModule: ModuleManifest = {
@@ -241,14 +371,30 @@ export const parkModule: ModuleManifest = {
           .addChoices(...kindChoices)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        // Hoisted out of the call below because the InsufficientFundsError arm in the catch
+        // dereferences it to name the building. Do NOT re-inline this read: the catch stops
+        // compiling (TS2304) and the reply loses the name the message is supposed to carry.
+        // buildLot's own Object.hasOwn check runs first, so by the time that arm is reached
+        // `kind` is a real key of PADDOCKS or FACILITIES.
+        const kind = i.options.getString('kind', true);
         try {
-          const lot = buildLot(ctx, i.user.id, i.options.getString('kind', true));
-          const hint = lot.type === 'paddock' ? ' Assign a dino with /dino assign to start earning.' : '';
-          await i.reply({ content: `🏗️ Built **${lot.name}** (lot #${lot.id}).${hint}` });
+          const lot = buildLot(ctx, i.user.id, kind);
+          // A paddock earns nothing until a dino lives in it, so the next step ships as a
+          // control instead of a sentence naming a command to type.
+          //
+          // A named local that is PUSHED onto, never an array assigned wholesale: this reply
+          // carries no other row today, and the next task to add one must be able to join it
+          // rather than having to rewrite this expression.
+          const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+          if (lot.type === 'paddock') rows.push(buildDinoRow(i.user.id, lot.id));
+          await i.reply({ content: `🏗️ Built **${lot.name}** (lot #${lot.id}).`, components: rows });
         } catch (e) {
           if (e instanceof DuplicateFacilityError) await i.reply({ content: `You already have a ${e.message} — upgrade it instead.`, flags: MessageFlags.Ephemeral });
-          else if (e instanceof LotLimitError) await i.reply({ content: 'All lots full. More slots unlock with park rating.', flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof LotLimitError) await i.reply({ content: lotSlotCapLine(ctx, i.user.id), flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) {
+            const def = PADDOCKS[kind] ?? FACILITIES[kind]!;
+            await i.reply({ content: `Not enough cash — the ${def.name} ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
+          }
           else throw e;
         }
       },
@@ -259,9 +405,10 @@ export const parkModule: ModuleManifest = {
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
         const lotId = i.options.getInteger('lot', true);
-        // Hoisted so the InsufficientFundsError branch below can quote the price: upgradeLot
-        // does the same lookup internally, so this is one cheap extra read, not a second
-        // source of truth for the cost (upgradeCostFor stays the only place that computes it).
+        // Hoisted for upgradeLot's expectedLevel argument below, NOT for the price: the price
+        // now comes off the error the guard threw, so upgradeCostFor is no longer called on
+        // this path at all. It is still used by this command's autocomplete, by the Lots-tab
+        // upgrade select and by its confirm label — `grep -n "upgradeCostFor" src/modules/park/index.ts`.
         const lotRow = ctx.db.select().from(schema.lots)
           .where(and(eq(schema.lots.id, lotId), eq(schema.lots.userId, i.user.id))).get();
         try {
@@ -272,10 +419,10 @@ export const parkModule: ModuleManifest = {
           const lot = upgradeLot(ctx, i.user.id, lotId, lotRow?.level ?? -1);
           await i.reply({ content: `⬆️ **${lot.name}** is now level ${lot.level}.` });
         } catch (e) {
-          if (e instanceof LotLimitError) await i.reply({ content: 'Already max level.', flags: MessageFlags.Ephemeral });
+          if (e instanceof LotLimitError) await i.reply({ content: maxLevelLine(lotRow!.kind), flags: MessageFlags.Ephemeral });
           else if (e instanceof UnknownKindError) await i.reply({ content: 'No such lot.', flags: MessageFlags.Ephemeral });
           else if (e instanceof InsufficientFundsError) await i.reply({
-            content: `Not enough cash — that upgrade costs ${upgradeCostFor(lotRow!.kind, lotRow!.level).toLocaleString('en-US')}.`,
+            content: `Not enough cash — that upgrade ${shortfallLine(e)}.`,
             flags: MessageFlags.Ephemeral,
           });
           else if (e instanceof StaleLevelError) await i.reply({
@@ -295,7 +442,7 @@ export const parkModule: ModuleManifest = {
         await respondRanked(i, lots
           .filter((l) => matches(q, l.id, l.name))
           .map((l) => {
-            const maxLevel = FACILITIES[l.kind]?.maxLevel ?? 4;
+            const maxLevel = maxLevelFor(l.kind);
             const valid = l.level < maxLevel;
             const price = valid ? ` — ${upgradeCostFor(l.kind, l.level).toLocaleString('en-US')} cash` : '';
             return { value: l.id, valid, label: `🏗️ #${l.id} ${l.name} (lvl ${l.level})${valid ? price : ' — MAX LEVEL'}` };
@@ -389,12 +536,19 @@ export const parkModule: ModuleManifest = {
         .addStringOption((o) => o.setName('item').setDescription('Decoration — type to search').setRequired(true).setAutocomplete(true)),
       async execute(ctx, i) {
         getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        // Hoisted so the InsufficientFundsError arm can name the decoration, same rule as
+        // /build's `kind`. decorateLot throws AssignError('Unknown decoration.') for a kind
+        // absent from DECOR and that arm is checked first, so `item` is a real key here.
+        const item = i.options.getString('item', true);
         try {
-          decorateLot(ctx, i.user.id, i.options.getInteger('lot', true), i.options.getString('item', true));
+          decorateLot(ctx, i.user.id, i.options.getInteger('lot', true), item);
           await i.reply({ content: '🌴 Decoration added.' });
         } catch (e) {
           if (e instanceof AssignError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) await i.reply({
+            content: `Not enough cash — the ${DECOR[item].name} ${shortfallLine(e)}.`,
+            flags: MessageFlags.Ephemeral,
+          });
           else throw e;
         }
       },
@@ -493,6 +647,35 @@ export const parkModule: ModuleManifest = {
           ));
           return;
         }
+        if (action === 'builddinosel') {
+          // The MIRROR of assignsel directly above: there the dino is fixed in the id and a
+          // value is a lot; here the LOT is fixed in the id and a value is a DINO. Swapping
+          // the two arguments below compiles cleanly and silently assigns the wrong pair, so
+          // read them once more before you move on.
+          //
+          // Re-split rather than widening the shared destructure at the top of this handler:
+          // the lot id sits at index 3, where the build and upgrade menus carry nothing, and
+          // every other branch here is untouched by this addition.
+          //
+          // No integer guard, and no second copy of the validation: assignFollowThrough owns
+          // the first-home rule, the lot-identity check and the write, exactly as it does for
+          // park:assign and park:assignsel — one write path, so the button and both menus
+          // cannot validate differently. It replies ephemerally rather than updating: this
+          // chooser is already an ephemeral of its own, and the shared path must stay safe for
+          // the button, which can sit on a public message.
+          await assignFollowThrough(ctx, i, Number(value), Number(i.customId.split(':')[3]));
+          return;
+        }
+        if (action === 'assignsel') {
+          // The router proved both halves centrally (clickedIdIsOnMessage, then
+          // submittedValuesAreOnMessage), and the owner check at the top of this handler
+          // proved the clicker. What is left is DOMAIN validity, which no guard can give
+          // us: the first-home rule, and whether that lot is still a diet-matching paddock
+          // with room. Both live in assignFollowThrough, which park:assign shares — the
+          // two paths cannot answer the same question differently.
+          await assignFollowThrough(ctx, i, Number(i.customId.split(':')[3]), Number(value));
+          return;
+        }
         await i.deferUpdate();
       },
     },
@@ -538,6 +721,42 @@ export const parkModule: ModuleManifest = {
               if (e instanceof AssignError) await i.update({ content: e.message, components: [] });
               else throw e;
             }
+            return;
+          }
+          case 'assign': {
+            // park:assign:<uid>:<dinoId>:<lotId> — minted where exactly one paddock was
+            // eligible. This owner check is a MESSAGE-QUALITY layer, not the write barrier:
+            // assignRefusal and assignDino both resolve the dino against the CLICKER, so a
+            // bystander is already refused one level down. What it buys is that the
+            // bystander is told "not yours" instead of a staleness line that would
+            // misdescribe what happened.
+            if (i.user.id !== uid) { await i.reply({ content: 'Not your assignment.', flags: MessageFlags.Ephemeral }); return; }
+            await assignFollowThrough(ctx, i, Number(parts[3]), Number(parts[4]));
+            return;
+          }
+          case 'assignpick': {
+            // park:assignpick:<uid>:<dinoId> — the menu's options are derived HERE, at click
+            // time, and never carried in the id: this button may have been minted an hour ago.
+            if (i.user.id !== uid) { await i.reply({ content: 'Not your assignment.', flags: MessageFlags.Ephemeral }); return; }
+            const pickDinoId = Number(parts[3]);
+            settleEscapes(ctx, i.user.id);
+            // Same first-home rule the write path applies, checked before the menu opens so
+            // an already-housed dino is told so once rather than after a pointless pick.
+            const pickRefusal = assignRefusal(ctx, i.user.id, pickDinoId);
+            if (pickRefusal !== null) { await i.reply({ content: pickRefusal, flags: MessageFlags.Ephemeral }); return; }
+            const eligible = eligiblePaddocks(ctx, i.user.id, pickDinoId);
+            // NEVER fall through to assignSelectRow with an empty list: a zero-option select
+            // is rejected outright, which would turn a legible refusal into the router's
+            // generic failure line. This also covers a forged or junk dinoId, which
+            // eligiblePaddocks answers with [].
+            if (eligible.length === 0) { await i.reply({ content: STALE_ASSIGN, flags: MessageFlags.Ephemeral }); return; }
+            // Ephemeral, never i.update: this button can sit on a PUBLIC hatch reveal, and
+            // rewriting somebody's reveal card into a private chooser is the wrong trade.
+            await i.reply({
+              content: 'Which paddock?',
+              components: [assignSelectRow(i.user.id, pickDinoId, eligible)],
+              flags: MessageFlags.Ephemeral,
+            });
             return;
           }
           case 'dinos': {
@@ -630,7 +849,7 @@ export const parkModule: ModuleManifest = {
               if (e instanceof LandmarkMaxedError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
               else if (e instanceof InsufficientFundsError) {
                 await i.reply({
-                  content: `Not enough cash — the ${rung.name} costs ${rung.cost.toLocaleString('en-US')}.`,
+                  content: `Not enough cash — the ${rung.name} ${shortfallLine(e)}.`,
                   flags: MessageFlags.Ephemeral,
                 });
               } else throw e;
@@ -703,6 +922,31 @@ export const parkModule: ModuleManifest = {
               await i.reply({ ...dinoListPayload(ctx, i.user.id, 1), flags: MessageFlags.Ephemeral });
               return;
             }
+            if (target === 'lots') {
+              // The landing for assignRow's third shape, "🏗️ Build a paddock", minted on
+              // the hatch reveal when nothing is eligible. Ephemeral exactly like the
+              // landmark/guests/roster targets beside it: that button can sit on a PUBLIC
+              // reveal card, and an i.update would rewrite somebody's card into a private
+              // build screen.
+              const ownLots = ctx.db.select().from(schema.lots)
+                .where(eq(schema.lots.userId, i.user.id)).all();
+              const built = lotsTab(fresh, ownLots, false);
+              // Unlike landmarkPayload/guestsPayload/dinoListPayload, lotsPayload appends a
+              // tab row on EVERY call, so this one has to be stripped rather than merely not
+              // added. A decision, not an oversight: a tab click on this ephemeral would
+              // advance THIS message, handing the player a second, parallel park card beside
+              // the one they opened it from. The Build menu it keeps mints park:build:<uid>,
+              // whose confirm re-renders this same ephemeral.
+              //
+              // `as unknown as` because the builder union's toJSON() types disagree about
+              // whether custom_id is optional; the walk only reads it.
+              built.components = built.components.filter((r) => {
+                const row = r.toJSON() as unknown as { components?: Array<{ custom_id?: string }> };
+                return !(row.components ?? []).some((c) => c.custom_id?.startsWith(`park:tab:${i.user.id}:`));
+              });
+              await i.reply({ ...built, flags: MessageFlags.Ephemeral });
+              return;
+            }
             await i.deferUpdate();
             return;
           }
@@ -721,6 +965,54 @@ export const parkModule: ModuleManifest = {
               return;
             }
             await renderTab(ctx, i, uid, tab, true);
+            return;
+          }
+          case 'builddino': {
+            // park:builddino:<uid>:<lotId> — minted on the PUBLIC /build reply and on the
+            // ephemeral follow-up park:buildyes sends. routeInteraction dispatches on the
+            // PREFIX alone, so both segments have to be here and both are re-read: the lot id
+            // rides in the id rather than only in the label because a Discord message is
+            // durable and its label is never re-derived.
+            //
+            // This owner check is a MESSAGE-QUALITY layer, not the write barrier, and must
+            // not be described as one: assignableDinosFor scopes every read to the CALLER, so
+            // a bystander is already refused one line down. What it buys is that they are
+            // told whose park it is instead of being told a lot they can see has changed.
+            if (i.user.id !== uid) { await i.reply({ content: 'Not your park.', flags: MessageFlags.Ephemeral }); return; }
+            settleEscapes(ctx, i.user.id);
+            // NO integer guard on the lot segment, for the reason assignRefusal states above:
+            // Number('nonsense') is NaN, better-sqlite3 binds NaN as a legal no-match, so the
+            // read below lands on its not-found arm and answers STALE_ASSIGN already. A parse
+            // branch would be a guard no test could tell apart from that one.
+            const pick = assignableDinosFor(ctx, i.user.id, Number(parts[3]));
+            if (!pick) { await i.reply({ content: STALE_ASSIGN, flags: MessageFlags.Ephemeral }); return; }
+            // Three refusals, three sentences, and none of them may fall through to the menu:
+            // Discord REJECTS a select carrying zero options, so an empty candidate list is an
+            // error payload, not an empty dropdown.
+            if (!pick.hasRoom) { await i.reply({ content: PADDOCK_FULL, flags: MessageFlags.Ephemeral }); return; }
+            if (pick.dinos.length === 0) {
+              const diet = PADDOCKS[pick.lot.kind].diet;
+              // Two causes, two messages — the split feedDino already makes in
+              // src/modules/care/service.ts. "Every one you own is housed or escaped" is FALSE
+              // for a player who owns none of this diet, and /dino unassign cannot help them;
+              // that is the case a brand-new player's first paddock produces.
+              await i.reply({
+                content: pick.ofDiet.length === 0
+                  ? `You own no ${diet} dinos yet — hatch one from \`/eggs\`.`
+                  : `No free ${diet} dinos — every ${diet} you own is housed or escaped.`
+                    + ' Free one with `/dino unassign`, or hatch another from `/eggs`.',
+                flags: MessageFlags.Ephemeral,
+              });
+              return;
+            }
+            const pickNow = ctx.now();
+            await i.reply({
+              content: `Which dino moves into **${pick.lot.name}** (lot #${pick.lot.id})?`,
+              components: [buildDinoSelectRow(i.user.id, pick.lot.id, pick.dinos.map((d) => ({
+                id: d.id, label: dinoLabel(d, getSpecies(d.speciesId), pickNow),
+              })))],
+              flags: MessageFlags.Ephemeral,
+            });
             return;
           }
           case 'buildno':
@@ -777,6 +1069,22 @@ export const parkModule: ModuleManifest = {
             try {
               const lot = buildLot(ctx, i.user.id, kind);
               await renderTab(ctx, i, i.user.id, 'lots', false, `🏗️ Built **${lot.name}** (lot #${lot.id}).`);
+              // The Lots tab's Build… dropdown is the path /park view actively pushes players
+              // toward, so this confirm owes the same follow-through the /build slash reply
+              // mints. It cannot ride on the tab: renderTab builds AND sends that whole
+              // payload, so the control arrives as an ephemeral follow-up beside it —
+              // legal here precisely because renderTab's 'lots' branch has already replied.
+              //
+              // No module gate: park mints this and park handles it. Only a CROSS-module mint
+              // has to check ctx.config.modules, because ModuleRegistry searches enabled
+              // modules only.
+              if (lot.type === 'paddock') {
+                await i.followUp({
+                  content: `**${lot.name}** (lot #${lot.id}) is empty — put a dino in it.`,
+                  components: [buildDinoRow(i.user.id, lot.id)],
+                  flags: MessageFlags.Ephemeral,
+                });
+              }
             } catch (e) {
               // Mapped for the BUILD menu specifically: LotLimitError means "slot cap" here
               // and "already max level" in upgradeLot, and UnknownKindError is likewise
@@ -785,11 +1093,11 @@ export const parkModule: ModuleManifest = {
               if (e instanceof DuplicateFacilityError) {
                 await i.reply({ content: `You already have a ${e.message} — upgrade it instead.`, flags: MessageFlags.Ephemeral });
               } else if (e instanceof LotLimitError) {
-                await i.reply({ content: 'All lots full. More slots unlock with park rating.', flags: MessageFlags.Ephemeral });
+                await i.reply({ content: lotSlotCapLine(ctx, i.user.id), flags: MessageFlags.Ephemeral });
               } else if (e instanceof InsufficientFundsError) {
                 const def = PADDOCKS[kind] ?? FACILITIES[kind]!;
                 await i.reply({
-                  content: `Not enough cash — ${def.name} costs ${def.buildCost.toLocaleString('en-US')}.`,
+                  content: `Not enough cash — the ${def.name} ${shortfallLine(e)}.`,
                   flags: MessageFlags.Ephemeral,
                 });
               } else throw e;
@@ -832,7 +1140,7 @@ export const parkModule: ModuleManifest = {
               // Mapped for the UPGRADE menu: LotLimitError means "already max level" here,
               // where the build handler reads the same class as "slot cap".
               if (e instanceof LotLimitError) {
-                await i.reply({ content: 'Already max level.', flags: MessageFlags.Ephemeral });
+                await i.reply({ content: maxLevelLine(lot.kind), flags: MessageFlags.Ephemeral });
               } else if (e instanceof UnknownKindError) {
                 await i.reply({ content: 'No such lot.', flags: MessageFlags.Ephemeral });
               } else if (e instanceof StaleLevelError) {
@@ -845,7 +1153,7 @@ export const parkModule: ModuleManifest = {
                 });
               } else if (e instanceof InsufficientFundsError) {
                 await i.reply({
-                  content: `Not enough cash — that upgrade costs ${upgradeCostFor(lot.kind, lot.level).toLocaleString('en-US')}.`,
+                  content: `Not enough cash — that upgrade ${shortfallLine(e)}.`,
                   flags: MessageFlags.Ephemeral,
                 });
               } else throw e;
@@ -914,6 +1222,37 @@ export const parkModule: ModuleManifest = {
     },
   ],
 };
+
+/**
+ * The Lots tab's view model, in one place. Both the tab click and park:goto:lots render
+ * through it, so the buildable and upgradable filters cannot drift between two call sites —
+ * the same reason upgradeCostFor is a single helper.
+ *
+ * The max-level filter goes through maxLevelFor (src/modules/park/service.ts), the same
+ * resolver upgradeLot charges through, and NEVER a local literal: a menu that offers a maxed
+ * lot is merely a wasted click, but a menu built off a different cap than the charge is how a
+ * label and a price come apart.
+ *
+ * Takes the rows the caller already read: a tab switch pays for this render's SELECTs as it
+ * is, and re-reading here would add two more to every click.
+ */
+function lotsTab(user: User, lots: Lot[], visit: boolean) {
+  const owned = new Set(lots.map((l) => l.kind));
+  const full = lots.length >= lotSlots(user.ratingHighWater);
+  // Facilities are one per park; paddocks are duplicable — building more of one kind IS
+  // the capacity progression. Filtering here keeps the menu honest, but it is NOT the
+  // guard: buildLot re-checks both, and a stale menu is rejected there.
+  const buildable = full ? [] : [
+    ...Object.entries(PADDOCKS).map(([kind, d]) => ({ kind, name: d.name, cost: d.buildCost })),
+    ...Object.entries(FACILITIES)
+      .filter(([kind]) => !owned.has(kind))
+      .map(([kind, d]) => ({ kind, name: d.name, cost: d.buildCost })),
+  ];
+  const upgradable = lots
+    .filter((l) => l.level < maxLevelFor(l.kind))
+    .map((l) => ({ lotId: l.id, name: l.name, level: l.level, cost: upgradeCostFor(l.kind, l.level) }));
+  return lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit, buildable, upgradable });
+}
 
 /**
  * Renders one tab onto the message that was clicked.
@@ -1002,24 +1341,7 @@ async function renderTab(
     return;
   }
   if (tab === 'lots') {
-    const owned = new Set(lots.map((l) => l.kind));
-    const full = lots.length >= lotSlots(user.ratingHighWater);
-    // Facilities are one per park; paddocks are duplicable — building more of one kind IS
-    // the capacity progression. Filtering here keeps the menu honest, but it is NOT the
-    // guard: buildLot re-checks both, and a stale menu is rejected there.
-    const buildable = full ? [] : [
-      ...Object.entries(PADDOCKS).map(([kind, d]) => ({ kind, name: d.name, cost: d.buildCost })),
-      ...Object.entries(FACILITIES)
-        .filter(([kind]) => !owned.has(kind))
-        .map(([kind, d]) => ({ kind, name: d.name, cost: d.buildCost })),
-    ];
-    // `?? 4` matches upgradeLot's own `const maxLevel = def ? def.maxLevel : 4` — a
-    // paddock has no FACILITIES entry and caps at level 4. Keep the two in step; a menu
-    // that offers a maxed lot is rejected by LotLimitError, but it is a wasted click.
-    const upgradable = lots
-      .filter((l) => l.level < (FACILITIES[l.kind]?.maxLevel ?? 4))
-      .map((l) => ({ lotId: l.id, name: l.name, level: l.level, cost: upgradeCostFor(l.kind, l.level) }));
-    const built = lotsPayload(user, lots, lotSlots(user.ratingHighWater), { visit, buildable, upgradable });
+    const built = lotsTab(user, lots, visit);
     if (tourRow) built.components.push(tourRow);
     await i.update({ content: content ?? '', ...built, attachments: [] });
     return;

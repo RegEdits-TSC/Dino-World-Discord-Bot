@@ -12,16 +12,40 @@ import { schema } from '../../core/db/index.js';
 import { getSpecies } from '../../data/species/index.js';
 import { FOOD_BUNDLES, SHOP_EGG_PRICES } from '../../data/shop.js';
 import { DECOR } from '../../data/decor.js';
-import { InsufficientFundsError } from '../../core/economy.js';
+import { InsufficientFundsError, shortfallLine } from '../../core/economy.js';
 import { matches, respondRanked, emptyRow, capitalize } from '../../core/autocomplete.js';
 import { assetImage, attach } from '../../core/images.js';
-import { RARITY_COLOR } from '../hatchery/embeds.js';
+import { RARITY_COLOR, incubateRow } from '../hatchery/embeds.js';
 import { RARITY } from '../../data/rarity.js';
 import type { AttachmentBuilder } from 'discord.js';
 import { emojiTag, rarityEmoji, foodEmoji } from '../../core/emojis.js';
-import { FOODS, foodsForDiet } from '../../data/foods.js';
+import { FOODS, foodsForDiet, getFood } from '../../data/foods.js';
 
 const eggRarityChoices = (['common', 'uncommon', 'rare', 'epic', 'legendary'] as const).map((r) => ({ name: r, value: r }));
+
+/**
+ * The Buy another control, minted on /shop egg's PUBLIC reply. The owner id rides in the
+ * customId because buyEgg resolves against the CALLER — a bystander's click would buy
+ * themselves an egg rather than be refused.
+ *
+ * Unicode in the label, never setEmoji: emojiTag returns '' when no emoji map is loaded and
+ * ButtonBuilder#setEmoji throws on that rather than degrading. No price here either — an egg
+ * price rolls at every UTC midnight, and only the ephemeral confirm card this opens quotes a
+ * number and bakes it into an id.
+ */
+export function buyAnotherRow(userId: string, rarity: Rarity): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(`shop:again:${userId}:${rarity}`)
+      .setLabel('🥚 Buy another').setStyle(ButtonStyle.Primary));
+}
+
+/**
+ * One sentence, two surfaces: /shop egg's own gate below and shop:againyes's recheck. Two
+ * literals would drift silently, because nothing ever renders both at once.
+ */
+function notInRotation(rarity: string): string {
+  return `A ${rarity} egg isn't in today's rotation — see /shop view.`;
+}
 
 // Single source of truth for /shop view's header key list: exported so
 // tests/world-module.test.ts's per-key anyModRelevant tests exercise this
@@ -94,12 +118,29 @@ export const shopModule: ModuleManifest = {
           } else if (sub === 'egg') {
             const rarity = i.options.getString('rarity', true) as Rarity;
             const offers = dailyEggOffers(user.ratingHighWater, ctx.now());
-            if (!offers.includes(rarity)) { await i.reply({ content: `A ${rarity} egg isn't in today's rotation — see /shop view.`, flags: MessageFlags.Ephemeral }); return; }
+            if (!offers.includes(rarity)) { await i.reply({ content: notInRotation(rarity), flags: MessageFlags.Ephemeral }); return; }
             const egg = buyEgg(ctx, i.user.id, rarity);
             const eggEmbed = new EmbedBuilder().setColor(RARITY_COLOR[egg.rarity] ?? 0x95a5a6)
               .setTitle(`🥚 Bought a ${rarityEmoji(egg.rarity)}${egg.rarity} egg (#${egg.id})`)
-              .setDescription(`Incubate it with /incubate ${egg.id}.`);
-            const eggPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [eggEmbed] };
+              // `/incubate egg:<id>`, never `/incubate <id>`: the option is NAMED
+              // (src/modules/hatchery/index.ts, o.setName('egg')), so the old text was not
+              // valid Discord syntax. Names only the typed path — the button beside it is
+              // gated on the hatchery module being enabled.
+              .setDescription(`Incubate it with \`/incubate egg:${egg.id}\`.`);
+            // components starts EMPTY and is PUSHED into. Spec §3 gives this surface two
+            // controls from two separate tasks; assigning the array wholesale would make
+            // whichever lands second silently delete the other's button, with nothing failing.
+            const eggPayload: {
+              embeds: EmbedBuilder[];
+              components: ActionRowBuilder<ButtonBuilder>[];
+              files?: AttachmentBuilder[];
+            } = { embeds: [eggEmbed], components: [] };
+            eggPayload.components.push(buyAnotherRow(i.user.id, egg.rarity));
+            // Cross-module mint, and PUSHED, never assigned — same reasoning as the
+            // /expedition claim reply: ModuleRegistry routes only enabled modules, so with
+            // "hatchery": false this button would answer nothing, and Task 23 (G7-D) owns
+            // buyAnotherRow on this same array.
+            if (ctx.config.modules.hatchery) eggPayload.components.push(incubateRow(i.user.id, egg.id));
             attach(eggEmbed, eggPayload, 'thumbnail', assetImage('eggs', egg.rarity, String(egg.id)));
             await i.reply(eggPayload);
           } else {
@@ -114,7 +155,15 @@ export const shopModule: ModuleManifest = {
           }
         } catch (e) {
           if (e instanceof ShopError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
-          else if (e instanceof InsufficientFundsError) await i.reply({ content: 'Not enough cash.', flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) {
+            // `sub` is 'egg' or 'food' here — 'view' performs no charge and cannot reach this
+            // branch. getFood throws on an unknown id, which buyFood's own ShopError has
+            // already caught above by the time this runs.
+            const what = sub === 'egg'
+              ? `a ${i.options.getString('rarity', true)} egg`
+              : `${i.options.getInteger('units', true)}× ${getFood(i.options.getString('item', true)).name}`;
+            await i.reply({ content: `Not enough cash — ${what} ${shortfallLine(e)}.`, flags: MessageFlags.Ephemeral });
+          }
           else throw e;
         }
       },
@@ -191,13 +240,96 @@ export const shopModule: ModuleManifest = {
   components: [
     { prefix: 'sell', async execute(ctx, i) {
         const [, action, idStr] = i.customId.split(':');
-        if (action !== 'confirm') return;
+        // deferUpdate, never a bare return: a bare return paints "This interaction failed"
+        // after three seconds, and a stale id from an older deploy lands exactly here.
+        if (action !== 'confirm') { await i.deferUpdate(); return; }
         try {
           const res = sellDino(ctx, i.user.id, Number(idStr));
           const cap = res.capped ? ' (shard cap reached)' : '';
           await i.update({ content: `${emojiTag('dw_cash')} Sold for **${res.cash.toLocaleString()}** cash and **${res.shards}** shards${cap}.`,
             embeds: [], components: [], attachments: [] });
         } catch (e) { if (e instanceof ShardError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e; }
+      } },
+    { prefix: 'shop', async execute(ctx, i) {
+        const parts = i.customId.split(':');
+        const [, action, uid, rarityRaw] = parts;
+        // Unknown action first, and it must acknowledge: a bare return paints "This
+        // interaction failed" after three seconds, and a stale id from an older deploy lands
+        // here. Any future shop action needs its own arm below.
+        if (action !== 'again' && action !== 'againyes') { await i.deferUpdate(); return; }
+        // buyEgg resolves against the CALLER, so without this a bystander clicking the public
+        // /shop egg reply would buy THEMSELVES an egg rather than be refused.
+        if (i.user.id !== uid) {
+          await i.reply({ content: 'That is not your purchase.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+        // Narrow the client-supplied segment against the rarities the builder itself offers,
+        // rather than casting it. This is what stops a forged segment being echoed back inside
+        // a rendered sentence, and what lets buyEgg below take a real Rarity with no cast.
+        const rarity = eggRarityChoices.map((c) => c.value).find((r) => r === rarityRaw);
+        if (!rarity) { await i.deferUpdate(); return; }
+        const user = getOrCreateUser(ctx, i.user.id, i.user.displayName);
+        const now = ctx.now();
+        // Rotation BEFORE price. eggPriceAt happily prices a rarity that is no longer on
+        // offer, so a price-first order would sometimes report a moved price for an egg that
+        // cannot be bought at any price today.
+        if (!dailyEggOffers(user.ratingHighWater, now).includes(rarity)) {
+          await i.reply({ content: notInRotation(rarity), flags: MessageFlags.Ephemeral });
+          return;
+        }
+        // ONE expression, both arms: the price the card QUOTES and the price the confirm
+        // RECHECKS are the same call, so they cannot drift apart.
+        const price = eggPriceAt(rarity, now);
+        if (action === 'again') {
+          const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder().setCustomId(`shop:againyes:${i.user.id}:${rarity}:${price}`)
+              .setLabel(`Buy — ${price.toLocaleString('en-US')} cash`).setStyle(ButtonStyle.Success));
+          await i.reply({
+            content: `Buy another **${rarity}** egg for **${price.toLocaleString('en-US')}** cash?`,
+            components: [row],
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        const quoted = Number(parts[4]);
+        if (!Number.isInteger(quoted)) { await i.deferUpdate(); return; }
+        // The whole point of the segment. An egg price rolls at every UTC midnight — the world
+        // event moves eggPrice and the daily deal moves which rarity is discounted — so a
+        // confirm card left open across one would charge today's price under yesterday's
+        // label. Refusing is the PURPOSE of the segment, not a nicety; the repaint below is a
+        // second layer only, because any OTHER open card still holds a button minted at the
+        // old price.
+        if (price !== quoted) {
+          await i.reply({
+            content: `A ${rarity} egg costs ${price.toLocaleString('en-US')} cash now, not ${quoted.toLocaleString('en-US')} — open the Buy another card for the current price.`,
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        try {
+          const egg = buyEgg(ctx, i.user.id, rarity);
+          // One named local, pushed into. Cross-module mint: hatch:inc is handled in the
+          // HATCHERY module and ModuleRegistry.findComponent searches only ENABLED modules
+          // (src/core/modules.ts), so with "hatchery": false this button would answer nothing.
+          const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+          if (ctx.config.modules.hatchery) rows.push(incubateRow(i.user.id, egg.id));
+          await i.update({
+            // `/incubate egg:<id>`, never `/incubate <id>`: the option is NAMED
+            // (o.setName('egg') in src/modules/hatchery/index.ts). The sentence names only the
+            // TYPED path — "below" would be a lie in exactly the configuration the gate above
+            // exists for, and nothing would catch it.
+            content: `🥚 Bought another **${egg.rarity}** egg (#${egg.id}) for **${price.toLocaleString('en-US')}** cash. Incubate it with \`/incubate egg:${egg.id}\`.`,
+            embeds: [], components: rows, attachments: [],
+          });
+        } catch (e) {
+          if (e instanceof ShopError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral });
+          else if (e instanceof InsufficientFundsError) {
+            await i.reply({
+              content: `Not enough cash — a ${rarity} egg ${shortfallLine(e)}.`,
+              flags: MessageFlags.Ephemeral,
+            });
+          } else throw e;
+        }
       } },
   ],
 };

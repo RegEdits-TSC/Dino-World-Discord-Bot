@@ -365,3 +365,38 @@ describe('shop food and sell error branches', () => {
     expect(ctx.db.select().from(schema.trades).all()[0].status).toBe('pending');
   });
 });
+
+describe('/shop insufficiency', () => {
+  it('/shop egg names the egg and quotes the shortfall', async () => {
+    ctx.db.update(schema.users).set({ cash: 120 }).where(eq(schema.users.discordId, 'u1')).run();
+    const cmd = shopModule.commands.find((c) => c.data.name === 'shop')!;
+    const i = fakeCommand({ name: 'shop', sub: 'egg', user: 'u1', options: { rarity: 'common' } });
+    await cmd.execute(ctx, i.asChatInput());
+    // The price is READ from the same helper buyEgg charges through, never hand-pinned:
+    // eggPriceAt folds the world event AND the daily deal, and the deal's target is a seeded
+    // per-day roll a FOODS/offers change can move. What is under test is that the error's
+    // number IS the charged number, which is exactly what this states.
+    // `common` is structurally always in the rotation at the uncommon ceiling (the pool there
+    // is exactly ['uncommon','common'] and slice(0,3) cannot truncate it), so the pre-buy
+    // rotation gate in /shop egg cannot swallow this case.
+    const need = eggPriceAt('common', 0);
+    expect(replyText(i.replies[0])).toBe(
+      `Not enough cash — a common egg costs ${need.toLocaleString('en-US')}, `
+      + `you have 120 (${(need - 120).toLocaleString('en-US')} short).`);
+    expect((i.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
+  });
+
+  it('/shop food names the order and quotes the shortfall', async () => {
+    ctx.db.update(schema.users).set({ cash: 12 }).where(eq(schema.users.discordId, 'u1')).run();
+    const cmd = shopModule.commands.find((c) => c.data.name === 'shop')!;
+    const i = fakeCommand({ name: 'shop', sub: 'food', user: 'u1', options: { item: 'ferns', units: 5 } });
+    await cmd.execute(ctx, i.asChatInput());
+    // Same rule as the egg case, and buyFood charges `units * foodPriceAt(food, now)` exactly
+    // — it never rounds the raw units*unitCost*mult product — so this IS the number the cash
+    // guard saw. (The cash guard fires before the food credit, so the wallet is 'cash' here.)
+    const need = 5 * foodPriceAt(FOODS.ferns, 0);
+    expect(replyText(i.replies[0])).toBe(
+      `Not enough cash — 5× Ferns costs ${need.toLocaleString('en-US')}, `
+      + `you have 12 (${(need - 12).toLocaleString('en-US')} short).`);
+  });
+});

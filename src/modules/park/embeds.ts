@@ -399,3 +399,111 @@ export function tabRow(id: string, active: ParkTab, visit = false): ActionRowBui
       .setDisabled(t === active)),
   );
 }
+
+/**
+ * The follow-through assign control, in whichever of its three shapes the eligibility list
+ * dictates. Always exactly one button, chosen AT MINT TIME:
+ *
+ *   one eligible → park:assign:<uid>:<dinoId>:<lotId>   the lot rides in the id
+ *   several      → park:assignpick:<uid>:<dinoId>       opens assignSelectRow below
+ *   none         → park:goto:lots:<uid>                 go build one instead
+ *
+ * The lot id is in the id and not merely in the label because a Discord message is durable
+ * and its label is never re-derived; assignDino (src/modules/park/dinos.ts) is the sole
+ * authority on that lot at write time — the handler itself does not re-check it.
+ *
+ * The owner uid is in every one of the three because these rows land on PUBLIC messages —
+ * the hatch reveal above all — where anyone in the channel can click.
+ *
+ * Unicode glyphs in the label, never emojiTag/setEmoji — the same reason tabRow gives: the
+ * app-emoji map returns '' when unloaded and setEmoji throws on that rather than degrading.
+ */
+export function assignRow(
+  userId: string, dinoId: number, eligible: Lot[],
+): ActionRowBuilder<ButtonBuilder> {
+  const button = eligible.length === 1
+    ? new ButtonBuilder().setCustomId(`park:assign:${userId}:${dinoId}:${eligible[0]!.id}`)
+      .setLabel(`🦕 Assign to #${eligible[0]!.id}`).setStyle(ButtonStyle.Success)
+    : eligible.length > 1
+      ? new ButtonBuilder().setCustomId(`park:assignpick:${userId}:${dinoId}`)
+        .setLabel('🦕 Assign… ▼').setStyle(ButtonStyle.Success)
+      : new ButtonBuilder().setCustomId(`park:goto:lots:${userId}`)
+        .setLabel('🏗️ Build a paddock').setStyle(ButtonStyle.Secondary);
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(button);
+}
+
+/**
+ * The menu park:assignpick opens. A value is the lot id and nothing else — an identity,
+ * never a price and never a capacity — so a stale option cannot describe a lot it no longer
+ * names. The handler re-derives eligibility itself; the router only proves the value was
+ * one this menu offered.
+ *
+ * Sliced at 25 for Discord's option cap. The live lot-slot ceiling is
+ * `BASE_LOT_SLOTS_FALLBACK + LOT_SLOT_THRESHOLDS.length` (src/data/progression.ts), well
+ * under 25, so the slice is insurance rather than a live constraint — the same shape
+ * lotsPayload's two menus use.
+ *
+ * NEVER call this with an empty list: checked against the installed @discordjs/builders
+ * (1.14.1), `addOptions([])` does NOT throw here — it silently builds `{"options":[]}` — so
+ * an empty list reaches Discord's REST layer intact and is rejected there, live, as a broken
+ * message, not caught locally. The handler checks for an empty eligible list before it
+ * reaches this builder.
+ */
+export function assignSelectRow(
+  userId: string, dinoId: number, eligible: Lot[],
+): ActionRowBuilder<StringSelectMenuBuilder> {
+  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`park:assignsel:${userId}:${dinoId}`)
+      .setPlaceholder('Pick a paddock…')
+      .addOptions(eligible.slice(0, 25).map((l) => new StringSelectMenuOptionBuilder()
+        .setValue(String(l.id))
+        .setLabel(`#${l.id} ${l.name} (lvl ${l.level})`))),
+  );
+}
+
+/**
+ * The follow-through on a freshly built paddock: one button that opens a private menu of the
+ * dinos that could move in. Minted by BOTH build paths — the /build slash reply and the
+ * park:buildyes confirm behind the Lots tab's Build… dropdown — which is why the id and the
+ * label live here and are written nowhere else.
+ *
+ * A button rather than the menu itself, because the /build reply is a PUBLIC message: a
+ * select sitting on it would be visible to the channel, and the roster it lists is the
+ * owner's business. The button carries the owner uid so a bystander's click is refused, and
+ * the lot id so the handler re-reads that exact lot instead of trusting the label.
+ *
+ * Unicode glyph in the label, never emojiTag/setEmoji — the same reason tabRow gives.
+ */
+export function buildDinoRow(userId: string, lotId: number): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(`park:builddino:${userId}:${lotId}`)
+      .setLabel('🦕 Assign a dino').setStyle(ButtonStyle.Primary),
+  );
+}
+
+/**
+ * The menu park:builddino opens. This is assignSelectRow's MIRROR and the two are easy to
+ * confuse, so state it plainly: there the lot varies and a value is a LOT id; here the lot is
+ * fixed in the customId and a value is a DINO id. Wiring one where the other belongs compiles
+ * cleanly and silently assigns the wrong pair.
+ *
+ * A value is the dino id and nothing else — an identity, never a diet and never a capacity —
+ * so a stale option cannot describe a dino it no longer names. The handler re-derives
+ * everything; the router only proves the value was one this menu offered.
+ *
+ * Labels are passed in already rendered: this file has no species lookup and should not grow
+ * one. Sliced at 25 for Discord's option cap, which a roster genuinely reaches.
+ */
+export function buildDinoSelectRow(
+  userId: string, lotId: number, dinos: Array<{ id: number; label: string }>,
+): ActionRowBuilder<StringSelectMenuBuilder> {
+  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`park:builddinosel:${userId}:${lotId}`)
+      .setPlaceholder('Pick a dino…')
+      .addOptions(dinos.slice(0, 25).map((d) => new StringSelectMenuOptionBuilder()
+        .setValue(String(d.id))
+        .setLabel(d.label))),
+  );
+}
