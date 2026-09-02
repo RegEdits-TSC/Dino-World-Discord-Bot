@@ -8,13 +8,16 @@ import {
 import { routeInteraction } from '../src/core/router.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, buildLot } from '../src/modules/park/service.js';
-import { startExpedition } from '../src/modules/expeditions/service.js';
+import { startExpedition, activeExpedition, expeditionFeeFor } from '../src/modules/expeditions/service.js';
 import { feedCostFor } from '../src/modules/care/service.js';
-import { dailyEggOffers } from '../src/modules/shop/service.js';
+import { dailyEggOffers, eggPriceAt } from '../src/modules/shop/service.js';
 import { mythicSpeciesChoices } from '../src/modules/shop/shards.js';
 import { MYTHIC_UNLOCK_RATING } from '../src/data/progression.js';
 import { ALL_MODULES } from '../src/core/module-list.js';
 import type { Config } from '../src/core/config.js';
+import { eventMods } from '../src/core/world.js';
+import { EXPEDITION_SITES } from '../src/data/sites.js';
+import type { Rarity } from '../src/data/types.js';
 
 // ---------------------------------------------------------------------------
 // The follow-through graph (docs/superpowers/specs/2026-08-31-follow-through-design.md §3).
@@ -220,6 +223,38 @@ function hatchReadyEgg(ctx: TestCtx) {
     userId: OWNER, rarity: 'common', speciesId: 'triceratops', source: 'shop',
     obtainedAt: DAY0 - 1, incubationStartedAt: DAY0 - 1, hatchesAt: DAY0 - 1,
   }).returning().get();
+}
+
+const cashOf = (ctx: TestCtx) =>
+  ctx.db.select().from(schema.users).where(eq(schema.users.discordId, OWNER)).get()!.cash;
+
+/**
+ * The first pair of adjacent UTC days on which Coastal Dig's expedition fee genuinely
+ * differs. DERIVED, never written down: which day carries which world event is a function of
+ * WORLD_SALT and the order of WORLD_EVENTS, so a pinned day index would go stale silently the
+ * moment either changed — and a stale one would leave the staleness test comparing a price
+ * against itself, passing forever while proving nothing.
+ *
+ * It compares the FEE, not the multiplier that scales it: expeditionFeeFor rounds and floors
+ * at 1, so a moved multiplier does not by itself guarantee a moved price.
+ */
+function daysWhereExpeditionFeeMoves(): { before: number; after: number } {
+  const cost = EXPEDITION_SITES.coastal_dig.cost;
+  const feeOn = (day: number) => expeditionFeeFor(cost, eventMods(day * DAY_MS).expeditionFee);
+  for (let day = 0; day < 2_000; day++) {
+    if (feeOn(day) !== feeOn(day + 1)) return { before: day, after: day + 1 };
+  }
+  throw new Error("no adjacent UTC day pair moves Coastal Dig's fee — the fixture cannot be built");
+}
+
+/** The same, for the shop's egg price, which rolls with both the world event and the Daily Deal. */
+function daysWhereEggPriceMoves(rarity: Rarity): { before: number; after: number } {
+  for (let day = 0; day < 2_000; day++) {
+    if (eggPriceAt(rarity, day * DAY_MS) !== eggPriceAt(rarity, (day + 1) * DAY_MS)) {
+      return { before: day, after: day + 1 };
+    }
+  }
+  throw new Error(`no adjacent UTC day pair moves eggPriceAt('${rarity}') — the fixture cannot be built`);
 }
 
 interface Step {
@@ -574,6 +609,59 @@ const GRAPH: GraphRow[] = [
       };
     },
   },
+  {
+    surface: 'the Dig again button',
+    async run(ctx) {
+      seedOwner(ctx);
+      const price = expeditionFeeFor(
+        EXPEDITION_SITES.coastal_dig.cost, eventMods(ctx.now()).expeditionFee);
+      // Read before the card opens and compared against itself afterwards: a literal here
+      // would bake in both seedOwner's grant AND users.cash's schema default, and a change to
+      // either would fail this line while blaming the Dig again handler.
+      const cashAtOpen = cashOf(ctx);
+      const b = await clickSurface(ctx, `exp:again:${OWNER}:coastal_dig`, 'the Dig again card');
+      // Two steps, never one: opening the card charges nothing at all.
+      expect(cashOf(ctx), 'opening the Dig again card charged the player').toBe(cashAtOpen);
+      expect(activeExpedition(ctx, OWNER),
+        'opening the Dig again card started an expedition').toBeUndefined();
+      return {
+        payload: b.replies[0],
+        required: [`exp:againyes:${OWNER}:coastal_dig:${price}`],
+        exactly: [`exp:againyes:${OWNER}:coastal_dig:${price}`],
+        follow: `exp:againyes:${OWNER}:coastal_dig:${price}`,
+        async effect() {
+          expect(cashOf(ctx), 'the confirmed dig did not charge exactly the price it quoted')
+            .toBe(cashAtOpen - price);
+          expect(activeExpedition(ctx, OWNER),
+            'the confirmed dig did not start an expedition').toBeDefined();
+        },
+      };
+    },
+  },
+  {
+    surface: 'the Buy another button',
+    async run(ctx) {
+      seedOwner(ctx);
+      expect(dailyEggOffers(0, ctx.now()),
+        'the fixture assumes common is in the rotation at high-water 0').toContain('common');
+      const price = eggPriceAt('common', ctx.now());
+      const cashAtOpen = cashOf(ctx);
+      const b = await clickSurface(ctx, `shop:again:${OWNER}:common`, 'the Buy another card');
+      expect(eggsOf(ctx), 'opening the Buy another card bought an egg').toHaveLength(0);
+      expect(cashOf(ctx), 'opening the Buy another card charged the player').toBe(cashAtOpen);
+      return {
+        payload: b.replies[0],
+        required: [`shop:againyes:${OWNER}:common:${price}`],
+        exactly: [`shop:againyes:${OWNER}:common:${price}`],
+        follow: `shop:againyes:${OWNER}:common:${price}`,
+        async effect() {
+          expect(cashOf(ctx), 'the confirmed purchase did not charge exactly the price it quoted')
+            .toBe(cashAtOpen - price);
+          expect(eggsOf(ctx), 'the confirmed purchase did not hand over an egg').toHaveLength(1);
+        },
+      };
+    },
+  },
 ];
 
 describe('the follow-through graph', () => {
@@ -612,4 +700,83 @@ describe('the follow-through graph', () => {
       await step.effect(click);
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// The price segment is the guard, not a nicety (spec §4.4). A confirm card left
+// open across a UTC midnight would otherwise charge today's price under
+// yesterday's label — and re-rendering the message on success is a second layer
+// only, because any OTHER open message still holds the stale button
+// (§repaint-is-second-layer-not-guard).
+//
+// Both tests MOVE THE CLOCK to a day where the price genuinely differs and then
+// replay the id minted on the earlier day. Handing the handler a hand-written
+// wrong price would prove that `!==` works and nothing at all about staleness, so
+// each test asserts up front that its two days really do disagree.
+// ---------------------------------------------------------------------------
+describe('a spend confirm refuses a price that moved under it', () => {
+  it('Dig again refuses a confirm minted on a day with a different expedition fee', async () => {
+    const { before, after } = daysWhereExpeditionFeeMoves();
+    const ctx = ctxOn(before * DAY_MS);
+    seedOwner(ctx);
+    const site = EXPEDITION_SITES.coastal_dig;
+    const quoted = expeditionFeeFor(site.cost, eventMods(ctx.now()).expeditionFee);
+
+    const open = `exp:again:${OWNER}:coastal_dig`;
+    const card = fakeButton({ customId: open, user: OWNER, componentIds: [open] });
+    await routeInteraction(ctx, testRegistry, card.asInteraction());
+    const minted = controlsOf(card.replies[0], open).map((c) => c.custom_id);
+    const stale = `exp:againyes:${OWNER}:coastal_dig:${quoted}`;
+    expect(minted, `the card did not quote ${quoted}`).toContain(stale);
+
+    ctx.setNow(after * DAY_MS);
+    expect(expeditionFeeFor(site.cost, eventMods(ctx.now()).expeditionFee),
+      'the two days must genuinely disagree about the fee, or this test proves nothing')
+      .not.toBe(quoted);
+
+    const cashBefore = cashOf(ctx);
+    const click = fakeButton({ customId: stale, user: OWNER, componentIds: minted });
+    await routeInteraction(ctx, testRegistry, click.asInteraction());
+
+    expect(cashOf(ctx), 'the stale confirm charged the player').toBe(cashBefore);
+    expect(activeExpedition(ctx, OWNER),
+      'the stale confirm started an expedition at the earlier day’s price').toBeUndefined();
+    // Refused, but ANSWERED: a bare return paints "This interaction failed" after three
+    // seconds, so the click must leave either a reply or an acknowledgement.
+    expect(click.replies.length + click.deferOpts.length,
+      'the stale confirm left the interaction unacknowledged').toBeGreaterThan(0);
+  });
+
+  it('Buy another refuses a confirm minted on a day with a different egg price', async () => {
+    const { before, after } = daysWhereEggPriceMoves('common');
+    const ctx = ctxOn(before * DAY_MS);
+    seedOwner(ctx);
+    // The ROTATION recheck is not what this test isolates, so both days must offer common —
+    // otherwise the handler would refuse on rotation and the price guard would never run.
+    expect(dailyEggOffers(0, before * DAY_MS)).toContain('common');
+    expect(dailyEggOffers(0, after * DAY_MS)).toContain('common');
+    const quoted = eggPriceAt('common', ctx.now());
+
+    const open = `shop:again:${OWNER}:common`;
+    const card = fakeButton({ customId: open, user: OWNER, componentIds: [open] });
+    await routeInteraction(ctx, testRegistry, card.asInteraction());
+    const minted = controlsOf(card.replies[0], open).map((c) => c.custom_id);
+    const stale = `shop:againyes:${OWNER}:common:${quoted}`;
+    expect(minted, `the card did not quote ${quoted}`).toContain(stale);
+
+    ctx.setNow(after * DAY_MS);
+    expect(eggPriceAt('common', ctx.now()),
+      'the two days must genuinely disagree about the price, or this test proves nothing')
+      .not.toBe(quoted);
+
+    const cashBefore = cashOf(ctx);
+    const click = fakeButton({ customId: stale, user: OWNER, componentIds: minted });
+    await routeInteraction(ctx, testRegistry, click.asInteraction());
+
+    expect(cashOf(ctx), 'the stale confirm charged the player').toBe(cashBefore);
+    expect(eggsOf(ctx), 'the stale confirm bought an egg at the earlier day’s price')
+      .toHaveLength(0);
+    expect(click.replies.length + click.deferOpts.length,
+      'the stale confirm left the interaction unacknowledged').toBeGreaterThan(0);
+  });
 });
