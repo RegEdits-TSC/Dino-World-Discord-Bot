@@ -370,8 +370,9 @@ describe('/shop egg offers Incubate', () => {
 /**
  * A gene lab, a herbivore paddock, and two common herbivores standing in it — the minimum
  * startBreeding accepts (same rarity, same diet, both in a paddock, fed, affordable).
- * triceratops and gallimimus are both common/herbivore; hunger defaults to 100 and lastFedAt
- * 0 at nowMs 0, comfortably over BREED_MIN_HUNGER. Returns the two dino ids.
+ * triceratops and gallimimus are both common/herbivore; hunger is left at the dinos table's
+ * schema default (src/core/db/schema.ts), comfortably over BREED_MIN_HUNGER, and lastFedAt 0
+ * at nowMs 0. Returns the two dino ids.
  */
 function pairedDinos(ctx: ReturnType<typeof makeCtx>): { a: number; b: number } {
   getOrCreateUser(ctx, 'u1', 'One');
@@ -397,8 +398,9 @@ describe('/breed claim offers Incubate', () => {
     const confirm = fakeButton({ customId: confirmId, user: 'u1', guild: 'g1', componentIds: [confirmId] });
     await routeInteraction(ctx, testRegistry, confirm.asInteraction());
     const breeding = ctx.db.select().from(schema.breedings).all()[0];
-    // BREED_MS.common is 30 minutes and day 0's clear_skies breedMs multiplier is 1, so the
-    // pairing is ready at exactly this stamp. claimBreeding refuses only on readyAt > now.
+    // BREED_MS.common sets the pairing's duration, and day 0's clear_skies event leaves the
+    // breedMs multiplier at 1, so the pairing is ready at exactly the stamp set on the next
+    // line. claimBreeding refuses only on readyAt > now.
     ctx.setNow(BREED_MS.common);
     return breeding.id;
   }
