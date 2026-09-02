@@ -10,7 +10,10 @@ import { toClockDinos, needsAttentionCount, capHours, facilityBonusPct } from '.
 import { TRADE_EXPIRY_MS } from '../../data/trade.js';
 import { questProgress, achievementsView } from '../daily/service.js';
 import { seasonView } from '../daily/season.js';
-import { claimableMilestones } from '../guests/service.js';
+import { claimableMilestones, nextMilestone } from '../guests/service.js';
+import { nextRatingGate } from './gates.js';
+import { settleEnergy } from '../../data/battle/energy.js';
+import { energyLine } from '../battles/embeds.js';
 import type { HubSignal } from './types.js';
 
 /**
@@ -313,6 +316,80 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
       control: { customId: 'park:collect', label: '💰 Collect', style: ButtonStyle.Success },
     });
   }
+
+  // WAITING. One combined row rather than three: this section answers "how long until
+  // something happens", and three separate lines for three countdowns crowds the card
+  // without saying more. It carries no control by construction — there is nothing to
+  // click on a wait.
+  const incubating = eggs.filter((e) => e.hatchesAt !== null && e.hatchesAt > now);
+  if (incubating.length > 0) {
+    const soonest = Math.min(...incubating.map((e) => e.hatchesAt!));
+    out.push({
+      id: 'waiting-eggs',
+      section: 'waiting',
+      text: `🥚 ${incubating.length} incubating — next <t:${Math.floor(soonest / 1000)}:R>`,
+      lossAtMs: null,
+    });
+  }
+
+  if (dig !== undefined && dig.returnsAt > now) {
+    out.push({
+      id: 'waiting-dig',
+      section: 'waiting',
+      text: `🧭 Dig crew back <t:${Math.floor(dig.returnsAt / 1000)}:R>`,
+      lossAtMs: null,
+    });
+  }
+
+  const cooking = breedings.filter((b) => b.readyAt > now);
+  if (cooking.length > 0) {
+    const soonest = Math.min(...cooking.map((b) => b.readyAt));
+    out.push({
+      id: 'waiting-breeding',
+      section: 'waiting',
+      text: `🧬 ${cooking.length} pairing${cooking.length === 1 ? '' : 's'} — next <t:${Math.floor(soonest / 1000)}:R>`,
+      lossAtMs: null,
+    });
+  }
+
+  // WORKING TOWARD. Always emitted — the energy row alone keeps this section non-empty
+  // even when the gate and the milestone are both null, which is what makes a caught-up
+  // park render as the hub with its earlier sections absent rather than a blank card.
+  const gate = nextRatingGate(user.ratingHighWater);
+  if (gate !== null) {
+    out.push({
+      id: 'goal-rating',
+      section: 'goals',
+      // ★ is rating/100 to one decimal — the house format, matching the lot-slot sentence in
+      // src/modules/park/index.ts. The live parkRating and the monotone high-water are BOTH
+      // shown because the gates key off the high-water while the player sees the live number
+      // move, and showing only one makes the gap look like a bug.
+      text: `★${(gate.threshold / 100).toFixed(1)} unlocks ${gate.labels.join(', ')}`
+        + ` — you're at ★${(user.parkRating / 100).toFixed(1)} (best ★${(user.ratingHighWater / 100).toFixed(1)})`,
+      lossAtMs: null,
+    });
+  }
+
+  const milestone = nextMilestone(ctx, userId);
+  if (milestone !== null) {
+    out.push({
+      id: 'goal-attendance',
+      section: 'goals',
+      text: `🎡 Next milestone: ${milestone.name} at ${milestone.at.toLocaleString()} attendance`,
+      lossAtMs: null,
+    });
+  }
+
+  const settled = settleEnergy(user.energy, user.energyUpdatedAt, now);
+  out.push({
+    id: 'goal-energy',
+    section: 'goals',
+    // settleEnergy is PURE and this is a read: the settled pair is rendered and never
+    // written back. users.energy is only accurate immediately after a fight, so printing it
+    // raw would show a number hours stale with nothing to catch it.
+    text: energyLine(settled.energy, settled.updatedAtMs),
+    lossAtMs: null,
+  });
 
   return out;
 }

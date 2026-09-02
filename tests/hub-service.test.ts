@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, toClockDinos, needsAttentionCount, capHours, facilityBonusPct } from '../src/modules/park/service.js';
 import { escapeAt, ESCAPE_WARN_MS, accruedIncome, HUNGER_DRAIN_MS, hungerAt, drainMsFor, dayKeyUTC, DAY_MS } from '../src/core/clock.js';
 import { hubView } from '../src/modules/hub/service.js';
+import { nextRatingGate } from '../src/modules/hub/gates.js';
 import { TRADE_EXPIRY_MS } from '../src/data/trade.js';
 import { track, readStat } from '../src/core/stats.js';
 import { QUESTS } from '../src/data/quests.js';
@@ -11,7 +13,10 @@ import { claimQuests } from '../src/modules/daily/service.js';
 import { rollSeason, seasonView } from '../src/modules/daily/season.js';
 import { SEASON_DAYS } from '../src/core/world.js';
 import { recomputeRating } from '../src/modules/park/rating.js';
-import { claimableMilestones } from '../src/modules/guests/service.js';
+import { claimableMilestones, nextMilestone } from '../src/modules/guests/service.js';
+import { ATTENDANCE_MILESTONES } from '../src/data/attendance.js';
+import { settleEnergy } from '../src/data/battle/energy.js';
+import { energyLine } from '../src/modules/battles/embeds.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx({ nowMs: 1_000_000 }); getOrCreateUser(ctx, 'u1', 'U1'); });
@@ -391,5 +396,107 @@ describe('hubView — the CLAIM section', () => {
     expect(ctx.db.select().from(schema.dailyQuests).all()).toEqual(beforeQuests);
     expect(ctx.db.select().from(schema.seasonProgress).all()).toEqual(beforeSeason);
     expect(ctx.db.select().from(schema.achievementClaims).all()).toEqual(beforeClaims);
+  });
+});
+
+describe('hubView — WAITING and WORKING TOWARD', () => {
+  it('an incubating egg, a dig still out and a pairing still cooking are WAITING rows with no control, and flip to READY the instant their clock crosses', () => {
+    const soon = ctx.now() + 1;
+    egg({ incubationStartedAt: 0, hatchesAt: soon });
+    ctx.db.insert(schema.expeditions).values({
+      userId: 'u1', siteId: 'coastal_dig', departedAt: 0, returnsAt: soon,
+    }).run();
+    ctx.db.insert(schema.breedings).values({
+      userId: 'u1', parentA: 1, parentB: 2, rarity: 'common', startedAt: 0, readyAt: soon,
+    }).run();
+
+    // Before the boundary: WAITING claims all three, and none of their READY twins fire.
+    const before = hubView(ctx, 'u1');
+    for (const id of ['waiting-eggs', 'waiting-dig', 'waiting-breeding']) {
+      const row = before.find((s) => s.id === id);
+      expect(row, `no ${id} row before the boundary`).toBeTruthy();
+      expect(row!.section).toBe('waiting');
+      expect(row!.text).toMatch(/<t:\d+:R>/);
+      expect(row!.control, `${id} must not carry a control`).toBeUndefined();
+      expect(row!.lossAtMs, 'a wait is not a deadline').toBeNull();
+    }
+    const beforeIds = before.map((s) => s.id);
+    for (const id of ['eggs-ready', 'expedition-ready', 'breeding-ready']) {
+      expect(beforeIds, `${id} claimed early — an item cannot be both waiting and ready`).not.toContain(id);
+    }
+
+    // Cross the boundary: the same three become READY, and WAITING must release them — the
+    // overlap this test exists to catch is either section still claiming the same item.
+    ctx.setNow(soon);
+    const after = hubView(ctx, 'u1');
+    const afterIds = after.map((s) => s.id);
+    for (const id of ['eggs-ready', 'expedition-ready', 'breeding-ready']) {
+      expect(afterIds, `${id} missing after the boundary`).toContain(id);
+    }
+    for (const id of ['waiting-eggs', 'waiting-dig', 'waiting-breeding']) {
+      expect(afterIds, `${id} still claimed after the boundary — overlap with READY`).not.toContain(id);
+    }
+  });
+
+  it('a completely idle park still produces a goals section — the empty-state contract', () => {
+    expect(hubView(ctx, 'u1').some((s) => s.section === 'goals')).toBe(true);
+  });
+
+  it('quotes the rating gate threshold in star form and names every label at it', () => {
+    const user = getOrCreateUser(ctx, 'u1', 'U1');
+    const gate = nextRatingGate(user.ratingHighWater);
+    expect(gate, 'fixture sanity: a fresh user must not already be past every gate').not.toBeNull();
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'goal-rating')!;
+    expect(row, 'no goal-rating row').toBeTruthy();
+    expect(row.section).toBe('goals');
+    expect(row.text).toContain(`★${(gate!.threshold / 100).toFixed(1)}`);
+    // Every label at the threshold, joined exactly as the ladder computed them — not a
+    // hardcoded count, since more than one rung can collide on the same threshold.
+    expect(row.text).toContain(gate!.labels.join(', '));
+  });
+
+  it("the energy row equals energyLine's exact wording for the settled pair — never a second rendering of it", () => {
+    const user = getOrCreateUser(ctx, 'u1', 'U1');
+    const settled = settleEnergy(user.energy, user.energyUpdatedAt, ctx.now());
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'goal-energy')!;
+    expect(row, 'no goal-energy row').toBeTruthy();
+    expect(row.section).toBe('goals');
+    expect(row.text).toBe(energyLine(settled.energy, settled.updatedAtMs));
+  });
+
+  it('never renders the raw stored energy — it is only accurate immediately after a fight', () => {
+    ctx.db.update(schema.users).set({ energy: 2, energyUpdatedAt: 0 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    ctx.setNow(100_000_000);   // long past due for regen to have moved well off the raw value
+    const settled = settleEnergy(2, 0, ctx.now());
+    expect(settled.energy, 'fixture sanity: regen must actually move the number away from the raw one').not.toBe(2);
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'goal-energy')!;
+    expect(row.text, 'the raw stored energy leaked into the row').not.toContain('2/10');
+    expect(row.text).toBe(energyLine(settled.energy, settled.updatedAtMs));
+  });
+
+  it('names the next unclaimed attendance milestone', () => {
+    const milestone = nextMilestone(ctx, 'u1');
+    expect(milestone, 'fixture sanity: a fresh user must have an unclaimed milestone ahead').not.toBeNull();
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'goal-attendance')!;
+    expect(row, 'no goal-attendance row').toBeTruthy();
+    expect(row.section).toBe('goals');
+    expect(row.text).toContain(milestone!.name);
+    expect(row.text).toContain(milestone!.at.toLocaleString());
+  });
+
+  it('omits the attendance goal once none is left, without losing the empty-state contract', () => {
+    // The ladder tops out at 1800 (ATTENDANCE_MILESTONES); pushing the high-water past it
+    // AND claiming every rung is the fixture for "nothing left ahead" — leaving any rung
+    // unclaimed would light up guests-claimable instead and mask what this test checks.
+    ctx.db.update(schema.users).set({ attendanceHighWater: 999_999 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    for (const m of ATTENDANCE_MILESTONES) {
+      ctx.db.insert(schema.attendanceClaims).values({ userId: 'u1', milestone: m.at, claimedAt: 0 }).run();
+    }
+    expect(nextMilestone(ctx, 'u1'), 'fixture sanity: must actually exhaust the ladder').toBeNull();
+    expect(claimableMilestones(ctx, 'u1'), 'fixture sanity: nothing must be left claimable either').toEqual([]);
+    expect(hubView(ctx, 'u1').map((s) => s.id)).not.toContain('goal-attendance');
+    expect(hubView(ctx, 'u1').some((s) => s.section === 'goals')).toBe(true);
   });
 });
