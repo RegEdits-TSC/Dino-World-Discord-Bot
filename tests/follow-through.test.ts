@@ -363,6 +363,11 @@ const GRAPH: GraphRow[] = [
         required: [`hatch:inc:${OWNER}:${egg.id}`, `exp:again:${OWNER}:coastal_dig`],
         exactly: [`exp:again:${OWNER}:coastal_dig`, `hatch:inc:${OWNER}:${egg.id}`],
         follow: `hatch:inc:${OWNER}:${egg.id}`,
+        // Same two-control shape as /expedition claim above, minted by the same i.update in
+        // the exp component handler rather than the slash command's own i.reply — the
+        // Important defect's fix is shared code, but nothing pinned this surface against a
+        // future edit reopening it here specifically.
+        siblingSurvivesClick: `exp:again:${OWNER}:coastal_dig`,
         effect: startedIncubating(ctx, egg.id),
       };
     },
