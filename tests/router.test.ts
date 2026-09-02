@@ -522,7 +522,7 @@ describe('router component guard — every live component surface still routes',
   const SEASON_1 = 690 * SEASON_DAYS * 86_400_000;
   // One prefix per surface below; the handler only records, since what is under test is
   // the guard's verdict, not any module's logic.
-  const PREFIXES = ['park', 'dex', 'battle', 'hatch', 'season', 'guests', 'daily', 'alert', 'top'];
+  const PREFIXES = ['park', 'dex', 'battle', 'hatch', 'season', 'guests', 'daily', 'alert', 'top', 'hub'];
 
   const componentsOf = (rows: ReadonlyArray<{ toJSON(): unknown }> = []) =>
     rows.flatMap((r) => ((r.toJSON() as {
@@ -556,14 +556,18 @@ describe('router component guard — every live component surface still routes',
     const topRows = (top.replies[0] as { components: Array<{ toJSON(): unknown }> }).components;
 
     const surfaces: Array<[string, Array<{ custom_id: string; type?: number; options?: Array<{ value: string }> }>]> = [
-      ['/park view dashboard', componentsOf(dashboardPayload(user, 1234, { now: ctx.now() }).components)],
+      ['/park view dashboard', componentsOf(dashboardPayload(user, 1234, { now: ctx.now(), hub: true }).components)],
       ['/park view Animals tab', componentsOf(animalsPayload(user, 3, {}).components)],
       ['/park view Lots tab', componentsOf(lotsPayload(user, [], 3, {
         buildable: [{ kind: 'carnivore_paddock', name: 'Carnivore Paddock', cost: 1000 }],
         upgradable: [{ lotId: 1, name: 'Carnivore Paddock', level: 1, cost: 5000 }],
       }).components)],
       ['/park view Prestige tab', componentsOf(prestigePayload(user, {}).components)],
-      ['/park view visited card', componentsOf(dashboardPayload(user, 0, { visit: true }).components)],
+      // hub: true here too, matching production (renderTab passes ctx.config.modules.hub
+      // regardless of visit) — the mint sits inside `if (!opts.visit)`, so a visited card
+      // must still mint NO hub button even with the flag on. Proves the omission is the
+      // visit guard, not the flag never reaching this call.
+      ['/park view visited card', componentsOf(dashboardPayload(user, 0, { visit: true, hub: true }).components)],
       ['/dex list pager', componentsOf([dexPageRow('u1', {}, 2, 5)])],
       ['/battle chapters', componentsOf(chaptersPayload('u1', 0, chapters).components)],
       ['/hatch eggs pager', componentsOf(eggListPayload(eggRows, ctx.now(), 'u1').components)],
@@ -576,10 +580,10 @@ describe('router component guard — every live component surface still routes',
         { capAt: ctx.now(), pending: 1240, capHours: 8 },
         { endsAt: ctx.now() + 3 * 86_400_000, unclaimed: 2 },
         ctx.now(),
-        // false: this sweep's registry only wires up PREFIXES above, which has no 'hub'
-        // entry — the hub button's own routing is covered end-to-end in
-        // tests/park-tabs.test.ts and tests/alert-buttons.test.ts.
-        false,
+        // true: matches alert-sweep.ts's real ctx.config.modules.hub caller. 'hub' is now
+        // in PREFIXES above, so this sweep covers the hub control on the alert DM too,
+        // rather than only tolerating it.
+        true,
       )!.components)],
       ['/top board', componentsOf(topRows)],
     ];
