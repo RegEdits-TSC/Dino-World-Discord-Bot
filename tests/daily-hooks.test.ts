@@ -82,6 +82,12 @@ const dailySyntheticCmd: CommandDef = {
   data: sc('daily'),
   async execute(ctx, i) { track(ctx, i.user.id, 'eggs_hatched', 1); await i.reply('ok'); },
 };
+// Same NAME as the real /hub command, but a synthetic module — pins that the hint
+// exemption keys off the dispatched command's name, not off which module owns it.
+const hubSyntheticCmd: CommandDef = {
+  data: sc('hub'),
+  async execute(ctx, i) { track(ctx, i.user.id, 'eggs_hatched', 1); await i.reply('ok'); },
+};
 
 describe('dailyRouterHooks', () => {
   it('pre-dispatch roll counts the days first action toward its own quest', async () => {
@@ -185,6 +191,40 @@ describe('dailyRouterHooks', () => {
     expect(i.replies).toHaveLength(1);
   });
 
+  it('a command named hub never triggers the hint, even completing a quest, and leaves notifiedAt null', async () => {
+    const ctx = makeCtx();
+    const uid = 'hub-cmd-user';
+    ctx.db.insert(schema.users).values({ discordId: uid, lastCollectAt: 0, createdAt: 0 }).run();
+    seedRow(ctx, uid, 0, 'hatch_1', 0, 1);
+    const registry = regWith([hubSyntheticCmd]);
+
+    const i = fakeCommand({ name: 'hub', user: uid });
+    await routeInteraction(ctx, registry, i.asInteraction(), dailyRouterHooks);
+    expect(i.replies).toHaveLength(1);
+    const view = questProgress(ctx, uid).find((v) => v.def.stat === 'eggs_hatched')!;
+    expect(view.complete).toBe(true);
+    expect(view.row.notifiedAt).toBeNull();
+  });
+
+  // The control: same completed-quest state as the two hub cases above/below, but a
+  // non-exempt command name. If this stopped hinting too, the hint mechanism itself would
+  // be broken and the hub cases would be vacuous — this proves the hint still fires when
+  // nothing exempts it, so the hub cases are proof of suppression, not proof of breakage.
+  it('a non-exempt command with the same completed-quest state still hints (control)', async () => {
+    const ctx = makeCtx();
+    const uid = 'hub-control-user';
+    ctx.db.insert(schema.users).values({ discordId: uid, lastCollectAt: 0, createdAt: 0 }).run();
+    const seeded = seedRow(ctx, uid, 0, 'hatch_1', 0, 1);
+    const registry = regWith([playCmd]);
+
+    const i = fakeCommand({ name: 'play', user: uid });
+    await routeInteraction(ctx, registry, i.asInteraction(), dailyRouterHooks);
+    expect(i.replies).toHaveLength(2);
+    expect(replyText(i.replies[1])).toContain('/daily');
+    const row = ctx.db.select().from(schema.dailyQuests).where(eq(schema.dailyQuests.id, seeded.id)).get()!;
+    expect(row.notifiedAt).toBe(ctx.now());
+  });
+
   it('a button under the ach prefix never triggers the hint', async () => {
     const ctx = makeCtx();
     const uid = 'u1';
@@ -215,6 +255,24 @@ describe('dailyRouterHooks', () => {
     const b = fakeButton({ customId: 'daily:claim:u2', user: uid });
     await routeInteraction(ctx, registry, b.asInteraction(), dailyRouterHooks);
     expect(b.replies).toHaveLength(1);
+  });
+
+  it('a button under the hub prefix never triggers the hint', async () => {
+    const ctx = makeCtx();
+    const uid = 'u-hub';
+    ctx.db.insert(schema.users).values({ discordId: uid, lastCollectAt: 0, createdAt: 0 }).run();
+    const seeded = seedRow(ctx, uid, 0, 'hatch_1', 0, 1);
+    const hubComponent: ComponentDef = {
+      prefix: 'hub',
+      async execute(ctx2, i) { track(ctx2, i.user.id, 'eggs_hatched', 1); await i.update({ content: 'x' }); },
+    };
+    const registry = regWith([], [hubComponent]);
+
+    const b = fakeButton({ customId: `hub:refresh:${uid}`, user: uid });
+    await routeInteraction(ctx, registry, b.asInteraction(), dailyRouterHooks);
+    expect(b.replies).toHaveLength(1);
+    const row = ctx.db.select().from(schema.dailyQuests).where(eq(schema.dailyQuests.id, seeded.id)).get()!;
+    expect(row.notifiedAt).toBeNull();
   });
 
   it('a command that completes a quest without replying leaves the hint owed for the next command', async () => {
@@ -305,6 +363,31 @@ describe('dailyRouterHooks', () => {
     const registry = regWith([dailyCapstoneCmd]);
 
     await routeInteraction(ctx, registry, fakeCommand({ name: 'daily', user: uid }).asInteraction(), dailyRouterHooks);
+
+    expect(seasonBadges(ctx, uid).count).toBe(1);
+  });
+
+  // Same distinction as the daily-cmd season-badge case above, for /hub: EXEMPT_COMMANDS
+  // silences the quest hint TEXT only and has nothing to do with the season track, so a
+  // command named 'hub' must still cross the capstone and stamp the badge in the same
+  // dispatch that its hint is suppressed in.
+  it('a command named hub still stamps the season badge on crossing, even though it is hint-exempt', async () => {
+    const ctx = makeCtx();
+    const uid = 'season-badge-hub-cmd-user';
+    ctx.db.insert(schema.users).values({ discordId: uid, lastCollectAt: 0, createdAt: 0 }).run();
+    const hubCapstoneCmd: CommandDef = {
+      data: sc('hub'),
+      async execute(ctx2, i) {
+        track(ctx2, i.user.id, 'expeditions_claimed', 50);   // 250
+        track(ctx2, i.user.id, 'battles_fought', 1000);      // +250 = 500
+        track(ctx2, i.user.id, 'eggs_hatched', 75);           // +225 = 725
+        track(ctx2, i.user.id, 'dinos_fed', 360);             // +120 = 845 >= 800
+        await i.reply('ok');
+      },
+    };
+    const registry = regWith([hubCapstoneCmd]);
+
+    await routeInteraction(ctx, registry, fakeCommand({ name: 'hub', user: uid }).asInteraction(), dailyRouterHooks);
 
     expect(seasonBadges(ctx, uid).count).toBe(1);
   });

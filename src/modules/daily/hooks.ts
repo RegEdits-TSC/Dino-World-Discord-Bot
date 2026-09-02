@@ -5,11 +5,16 @@ import { schema } from '../../core/db/index.js';
 import { rollDailyQuests, questProgress } from './service.js';
 import { rollSeason, stampSeasonBadge, seasonView, stampSeasonHint } from './season.js';
 
-const EXEMPT_COMMANDS = new Set(['daily', 'achievements', 'season']);
+const EXEMPT_COMMANDS = new Set(['daily', 'achievements', 'season', 'hub']);
 // `alert` is exempt for the same reason daily/ach/season are: an alert is a DM, where an
 // "ephemeral" followUp is just a second visible message — and a quest-complete hint
-// immediately after clicking Mute is absurd.
-const EXEMPT_PREFIXES = new Set(['daily', 'ach', 'alert', 'season']);
+// immediately after clicking Mute is absurd. `hub` is exempt because the hub card already
+// shows the player's claimable quest state; a hint stacked underneath it would say the same
+// thing twice and burn the one-shot notifiedAt stamp on a screen where it isn't news. This
+// set is prefix-wide, which would have been damaging had the hub been built as a /park view
+// tab — exempting `park` would have killed the hint after every park button click — but
+// `hub` owns its whole prefix, so there is no collateral here.
+const EXEMPT_PREFIXES = new Set(['daily', 'ach', 'alert', 'season', 'hub']);
 
 // Router-level hooks that wire the daily quest board into every command and button
 // dispatch. Both preDispatch and postDispatch are called from routeInteraction inside
