@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { ComponentType } from 'discord.js';
+import { ActionRow, ComponentType } from 'discord.js';
+import type { APIActionRowComponent, APIComponentInMessageActionRow, MessageActionRowComponent } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import {
   makeCtx, fakeCommand, fakeButton, fakeSelect, replyText, testRegistry,
@@ -113,6 +114,33 @@ function controlsOf(payload: unknown, label: string): Rendered[] {
     const json = (row as { toJSON(): { components?: Rendered[] } }).toJSON();
     return (json.components ?? []).filter((c) => typeof c.custom_id === 'string');
   });
+}
+
+/**
+ * ActionRow's own constructor is private — discord.js parses gateway/REST payloads through
+ * it internally and never exposes it — so this casts the CLASS to a public-constructor shape
+ * purely to reach that same constructor from a test. The object that comes back is a genuine
+ * `ActionRow` instance (`instanceof ActionRow` is true), not a duck-typed stand-in.
+ */
+const RealActionRow = ActionRow as unknown as new (
+  data: APIActionRowComponent<APIComponentInMessageActionRow>,
+) => ActionRow<MessageActionRowComponent>;
+
+/**
+ * `i.message.components`, as discord.js actually represents it — real `ActionRow` structures
+ * built from a reply's real builder JSON — not the harness's default id-only placeholder
+ * (`fakeButton`'s `componentIds`, tests/harness.ts). Needed wherever a handler reads
+ * `i.message.components` itself, which until the Incubate fix (src/modules/hatchery/index.ts)
+ * nothing in this repo did: the placeholder's children carry a customId and nothing else, and
+ * `ActionRowBuilder.from()` rightly refuses to round-trip a button missing its label. Using the
+ * placeholder here would make the sibling-survival assertions below pass by drowning out the
+ * bug they exist to catch — every row would fail `instanceof ActionRow`, the rebuild would see
+ * zero rows regardless of what the card actually held, and `components: []` would look correct
+ * by coincidence.
+ */
+function realMessageComponents(payload: unknown): ActionRow<MessageActionRowComponent>[] {
+  const rows = (payload as { components?: ReadonlyArray<{ toJSON(): unknown }> } | undefined)?.components ?? [];
+  return rows.map((row) => new RealActionRow(row.toJSON() as APIActionRowComponent<APIComponentInMessageActionRow>));
 }
 
 /**
@@ -272,6 +300,17 @@ interface Step {
   forbiddenPrefixes?: string[];
   /** The one id this row dispatches back through the router. */
   follow: string;
+  /**
+   * Set only on a card that mints TWO controls where `follow` spends one of them
+   * (hatch:inc) — the id of the OTHER control, which that click must not delete. This is
+   * the assertion this whole plan shipped without: every row here previously asserted only
+   * the graph at MINT time, never what the message looks like after a follow-through is
+   * taken, which is exactly how one click deleting its sibling survived 32 reviews. Set
+   * this and `follow`'s click is driven with the card's REAL rendered components
+   * (`realMessageComponents`) rather than the harness's id-only placeholder — the
+   * placeholder would make this assertion pass for the wrong reason (see that helper).
+   */
+  siblingSurvivesClick?: string;
   /** Asserted after `follow` has routed. Receives the click that routed it. */
   effect(followed: FakeInteraction): Promise<void>;
 }
@@ -303,6 +342,10 @@ const GRAPH: GraphRow[] = [
         // pushes after it. This is the only place that order is pinned.
         exactly: [`exp:again:${OWNER}:coastal_dig`, `hatch:inc:${OWNER}:${egg.id}`],
         follow: `hatch:inc:${OWNER}:${egg.id}`,
+        // This is the exact card the reviewer reproduced the Important defect on: clicking
+        // Incubate replaced components with [], deleting Dig again along with the spent
+        // button.
+        siblingSurvivesClick: `exp:again:${OWNER}:coastal_dig`,
         effect: startedIncubating(ctx, egg.id),
       };
     },
@@ -342,6 +385,10 @@ const GRAPH: GraphRow[] = [
         // Buy another first, then Incubate — Task 23 (G7-D) pushes, Task 26 (G4-E) pushes after it.
         exactly: [`shop:again:${OWNER}:common`, `hatch:inc:${OWNER}:${egg.id}`],
         follow: `hatch:inc:${OWNER}:${egg.id}`,
+        // The other card the reviewer reproduced the Important defect on, same shape as
+        // /expedition claim above: clicking Incubate replaced components with [], deleting
+        // Buy another along with the spent button.
+        siblingSurvivesClick: `shop:again:${OWNER}:common`,
         effect: startedIncubating(ctx, egg.id),
       };
     },
@@ -695,8 +742,22 @@ describe('the follow-through graph', () => {
       }
       expect(step.required, 'this row dispatches an id it never required').toContain(step.follow);
       const click = fakeButton({ customId: step.follow, user: OWNER, componentIds: minted });
+      if (step.siblingSurvivesClick) {
+        // The default id-only placeholder cannot exercise this assertion — see
+        // realMessageComponents for why — so this row's click gets the card's REAL rendered
+        // components instead.
+        (click.asInteraction() as unknown as { message: { components: unknown[] } }).message.components =
+          realMessageComponents(step.payload);
+      }
       await routeInteraction(ctx, testRegistry, click.asInteraction());
       expectDispatched(click, `${row.surface} → ${step.follow}`);
+      if (step.siblingSurvivesClick) {
+        const after = controlsOf(click.replies[0], `${row.surface} after clicking ${step.follow}`)
+          .map((c) => c.custom_id);
+        expect(after,
+          `${row.surface}: clicking ${step.follow} deleted its sibling control ${step.siblingSurvivesClick} — a follow-through click must close only the control it spent`)
+          .toContain(step.siblingSurvivesClick);
+      }
       await step.effect(click);
     });
   }

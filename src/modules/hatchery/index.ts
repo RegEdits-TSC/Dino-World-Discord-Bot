@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, type AttachmentBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, ActionRow, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, type AttachmentBuilder, type MessageActionRowComponent, type APIActionRowComponent, type APIButtonComponent } from 'discord.js';
 import { eq, and } from 'drizzle-orm';
 import type { ModuleManifest } from '../../core/modules.js';
 import { schema } from '../../core/db/index.js';
@@ -119,12 +119,40 @@ export const hatcheryModule: ModuleManifest = {
             // button sits on carries an egg embed whose image is an attachment:// URL into
             // its own upload: `attachments: []` would drop that upload and leave the embed
             // pointing at nothing, and `embeds: []` would throw the reveal away. Only
-            // content and components are replaced — components: [] REMOVES the spent
-            // button, which is how a one-shot flow is closed here, because neither router
-            // guard reads `disabled`. i.reply would leave the button standing.
+            // content and components are replaced. i.reply would leave the button standing.
+            //
+            // components is REBUILT from i.message.components — Discord's own record of what
+            // is on the card — not cleared outright. Incubate is no longer the only control
+            // here: /expedition claim's reply, the exp:claim update and /shop egg's reply each
+            // push a sibling (Dig again / Buy another) onto this same array, and `components:
+            // []` deleted it along with the spent button. Only the SPENT button (this
+            // customId) is dropped; a row left with no surviving children is dropped too,
+            // rather than sent as an empty row. Closing the flow by REMOVING the button, not
+            // disabling it, still stands — neither router guard reads `disabled`.
+            //
+            // ActionRowBuilder.from() round-trips a real row cleanly (verified directly
+            // against the installed @discordjs/builders: a row built from real API JSON comes
+            // back byte-for-byte via .from().toJSON()) — the installed version does not have
+            // the addOptions([])-style surprise an earlier task in this plan found elsewhere.
+            const components = (i.message?.components ?? [])
+              // Only ActionRows of buttons are ever minted onto these cards (see
+              // src/core/components.ts's own note on Components V2 containers/sections);
+              // filtering to ActionRow narrows i.message.components' broader TopLevelComponent
+              // type to the one shape this rebuild handles.
+              .filter((row): row is ActionRow<MessageActionRowComponent> => row instanceof ActionRow)
+              .map((row) => row.toJSON())
+              .map((row) => ({ ...row, components: row.components.filter((c) => (c as { custom_id?: string }).custom_id !== i.customId) }))
+              .filter((row) => row.components.length > 0)
+              // Cast, not a generic on .from(): row.toJSON()'s declared return type is the
+              // whole message-action-row union (button OR select), because ActionRow itself
+              // has no opinion on what its message actually carries. Every row this handler
+              // ever sees is a single-button row (digAgainRow/buyAnotherRow/incubateRow, the
+              // only builders that mint onto these cards) — the assertion documents that fact
+              // rather than inventing it.
+              .map((row) => ActionRowBuilder.from<ButtonBuilder>(row as APIActionRowComponent<APIButtonComponent>));
             await i.update({
               content: `🥚 Egg #${egg.id} is incubating — ready <t:${Math.floor(egg.hatchesAt! / 1000)}:R>, then \`/hatch egg:${egg.id}\`.`,
-              components: [],
+              components,
             });
           } catch (e) {
             if (e instanceof HatcheryError) await i.reply({ content: e.message, flags: MessageFlags.Ephemeral }); else throw e;
