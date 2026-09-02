@@ -17,6 +17,8 @@ import { claimableMilestones, nextMilestone } from '../src/modules/guests/servic
 import { ATTENDANCE_MILESTONES } from '../src/data/attendance.js';
 import { settleEnergy } from '../src/data/battle/energy.js';
 import { energyLine } from '../src/modules/battles/embeds.js';
+import { LOT_SLOT_THRESHOLDS, SHOP_CEILING, MYTHIC_UNLOCK_RATING } from '../src/data/progression.js';
+import { EXPEDITION_SITES } from '../src/data/sites.js';
 
 let ctx: ReturnType<typeof makeCtx>;
 beforeEach(() => { ctx = makeCtx({ nowMs: 1_000_000 }); getOrCreateUser(ctx, 'u1', 'U1'); });
@@ -498,5 +500,43 @@ describe('hubView — WAITING and WORKING TOWARD', () => {
     expect(claimableMilestones(ctx, 'u1'), 'fixture sanity: nothing must be left claimable either').toEqual([]);
     expect(hubView(ctx, 'u1').map((s) => s.id)).not.toContain('goal-attendance');
     expect(hubView(ctx, 'u1').some((s) => s.section === 'goals')).toBe(true);
+  });
+
+  it('the goals section renders from the energy row ALONE once both the rating gate and the milestone are exhausted', () => {
+    // Every ladder nextRatingGate consults, read from gates.ts's own imports rather than a
+    // guessed literal: lot slots, expedition site unlocks, the shop ceiling and the mythic
+    // unlock. Every comparison in nextRatingGate is a strict `>`, so sitting exactly ON the
+    // highest rung clears all of them at once.
+    const highestGateThreshold = Math.max(
+      ...LOT_SLOT_THRESHOLDS,
+      ...Object.values(EXPEDITION_SITES).map((s) => s.unlockRating),
+      ...SHOP_CEILING.map((r) => r.atLeast),
+      MYTHIC_UNLOCK_RATING,
+    );
+    ctx.db.update(schema.users)
+      .set({ ratingHighWater: highestGateThreshold, attendanceHighWater: 999_999 })
+      .where(eq(schema.users.discordId, 'u1')).run();
+    // Same exhaustion fixture as the test above — every rung claimed, not merely crossed,
+    // or claimableMilestones would light up guests-claimable and mask this case too.
+    for (const m of ATTENDANCE_MILESTONES) {
+      ctx.db.insert(schema.attendanceClaims).values({ userId: 'u1', milestone: m.at, claimedAt: 0 }).run();
+    }
+
+    // Both preconditions this case depends on, asserted directly against the real
+    // functions — not assumed from the setup above.
+    expect(nextRatingGate(highestGateThreshold), 'fixture sanity: the rating gate must be exhausted').toBeNull();
+    expect(nextMilestone(ctx, 'u1'), 'fixture sanity: the milestone ladder must be exhausted').toBeNull();
+
+    const rows = hubView(ctx, 'u1');
+    const ids = rows.map((s) => s.id);
+    expect(ids).not.toContain('goal-rating');
+    expect(ids).not.toContain('goal-attendance');
+    // Not just "a goals row exists" — exactly one, and it is the energy row. That is the
+    // difference between this case and the idle-park test: there, goal-rating and
+    // goal-attendance both still fire (ratingHighWater/attendanceHighWater sit at 0, below
+    // every rung), so goal-energy is never the ONLY thing keeping the section alive.
+    const goalsRows = rows.filter((s) => s.section === 'goals');
+    expect(goalsRows, 'the goals section must still render on the energy row alone').toHaveLength(1);
+    expect(goalsRows[0].id).toBe('goal-energy');
   });
 });
