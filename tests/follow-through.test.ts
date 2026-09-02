@@ -846,3 +846,54 @@ describe('a spend confirm refuses a price that moved under it', () => {
       'the stale confirm left the interaction unacknowledged').toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// This pins an ACCEPTED risk, not a bug to fix — design doc §8
+// (docs/superpowers/specs/2026-08-31-follow-through-design.md): stale
+// same-message replay is narrowed by the two-step confirm and the price
+// recheck, not closed. A STILL-VALID shop:againyes confirm — same price,
+// same rotation, no clock movement, nothing stale about it — clicked twice
+// charges twice and delivers two eggs, because buyEgg charges and inserts
+// in one transaction and nothing dedupes the click itself. That was a
+// deliberate call: closing it systemically is the separate queued
+// stale-replay-hardening work, not this branch, and the charge stays 1:1
+// with what the player receives on each click — nothing is lost, only
+// doubled. This test exists so a future idempotency key or second confirm
+// on this arm is a conscious decision made against a red test, not a
+// silent behaviour change nobody notices because nothing here pinned the
+// shape that was chosen.
+// ---------------------------------------------------------------------------
+describe('a still-valid spend confirm clicked twice (accepted risk, design doc §8)', () => {
+  it('shop:againyes clicked twice with no clock movement charges twice and delivers two eggs', async () => {
+    const ctx = ctxOn(DAY0);
+    seedOwner(ctx);
+    expect(dailyEggOffers(0, ctx.now()),
+      'the fixture assumes common is in the rotation at high-water 0').toContain('common');
+    const price = eggPriceAt('common', ctx.now());
+    const cashBefore = cashOf(ctx);
+
+    const card = await clickSurface(ctx, `shop:again:${OWNER}:common`, 'the Buy another card');
+    const minted = controlsOf(card.replies[0], 'the Buy another card').map((c) => c.custom_id);
+    // Read off the real minted id rather than hand-typing it: hand-typing would only prove
+    // two strings someone wrote match, not that this id came from the real confirm card.
+    const confirmId = minted.find((id) => id.startsWith(`shop:againyes:${OWNER}:common:`));
+    expect(confirmId, 'the Buy another card did not mint a shop:againyes confirm').toBeDefined();
+
+    const first = fakeButton({ customId: confirmId!, user: OWNER, componentIds: [confirmId!] });
+    await routeInteraction(ctx, testRegistry, first.asInteraction());
+    expectDispatched(first, 'the first click of the still-valid shop:againyes confirm');
+
+    // The SAME id, dispatched again, with no clock movement in between — this is the
+    // still-valid replay §8 accepts, not the stale-price replay the block above covers.
+    const second = fakeButton({ customId: confirmId!, user: OWNER, componentIds: [confirmId!] });
+    await routeInteraction(ctx, testRegistry, second.asInteraction());
+    expectDispatched(second, 'the second click of the same still-valid shop:againyes confirm');
+
+    expect(cashOf(ctx),
+      'two clicks of one still-valid confirm did not charge exactly twice the quoted price')
+      .toBe(cashBefore - 2 * price);
+    expect(eggsOf(ctx),
+      'two clicks of one still-valid confirm did not deliver exactly two eggs')
+      .toHaveLength(2);
+  });
+});
