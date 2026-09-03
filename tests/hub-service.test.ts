@@ -443,6 +443,47 @@ describe('hubView — the CLAIM section', () => {
   });
 });
 
+describe('hubView — the waiting row carries incubator occupancy', () => {
+  it('names slots in use alongside the count still cooking', () => {
+    seedHatcheryLab(3);
+    egg({ incubationStartedAt: 0, hatchesAt: 9_000_000 });
+    egg({ incubationStartedAt: 0, hatchesAt: 9_000_001 });
+    const { lots } = toClockDinos(ctx, 'u1');
+    expect(incubatorSlots(lots)).toBe(3);
+
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'waiting-eggs')!;
+    expect(row.text).toContain('2 of 3 slots in use');
+  });
+
+  // THE case this row exists for. A ready-but-uncracked egg still HOLDS its slot but is no
+  // longer "incubating", so the two numbers genuinely diverge. Deriving occupancy from the
+  // cooking count would read "2 of 3 slots in use" here while the incubator is actually
+  // full — telling the player they have room when they have none, which is worse than the
+  // silence this row replaced. Occupancy must come from incubatingCount, which counts a
+  // started egg whether or not it has finished.
+  it('counts a ready-but-uncracked egg as holding its slot, though it is no longer cooking', () => {
+    seedHatcheryLab(3);
+    egg({ incubationStartedAt: 0, hatchesAt: 9_000_000 });          // cooking
+    egg({ incubationStartedAt: 0, hatchesAt: 9_000_001 });          // cooking
+    egg({ incubationStartedAt: 0, hatchesAt: ctx.now() });          // ready, still holding
+    const { lots } = toClockDinos(ctx, 'u1');
+    // The precondition that makes this case meaningful: the two counts really do differ.
+    expect(incubatingCount(ctx, 'u1'), 'all three eggs should hold a slot').toBe(3);
+    expect(incubatorSlots(lots)).toBe(3);
+
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'waiting-eggs')!;
+    expect(row.text, 'only two are still cooking').toContain('2 incubating');
+    expect(row.text, 'the ready egg still holds its slot — the incubator is full')
+      .toContain('3 of 3 slots in use');
+  });
+
+  it('reports occupancy even for a player with no Hatchery Lab', () => {
+    egg({ incubationStartedAt: 0, hatchesAt: 9_000_000 });
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'waiting-eggs')!;
+    expect(row.text).toContain('1 of 1 slots in use');
+  });
+});
+
 describe('hubView — WAITING and WORKING TOWARD', () => {
   it('an incubating egg, a dig still out and a pairing still cooking are WAITING rows with no control, and flip to READY the instant their clock crosses', () => {
     const soon = ctx.now() + 1;
@@ -676,6 +717,9 @@ describe('hubView — the Incubate control against a full incubator', () => {
     expect(row.text).toMatch(/hatch/i);
   });
 
+  // The slot count used to surface ONLY here, in the blocked state — so a player who was
+  // not currently stuck had nowhere in the product to learn how many slots they owned.
+  // The waiting row now carries occupancy too, which is where these next cases live.
   it('offers Incubate again the moment a slot frees up', () => {
     // The other side of the same boundary: nothing incubating, one idle egg, control back.
     egg();
