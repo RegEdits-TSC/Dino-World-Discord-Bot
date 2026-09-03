@@ -234,9 +234,12 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
     });
   }
 
-  // CLAIM. All five controls below are reused verbatim from their owning commands and are
-  // all hub-safe: daily:claim, ach:claimall and season:claim all reply ephemerally, and so
-  // does park:collect, so clicking any of them leaves the hub card standing.
+  // CLAIM. Every control below is reused verbatim from its owning command, never proxied.
+  // daily:claim, ach:claimall, season:claim and park:collect all reply ephemerally, so
+  // clicking any of them leaves the hub card standing — with a now-stale label, which is
+  // what the Refresh button is for. guests:claim is the odd one out: its handler calls
+  // i.update with a fresh guestsPayload, so clicking it replaces the hub card with the
+  // guests card instead of leaving it up.
   const claimableQuests = questProgress(ctx, userId)
     // `complete` alone re-offers a quest that was already claimed, forever.
     .filter((v) => v.complete && v.row.claimedAt === null);
