@@ -19,6 +19,7 @@ export const HELP_TOPICS: Record<string, HelpTopic> = {
     '4. `/incubate egg:<id>`, then `/hatch egg:<id>` when ready.',
     '5. `/build kind:herbivore_paddock`, then `/dino assign` — unassigned dinos earn nothing.',
     '6. `/feed all` regularly — hungry dinos get uncomfortable and eventually escape.',
+    'Not sure what to do next at any point after that? `/hub` lays out what\'s ready, what needs you, and what you can claim, with a button for each on one screen.',
   ].join('\n') },
   park: { title: '🏞️ Park', body: [
     '`/park view [user]` — dashboard, park map, Collect button. Add `user` to visit someone else\'s park, read-only, with a Next park ▶ button to keep browsing.',
