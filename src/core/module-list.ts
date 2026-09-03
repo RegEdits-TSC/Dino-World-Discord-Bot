@@ -16,6 +16,7 @@ import { worldModule } from '../modules/world/index.js';
 import { dexModule } from '../modules/dex/index.js';
 import { duelsModule } from '../modules/duels/index.js';
 import { guestsModule } from '../modules/guests/index.js';
+import { hubModule } from '../modules/hub/index.js';
 
 // The one and only module array. index.ts, deploy-commands.ts, and the test
 // suite all consume this list, so registered handlers and deployed builders
@@ -24,5 +25,5 @@ export const ALL_MODULES: ModuleManifest[] = [
   parkModule, hatcheryModule, expeditionsModule, shopModule, settingsModule,
   careModule, tradingModule, leaderboardsModule, adminModule, helpModule,
   battlesModule, geneLabModule, dailyModule, worldModule, dexModule, duelsModule,
-  guestsModule,
+  guestsModule, hubModule,
 ];

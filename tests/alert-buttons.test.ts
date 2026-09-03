@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { eq } from 'drizzle-orm';
 import type { ButtonInteraction } from 'discord.js';
-import { makeCtx, fakeButton } from './harness.js';
+import { makeCtx, fakeButton, testRegistry } from './harness.js';
+import { routeInteraction } from '../src/core/router.js';
 import { schema } from '../src/core/db/index.js';
 import { parkModule } from '../src/modules/park/index.js';
 import { expeditionsModule } from '../src/modules/expeditions/index.js';
@@ -85,6 +86,21 @@ describe('alert buttons', () => {
     await alertComp().execute(ctx, b.asInteraction() as unknown as ButtonInteraction);
     expect(b.deferOpts.length).toBe(1);
     expect(b.replies).toHaveLength(0);
+  });
+
+  it('the hub:open button minted on the alert DM replies rather than updating', async () => {
+    // The alert DM mints hub:open:<uid> as a raw string (park does not import the hub
+    // module), so this dispatches through the REAL router against testRegistry, exactly
+    // like a click on the DM itself would, rather than through alertComp() which owns
+    // only the 'alert' prefix.
+    const ctx = makeCtx(); seed(ctx);
+    const b = fakeButton({ customId: 'hub:open:u1', user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(b.replies, 'hub:open answered nothing').toHaveLength(1);
+    // An alert DM is a message the player may still need — an i.update() there would
+    // destroy the alert itself. replyKinds is the accessor that discriminates reply from
+    // update (all four ack methods push into the same `replies` array).
+    expect(b.replyKinds, 'hub:open updated the alert DM instead of replying').toEqual(['reply']);
   });
 
   it('exp:claim rejects a bystander', async () => {

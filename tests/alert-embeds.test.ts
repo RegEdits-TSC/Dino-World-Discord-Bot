@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import type { NotifyPayload, Sender } from '../src/core/notify.js';
+import { deliverNotification } from '../src/core/notify.js';
 import { alertPayload } from '../src/modules/park/alert-embeds.js';
 import { validateMessagePayload } from './lib/discord-limits.js';
+import { makeCtx } from './harness.js';
 
 const esc = (over = {}) => ({ dinoId: 1, name: 'Rexy', escapeAt: 3_600_000, tier: 'last_call' as const, ...over });
 const seasonNudge = { endsAt: 3 * 86_400_000, unclaimed: 2 };
@@ -16,7 +19,7 @@ const fileNames = (p: NonNullable<ReturnType<typeof alertPayload>>): Array<strin
 
 describe('alertPayload', () => {
   it('renders both conditions in one embed with one button row', () => {
-    const p = alertPayload('u1', [esc()], { capAt: 0, pending: 1240, capHours: 8 }, null, 0)!;
+    const p = alertPayload('u1', [esc()], { capAt: 0, pending: 1240, capHours: 8 }, null, 0, false)!;
     const d = json(p).description ?? '';
     expect(d).toContain('Rexy');
     expect(d).toContain('1,240');
@@ -27,14 +30,14 @@ describe('alertPayload', () => {
   });
 
   it('omits the Feed all button when there are no escapes', () => {
-    const p = alertPayload('u1', [], { capAt: 0, pending: 500, capHours: 8 }, null, 0)!;
+    const p = alertPayload('u1', [], { capAt: 0, pending: 500, capHours: 8 }, null, 0, false)!;
     const ids = (p.components![0].toJSON() as { components: Array<{ custom_id: string }> })
       .components.map((c) => c.custom_id);
     expect(ids).toEqual(['alert:collect:u1', 'alert:mute:u1']);
   });
 
   it('omits the Collect button when income has not capped', () => {
-    const p = alertPayload('u1', [esc()], null, null, 0)!;
+    const p = alertPayload('u1', [esc()], null, null, 0, false)!;
     const ids = (p.components![0].toJSON() as { components: Array<{ custom_id: string }> })
       .components.map((c) => c.custom_id);
     expect(ids).toEqual(['alert:feedall:u1', 'alert:mute:u1']);
@@ -44,7 +47,7 @@ describe('alertPayload', () => {
     // MessagePayload.resolveBody PUSHES into an explicit attachments array and create()
     // only shallow-copies it, so a shared array accumulates duplicate ids on the second
     // send. Notification payloads are safe precisely because they omit the key.
-    const p = alertPayload('u1', [esc()], null, null, 0)! as Record<string, unknown>;
+    const p = alertPayload('u1', [esc()], null, null, 0, false)! as Record<string, unknown>;
     expect('attachments' in p).toBe(false);
   });
 
@@ -53,7 +56,7 @@ describe('alertPayload', () => {
     // description limit.
     const many = Array.from({ length: 80 }, (_, n) =>
       esc({ dinoId: n + 1, name: `Dino${n}`, escapeAt: (n + 1) * 60_000 }));
-    const p = alertPayload('u1', many, null, null, 0)!;
+    const p = alertPayload('u1', many, null, null, 0, false)!;
     const description = json(p).description ?? '';
     expect(description).toContain('+75 more');
     // Guards the truncation count itself, not just the presence of the word "more": exactly
@@ -63,24 +66,24 @@ describe('alertPayload', () => {
   });
 
   it('passes Discord limit validation in the everyday case', () => {
-    const p = alertPayload('u1', [esc()], { capAt: 0, pending: 1240, capHours: 8 }, null, 0);
+    const p = alertPayload('u1', [esc()], { capAt: 0, pending: 1240, capHours: 8 }, null, 0, false);
     expect(() => validateMessagePayload(p, 'alert payload')).not.toThrow();
   });
 
   it('titles a season-only alert for the season nudge, not the generic park warning', () => {
-    const p = alertPayload('u1', [], null, seasonNudge, 0)!;
+    const p = alertPayload('u1', [], null, seasonNudge, 0, false)!;
     expect(json(p).title).toBe('🎖️ Season ending soon');
   });
 
   it('keeps the generic title when an escape or income-cap condition rides alongside the season nudge', () => {
-    const withEscape = alertPayload('u1', [esc()], null, seasonNudge, 0)!;
+    const withEscape = alertPayload('u1', [esc()], null, seasonNudge, 0, false)!;
     expect(json(withEscape).title).toBe('🚨 Your park needs you');
-    const withIncome = alertPayload('u1', [], { capAt: 0, pending: 500, capHours: 8 }, seasonNudge, 0)!;
+    const withIncome = alertPayload('u1', [], { capAt: 0, pending: 500, capHours: 8 }, seasonNudge, 0, false)!;
     expect(json(withIncome).title).toBe('🚨 Your park needs you');
   });
 
   it('dresses a season-only alert with the season banner and STILL carries no attachments key', () => {
-    const p = alertPayload('u1', [], null, seasonNudge, 0)!;
+    const p = alertPayload('u1', [], null, seasonNudge, 0, false)!;
     expect(fileNames(p)).toEqual(['season.webp']);
     expect(json(p).image?.url).toBe('attachment://season.webp');
     // The banner may be added; the attachments key may NEVER be. deliverNotification hands
@@ -94,9 +97,9 @@ describe('alertPayload', () => {
   it('keeps the escape and income banners when either condition rides alongside the season nudge', () => {
     // The banner arms must track the title arms: escapes lead, then income, and only a
     // season-ONLY alert gets the season banner — matching the '🎖️ Season ending soon' title.
-    const withEscape = alertPayload('u1', [esc()], null, seasonNudge, 0)!;
+    const withEscape = alertPayload('u1', [esc()], null, seasonNudge, 0, false)!;
     expect(fileNames(withEscape)).toEqual(['care_neglect.webp']);
-    const withIncome = alertPayload('u1', [], { capAt: 0, pending: 500, capHours: 8 }, seasonNudge, 0)!;
+    const withIncome = alertPayload('u1', [], { capAt: 0, pending: 500, capHours: 8 }, seasonNudge, 0, false)!;
     // The banner is seeded on userId, and 'u1' happens to hash to index 0 for `collect`
     // — index 0 IS the base file — so this name reads exactly as it did before seeding.
     // care_neglect and season ship no -vN siblings at all, so their seed is inert.
@@ -110,13 +113,60 @@ describe('alertPayload', () => {
     // Guards the seed itself: 'u1' resolving to the base file above cannot tell a seeded
     // call from an unseeded one, so a second player pins that the face actually moves.
     const income = { capAt: 0, pending: 500, capHours: 8 };
-    expect(fileNames(alertPayload('u2', [], income, null, 0)!)).toEqual(['collect-v3.webp']);
+    expect(fileNames(alertPayload('u2', [], income, null, 0, false)!)).toEqual(['collect-v3.webp']);
   });
 
   it('returns null when there is nothing to report', () => {
     // An alert with no conditions is not an empty alert, it is no alert: setDescription('')
     // is rejected outright by @discordjs/builders' embed validator, so there must be no way
     // to reach that call with escapes, income, and season all empty.
-    expect(alertPayload('u1', [], null, null, 0)).toBeNull();
+    expect(alertPayload('u1', [], null, null, 0, false)).toBeNull();
+  });
+});
+
+describe('the hub button on the alert DM', () => {
+  const income = { capAt: 0, pending: 1240, capHours: 8 };
+  const ids = (p: NonNullable<ReturnType<typeof alertPayload>>) =>
+    (p.components![0].toJSON() as { components: Array<{ custom_id: string }> })
+      .components.map((c) => c.custom_id);
+
+  it('with hub true the row ends with hub:open:<uid>, and Mute is still present', () => {
+    const p = alertPayload('u1', [esc()], income, null, 0, true)!;
+    expect(ids(p)).toEqual(['alert:feedall:u1', 'alert:collect:u1', 'hub:open:u1', 'alert:mute:u1']);
+  });
+
+  it('with hub false the row is exactly what it is today — no hub:open anywhere', () => {
+    const p = alertPayload('u1', [esc()], income, null, 0, false)!;
+    expect(ids(p)).toEqual(['alert:feedall:u1', 'alert:collect:u1', 'alert:mute:u1']);
+    expect(JSON.stringify(p)).not.toContain('hub:open');
+  });
+
+  it('the fullest possible alert (escapes AND income AND season, hub true) still clears the row cap', async () => {
+    // Season adds no button of its own (it only changes the title/description), so the
+    // worst case for row occupancy is exactly this: escapes, income and hub all present.
+    const p = alertPayload('u1', [esc()], income, seasonNudge, 0, true)!;
+    expect(ids(p)).toEqual(['alert:feedall:u1', 'alert:collect:u1', 'hub:open:u1', 'alert:mute:u1']);
+
+    // Sent through a fake Sender exactly as the sweep does (tests/alert-sweep.test.ts's own
+    // capture() shape) rather than validated in isolation: unlike harness.ts's fake
+    // interactions, a Sender fake does not run the validator itself, so it is called here
+    // explicitly against the exact object deliverNotification handed to dmSend.
+    const ctx = makeCtx();
+    const captured: NotifyPayload[] = [];
+    const sender: Sender = {
+      channelSend: async () => { throw new Error('alerts are DM-only'); },
+      dmSend: async (_userId, payload) => { captured.push(payload); },
+    };
+    await deliverNotification(sender, ctx, 'u1', null, p);
+    expect(captured).toHaveLength(1);
+    expect(() => validateMessagePayload(captured[0], 'fullest alert payload')).not.toThrow();
+
+    const buttonCount = ids(p).length;
+    // Discord's own cap is 5 buttons per row (tests/lib/discord-limits.ts's rowSchema,
+    // exercised above through validateMessagePayload). Reporting the actual count rather
+    // than asserting a hand-picked number: whatever this run measures is what goes in the
+    // task report, so the number in the report and the number a future reader can re-derive
+    // from this test can never drift apart.
+    expect(buttonCount).toBeLessThanOrEqual(5);
   });
 });

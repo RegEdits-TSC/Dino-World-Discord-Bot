@@ -134,6 +134,7 @@ drive, and `/help` walks you through your first ten minutes in Discord.
 
 | Command | What it does | Notes |
 | --- | --- | --- |
+| `/hub` | What to do right now — everything ready to claim, everything that needs you, what's still cooking, and what you're working toward, on one ephemeral card | Rows you can act on get a button where one exists (crack an egg, claim a dig, feed a hungry paddock, and more). They share a single row of buttons, so when more rows compete than fit, the ones you stand to lose something by ignoring come first; some rows are a heads-up with no button at all, and point at the command instead. A 🔄 Refresh button repaints the card after you use one. Also reachable via a **🧭 What now?** button on your park card and on park alert DMs |
 | `/top` | Leaderboards by rating, cash, collection, legacy standing, battle stars, duel rating, season points, or attendance | Server or global scope. Up to five **Visit** buttons open the ranked players' parks |
 | `/help` | How to play, across **thirteen** topics | Run with no topic for a first-ten-minutes walkthrough |
 

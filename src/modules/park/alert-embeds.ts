@@ -21,7 +21,7 @@ function fmtRemaining(ms: number): string {
  */
 export function alertPayload(
   userId: string, escapes: EscapeAlert[], income: IncomeCapAlert | null,
-  season: SeasonEndAlert | null, now: number,
+  season: SeasonEndAlert | null, now: number, hub: boolean,
 ): (NotifyPayload & { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] }) | null {
   // An alert with no conditions is not an empty alert, it is no alert. Returning null here
   // means no caller can coerce this function into building `setDescription('')`, which
@@ -92,6 +92,14 @@ export function alertPayload(
   if (income) {
     row.addComponents(new ButtonBuilder().setCustomId(`alert:collect:${userId}`)
       .setLabel('💰 Collect').setStyle(ButtonStyle.Success));
+  }
+  if (hub) {
+    // Raw string: the park module must not import the hub, for the reason recorded on the
+    // park-card mint (src/modules/park/embeds.ts). Gated on the module flag by the caller,
+    // since ModuleRegistry filters to enabled modules — an ungated mint is a button that
+    // silently does nothing. Before Mute so Mute stays the row's last button.
+    row.addComponents(new ButtonBuilder().setCustomId(`hub:open:${userId}`)
+      .setLabel('🧭 What now?').setStyle(ButtonStyle.Secondary));
   }
   row.addComponents(new ButtonBuilder().setCustomId(`alert:mute:${userId}`)
     .setLabel('🔕 Mute alerts').setStyle(ButtonStyle.Secondary));

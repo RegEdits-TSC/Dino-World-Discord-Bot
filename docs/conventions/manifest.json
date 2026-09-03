@@ -452,6 +452,7 @@
         "src/core/autocomplete.ts",
         "tests/contract.test.ts",
         "tests/follow-through.test.ts",
+        "tests/hub-*.test.ts",
         "tests/autocomplete-*.test.ts",
         "tests/battles-autocomplete.test.ts",
         "tests/settings.test.ts"

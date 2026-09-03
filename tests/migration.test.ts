@@ -771,6 +771,7 @@ describe('0018 read indexes via the real drizzle migrator (production path)', ()
         'season_progress_season_user',
         'timers_due',
         'trades_status_from',
+        'trades_status_to',
         'tx_log_reverses',
         'user_guilds_guild',
       ]);

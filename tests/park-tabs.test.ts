@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { MessageFlags } from 'discord.js';
 import { eq } from 'drizzle-orm';
 import { PARK_TABS, isParkTab, tabRow, dashboardPayload, animalsPayload, lotsPayload, prestigePayload } from '../src/modules/park/embeds.js';
-import { makeCtx, fakeButton } from './harness.js';
+import { makeCtx, fakeButton, testRegistry } from './harness.js';
+import { routeInteraction } from '../src/core/router.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { tierForPoints } from '../src/modules/park/ranks.js';
 import { ATTENDANCE_MAX } from '../src/data/attendance.js';
@@ -87,6 +88,54 @@ describe('Park tab', () => {
     const p = dashboardPayload(user, 999, { visit: true });
     expect(JSON.stringify(p)).not.toContain('park:collect');
     expect(p.components[0].toJSON().components).toHaveLength(4);
+  });
+});
+
+describe('the hub button', () => {
+  it('offers hub:open second, after Collect, when the module is enabled', () => {
+    // The whole config object, not just the one key: makeCtx spreads overrides LAST, so
+    // passing { config: { modules: { hub: true } } } would REPLACE the default config
+    // outright and drop token/clientId/databasePath/ownerId along with it.
+    const ctx = makeCtx({
+      config: { token: 't', clientId: 'c', databasePath: ':memory:', ownerId: 'owner', modules: { hub: true } },
+    });
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, 1234, { hub: ctx.config.modules.hub });
+    const row0 = p.components[0].toJSON().components;
+    expect((row0[0] as { custom_id: string }).custom_id).toBe('park:collect');
+    expect((row0[1] as { custom_id: string }).custom_id).toBe('hub:open:u1');
+    expect(row0).toHaveLength(2);
+  });
+
+  it('mints nothing extra when the module is disabled', () => {
+    const ctx = makeCtx({
+      config: { token: 't', clientId: 'c', databasePath: ':memory:', ownerId: 'owner', modules: { hub: false } },
+    });
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, 1234, { hub: ctx.config.modules.hub });
+    const row0 = p.components[0].toJSON().components;
+    expect((row0[0] as { custom_id: string }).custom_id).toBe('park:collect');
+    expect(row0).toHaveLength(1);
+  });
+
+  it('never offers the owner hub on a visited card, even with the module enabled', () => {
+    const ctx = makeCtx({
+      config: { token: 't', clientId: 'c', databasePath: ':memory:', ownerId: 'owner', modules: { hub: true } },
+    });
+    const user = getOrCreateUser(ctx, 'u1', 'Reg');
+    const p = dashboardPayload(user, 999, { visit: true, hub: ctx.config.modules.hub });
+    expect(JSON.stringify(p)).not.toContain('hub:open');
+  });
+
+  it('the minted id reaches the hub module through the real router', async () => {
+    const ctx = makeCtx({
+      config: { token: 't', clientId: 'c', databasePath: ':memory:', ownerId: 'owner', modules: { hub: true } },
+    });
+    getOrCreateUser(ctx, 'u1', 'Reg');
+    const b = fakeButton({ customId: 'hub:open:u1', user: 'u1' });
+    await routeInteraction(ctx, testRegistry, b.asInteraction());
+    expect(b.replies, 'hub:open answered nothing').toHaveLength(1);
+    expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
 });
 
