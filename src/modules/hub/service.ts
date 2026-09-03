@@ -48,6 +48,17 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
   // needed it: `lots` is what the eggs-idle row below asks incubatorSlots about, and reading
   // the lots table again for that one question would pay twice for rows already in hand.
   const { clockDinos, lots, user, dinos } = toClockDinos(ctx, userId);
+  // Incubator occupancy, read ONCE for the two rows that need it — the idle row's control
+  // gate and the waiting row's text. incubatingCount issues its own query; hoisting it here
+  // rather than computing it inside each block keeps that to one read per render.
+  //
+  // slotsBusy is NOT the number of eggs still cooking. incubatingCount counts every egg with
+  // incubationStartedAt set, which INCLUDES one that has finished and is waiting to be
+  // cracked — a ready egg holds its slot until it is hatched. Deriving occupancy from the
+  // cooking count instead would tell a player with a ready egg that they had a free slot
+  // when they had none, which is worse than the silence this replaced.
+  const slots = incubatorSlots(lots);
+  const slotsBusy = incubatingCount(ctx, userId);
 
   const out: HubSignal[] = [];
 
@@ -74,12 +85,7 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
   // It earns nothing and finishes nothing while it sits there.
   const idle = eggs.filter((e) => e.incubationStartedAt === null && !locks.eggs.has(e.id));
   if (idle.length > 0) {
-    // incubatingCount issues its own query — read it once here rather than inside both the
-    // text and the control. incubatorSlots is 1 with no Hatchery Lab, so a player holding a
-    // second shop egg reaches this row routinely, not as an edge case.
-    const slots = incubatorSlots(lots);
-    const busy = incubatingCount(ctx, userId);
-    const freeSlots = slots - busy;
+    const freeSlots = slots - slotsBusy;
     const subject = idle.length === 1 ? 'An egg is' : `${idle.length} eggs are`;
     // The full row names the blocker AND the remedy, and the remedy depends on the lab. An
     // earlier version said only "every incubator slot is full", which left a player unable
@@ -108,7 +114,7 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
       // put it.
       text: freeSlots > 0
         ? `🥚 ${subject} sitting in your inventory, not incubating`
-        : `🥚 ${subject} sitting in your inventory — incubator full (${busy}/${slots}). ${remedy[0].toUpperCase()}${remedy.slice(1)}.`,
+        : `🥚 ${subject} sitting in your inventory — incubator full (${slotsBusy}/${slots}). ${remedy[0].toUpperCase()}${remedy.slice(1)}.`,
       lossAtMs: null,
       // No control with the incubator full: incubateEgg refuses on exactly this condition
       // (src/modules/hatchery/service.ts), so Incubate here is a button that can only fail —
@@ -427,7 +433,11 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
     out.push({
       id: 'waiting-eggs',
       section: 'waiting',
-      text: `🥚 ${incubating.length} incubating — next <t:${Math.floor(soonest / 1000)}:R>`,
+      // Two separate facts, deliberately not collapsed into one: how many are still cooking,
+      // and how many slots are held. They diverge the moment an egg finishes without being
+      // cracked, and that divergence is exactly when a player most needs to know the truth.
+      text: `🥚 ${incubating.length} incubating — next <t:${Math.floor(soonest / 1000)}:R>`
+        + ` · ${slotsBusy} of ${slots} slots in use`,
       lossAtMs: null,
     });
   }
