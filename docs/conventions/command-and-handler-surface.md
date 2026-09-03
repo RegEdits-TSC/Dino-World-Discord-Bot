@@ -28,10 +28,10 @@ contract, autocomplete and settings test files that gate them.
 - Keep the existence check AHEAD of the acknowledgement at all three visiting surfaces — "That player has no park yet" is an EPHEMERAL answer and either defer would have committed it to a public message. §existence-check-before-acknowledgement
 - Every surface that hands a player a new object offers the next step as a control on that same message, and every such control is a row in the table in `tests/follow-through.test.ts` — the graph is convention, nothing structural, so that table is the only thing that catches a new surface minting an egg and forgetting to offer Incubate. §follow-through-graph-has-a-row-per-surface
 - A follow-through control on a PUBLIC reply carries the owner's id and its handler rejects a mismatch BEFORE the service call — but only for `claimExpedition` and `startExpedition` is that check the write barrier, because both resolve the CALLER's own dig and take no id. For `incubateEgg`, `assignDino` and `feedDino` the service already filters on the caller, so the check buys the right SENTENCE on a public card and nothing more; never describe it as the protection. §follow-through-control-carries-the-owner-uid
-- `hubView` (`src/modules/hub/service.ts`) reads eight-plus subsystems onto one card and must never roll a quest board, roll a season, stamp a season hint or badge, recompute rating, bump the legacy high-water, expire a trade, record an alert, or claim anything — each is a write the rest of the codebase only ever reaches from a real command, and `tests/hub-nowrite.test.ts` is the gate that proves `hubView`/`hubCardPayload` touch none of them. §hub-is-a-read
+- `hubView` (`src/modules/hub/service.ts`) reads across the game's subsystems onto one card and must never roll a quest board, roll a season, stamp a season hint or badge, recompute rating, bump the legacy high-water, expire a trade, record an alert, or claim anything — each is a write the rest of the codebase only ever reaches from a real command, and `tests/hub-nowrite.test.ts` is the gate that proves `hubView`/`hubCardPayload` touch none of them. §hub-is-a-read
 - `hub:open` is minted as a raw string by the park dashboard and by the park alert DM, never imported from the hub module, so the hub stays a leaf and park never grows the other half of an import cycle; the mint is gated on `ctx.config.modules.hub`, and a renamed hub prefix or action breaks both entry points with no compiler or typecheck signal at all. §hub-open-is-minted-by-other-modules
-- No control the hub renders may spend cash: one `hub:refresh` button is what makes reusing other modules' controls safe despite most of them leaving the hub card's own labels stale, and that trade holds only as long as nothing behind it charges. §hub-controls-never-spend
-- `hatch:crack` and `breed:claim` carry no owner segment; they are safe to mint on the hub only because the hub's own reply is ephemeral and therefore visible to nobody but its owner — a property of the SURFACE those two ids happen to sit on, not of the ids themselves. §ephemeral-is-what-makes-the-reuse-safe
+- No control the hub renders may spend cash. Its reused controls split three ways on click — one self-heals its own card (`hatch:inc`), several replace the hub card outright with their owning module's own card (`hatch:crack`, `exp:claim`, `breed:claim`, `guests:claim`), and the rest leave the hub card standing with a now-stale label (`daily:claim`, `ach:claimall`, `season:claim`, `park:collect`) — `hub:refresh` exists for that last group alone, and the trade holds only as long as nothing behind any of them charges. §hub-controls-never-spend
+- `hatch:crack` and `breed:claim` carry no owner segment; they are safe to mint on the hub only because ephemerality — established once, at `/hub`'s own reply and at `hub:open` — is inherited by every later `hub:*` update, making the surface visible to nobody but its owner. A property of the SURFACE those two ids happen to sit on, not of the ids themselves. §ephemeral-is-what-makes-the-reuse-safe
 
 ## commands-live-in-manifests
 
@@ -289,11 +289,11 @@ you are holding before copying either pattern.
 
 ## hub-is-a-read
 
-`hubView` (`src/modules/hub/service.ts`) reads eight-plus subsystems onto one card — eggs,
+`hubView` (`src/modules/hub/service.ts`) reads across the game's subsystems onto one card — eggs,
 expeditions, breedings, park clock state (`toClockDinos`, called once and threaded through every
-later section rather than re-read), quests, season, guests and battle energy — and every one of
-those subsystems normally sits behind its own write the moment a player looks at it through its
-OWN command: `/daily` calls `rollDailyQuests`, `/season` calls `rollSeason` and, once a hint has
+later section rather than re-read), trades, daily quests, achievements, season, guests and battle
+energy — and every one of those subsystems normally sits behind its own write the moment a player
+looks at it through its OWN command: `/daily` calls `rollDailyQuests`, `/season` calls `rollSeason` and, once a hint has
 gone out, `stampSeasonHint`; `/park view` and its siblings call `recomputeRating`; `/dex` and
 `/park` call `bumpLegacyBest`; `/trade` calls `expireStale`; the alert sweep inserts into
 `alertsSent` (`src/modules/park/alert-record.ts`). `hubView` must never call any of them, and the
@@ -369,24 +369,42 @@ prefix there too, or the sweep silently tolerates exactly the defect it exists t
 The hub renders its READY and CLAIM rows by minting other modules' own customIds verbatim —
 `hatch:crack`, `hatch:inc`, `exp:claim`, `breed:claim`, `daily:claim`, `ach:claimall`,
 `season:claim`, `guests:claim`, `park:collect` — rather than growing proxy handlers of its own.
-Most of those replies are EPHEMERAL from their owning module, which is what lets the hub reuse
-them at all: an ephemeral reply leaves the hub card standing behind it, unlike an `i.update` that
-would consume the message the click came from. The cost of that reuse is that the hub card's OWN
-labels go stale the moment one of those buttons is clicked from it — claim your dailies from the
-hub and the "Ready to claim" row still shows the pre-claim count until something re-renders it.
+What each of those does to the HUB CARD once clicked is not one shape but three, and only one of
+the three is what `hub:refresh` actually answers:
 
-One `hub:refresh:<userId>` button (`hubCardPayload`, `ButtonStyle.Secondary`, alone on its own
-row) is what makes that acceptable: rather than a proxy per subsystem re-rendering itself after
-its own action, ONE control retires the whole class of "stale label after a reused button" by
-re-running `hubView` from scratch. That trade is sound only because every control the hub
-currently mints is a claim, an incubate, a feed, or a collect — none of them spends cash. The
-moment a hub row offers a control that DOES spend cash, staleness stops being cosmetic:
-§money-button-carries-its-rung's landmark incident is exactly the shape a stale cash button takes,
-and the hub's whole reuse strategy assumes staleness is always a wrong NUMBER on an
-already-harmless action, never a wrong PRICE on a re-clickable one. A future hub row must not mint
-one of the two-step cash-confirm ids (`park:landmark:buy:<userId>:<tier>`,
-`shop:againyes:<userId>:<rarity>:<price>`, `exp:againyes:<userId>:<siteId>:<price>`-shaped
-controls) without re-litigating this trade first.
+- **Self-heals.** `hatch:inc` (`src/modules/hatchery/index.ts`) answers with `i.update`, but it
+  rebuilds `components` from `i.message.components`, filtering out only the row entry matching its
+  own `custom_id`, and replaces `content`. The hub card's own embed and its other buttons —
+  Refresh included — survive untouched; only the incubate button itself disappears, correctly,
+  since that egg is no longer idle.
+- **Replaces the card outright.** `hatch:crack`, `exp:claim`, `breed:claim` and `guests:claim` each
+  answer with `i.update` too, but of their OWNING module's own reveal/claim card — a hatch reveal,
+  an expedition claim card, a breeding claim card, the guests view — new embed, new components, no
+  reference back to the hub at all. The hub card is gone, not stale; there is nothing left standing
+  to refresh.
+- **Leaves the hub card standing, now stale.** `daily:claim`, `ach:claimall` and `season:claim`
+  (`src/modules/daily/index.ts`) and `park:collect` (`src/modules/park/index.ts`) each answer with
+  a brand-new EPHEMERAL `i.reply` of their own — a separate message — rather than touching the
+  message the button was clicked from. The hub card the player opened `/hub` on is left exactly as
+  it rendered, still naming a quest, an achievement tier, a season rung or pending income as ready,
+  even though it no longer is.
+
+`hub:refresh:<userId>` (`hubCardPayload`, `ButtonStyle.Secondary`, alone on its own row) exists for
+the last group alone: it is the only one where the card outlives an action that changed what the
+card says. The self-healing group needs no help. The card-replacing group needs no refresh either,
+for a different reason — the card is gone, and the only way back to a live one is reopening
+`/hub`, an acceptable recovery only because the hub is cheap to reopen: one ephemeral command, no
+state lost, nothing charged for looking.
+
+None of that changes the rule that actually matters: no control the hub currently mints spends
+cash — every one of the nine is a claim, an incubate, a feed, or a collect. A stale label on a free
+action is cosmetic; the same staleness on a control that spends money is the exact defect this repo
+already paid for once — §money-button-carries-its-rung's landmark incident is what a stale PRICE
+looks like, not a stale count. A future hub row must not mint one of the two-step cash-confirm ids
+(`park:landmark:buy:<userId>:<tier>`, `shop:againyes:<userId>:<rarity>:<price>`,
+`exp:againyes:<userId>:<siteId>:<price>`-shaped controls) without re-litigating this trade first —
+and if it lands in the stale-standing-card group, it inherits that group's staleness with none of
+its "worst case is cosmetic" excuse.
 
 ## ephemeral-is-what-makes-the-reuse-safe
 
@@ -401,13 +419,21 @@ same shape §follow-through-control-carries-the-owner-uid already documents for
 safe to hand out with no owner segment: it is incidental to their OWN surfaces (`/hatch`'s reveal,
 `/breed claim`'s reply), which were already scoped to the caller before the hub ever reused them.
 
-What actually makes them safe on the hub is narrower and does not depend on that filtering: `/hub`'s
-reply and every `hub:*` component reply is minted with `flags: MessageFlags.Ephemeral`
-(`src/modules/hub/index.ts`), so Discord shows the card — and therefore the button — to nobody but
-the player who ran `/hub`. No other player's client ever renders a `hatch:crack` or `breed:claim`
-button minted on someone else's hub, so there is no bystander left to test the ownership filter
-against in the first place. That is a property of the SURFACE — an ephemeral, owner-only delivery
-Discord itself guarantees — not of the id.
+What actually makes them safe on the hub is narrower and does not depend on that filtering.
+Ephemerality is established at exactly two entry points — the `/hub` command's own reply and the
+`hub:open` action — both of which set `flags: MessageFlags.Ephemeral` explicitly
+(`src/modules/hub/index.ts`) — and is INHERITED from there by everything downstream: `hub:refresh`
+and `hub:feedall` both answer with `i.update` and set no `flags` of their own, because Discord
+never lets an `i.update` change a message's ephemeral status — editing an already-ephemeral message
+keeps it ephemeral with nothing further to set. So every `hub:*` card the player ever sees is
+ephemeral, but the code establishes that fact once per open rather than fresh on every render, and
+what `hatch:crack`/`breed:claim` actually ride on is that INHERITED ephemerality, not a flag either
+of those two branches sets for itself. Either way, Discord shows the card — and therefore the
+button — to nobody but the player who ran `/hub` or clicked `hub:open`. No other player's client
+ever renders a `hatch:crack` or `breed:claim` button minted on someone else's hub, so there is no
+bystander left to test the ownership filter against in the first place. That is a property of the
+SURFACE — an ephemeral, owner-only delivery Discord itself guarantees once established — not of
+the id.
 
 Neither id becomes safe to mint on a PUBLIC message on the strength of that filtering. A public
 surface exposes the button to everyone in the channel, and the two ids carry nothing to
