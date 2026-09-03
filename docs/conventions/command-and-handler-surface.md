@@ -397,7 +397,7 @@ for a different reason — the card is gone, and the only way back to a live one
 state lost, nothing charged for looking.
 
 None of that changes the rule that actually matters: no control the hub currently mints spends
-cash — every one of the nine is a claim, an incubate, a feed, or a collect. A stale label on a free
+cash — every one of them is a claim, an incubate, a feed, or a collect. A stale label on a free
 action is cosmetic; the same staleness on a control that spends money is the exact defect this repo
 already paid for once — §money-button-carries-its-rung's landmark incident is what a stale PRICE
 looks like, not a stale count. A future hub row must not mint one of the two-step cash-confirm ids
