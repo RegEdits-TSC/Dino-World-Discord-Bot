@@ -4,9 +4,21 @@ import { makeCtx, fakeCommand, testRegistry } from './harness.js';
 import { routeInteraction } from '../src/core/router.js';
 import { getOrCreateUser } from '../src/modules/park/service.js';
 import { schema } from '../src/core/db/index.js';
+import { ALL_MODULES } from '../src/core/module-list.js';
 
 let ctx: ReturnType<typeof makeCtx>;
-beforeEach(() => { ctx = makeCtx(); });
+// makeCtx's default config carries `modules: {}`, and hubView gates every control it mints
+// for another module on that module's flag — so the default would render this end-to-end
+// card with no Incubate button and the case below would stop being end-to-end. Derived from
+// ALL_MODULES so a module added later is enabled here without anyone remembering to.
+beforeEach(() => {
+  ctx = makeCtx({
+    config: {
+      token: 't', clientId: 'c', databasePath: ':memory:', ownerId: 'owner',
+      modules: Object.fromEntries(ALL_MODULES.map((m) => [m.name, true])),
+    },
+  });
+});
 
 describe('/hub', () => {
   it('routes through the real registry and answers ephemerally', async () => {
@@ -67,5 +79,18 @@ describe('/hub', () => {
     }
     expect(refreshButton, 'hub reply must have the Refresh button').toBeTruthy();
     expect(refreshButton!.label).toContain('Refresh');
+    // And the cross-module control the seeded egg earns, which the Refresh button alone
+    // would not prove: hub:refresh is minted unconditionally by hubCardPayload, so a card
+    // whose ranked action row never rendered at all still carries it.
+    const allButtons = components.flatMap((row) => {
+      const rowObj = (row && typeof (row as { toJSON?: unknown }).toJSON === 'function'
+        ? (row as { toJSON(): unknown }).toJSON()
+        : row) as { components: Array<{ custom_id?: string; customId?: string; label: string }> };
+      return rowObj?.components ?? [];
+    });
+    expect(
+      allButtons.some((c) => (c.custom_id ?? c.customId ?? '').startsWith('hatch:inc:')),
+      'the idle egg earned no Incubate button',
+    ).toBe(true);
   });
 });

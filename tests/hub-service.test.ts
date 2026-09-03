@@ -2,16 +2,20 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
-import { getOrCreateUser, toClockDinos, needsAttentionCount, capHours, facilityBonusPct } from '../src/modules/park/service.js';
+import { getOrCreateUser, toClockDinos, capHours, facilityBonusPct } from '../src/modules/park/service.js';
+import { ALL_MODULES } from '../src/core/module-list.js';
+import type { Config } from '../src/core/config.js';
 import { escapeAt, ESCAPE_WARN_MS, accruedIncome, HUNGER_DRAIN_MS, hungerAt, drainMsFor, dayKeyUTC, DAY_MS } from '../src/core/clock.js';
 import { hubView } from '../src/modules/hub/service.js';
+import { rankSignals, MAX_HUB_BUTTONS } from '../src/modules/hub/rank.js';
 import { nextRatingGate } from '../src/modules/hub/gates.js';
+import { incubatingCount, incubatorSlots } from '../src/modules/hatchery/service.js';
 import { TRADE_EXPIRY_MS } from '../src/data/trade.js';
 import { track, readStat } from '../src/core/stats.js';
 import { QUESTS } from '../src/data/quests.js';
 import { claimQuests } from '../src/modules/daily/service.js';
 import { rollSeason, seasonView } from '../src/modules/daily/season.js';
-import { SEASON_DAYS } from '../src/core/world.js';
+import { SEASON_DAYS, seasonIndexFor } from '../src/core/world.js';
 import { recomputeRating } from '../src/modules/park/rating.js';
 import { claimableMilestones, nextMilestone } from '../src/modules/guests/service.js';
 import { ATTENDANCE_MILESTONES } from '../src/data/attendance.js';
@@ -20,8 +24,31 @@ import { energyLine } from '../src/modules/battles/embeds.js';
 import { LOT_SLOT_THRESHOLDS, SHOP_CEILING, MYTHIC_UNLOCK_RATING } from '../src/data/progression.js';
 import { EXPEDITION_SITES } from '../src/data/sites.js';
 
+/**
+ * hubView gates every control it mints for another module on that module's own flag, and
+ * makeCtx's default config carries `modules: {}` — every flag missing, every gate closed. A
+ * fixture that kept the default would render a hub with no cross-module control at all and
+ * every control assertion below would be asserting the absence it was written to catch.
+ *
+ * Derived from ALL_MODULES rather than a hand-written list of names, matching
+ * tests/follow-through-incubate.test.ts: a gate added later on a module a literal list
+ * happened not to name would read `undefined`, suppress its own control, and leave the test
+ * green with nothing to show for it. `over` is how the disabled-module cases below build
+ * their own ctx; makeCtx spreads overrides LAST, so a passed `config` replaces the default
+ * outright and has to be whole.
+ */
+function modulesConfig(over: Record<string, boolean> = {}): Config {
+  return {
+    token: 't', clientId: 'c', databasePath: ':memory:', ownerId: 'owner',
+    modules: { ...Object.fromEntries(ALL_MODULES.map((m) => [m.name, true])), ...over },
+  };
+}
+
 let ctx: ReturnType<typeof makeCtx>;
-beforeEach(() => { ctx = makeCtx({ nowMs: 1_000_000 }); getOrCreateUser(ctx, 'u1', 'U1'); });
+beforeEach(() => {
+  ctx = makeCtx({ nowMs: 1_000_000, config: modulesConfig() });
+  getOrCreateUser(ctx, 'u1', 'U1');
+});
 
 const egg = (over: Partial<typeof schema.eggs.$inferInsert> = {}) =>
   ctx.db.insert(schema.eggs).values({
@@ -235,15 +262,21 @@ describe('hubView — the NEEDS YOU section', () => {
     expect(hubView(ctx, 'u1').find((s) => s.id === 'dinos-at-risk')?.control).toBeUndefined();
   });
 
-  it('agrees with needsAttentionCount rather than keeping its own definition', () => {
-    // The union of at-risk and wrong-habitat, counted as DISTINCT dinos: a dino can trip
-    // both, and summing the two rows would double-count it. This test is what stops the
-    // hub growing a third inlined copy of the predicate.
+  it('prints no roll-up tally over the individual dino rows', () => {
+    // Retired with the row it covered. /park view prints "need attention" over
+    // `escaped + needsAttentionCount(...)` while the hub had no escaped term, so one park
+    // read "3 need attention" there and "1 need attention" here at the same instant. The
+    // roll-up was also redundant — it fired if and only if dinos-at-risk or
+    // dinos-wrong-habitat already had — so deleting it loses no information and retires the
+    // collision instead of restating the other screen's arithmetic.
     seedAtRiskDino();
     seedWrongHabitatDino();
-    const { clockDinos } = toClockDinos(ctx, 'u1');
-    const row = hubView(ctx, 'u1').find((s) => s.id === 'needs-attention')!;
-    expect(row.text).toContain(String(needsAttentionCount(clockDinos, ctx.now())));
+    const rows = hubView(ctx, 'u1');
+    expect(rows.map((s) => s.id)).not.toContain('needs-attention');
+    expect(rows.map((s) => s.id)).toEqual(
+      expect.arrayContaining(['dinos-at-risk', 'dinos-wrong-habitat']));
+    expect(rows.filter((s) => /need attention/i.test(s.text)), 'a roll-up line survived')
+      .toHaveLength(0);
   });
 });
 
@@ -538,5 +571,213 @@ describe('hubView — WAITING and WORKING TOWARD', () => {
     const goalsRows = rows.filter((s) => s.section === 'goals');
     expect(goalsRows, 'the goals section must still render on the energy row alone').toHaveLength(1);
     expect(goalsRows[0].id).toBe('goal-energy');
+  });
+});
+
+describe('hubView — the Incubate control against a full incubator', () => {
+  it('keeps the row but withholds Incubate, and says the incubator is full', () => {
+    // incubateEgg refuses on exactly this condition (src/modules/hatchery/service.ts), so an
+    // Incubate button here can only ever answer "All incubator slots are full." The row is
+    // still worth printing — the egg really is earning nothing — but it must not read as
+    // though incubating were a choice the player simply had not made.
+    egg({ incubationStartedAt: 0, hatchesAt: 9_000_000 });   // occupies the only slot
+    egg();                                                   // the idle one
+    const { lots } = toClockDinos(ctx, 'u1');
+    // Preconditions read off the real functions, never assumed from "no Hatchery Lab lot".
+    expect(incubatorSlots(lots), 'fixture has more slots than it thinks').toBe(1);
+    expect(incubatingCount(ctx, 'u1'), 'fixture does not actually fill the incubator').toBe(1);
+
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'eggs-idle');
+    expect(row, 'the row was suppressed — only the control should be').toBeTruthy();
+    expect(row!.control, 'Incubate was offered with nowhere to incubate').toBeUndefined();
+    expect(row!.text).toContain('every incubator slot is full');
+    expect(row!.text, 'the full row still reads as though incubating were a free choice')
+      .not.toContain('not incubating');
+  });
+
+  it('offers Incubate again the moment a slot frees up', () => {
+    // The other side of the same boundary: nothing incubating, one idle egg, control back.
+    egg();
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'eggs-idle')!;
+    expect(incubatingCount(ctx, 'u1')).toBe(0);
+    expect(row.control!.customId).toBe('hatch:inc:u1:1');
+    expect(row.text).toContain('not incubating');
+  });
+});
+
+describe('hubView — the capped-income deadline rides on the row with the button', () => {
+  it('gives income-pending the capped instant, and leaves it null while earnings still accrue', () => {
+    seedIncomeAtCap();
+    const rows = hubView(ctx, 'u1');
+    const capped = rows.find((s) => s.id === 'income-capped')!;
+    const pending = rows.find((s) => s.id === 'income-pending')!;
+    // rankSignals drops every row without a control BEFORE it sorts, so a deadline sitting
+    // on income-capped alone can never influence the ranking at all.
+    expect(capped.control, 'income-capped grew a control').toBeUndefined();
+    expect(pending.control!.customId).toBe('park:collect');
+    expect(pending.lossAtMs, 'the row carrying Collect must carry the deadline too')
+      .toBe(capped.lossAtMs);
+    expect(pending.lossAtMs!, 'the cap is already behind us').toBeLessThanOrEqual(ctx.now());
+  });
+
+  it('carries no deadline while the cap is still ahead — idle earnings wait forever', () => {
+    const lot = paddockLot('herbivore_paddock', 'Herbivore Paddock');
+    const before = toClockDinos(ctx, 'u1');
+    ctx.db.insert(schema.dinos).values({
+      userId: 'u1', speciesId: 'triceratops', lotId: lot.id,
+      hunger: 100, lastFedAt: before.user.lastCollectAt, hatchedAt: 0,
+    }).run();
+    ctx.setNow(before.user.lastCollectAt + 3_600_000);   // 1h, well under the 8h fallback cap
+    const rows = hubView(ctx, 'u1');
+    expect(rows.map((s) => s.id), 'fixture already capped').not.toContain('income-capped');
+    expect(rows.find((s) => s.id === 'income-pending')!.lossAtMs).toBeNull();
+  });
+
+  it('the Collect button survives the button cap once income has capped', () => {
+    // The scenario the split lost: enough wait-forever rows to fill the action row, and a
+    // park whose earnings stopped hours ago. income-pending is pushed LAST of them, so with
+    // a null deadline it was the first control rankSignals dropped — the card said the cap
+    // was hit and handed the player no way to clear it.
+    seedIncomeAtCap();                  // moves the clock; everything below is seeded after
+    const now = ctx.now();
+    egg({ incubationStartedAt: 0, hatchesAt: now });
+    ctx.db.insert(schema.expeditions).values({
+      userId: 'u1', siteId: 'coastal_dig', departedAt: 0, returnsAt: now,
+    }).run();
+    ctx.db.insert(schema.breedings).values({
+      userId: 'u1', parentA: 1, parentB: 2, rarity: 'common', startedAt: 0, readyAt: now,
+    }).run();
+    const def = QUESTS.find((q) => q.id === 'feed_3')!;
+    ctx.db.insert(schema.dailyQuests).values({
+      userId: 'u1', dayKey: dayKeyUTC(now), slot: 0, questId: def.id,
+      baseline: readStat(ctx, 'u1', def.stat), target: 3,
+    }).run();
+    track(ctx, 'u1', def.stat, 3);
+    track(ctx, 'u1', 'eggs_hatched', 60);
+
+    const rows = hubView(ctx, 'u1');
+    const controls = rows.filter((s) => s.control !== undefined).map((s) => s.id);
+    // Non-vacuous only if Collect really is past the cap in caller order — otherwise it
+    // would survive the ranking whatever its deadline said.
+    expect(controls.indexOf('income-pending'), 'fixture does not push Collect past the cap')
+      .toBeGreaterThanOrEqual(MAX_HUB_BUTTONS);
+    expect(rankSignals(rows).map((s) => s.id), 'Collect never reached the button row')
+      .toContain('income-pending');
+  });
+});
+
+describe('hubView — the season deadline is the real boundary', () => {
+  it('forfeits at the season boundary rather than a day-granular estimate of it', () => {
+    const S1 = 690 * SEASON_DAYS * DAY_MS;
+    ctx.setNow(S1 + 12 * 3_600_000);   // half a day into the season's first day
+    rollSeason(ctx, 'u1');
+    track(ctx, 'u1', 'expeditions_claimed', 10);   // 5 pts each -> 50, clearing rung 0
+    const view = seasonView(ctx, 'u1')!;
+    const at = hubView(ctx, 'u1').find((s) => s.id === 'season-claimable')!.lossAtMs!;
+    // seasonIndexFor is the oracle rather than a second copy of the arithmetic: `at` is the
+    // boundary if and only if it opens the NEXT index and the millisecond before it does not.
+    expect(seasonIndexFor(at), 'the deadline does not open the next season').toBe(view.index + 1);
+    expect(seasonIndexFor(at - 1), 'the deadline is a whole season too far out').toBe(view.index);
+    // Strictly earlier than what daysLeft gave: that estimate rounds UP by as much as a day,
+    // which let a trade offer dying tonight outrank a rung forfeiting this afternoon.
+    expect(at, 'still the day-granular over-estimate')
+      .toBeLessThan(ctx.now() + view.daysLeft * DAY_MS);
+  });
+});
+
+describe('hubView — every cross-module control is gated on its owning module', () => {
+  /**
+   * ModuleRegistry.findComponent (src/core/modules.ts) searches only ENABLED modules and
+   * routeInteraction falls through in silence when it misses, so a control minted for a
+   * module that is switched off is a button that does nothing, forever, with no log and no
+   * error. Only ctx.config moves these: testRegistry builds its own all-enabled flags map,
+   * so routing stays fully enabled either way and no routed click could see the difference.
+   *
+   * Each case rebuilds ctx before it seeds, because makeCtx spreads overrides LAST — a
+   * passed config replaces the default outright and cannot be patched afterwards.
+   */
+  const start = (over: Record<string, boolean> = {}) => {
+    ctx = makeCtx({ nowMs: 1_000_000, config: modulesConfig(over) });
+    getOrCreateUser(ctx, 'u1', 'U1');
+  };
+
+  const seedDailyQuest = () => {
+    const def = QUESTS.find((q) => q.id === 'feed_3')!;
+    ctx.db.insert(schema.dailyQuests).values({
+      userId: 'u1', dayKey: dayKeyUTC(ctx.now()), slot: 0, questId: def.id,
+      baseline: readStat(ctx, 'u1', def.stat), target: 3,
+    }).run();
+    track(ctx, 'u1', def.stat, 3);
+  };
+
+  const seedCrossedMilestone = () => {
+    const lot = paddockLot('herbivore_paddock', 'Herbivore Paddock');
+    const species = [
+      'triceratops', 'stegosaurus', 'parasaurolophus', 'iguanodon',
+      'ankylosaurus', 'brachiosaurus', 'gallimimus', 'maiasaura', 'massospondylus',
+    ];
+    ctx.db.insert(schema.dinos).values(species.map((speciesId) => ({
+      userId: 'u1', lotId: lot.id, speciesId, hunger: 100, lastFedAt: 0, hatchedAt: 0,
+    }))).run();
+    recomputeRating(ctx, 'u1');   // the real writer of attendanceHighWater
+  };
+
+  const CASES: Array<{ row: string; owner: string; seed: () => void }> = [
+    { row: 'eggs-ready', owner: 'hatchery', seed: () => { egg({ incubationStartedAt: 0, hatchesAt: ctx.now() }); } },
+    { row: 'eggs-idle', owner: 'hatchery', seed: () => { egg(); } },
+    { row: 'expedition-ready', owner: 'expeditions', seed: () => {
+      ctx.db.insert(schema.expeditions).values({
+        userId: 'u1', siteId: 'coastal_dig', departedAt: 0, returnsAt: ctx.now(),
+      }).run();
+    } },
+    { row: 'breeding-ready', owner: 'genelab', seed: () => {
+      ctx.db.insert(schema.breedings).values({
+        userId: 'u1', parentA: 1, parentB: 2, rarity: 'common', startedAt: 0, readyAt: ctx.now(),
+      }).run();
+    } },
+    { row: 'daily-claimable', owner: 'daily', seed: seedDailyQuest },
+    { row: 'achievements-claimable', owner: 'daily', seed: () => { track(ctx, 'u1', 'eggs_hatched', 60); } },
+    { row: 'season-claimable', owner: 'daily', seed: () => {
+      ctx.setNow(690 * SEASON_DAYS * DAY_MS);
+      rollSeason(ctx, 'u1');
+      track(ctx, 'u1', 'expeditions_claimed', 10);
+    } },
+    { row: 'guests-claimable', owner: 'guests', seed: seedCrossedMilestone },
+    { row: 'income-pending', owner: 'park', seed: () => {
+      const lot = paddockLot('herbivore_paddock', 'Herbivore Paddock');
+      const before = toClockDinos(ctx, 'u1');
+      ctx.db.insert(schema.dinos).values({
+        userId: 'u1', speciesId: 'triceratops', lotId: lot.id,
+        hunger: 100, lastFedAt: before.user.lastCollectAt, hatchedAt: 0,
+      }).run();
+      ctx.setNow(before.user.lastCollectAt + 3_600_000);
+    } },
+  ];
+
+  for (const c of CASES) {
+    it(`${c.row} keeps its row and drops its control with "${c.owner}": false`, () => {
+      start();
+      c.seed();
+      const on = hubView(ctx, 'u1').find((s) => s.id === c.row);
+      expect(on, `fixture never produced the ${c.row} row`).toBeTruthy();
+      // Without this the disabled half below would pass on a fixture that never minted a
+      // control in the first place.
+      expect(on!.control, `${c.row} mints no control even with ${c.owner} enabled`).toBeTruthy();
+
+      start({ [c.owner]: false });
+      c.seed();
+      const off = hubView(ctx, 'u1').find((s) => s.id === c.row);
+      expect(off, `${c.row} vanished — the gate withholds the control, never the row`).toBeTruthy();
+      expect(off!.control, `${c.row} still mints ${c.owner}'s customId with that module off`)
+        .toBeUndefined();
+    });
+  }
+
+  it("leaves the hub's OWN controls alone — they are handled in this module", () => {
+    start({ hatchery: false, expeditions: false, genelab: false, daily: false, guests: false, park: false });
+    seedAtRiskDino();
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'dinos-at-risk')!;
+    expect(row.control!.customId, "hub:feedall was gated on somebody else's flag")
+      .toBe('hub:feedall:u1');
   });
 });

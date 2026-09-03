@@ -6,7 +6,9 @@ import { locksFor } from '../../core/locks.js';
 import { activeExpedition } from '../expeditions/service.js';
 import { activeBreedings } from '../genelab/service.js';
 import { escapeAt, ESCAPE_WARN_MS, accruedIncome, DAY_MS } from '../../core/clock.js';
-import { toClockDinos, needsAttentionCount, capHours, facilityBonusPct } from '../park/service.js';
+import { toClockDinos, capHours, facilityBonusPct } from '../park/service.js';
+import { incubatingCount, incubatorSlots } from '../hatchery/service.js';
+import { seasonIndexFor, SEASON_DAYS } from '../../core/world.js';
 import { TRADE_EXPIRY_MS } from '../../data/trade.js';
 import { questProgress, achievementsView } from '../daily/service.js';
 import { seasonView } from '../daily/season.js';
@@ -27,11 +29,25 @@ import type { HubSignal } from './types.js';
  *
  * toClockDinos is called ONCE and its four returns are threaded through every derived row.
  * Later sections in this function must reuse them rather than calling it again.
+ *
+ * Every control it mints for ANOTHER module is gated on that module's own flag.
+ * ModuleRegistry.findComponent (src/core/modules.ts) searches only ENABLED modules and
+ * routeInteraction falls through in silence when it misses, so an ungated cross-module mint
+ * is a button that silently does nothing — the same rule park's own `hub:open` mint follows.
+ * The ROW is never gated, only the control: the text is still a true statement about the
+ * park, and suppressing rows would have to reach the countdown and goal rows too (which
+ * carry no control to gate) or the card would hide "an egg is ready to hatch" while still
+ * printing the incubating countdown beside it. `hub:feedall` and `hub:refresh` are the hub's
+ * own ids and need no gate.
  */
 export function hubView(ctx: Ctx, userId: string): HubSignal[] {
   const now = ctx.now();
   const locks = locksFor(ctx, userId);
   const eggs = ctx.db.select().from(schema.eggs).where(eq(schema.eggs.userId, userId)).all();
+  // Hoisted above the READY section rather than sitting beside the ATTENTION rows that first
+  // needed it: `lots` is what the eggs-idle row below asks incubatorSlots about, and reading
+  // the lots table again for that one question would pay twice for rows already in hand.
+  const { clockDinos, lots, user, dinos } = toClockDinos(ctx, userId);
 
   const out: HubSignal[] = [];
 
@@ -48,7 +64,9 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
       lossAtMs: null,
       // hatch:crack carries no owner segment. That is safe HERE and only here, because the
       // hub is ephemeral and therefore owner-only; it is not a property of the id.
-      control: { customId: `hatch:crack:${ready[0].id}`, label: '🔨 Crack it open!', style: ButtonStyle.Success },
+      ...(ctx.config.modules.hatchery
+        ? { control: { customId: `hatch:crack:${ready[0].id}`, label: '🔨 Crack it open!', style: ButtonStyle.Success } }
+        : {}),
     });
   }
 
@@ -56,12 +74,27 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
   // It earns nothing and finishes nothing while it sits there.
   const idle = eggs.filter((e) => e.incubationStartedAt === null && !locks.eggs.has(e.id));
   if (idle.length > 0) {
+    // incubatingCount issues its own query — read it once here rather than inside both the
+    // text and the control. incubatorSlots is 1 with no Hatchery Lab, so a player holding a
+    // second shop egg reaches this row routinely, not as an edge case.
+    const freeSlots = incubatorSlots(lots) - incubatingCount(ctx, userId);
+    const subject = idle.length === 1 ? 'An egg is' : `${idle.length} eggs are`;
     out.push({
       id: 'eggs-idle',
       section: 'ready',
-      text: `🥚 ${idle.length === 1 ? 'An egg is' : `${idle.length} eggs are`} sitting in your inventory, not incubating`,
+      // The row is worth showing either way — an egg earning nothing is the fact — but it
+      // must not say "not incubating" as though that were a choice when there is nowhere to
+      // put it. Upgrade the Hatchery Lab, or wait for one already in there to hatch.
+      text: freeSlots > 0
+        ? `🥚 ${subject} sitting in your inventory, not incubating`
+        : `🥚 ${subject} sitting in your inventory — every incubator slot is full`,
       lossAtMs: null,
-      control: { customId: `hatch:inc:${userId}:${idle[0].id}`, label: '🥚 Incubate', style: ButtonStyle.Primary },
+      // No control with the incubator full: incubateEgg refuses on exactly this condition
+      // (src/modules/hatchery/service.ts), so Incubate here is a button that can only fail —
+      // the same reasoning dinos-at-risk applies to Feed all with an empty larder below.
+      ...(freeSlots > 0 && ctx.config.modules.hatchery
+        ? { control: { customId: `hatch:inc:${userId}:${idle[0].id}`, label: '🥚 Incubate', style: ButtonStyle.Primary } }
+        : {}),
     });
   }
 
@@ -74,7 +107,9 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
       lossAtMs: null,
       // exp:claim takes no expedition id: claimExpedition resolves the CALLER's current dig
       // and takes no id, so the uid segment is the whole address.
-      control: { customId: `exp:claim:${userId}`, label: '🧭 Claim', style: ButtonStyle.Success },
+      ...(ctx.config.modules.expeditions
+        ? { control: { customId: `exp:claim:${userId}`, label: '🧭 Claim', style: ButtonStyle.Success } }
+        : {}),
     });
   }
 
@@ -92,15 +127,20 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
       section: 'ready',
       text: `🧬 ${pairings.length === 1 ? 'A pairing has' : `${pairings.length} pairings have`} produced an egg`,
       lossAtMs: null,
-      control: { customId: `breed:claim:${first.id}`, label: '🧬 Claim', style: ButtonStyle.Success },
+      // breed:claim carries no owner segment either, and for the same ephemeral-surface
+      // reason as hatch:crack above.
+      ...(ctx.config.modules.genelab
+        ? { control: { customId: `breed:claim:${first.id}`, label: '🧬 Claim', style: ButtonStyle.Success } }
+        : {}),
     });
   }
 
-  const { clockDinos, lots, user, dinos } = toClockDinos(ctx, userId);
-
-  // ATTENTION. The three dino predicates below are the SPLIT of what needsAttentionCount
-  // unions; the roll-up row uses that function directly rather than summing these, because
-  // a dino can be both at risk and off-diet and summing double-counts it.
+  // ATTENTION. Each dino predicate below names one distinct thing gone wrong, and none of
+  // them is a roll-up of the others: the hub prints them as separate lines rather than as a
+  // single "need attention" tally, because /park view already prints that label over a
+  // DIFFERENT figure — needsAttentionCount's union of at-risk and off-diet plus the escaped
+  // count — and two screens carrying the same label over different figures is the drift this
+  // repo has already paid to fix once.
   const escaped = dinos.filter((d) => d.escapedAt !== null);
   if (escaped.length > 0) {
     out.push({
@@ -118,7 +158,19 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
     out.push({
       id: 'dinos-unassigned',
       section: 'attention',
-      text: `🦕 ${unassigned.length} ${unassigned.length === 1 ? 'dino has' : 'dinos have'} no paddock — they earn nothing`,
+      // No control, and unlike the escaped and off-diet rows beside it this one is a
+      // DELIBERATE omission rather than a structural impossibility: spec §5.1 lists the
+      // whole park:assign family as hub-safe, and it is — every one of those handlers, the
+      // park:goto:lots landing included, answers with an ephemeral i.reply that leaves this
+      // card standing. What blocks it is the mint side. assignRow (src/modules/park/embeds.ts)
+      // picks between park:assign / park:assignpick / park:goto:lots from
+      // eligiblePaddocks(ctx, userId, dinoId), which is a per-dino read of three more tables
+      // on a render path, and it returns an ActionRowBuilder while HubSignal.control is a
+      // flat {customId,label,style} — so nothing can be shared and the hub would have to
+      // keep its own copy of that chooser, silently stuck on today's shapes the day
+      // assignRow grows another. `/dino assign` stays the route; revisit if HubControl and
+      // assignRow ever meet in one shape.
+      text: `🦕 ${unassigned.length} ${unassigned.length === 1 ? 'dino has' : 'dinos have'} no paddock — they earn nothing · \`/dino assign\``,
       lossAtMs: null,
     });
   }
@@ -169,19 +221,6 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
     });
   }
 
-  const attention = needsAttentionCount(clockDinos, now);
-  if (attention > 0) {
-    out.push({
-      id: 'needs-attention',
-      section: 'attention',
-      // needsAttentionCount, never atRisk.length + mismatch.length: a dino can trip both
-      // predicates and the sum double-counts it. Its doc comment forbids a second copy, and
-      // this is the row that keeps the hub agreeing with the park card's marker.
-      text: `⚠️ ${attention} need attention`,
-      lossAtMs: null,
-    });
-  }
-
   if (!hasFood && dinos.length > 0) {
     out.push({
       id: 'food-empty',
@@ -196,14 +235,22 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
   const capMs = capHours(lots) * 3_600_000;
   const pending = accruedIncome(
     clockDinos, facilityBonusPct(lots), capHours(lots), user.lastCollectAt, now);
-  if (pending > 0 && now - user.lastCollectAt >= capMs) {
+  // The instant the park stopped earning, and whether it has passed. Capped is a strict
+  // SUBSET of pending — it is the same `pending > 0` with one extra term — so both rows fire
+  // together, and the pair has to be computed once here for the CLAIM section to reuse it.
+  const cappedAtMs = user.lastCollectAt + capMs;
+  const capped = pending > 0 && now >= cappedAtMs;
+  if (capped) {
     out.push({
       id: 'income-capped',
       section: 'attention',
       text: '⛔ Idle earnings hit the Visitor Center cap — collect to restart them',
       // Deliberately in the PAST: the park stopped earning at this instant and has been
       // losing ever since, which is what ranks it above a row that merely expires later.
-      lossAtMs: user.lastCollectAt + capMs,
+      // This row carries NO control — the Collect button lives on income-pending — so
+      // rankSignals drops it before sorting; income-pending carries the same instant so the
+      // ranking can actually act on it.
+      lossAtMs: cappedAtMs,
     });
   }
 
@@ -249,7 +296,9 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
       section: 'claim',
       text: `🎯 ${claimableQuests.length} daily quest${claimableQuests.length === 1 ? '' : 's'} ready to claim`,
       lossAtMs: null,
-      control: { customId: `daily:claim:${userId}`, label: '🎯 Claim dailies', style: ButtonStyle.Success },
+      ...(ctx.config.modules.daily
+        ? { control: { customId: `daily:claim:${userId}`, label: '🎯 Claim dailies', style: ButtonStyle.Success } }
+        : {}),
     });
   }
 
@@ -261,7 +310,12 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
       section: 'claim',
       text: `🏆 ${claimableTiers.length} achievement tier${claimableTiers.length === 1 ? '' : 's'} ready`,
       lossAtMs: null,
-      control: { customId: `ach:claimall:${userId}`, label: '🏆 Claim all', style: ButtonStyle.Success },
+      // ach:claimall is registered under the `ach` prefix by the DAILY module, not one of
+      // its own — the prefix and the owner do not have to match, and the flag follows the
+      // owner.
+      ...(ctx.config.modules.daily
+        ? { control: { customId: `ach:claimall:${userId}`, label: '🏆 Claim all', style: ButtonStyle.Success } }
+        : {}),
     });
   }
 
@@ -274,18 +328,25 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
         section: 'claim',
         text: `🎖️ ${rungs.length} season reward${rungs.length === 1 ? '' : 's'} unclaimed`
           + ` — the season ends in ${season.daysLeft} day${season.daysLeft === 1 ? '' : 's'}`,
-        // DAY-GRANULAR, and the only approximate deadline on the card: SeasonView exposes
-        // daysLeft rather than an end instant. It is precise enough to RANK — nothing else
-        // on the hub forfeits at all — but it must never be presented as an exact time. If
-        // you find an exact season-end instant on the view, use it and say that you did.
-        lossAtMs: now + season.daysLeft * DAY_MS,
+        // The EXACT forfeit instant, derived the way seasonIndexFor derives the index it is
+        // the inverse of: dayIndex is `floor(now / DAY_MS)` and a season is SEASON_DAYS of
+        // those, so the next season opens at the boundary below. SeasonView's own daysLeft
+        // is day-granular and rounds UP, which over-estimated this by as much as a day and
+        // let a trade offer dying tonight outrank a rung forfeiting this afternoon. The
+        // TEXT stays day-granular on purpose — that is the sentence a player can act on —
+        // and only the ranking reads the exact instant.
+        lossAtMs: (seasonIndexFor(now) + 1) * SEASON_DAYS * DAY_MS,
         // The season index rides in the id because the handler rejects a stale one. It comes
         // from the view, never from a literal.
-        control: {
-          customId: `season:claim:${userId}:${season.index}`,
-          label: '🎖️ Claim season',
-          style: ButtonStyle.Success,
-        },
+        ...(ctx.config.modules.daily
+          ? {
+            control: {
+              customId: `season:claim:${userId}:${season.index}`,
+              label: '🎖️ Claim season',
+              style: ButtonStyle.Success,
+            },
+          }
+          : {}),
       });
     }
   }
@@ -298,11 +359,15 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
       section: 'claim',
       text: `🎁 ${first.name} milestone ready to claim`,
       lossAtMs: null,
-      control: {
-        customId: `guests:claim:${userId}:${first.at}`,
-        label: '🎁 Claim milestone',
-        style: ButtonStyle.Success,
-      },
+      ...(ctx.config.modules.guests
+        ? {
+          control: {
+            customId: `guests:claim:${userId}:${first.at}`,
+            label: '🎁 Claim milestone',
+            style: ButtonStyle.Success,
+          },
+        }
+        : {}),
     });
   }
 
@@ -311,12 +376,20 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
       id: 'income-pending',
       section: 'claim',
       text: `💰 ${pending.toLocaleString()} idle earnings waiting`,
-      lossAtMs: null,
+      // The capped deadline belongs on THIS row, because this is the row that carries the
+      // Collect button and rankSignals drops every row that carries none before it sorts.
+      // Left on income-capped alone it could never reach the ranking at all, and Collect —
+      // pushed last — was the first control dropped whenever more than a row's worth of
+      // buttons competed. Until the cap is reached there is no deadline: idle earnings
+      // accrue and wait.
+      lossAtMs: capped ? cappedAtMs : null,
       // park:collect carries NO owner segment by design — a clicker collects their OWN
       // income. On an owner-only ephemeral that is exactly right, which is why this row
       // needs no hub proxy. Its label goes stale after the click; Refresh is the answer,
       // not a proxy handler.
-      control: { customId: 'park:collect', label: '💰 Collect', style: ButtonStyle.Success },
+      ...(ctx.config.modules.park
+        ? { control: { customId: 'park:collect', label: '💰 Collect', style: ButtonStyle.Success } }
+        : {}),
     });
   }
 

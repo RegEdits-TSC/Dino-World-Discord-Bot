@@ -3,7 +3,11 @@ import { eq } from 'drizzle-orm';
 import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
 import { getOrCreateUser, toClockDinos } from '../src/modules/park/service.js';
-import { escapeAt, ESCAPE_WARN_MS } from '../src/core/clock.js';
+import { escapeAt, ESCAPE_WARN_MS, DAY_MS } from '../src/core/clock.js';
+import { rollDailyQuests, questProgress } from '../src/modules/daily/service.js';
+import { rollSeason, seasonView } from '../src/modules/daily/season.js';
+import { SEASON_DAYS } from '../src/core/world.js';
+import { QUESTS } from '../src/data/quests.js';
 import { hubView } from '../src/modules/hub/service.js';
 import { hubCardPayload } from '../src/modules/hub/embeds.js';
 import { TRADE_EXPIRY_MS } from '../src/data/trade.js';
@@ -173,6 +177,14 @@ beforeEach(() => {
 const TABLES_THE_HUB_MAY_NOT_TOUCH = [
   'dailyQuests', 'seasonProgress', 'achievementClaims', 'alertsSent',
   'trades', 'eggs', 'expeditions', 'breedings', 'dinos', 'lots',
+  // The stat/ledger side, widened after the whole-branch review: a future hub row calling
+  // track(...) is the most plausible accidental write on a render path, and track writes
+  // user_stats — which then feeds quest progress, achievement tiers and season points, so
+  // the damage is not confined to the row that caused it. speciesSeen and seasonClaims are
+  // the two other "first touch" records the read path sits next to, foodInventory is what a
+  // stray feed would move, and txLog is where any cash movement lands. None of these were
+  // visible to this gate before.
+  'userStats', 'speciesSeen', 'seasonClaims', 'foodInventory', 'txLog',
 ] as const;
 
 // Confirmed against src/core/db/schema.ts:
@@ -180,7 +192,13 @@ const TABLES_THE_HUB_MAY_NOT_TOUCH = [
 // every name above is a real export; no renaming was needed.
 
 describe('the hub no-write gate', () => {
-  it('sanity: the seeded park actually exercises every branch this gate depends on', () => {
+  it('sanity: the seeded park actually renders every row named below', () => {
+    // The claim is deliberately scoped to the rows this list names rather than to "every
+    // branch": food-empty, for one, cannot coexist with the fed dinos this fixture needs,
+    // and the two CLAIM rows below are excluded on purpose. What the list has to be is
+    // complete for the rows it does assert, which is why the two goals rows are in it —
+    // they render on the fresh-user zeroes this fixture leaves in place, and leaving them
+    // out let the list look narrower than the fixture actually is.
     const { now } = seedLivePark();
     const rows = hubView(ctx, 'u1');
     const ids = rows.map((s) => s.id);
@@ -188,11 +206,11 @@ describe('the hub no-write gate', () => {
       'eggs-idle', 'eggs-ready', 'waiting-eggs',
       'expedition-ready',
       'breeding-ready', 'waiting-breeding',
-      'dinos-escaped', 'dinos-unassigned', 'dinos-wrong-habitat', 'dinos-at-risk', 'needs-attention',
+      'dinos-escaped', 'dinos-unassigned', 'dinos-wrong-habitat', 'dinos-at-risk',
       'achievements-claimable', 'guests-claimable',
       'trade-incoming',
       'income-capped', 'income-pending',
-      'goal-energy',
+      'goal-rating', 'goal-attendance', 'goal-energy',
     ]) {
       expect(ids, `fixture does not exercise the ${id} branch`).toContain(id);
     }
@@ -222,5 +240,64 @@ describe('the hub no-write gate', () => {
     const before = ctx.db.select().from(schema.users).all();
     hubCardPayload(hubView(ctx, 'u1'), 'u1');
     expect(ctx.db.select().from(schema.users).all()).toEqual(before);
+  });
+});
+
+/**
+ * The two CLAIM branches seedLivePark deliberately cannot reach, on a fixture of their own.
+ *
+ * seedLivePark leaves dailyQuests and seasonProgress with no row for today ON PURPOSE:
+ * rollDailyQuests and rollSeason each short-circuit the moment such a row exists, so seeding
+ * one would make the break-and-watch injection of those two calls a guaranteed no-op and the
+ * gate above would prove nothing about them. That trade costs it the daily-claimable and
+ * season-claimable render branches — the rows a player sees on most days.
+ *
+ * So this fixture is the mirror image and stands entirely apart: it pre-seeds both of today's
+ * rows THROUGH THEIR REAL WRITERS, drives the quests and the season track to claimable, and
+ * then asserts the narrower claim that is still available once those rows exist — that
+ * rendering with the CLAIM rows LIVE writes nothing to either table. It must never be merged
+ * into seedLivePark, and neither fixture makes the other redundant.
+ */
+describe('the hub no-write gate, with today\'s claim rows already seeded', () => {
+  function seedClaimableDay(): void {
+    // A season boundary the calendar actually reaches, matching tests/hub-service.test.ts's
+    // own S1 anchor, rather than the epoch-adjacent index 0 the default clock sits on.
+    ctx.setNow(690 * SEASON_DAYS * DAY_MS + 12 * 3_600_000);
+    // The real writers, in the order the real commands call them: both snapshot baselines
+    // off current stats, so every track below has to come after them or it lands in the
+    // baseline instead of in the progress.
+    rollDailyQuests(ctx, 'u1');
+    rollSeason(ctx, 'u1');
+
+    // Drive whatever board was rolled to complete, reading each quest's own stat and target
+    // off the seeded row — never a hardcoded quest id, which pickBoard is free to stop
+    // rolling the day the roster changes.
+    for (const v of questProgress(ctx, 'u1')) {
+      const def = QUESTS.find((q) => q.id === v.row.questId)!;
+      track(ctx, 'u1', def.stat, v.row.target);
+    }
+    // 5 points per expedition claimed clears the first season rung on its own.
+    track(ctx, 'u1', 'expeditions_claimed', 10);
+  }
+
+  it('sanity: this fixture reaches the two branches seedLivePark cannot', () => {
+    seedClaimableDay();
+    const ids = hubView(ctx, 'u1').map((s) => s.id);
+    expect(ids, 'no claimable quest — the no-write claim below would be vacuous')
+      .toContain('daily-claimable');
+    expect(ids, 'no unlocked season rung — the no-write claim below would be vacuous')
+      .toContain('season-claimable');
+    expect(seasonView(ctx, 'u1'), 'no season row for today at all').not.toBeNull();
+  });
+
+  it('hubView writes nothing to daily_quests or season_progress with both rows live', () => {
+    seedClaimableDay();
+    const beforeQuests = ctx.db.select().from(schema.dailyQuests).all();
+    const beforeSeason = ctx.db.select().from(schema.seasonProgress).all();
+    hubCardPayload(hubView(ctx, 'u1'), 'u1');
+    expect(ctx.db.select().from(schema.dailyQuests).all(), 'hubView wrote to daily_quests')
+      .toEqual(beforeQuests);
+    expect(ctx.db.select().from(schema.seasonProgress).all(), 'hubView wrote to season_progress')
+      .toEqual(beforeSeason);
   });
 });
