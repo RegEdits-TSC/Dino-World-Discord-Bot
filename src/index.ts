@@ -15,6 +15,28 @@ import { armWorldBroadcast, worldBroadcastHandler } from './modules/world/broadc
 import { ALERT_TIMER, armAlertSweep, alertSweepHandler } from './modules/park/alert-sweep.js';
 import type { Ctx } from './core/context.js';
 
+// Registered before any other statement so a failure DURING startup is caught too — a throw
+// out of loadConfig or migrateDb is exactly the kind that used to vanish. Without these the
+// process terminates with nothing written through the logger at all: on 2026-09-03 the bot
+// stopped and left no record anywhere of why, which is the incident this pair exists for.
+//
+// `logger.fatal` then `process.exit(1)` is safe to write synchronously because the logger's
+// destinations are both sync (see src/core/logger.ts) — a worker-thread transport could lose
+// this exact line to the exit, which is why it does not use one.
+//
+// Exit rather than continue: an uncaught throw leaves the process in an unknown state, and a
+// bot that keeps serving interactions from one is worse than a bot that is visibly down.
+process.on('uncaughtException', (err) => {
+  logger.fatal({ err }, 'uncaught exception — exiting');
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  // `reason` is `unknown` and frequently not an Error, so it is logged under `err` for pino's
+  // serialiser without being asserted to be one.
+  logger.fatal({ err: reason }, 'unhandled rejection — exiting');
+  process.exit(1);
+});
+
 const config = loadConfig();
 const db = createDb(config.databasePath);
 migrateDb(db);
