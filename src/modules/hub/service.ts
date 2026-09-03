@@ -162,14 +162,17 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
       // DELIBERATE omission rather than a structural impossibility: spec §5.1 lists the
       // whole park:assign family as hub-safe, and it is — every one of those handlers, the
       // park:goto:lots landing included, answers with an ephemeral i.reply that leaves this
-      // card standing. What blocks it is the mint side. assignRow (src/modules/park/embeds.ts)
-      // picks between park:assign / park:assignpick / park:goto:lots from
-      // eligiblePaddocks(ctx, userId, dinoId), which is a per-dino read of three more tables
-      // on a render path, and it returns an ActionRowBuilder while HubSignal.control is a
-      // flat {customId,label,style} — so nothing can be shared and the hub would have to
-      // keep its own copy of that chooser, silently stuck on today's shapes the day
-      // assignRow grows another. `/dino assign` stays the route; revisit if HubControl and
-      // assignRow ever meet in one shape.
+      // card standing. What blocks it is a SHAPE mismatch at the mint, not the read cost.
+      // assignRow (src/modules/park/embeds.ts) picks between park:assign / park:assignpick /
+      // park:goto:lots from eligiblePaddocks(ctx, userId, dinoId) and returns an
+      // ActionRowBuilder<ButtonBuilder>, while HubSignal.control is a flat
+      // {customId,label,style} — so nothing can be shared, and the hub would need a second,
+      // frozen copy of that three-way chooser, silently stuck on today's shapes the day
+      // assignRow grows another — the same two-copies-drifting class this branch just retired
+      // elsewhere. eligiblePaddocks itself only reads the dinos and lots tables, and on this
+      // path would be called once, for the first unassigned dino — the same shape eggs-idle
+      // already accepts above — so cost was never the blocker. `/dino assign` stays the route;
+      // revisit if HubControl and assignRow ever meet in one shape.
       text: `🦕 ${unassigned.length} ${unassigned.length === 1 ? 'dino has' : 'dinos have'} no paddock — they earn nothing · \`/dino assign\``,
       lossAtMs: null,
     });

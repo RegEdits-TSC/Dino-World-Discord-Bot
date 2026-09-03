@@ -33,6 +33,7 @@ contract, autocomplete and settings test files that gate them.
 - No control the hub renders may spend cash. Its reused controls split three ways on click — one self-heals its own card (`hatch:inc`), several replace the hub card outright with their owning module's own card (`hatch:crack`, `exp:claim`, `breed:claim`, `guests:claim`), and the rest leave the hub card standing with a now-stale label (`daily:claim`, `ach:claimall`, `season:claim`, `park:collect`) — `hub:refresh` exists for that last group alone; its own `hub:feedall` re-renders the card in place and is the only control on the card that consumes anything, and what it consumes is food. The trade holds only as long as nothing behind any of them charges. §hub-controls-never-spend
 - Every control the hub mints for another module is gated on that module's own flag (`ctx.config.modules.<owner>`), because `ModuleRegistry.findComponent` searches only ENABLED modules and `routeInteraction` falls through in silence when it misses. The gate withholds the CONTROL and never the row: the sentence stays true with the module off, and suppressing rows would have to reach the countdown and goal rows too, which carry no control to gate. §hub-gates-every-cross-module-control
 - An egg escrowed in a pending trade appears in NO hub section at all: the `!locks.eggs.has(e.id)` filter sits on both READY egg arms and on neither WAITING one, so a locked egg that is ready to hatch and a locked egg that was never incubated both vanish, while a locked egg mid-incubation still shows its countdown. The player who loses the row is the OFFERER, and the hub lists only INCOMING offers, so nothing else on their card accounts for it. A gap in the section table of spec 4.2, recorded here rather than by amending the spec — §specs-are-dated-records, `docs/conventions/prose-and-specs.md`. §hub-escrowed-eggs-fall-through
+- `dinos-unassigned` ships with no control either, a third row beside the two spec 5.5 names. It is a SHAPE mismatch, not an oversight: `assignRow` (`src/modules/park/embeds.ts`) returns an `ActionRowBuilder<ButtonBuilder>` picked from `eligiblePaddocks`, while `HubSignal.control` is a flat `{customId,label,style}` descriptor, so nothing can be shared and the hub would need its own frozen copy of that three-way chooser; the row points at `/dino assign` instead. §hub-unassigned-row-has-no-control
 - `hatch:crack` and `breed:claim` carry no owner segment; they are safe to mint on the hub only because ephemerality — established once, at `/hub`'s own reply and at `hub:open` — is inherited by every later `hub:*` update, making the surface visible to nobody but its owner. A property of the SURFACE those two ids happen to sit on, not of the ids themselves. §ephemeral-is-what-makes-the-reuse-safe
 
 ## commands-live-in-manifests
@@ -376,14 +377,19 @@ the same reasoning `src/modules/hatchery/index.ts` gives for its un-gated `hatch
 a gate would be a condition that cannot be false.
 
 **The gate withholds the CONTROL, never the ROW.** With `"guests": false` the hub still says a
-milestone is ready; it simply offers no button for it. Two reasons, and the second is the load-
-bearing one. The row's text is a true statement about the park either way, matching how
-`dinos-at-risk` keeps its warning and drops only its Feed control on an empty larder. And row-level
-suppression cannot be done coherently at this level: `waiting-eggs`, `waiting-dig`,
-`waiting-breeding` and `goal-attendance` carry no control to gate, so suppressing only the rows
-that happen to have one would hide "an egg is ready to hatch" while still printing the incubating
-countdown beside it. A module-aware card is a bigger design than a gate, and it would have to
-start from the row set, not from the controls.
+milestone is ready; it simply offers no button for it — and that residual is INFORMATIONAL only,
+with no route left to act on it. `ModuleRegistry` filters `commands()` by the same flag the
+component gate reads (`src/core/modules.ts:42,56`), so with `guests` disabled `/guests claim` is
+gone from the command list too: there is no button and no slash command, by any route, until an
+operator re-enables the module. That is NOT the same shape as `dinos-at-risk` dropping only its
+Feed control on an empty larder — there `/shop food` still exists, so the player has somewhere to
+go regardless of the missing button; a gated module leaves nowhere. The row stays anyway, for a
+reason that is load-bearing on its own: row-level suppression cannot be done coherently at this
+level. `waiting-eggs`, `waiting-dig`, `waiting-breeding` and `goal-attendance` belong to subsystems
+that carry no control to gate in the first place, so suppressing only the rows that happen to have
+one would hide "an egg is ready to hatch" while still printing the incubating countdown beside it.
+A module-aware card is a bigger design than a gate, and it would have to start from the row set,
+not from the controls.
 
 Only `ctx.config` moves any of this. `tests/harness.ts`'s `testRegistry` builds its own
 all-enabled flags map as a separate `ModuleRegistry` argument, so routing stays fully enabled
@@ -417,6 +423,26 @@ accounts for the gap. It is bounded by `TRADE_EXPIRY_MS`: the egg reappears when
 or resolves, which is why this is recorded rather than fixed under time pressure.
 
 This is a gap in the section table of spec 4.2, which lists the egg rows without a locked case. Per
+§specs-are-dated-records (`docs/conventions/prose-and-specs.md`) the spec is a dated record of the
+decision as it was made and is not amended; the correction lives here.
+
+## hub-unassigned-row-has-no-control
+
+`dinos-unassigned` ships with no control, a third row beside the two spec §5.5 names — escaped
+dinos and the trade offer. Spec §5.1 separately lists the whole `park:assign` family —
+`park:assign`, `park:assignpick`, `park:assignsel`, `park:goto:lots` — as reusable on the hub, so a
+reader comparing spec to shipped code would expect a control on this row too and find none.
+
+The gap is a SHAPE mismatch at the mint, not a cost one. `assignRow` (`src/modules/park/embeds.ts`)
+picks between `park:assign` / `park:assignpick` / `park:goto:lots` from
+`eligiblePaddocks(ctx, userId, dinoId)` (`src/modules/park/dinos.ts`) and returns an
+`ActionRowBuilder<ButtonBuilder>`, while `HubSignal.control` (`src/modules/hub/types.ts`) is a flat
+`{customId,label,style}` descriptor. Nothing can be shared between the two, so minting a control
+here would mean the hub keeping its own frozen copy of that three-way chooser, silently stuck on
+today's shapes the day `assignRow` grows another. The row points the player at `/dino assign`
+instead.
+
+This is a gap in spec §5.5's own list, which names only the escaped and trade-offer rows. Per
 §specs-are-dated-records (`docs/conventions/prose-and-specs.md`) the spec is a dated record of the
 decision as it was made and is not amended; the correction lives here.
 
