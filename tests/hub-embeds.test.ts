@@ -29,11 +29,11 @@ describe('hubCardPayload', () => {
     const signals: HubSignal[] = [
       sig({ id: 'g1', section: 'goals', text: 'Reach 500 rating to unlock the next lot.' }),
     ];
-    expect(() => {
-      const p = hubCardPayload(signals, 'u1');
-      expect(p.embeds).toHaveLength(1);
-      expect(fieldsOf(p).length).toBeGreaterThanOrEqual(1);
-    }).not.toThrow();
+    // Flat, not wrapped in expect(...).not.toThrow(): a wrapper swallows WHICH assertion
+    // broke and reports every failure as the same "expected function not to throw".
+    const p = hubCardPayload(signals, 'u1');
+    expect(p.embeds).toHaveLength(1);
+    expect(fieldsOf(p).length).toBeGreaterThanOrEqual(1);
   });
 
   it('orders the button row by rankSignals, not by input order', () => {

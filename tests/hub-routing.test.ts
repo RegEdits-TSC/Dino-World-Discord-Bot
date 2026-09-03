@@ -91,6 +91,9 @@ describe('the hub component', () => {
     const b = fakeButton({ customId: 'hub:refresh:u1', user: 'intruder' });
     await routeInteraction(ctx, testRegistry, b.asInteraction());
     expect(b.replyKinds ?? []).not.toContain('update');
+    // Indexing [0] with nothing recorded reads `undefined`, and `undefined.flags` throws a
+    // TypeError that reads as a broken test rather than as the refusal never happening.
+    expect(b.replies, 'the refusal answered nothing at all').toHaveLength(1);
     expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
 
@@ -137,6 +140,8 @@ describe('hub:feedall — the one proxy', () => {
     const b = fakeButton({ customId: 'hub:feedall:u1', user: 'intruder' });
     await routeInteraction(ctx, testRegistry, b.asInteraction());
     expect(b.replyKinds ?? []).not.toContain('update');
+    // Same length guard as the hub:refresh refusal above, and for the same reason.
+    expect(b.replies, 'the refusal answered nothing at all').toHaveLength(1);
     expect((b.replies[0] as { flags?: number }).flags).toBe(MessageFlags.Ephemeral);
   });
 

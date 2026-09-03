@@ -30,7 +30,9 @@ contract, autocomplete and settings test files that gate them.
 - A follow-through control on a PUBLIC reply carries the owner's id and its handler rejects a mismatch BEFORE the service call — but only for `claimExpedition` and `startExpedition` is that check the write barrier, because both resolve the CALLER's own dig and take no id. For `incubateEgg`, `assignDino` and `feedDino` the service already filters on the caller, so the check buys the right SENTENCE on a public card and nothing more; never describe it as the protection. §follow-through-control-carries-the-owner-uid
 - `hubView` (`src/modules/hub/service.ts`) reads across the game's subsystems onto one card and must never roll a quest board, roll a season, stamp a season hint or badge, recompute rating, bump the legacy high-water, expire a trade, record an alert, or claim anything — each is a write the rest of the codebase only ever reaches from a real command, and `tests/hub-nowrite.test.ts` is the gate that proves `hubView`/`hubCardPayload` touch none of them. §hub-is-a-read
 - `hub:open` is minted as a raw string by the park dashboard and by the park alert DM, never imported from the hub module, so the hub stays a leaf and park never grows the other half of an import cycle; the mint is gated on `ctx.config.modules.hub`, and a renamed hub prefix or action breaks both entry points with no compiler or typecheck signal at all. §hub-open-is-minted-by-other-modules
-- No control the hub renders may spend cash. Its reused controls split three ways on click — one self-heals its own card (`hatch:inc`), several replace the hub card outright with their owning module's own card (`hatch:crack`, `exp:claim`, `breed:claim`, `guests:claim`), and the rest leave the hub card standing with a now-stale label (`daily:claim`, `ach:claimall`, `season:claim`, `park:collect`) — `hub:refresh` exists for that last group alone, and the trade holds only as long as nothing behind any of them charges. §hub-controls-never-spend
+- No control the hub renders may spend cash. Its reused controls split three ways on click — one self-heals its own card (`hatch:inc`), several replace the hub card outright with their owning module's own card (`hatch:crack`, `exp:claim`, `breed:claim`, `guests:claim`), and the rest leave the hub card standing with a now-stale label (`daily:claim`, `ach:claimall`, `season:claim`, `park:collect`) — `hub:refresh` exists for that last group alone; its own `hub:feedall` re-renders the card in place and is the only control on the card that consumes anything, and what it consumes is food. The trade holds only as long as nothing behind any of them charges. §hub-controls-never-spend
+- Every control the hub mints for another module is gated on that module's own flag (`ctx.config.modules.<owner>`), because `ModuleRegistry.findComponent` searches only ENABLED modules and `routeInteraction` falls through in silence when it misses. The gate withholds the CONTROL and never the row: the sentence stays true with the module off, and suppressing rows would have to reach the countdown and goal rows too, which carry no control to gate. §hub-gates-every-cross-module-control
+- An egg escrowed in a pending trade appears in NO hub section at all: the `!locks.eggs.has(e.id)` filter sits on both READY egg arms and on neither WAITING one, so a locked egg that is ready to hatch and a locked egg that was never incubated both vanish, while a locked egg mid-incubation still shows its countdown. The player who loses the row is the OFFERER, and the hub lists only INCOMING offers, so nothing else on their card accounts for it. A gap in the section table of spec 4.2, recorded here rather than by amending the spec — §specs-are-dated-records, `docs/conventions/prose-and-specs.md`. §hub-escrowed-eggs-fall-through
 - `hatch:crack` and `breed:claim` carry no owner segment; they are safe to mint on the hub only because ephemerality — established once, at `/hub`'s own reply and at `hub:open` — is inherited by every later `hub:*` update, making the surface visible to nobody but its owner. A property of the SURFACE those two ids happen to sit on, not of the ids themselves. §ephemeral-is-what-makes-the-reuse-safe
 
 ## commands-live-in-manifests
@@ -331,10 +333,92 @@ than once per subsystem's own screen, and each is a distinct, unrecoverable loss
 `hubCardPayload` can take — an egg in every incubation state, a returned dig, a finished and a
 still-cooking pairing, an at-risk, an escaped, an unassigned and an off-diet dino, a claimable
 achievement tier and attendance milestone, income both pending and capped, a live incoming trade
-offer and an already-expired one nothing has closed — then asserts every table in that forbidden
-list (`dailyQuests`, `seasonProgress`, `achievementClaims`, `alertsSent`, `trades`, `eggs`,
-`expeditions`, `breedings`, `dinos`, `lots`) and the `users` row itself read back byte-identical
-before and after calling `hubView` then `hubCardPayload`.
+offer and an already-expired one nothing has closed — then asserts every table in
+`TABLES_THE_HUB_MAY_NOT_TOUCH` and the `users` row itself read back byte-identical before and
+after calling `hubView` then `hubCardPayload`. Read that array for the current list rather than
+quoting one here. It covers more than the subsystems the hub renders: `userStats` is on it because
+`track(...)` from a new hub row is the most plausible accidental write a render path will ever
+grow, and a `track` call reaches quest progress, achievement tiers and season points at once, so
+the damage would never be confined to the row that caused it.
+
+That fixture is deliberately blind in one place, and a SECOND fixture in the same file exists only
+to cover it. `rollDailyQuests` and `rollSeason` both short-circuit the moment a row exists for
+today's key, so a fixture that seeded today's board would make the break-and-watch injection of
+those two calls a guaranteed no-op — the gate would go on passing while proving nothing about
+them. The live-park fixture therefore leaves both tables empty for today and gives up the
+`daily-claimable` and `season-claimable` render branches to keep that discrimination. The second
+fixture seeds today's rows through those same real writers, drives the board and the season track
+to claimable, and asserts the narrower claim still available once the rows exist: rendering with
+those CLAIM rows LIVE writes to neither table. Neither fixture makes the other redundant, and
+merging them would silently retire the discrimination the first one is built around.
+
+## hub-gates-every-cross-module-control
+
+`hubView` is the densest cross-module mint site in the repo: nearly every row it renders offers
+another module's own customId. `ModuleRegistry.findComponent` (`src/core/modules.ts`) resolves a
+component only among ENABLED modules, and `routeInteraction` falls through in silence when it
+misses — no reply, no log, no "This interaction failed". So each of those controls is gated on the
+flag of the module that OWNS its handler, read straight off `ctx.config.modules`:
+
+| Control | Owning module |
+| --- | --- |
+| `hatch:crack` · `hatch:inc` | `hatchery` |
+| `exp:claim` | `expeditions` |
+| `breed:claim` | `genelab` |
+| `daily:claim` · `ach:claimall` · `season:claim` | `daily` |
+| `guests:claim` | `guests` |
+| `park:collect` | `park` |
+
+The prefix is not the owner. `ach:claimall` and `season:claim` are registered by the DAILY module
+under prefixes of their own, so a gate written off the customId's first segment would be reading a
+flag that does not exist. `hub:feedall` and `hub:refresh` are the hub's own ids and take no gate —
+the same reasoning `src/modules/hatchery/index.ts` gives for its un-gated `hatch:inc` mint, where
+a gate would be a condition that cannot be false.
+
+**The gate withholds the CONTROL, never the ROW.** With `"guests": false` the hub still says a
+milestone is ready; it simply offers no button for it. Two reasons, and the second is the load-
+bearing one. The row's text is a true statement about the park either way, matching how
+`dinos-at-risk` keeps its warning and drops only its Feed control on an empty larder. And row-level
+suppression cannot be done coherently at this level: `waiting-eggs`, `waiting-dig`,
+`waiting-breeding` and `goal-attendance` carry no control to gate, so suppressing only the rows
+that happen to have one would hide "an egg is ready to hatch" while still printing the incubating
+countdown beside it. A module-aware card is a bigger design than a gate, and it would have to
+start from the row set, not from the controls.
+
+Only `ctx.config` moves any of this. `tests/harness.ts`'s `testRegistry` builds its own
+all-enabled flags map as a separate `ModuleRegistry` argument, so routing stays fully enabled
+whatever the ctx says and no routed click can see the difference — and `makeCtx` defaults to
+`modules: {}`, every flag missing, every gate closed. A fixture that needs the gates OPEN has to
+hand over a whole `config` object, because `makeCtx` spreads its overrides last and a passed
+`config` replaces the default outright rather than merging into it.
+
+## hub-escrowed-eggs-fall-through
+
+An egg escrowed in a pending trade can appear in NO section of the hub at all. `locksFor` supplies
+`locks.eggs`, and `hubView` applies `!locks.eggs.has(e.id)` to both READY egg arms — the
+ready-to-hatch filter and the un-incubated one — and to neither WAITING arm. A locked egg then
+falls out like this:
+
+- **locked and ready to hatch** — excluded from `eggs-ready` by the filter; `incubationStartedAt`
+  is set so `eggs-idle` never sees it; `hatchesAt <= now` so `waiting-eggs` never sees it either.
+  Invisible.
+- **locked and never incubated** — excluded from `eggs-idle` by the filter; no `hatchesAt` at all,
+  so neither egg-bearing arm can pick it up. Invisible, and this is the commoner of the two: an
+  offered egg is far more often one sitting in inventory than one mid-hatch.
+- **locked and still incubating** — `waiting-eggs` has no lock filter, so this one still renders
+  its countdown. The inconsistency is real but harmless: a countdown is not a control.
+
+The suppression itself is correct where it is applied — both `incubateEgg` and `hatchEgg` refuse a
+locked egg, so offering either control would be offering a button that can only error. What is
+missing is a row saying where the egg went. And the player who loses it is the OFFERER: escrow
+holds the offering side's items (`locksFor` reads `from_user`), while the hub's trade row is
+scoped to `to_user` and lists only INCOMING offers — so nothing else on that player's card
+accounts for the gap. It is bounded by `TRADE_EXPIRY_MS`: the egg reappears when the offer expires
+or resolves, which is why this is recorded rather than fixed under time pressure.
+
+This is a gap in the section table of spec 4.2, which lists the egg rows without a locked case. Per
+§specs-are-dated-records (`docs/conventions/prose-and-specs.md`) the spec is a dated record of the
+decision as it was made and is not amended; the correction lives here.
 
 ## hub-open-is-minted-by-other-modules
 
@@ -369,8 +453,11 @@ prefix there too, or the sweep silently tolerates exactly the defect it exists t
 The hub renders its READY and CLAIM rows by minting other modules' own customIds verbatim —
 `hatch:crack`, `hatch:inc`, `exp:claim`, `breed:claim`, `daily:claim`, `ach:claimall`,
 `season:claim`, `guests:claim`, `park:collect` — rather than growing proxy handlers of its own.
-What each of those does to the HUB CARD once clicked is not one shape but three, and only one of
-the three is what `hub:refresh` actually answers:
+Alongside them, in that same ranked button row, sits `hub:feedall` — the hub's own proxy rather
+than a reuse, and the closing paragraph below is where it is accounted for. (`hub:refresh` is the
+hub's own too, but it sits on a row of its own and actions nothing.) What each of the REUSED ids
+does to the HUB CARD once clicked is not one shape but three, and only one of the three is what
+`hub:refresh` actually answers:
 
 - **Self-heals.** `hatch:inc` (`src/modules/hatchery/index.ts`) answers with `i.update`, but it
   rebuilds `components` from `i.message.components`, filtering out only the row entry matching its
@@ -397,7 +484,13 @@ for a different reason — the card is gone, and the only way back to a live one
 state lost, nothing charged for looking.
 
 None of that changes the rule that actually matters: no control the hub currently mints spends
-cash — every one of them is a claim, an incubate, a feed, or a collect. A stale label on a free
+cash — every one of them is a claim, an incubate, a feed, or a collect. The feed is `hub:feedall`,
+and it is the only control on the card that consumes a resource at all: FOOD, never cash, out of
+the larder `getFoodInventory` reports. It is also the only one that is idempotent on its own
+terms — `feedAll` (`src/modules/care/service.ts`) filters its candidates to `hunger < 100`, so a
+second click on a card whose label has gone stale feeds nobody and spends nothing, which is why it
+can safely be the control that re-renders in place rather than replying and leaving a stale card
+behind. A stale label on a free
 action is cosmetic; the same staleness on a control that spends money is the exact defect this repo
 already paid for once — §money-button-carries-its-rung's landmark incident is what a stale PRICE
 looks like, not a stale count. A future hub row must not mint one of the two-step cash-confirm ids

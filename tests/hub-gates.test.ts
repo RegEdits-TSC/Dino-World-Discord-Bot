@@ -18,8 +18,9 @@ describe('nextRatingGate', () => {
   });
 
   it('collects EVERY ladder that lands on the shared threshold, not just the first', () => {
-    // The collision case. Three ladders meet at 800; a naive "return the first match" reads
-    // as correct on every non-colliding rung and silently drops two labels on this one.
+    // The collision case. More than one ladder lands on 800 — the assertions below name
+    // each one this gate has to report — so a naive "return the first match" reads as
+    // correct on every non-colliding rung and silently drops the rest here.
     const gate = nextRatingGate(799)!;
     expect(gate.threshold).toBe(800);
     expect(gate.labels.length).toBeGreaterThan(1);
