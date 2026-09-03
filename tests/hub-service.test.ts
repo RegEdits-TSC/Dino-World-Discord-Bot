@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { makeCtx } from './harness.js';
 import { schema } from '../src/core/db/index.js';
-import { getOrCreateUser, toClockDinos, capHours, facilityBonusPct } from '../src/modules/park/service.js';
+import { getOrCreateUser, toClockDinos, capHours, facilityBonusPct, facilityLevel, maxLevelFor } from '../src/modules/park/service.js';
 import { ALL_MODULES } from '../src/core/module-list.js';
 import type { Config } from '../src/core/config.js';
 import { escapeAt, ESCAPE_WARN_MS, accruedIncome, HUNGER_DRAIN_MS, hungerAt, drainMsFor, dayKeyUTC, DAY_MS } from '../src/core/clock.js';
@@ -69,6 +69,15 @@ const seedDino = (over: Partial<typeof schema.dinos.$inferInsert> = {}) =>
 
 const paddockLot = (kind: 'herbivore_paddock' | 'carnivore_paddock', name: string) =>
   ctx.db.insert(schema.lots).values({ userId: 'u1', type: 'paddock', kind, name }).returning().get();
+
+// A Hatchery Lab at a given level. Inserted directly rather than through buildLot/upgradeLot
+// because those charge cash and recompute rating, and the incubator-slot rows under test
+// care only about the lot's level. Every caller asserts the resulting incubatorSlots value
+// off the real function rather than trusting this to have produced it.
+const seedHatcheryLab = (level: number) =>
+  ctx.db.insert(schema.lots).values({
+    userId: 'u1', type: 'facility', kind: 'hatchery_lab', name: 'Hatchery Lab', level,
+  }).returning().get();
 
 // Escape-instant math is independent of `now` (see escapeAt's own doc comment), so it can
 // be computed once right after the insert and reused after ctx.setNow moves `now` under it.
@@ -590,9 +599,81 @@ describe('hubView — the Incubate control against a full incubator', () => {
     const row = hubView(ctx, 'u1').find((s) => s.id === 'eggs-idle');
     expect(row, 'the row was suppressed — only the control should be').toBeTruthy();
     expect(row!.control, 'Incubate was offered with nowhere to incubate').toBeUndefined();
-    expect(row!.text).toContain('every incubator slot is full');
+    expect(row!.text).toContain('incubator full');
     expect(row!.text, 'the full row still reads as though incubating were a free choice')
       .not.toContain('not incubating');
+  });
+
+  // The row said the incubator was full and stopped there, so a player could read it and
+  // still not know how many slots they had, nor that slots come from the Hatchery Lab at
+  // all. On a screen whose whole job is answering "what do I do now", naming the blocker
+  // without naming the remedy is half a sentence. The remedy differs by lab level, and
+  // getting it wrong is worse than silence: telling a player with no lab to `/upgrade`
+  // names a lot that does not exist, and telling one at max level to upgrade is a dead end.
+  it('names the slot count in every full state', () => {
+    egg({ incubationStartedAt: 0, hatchesAt: 9_000_000 });
+    egg();
+    const { lots } = toClockDinos(ctx, 'u1');
+    expect(incubatorSlots(lots)).toBe(1);
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'eggs-idle')!;
+    // Whole-string match on the fraction, not a substring containing "1": a bare
+    // toContain('1') passes against an egg id, a level, or the word "1 egg".
+    expect(row.text).toContain('(1/1)');
+  });
+
+  it('tells a player with NO Hatchery Lab to build one, and warns that level 1 adds nothing', () => {
+    // incubatorSlots is [1,2,3,4,5] indexed by level with a fallback of 1, so a level-1 lab
+    // grants the same single slot as no lab at all. A player who builds one on this row's
+    // advice and gains nothing has been actively misled, which is why the caveat is pinned.
+    egg({ incubationStartedAt: 0, hatchesAt: 9_000_000 });
+    egg();
+    const { lots } = toClockDinos(ctx, 'u1');
+    expect(facilityLevel(lots, 'hatchery_lab'), 'fixture already has a lab').toBe(0);
+
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'eggs-idle')!;
+    expect(row.text).toContain('/build');
+    expect(row.text, 'the level-1 trap is unmentioned').toMatch(/level 2/i);
+    // Deliberately NOT asserting the absence of `/upgrade` here. The honest advice in this
+    // state is build-THEN-upgrade, because a level-1 lab grants the same single slot as no
+    // lab at all — so naming `/upgrade` alongside `/build` is required to be useful, not a
+    // leak from the has-a-lab case. (An earlier draft of this test forbade it and would have
+    // forced a message that told the player to build and then stopped.)
+  });
+
+  it('tells a player whose lab is below max to upgrade it', () => {
+    seedHatcheryLab(2);
+    const { lots } = toClockDinos(ctx, 'u1');
+    expect(incubatorSlots(lots), 'a level-2 lab should grant a second slot').toBe(2);
+    expect(facilityLevel(lots, 'hatchery_lab')).toBeLessThan(maxLevelFor('hatchery_lab'));
+    egg({ incubationStartedAt: 0, hatchesAt: 9_000_000 });
+    egg({ incubationStartedAt: 0, hatchesAt: 9_000_001 });
+    egg();
+    expect(incubatingCount(ctx, 'u1')).toBe(2);
+
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'eggs-idle')!;
+    expect(row.text).toContain('(2/2)');
+    expect(row.text).toContain('/upgrade');
+    expect(row.text, 'told a player who already owns a lab to build another')
+      .not.toContain('/build');
+  });
+
+  it('tells a player at max level that a slot must free up, and offers no upgrade path', () => {
+    const max = maxLevelFor('hatchery_lab');
+    seedHatcheryLab(max);
+    const { lots } = toClockDinos(ctx, 'u1');
+    const slots = incubatorSlots(lots);
+    for (let n = 0; n < slots; n++) egg({ incubationStartedAt: 0, hatchesAt: 9_000_000 + n });
+    egg();
+    expect(incubatingCount(ctx, 'u1'), 'fixture does not fill a max-level incubator').toBe(slots);
+
+    const row = hubView(ctx, 'u1').find((s) => s.id === 'eggs-idle')!;
+    expect(row.text).toContain(`(${slots}/${slots})`);
+    // Neither remedy exists at max level; promising one would send the player to a command
+    // that refuses. The honest answer is that something has to hatch first.
+    expect(row.text, 'offered an upgrade at max level').not.toContain('/upgrade');
+    expect(row.text, 'offered a build to a player who already has the best lab')
+      .not.toContain('/build');
+    expect(row.text).toMatch(/hatch/i);
   });
 
   it('offers Incubate again the moment a slot frees up', () => {

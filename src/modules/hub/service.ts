@@ -6,7 +6,7 @@ import { locksFor } from '../../core/locks.js';
 import { activeExpedition } from '../expeditions/service.js';
 import { activeBreedings } from '../genelab/service.js';
 import { escapeAt, ESCAPE_WARN_MS, accruedIncome, DAY_MS } from '../../core/clock.js';
-import { toClockDinos, capHours, facilityBonusPct } from '../park/service.js';
+import { toClockDinos, capHours, facilityBonusPct, facilityLevel, maxLevelFor } from '../park/service.js';
 import { incubatingCount, incubatorSlots } from '../hatchery/service.js';
 import { seasonIndexFor, SEASON_DAYS } from '../../core/world.js';
 import { TRADE_EXPIRY_MS } from '../../data/trade.js';
@@ -77,17 +77,38 @@ export function hubView(ctx: Ctx, userId: string): HubSignal[] {
     // incubatingCount issues its own query — read it once here rather than inside both the
     // text and the control. incubatorSlots is 1 with no Hatchery Lab, so a player holding a
     // second shop egg reaches this row routinely, not as an edge case.
-    const freeSlots = incubatorSlots(lots) - incubatingCount(ctx, userId);
+    const slots = incubatorSlots(lots);
+    const busy = incubatingCount(ctx, userId);
+    const freeSlots = slots - busy;
     const subject = idle.length === 1 ? 'An egg is' : `${idle.length} eggs are`;
+    // The full row names the blocker AND the remedy, and the remedy depends on the lab. An
+    // earlier version said only "every incubator slot is full", which left a player unable
+    // to learn from the screen how many slots they had or that slots come from the Hatchery
+    // Lab at all — on a card whose whole job is answering "what do I do now", that is half
+    // a sentence. Naming the WRONG remedy would be worse than silence, so it branches:
+    //
+    //   no lab   — building alone gains nothing, because incubatorSlots is [1,2,3,4,5]
+    //              indexed by level and the no-lab fallback is already 1. Level 2 is the
+    //              first real slot, so the advice has to carry both steps.
+    //   below max — one lot to upgrade, and `/upgrade` autocompletes it.
+    //   at max   — neither remedy exists; promising one sends the player to a command that
+    //              refuses. Something has to hatch first, and a ready-but-uncracked egg
+    //              still holds its slot, so cracking one is the fastest route.
+    const labLevel = facilityLevel(lots, 'hatchery_lab');
+    const remedy = labLevel === 0
+      ? 'a Hatchery Lab adds slots from level 2 — `/build kind:hatchery_lab`, then `/upgrade`'
+      : labLevel < maxLevelFor('hatchery_lab')
+        ? 'upgrade your Hatchery Lab for another slot — `/upgrade`'
+        : 'every slot your Hatchery Lab can hold is in use — one has to hatch first';
     out.push({
       id: 'eggs-idle',
       section: 'ready',
       // The row is worth showing either way — an egg earning nothing is the fact — but it
       // must not say "not incubating" as though that were a choice when there is nowhere to
-      // put it. Upgrade the Hatchery Lab, or wait for one already in there to hatch.
+      // put it.
       text: freeSlots > 0
         ? `🥚 ${subject} sitting in your inventory, not incubating`
-        : `🥚 ${subject} sitting in your inventory — every incubator slot is full`,
+        : `🥚 ${subject} sitting in your inventory — incubator full (${busy}/${slots}). ${remedy[0].toUpperCase()}${remedy.slice(1)}.`,
       lossAtMs: null,
       // No control with the incubator full: incubateEgg refuses on exactly this condition
       // (src/modules/hatchery/service.ts), so Incubate here is a button that can only fail —
